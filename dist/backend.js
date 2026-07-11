@@ -2,6 +2,16 @@
 // src/shared.ts
 var EXTENSION_ID = "lumi_books";
 var EXTENSION_KEY = "lumibooks";
+var CODEX_FILE_KEYS = [
+  "characters",
+  "locations",
+  "things",
+  "relations",
+  "timeline",
+  "threads",
+  "world",
+  "knowledge"
+];
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var STORAGE_VERSION = 3;
 var SETTINGS_PATH = "settings.json";
@@ -62,7 +72,17 @@ function makeDefaultProfile(id, name) {
     retryCount: 3,
     shortCommentRulesOverride: null,
     memoriaPersonaOverride: null,
-    ttftTimeoutSecs: 60
+    ttftTimeoutSecs: 60,
+    codexEnabled: true,
+    codexLagUnit: "messages",
+    codexLagValue: 6,
+    codexWindowUnit: "messages",
+    codexWindowValue: 30,
+    codexTokenBreakpoint: 1e5,
+    codexRelationsTable: true,
+    codexThorough: false,
+    codexConnectionId: null,
+    codexExtraContext: false
   };
 }
 var DEFAULT_SETTINGS = {
@@ -143,7 +163,17 @@ function normalizeProfile(raw) {
     retryCount: clampInt(v.retryCount, 0, 10, base.retryCount),
     shortCommentRulesOverride: typeof v.shortCommentRulesOverride === "string" && v.shortCommentRulesOverride.trim() !== "" ? v.shortCommentRulesOverride : null,
     memoriaPersonaOverride: typeof v.memoriaPersonaOverride === "string" && v.memoriaPersonaOverride.trim() !== "" ? v.memoriaPersonaOverride : null,
-    ttftTimeoutSecs: clampInt(v.ttftTimeoutSecs, 10, 600, base.ttftTimeoutSecs)
+    ttftTimeoutSecs: clampInt(v.ttftTimeoutSecs, 10, 600, base.ttftTimeoutSecs),
+    codexEnabled: typeof v.codexEnabled === "boolean" ? v.codexEnabled : base.codexEnabled,
+    codexLagUnit: v.codexLagUnit === "tokens" ? "tokens" : "messages",
+    codexLagValue: clampInt(v.codexLagValue, 0, v.codexLagUnit === "tokens" ? 1e6 : 1e5, base.codexLagValue),
+    codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",
+    codexWindowValue: clampInt(v.codexWindowValue, 1, v.codexWindowUnit === "tokens" ? 1e6 : 1e5, base.codexWindowValue),
+    codexTokenBreakpoint: clampInt(v.codexTokenBreakpoint, 1000, 1e6, base.codexTokenBreakpoint),
+    codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
+    codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
+    codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
+    codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext
   };
 }
 function normalizeSamplers(raw) {
@@ -204,7 +234,9 @@ function normalizeEntryMeta(raw) {
     sceneNumber: typeof v.sceneNumber === "number" && Number.isFinite(v.sceneNumber) && v.sceneNumber > 0 ? Math.floor(v.sceneNumber) : undefined,
     rawOutput: typeof v.rawOutput === "string" ? v.rawOutput : undefined,
     isRoot: v.isRoot === true ? true : undefined,
-    rootOrigin: typeof v.rootOrigin === "string" && v.rootOrigin.trim() ? v.rootOrigin : undefined
+    rootOrigin: typeof v.rootOrigin === "string" && v.rootOrigin.trim() ? v.rootOrigin : undefined,
+    ghost: v.ghost === true ? true : undefined,
+    msgSigs: Array.isArray(v.msgSigs) ? v.msgSigs.filter((x) => typeof x === "string") : undefined
   };
 }
 function clampInt(v, min, max, fallback) {
@@ -293,19 +325,6 @@ function getBootstrapUserId() {
 }
 function send(payload, userId) {
   spindle.sendToFrontend(payload, userId);
-}
-function hostToast(userId, tone, text) {
-  const t = spindle.toast;
-  if (!t)
-    return;
-  const method = tone === "warn" ? "warning" : tone === "success" || tone === "info" || tone === "error" ? tone : "info";
-  if (typeof t[method] !== "function")
-    return;
-  try {
-    t[method](text, { userId, duration: tone === "error" ? 8000 : 4000 });
-  } catch (err) {
-    warn(`toast call failed: ${describeError(err)}`);
-  }
 }
 function readChatIdFromMessage(msg) {
   if (!("chatId" in msg))
@@ -597,7 +616,14 @@ async function reassertChatBinding(chatId, userId) {
   });
   return true;
 }
+var ENTRIES_CACHE_TTL_MS = 4000;
+var ENTRIES_CACHE_CAP = 300;
+var entriesCache = new Map;
 async function listLmbEntries(chatId, userId) {
+  const key = cacheKey(userId, chatId);
+  const cached = entriesCache.get(key);
+  if (cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS)
+    return cached.data;
   const bookId = await findBookForChat(chatId, userId);
   if (!bookId)
     return [];
@@ -612,13 +638,22 @@ async function listLmbEntries(chatId, userId) {
       continue;
     out.push({ raw: entry, meta });
   }
+  if (entriesCache.has(key))
+    entriesCache.delete(key);
+  entriesCache.set(key, { at: Date.now(), data: out });
+  while (entriesCache.size > ENTRIES_CACHE_CAP) {
+    const oldest = entriesCache.keys().next().value;
+    if (oldest === undefined)
+      break;
+    entriesCache.delete(oldest);
+  }
   return out;
 }
-async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], constant = true) {
+async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], constant = true, disabled = false) {
   return spindle.world_books.entries.create(bookId, {
     content,
     comment,
-    disabled: false,
+    disabled,
     constant,
     key: keys,
     keysecondary: [],
@@ -659,6 +694,11 @@ async function deleteEntry(entryId, userId) {
 async function setEntryDisabled(entryId, disabled, userId) {
   return spindle.world_books.entries.update(entryId, { disabled }, userId);
 }
+async function promoteGhostEntry(entry, userId) {
+  const nextMeta = { ...entry.meta, ghost: undefined, msgSigs: undefined };
+  const ext = entry.raw.extensions || {};
+  return spindle.world_books.entries.update(entry.raw.id, { disabled: false, extensions: { ...ext, [EXTENSION_KEY]: nextMeta } }, userId);
+}
 async function releaseEntry(entry, userId) {
   const ext = entry.raw.extensions || {};
   const nextExt = { ...ext };
@@ -676,6 +716,7 @@ async function patchEntryMeta(entry, metaPatch, userId) {
 }
 function invalidateBookCache(userId, chatId) {
   chatBookCache.delete(cacheKey(userId, chatId));
+  entriesCache.delete(cacheKey(userId, chatId));
 }
 function findCachedChatIdForBook(userId, bookId) {
   const prefix = `${userId}::`;
@@ -707,8 +748,10 @@ function invalidateAllBookCacheEntriesForBook(userId, bookId) {
     if (value.bookId === bookId)
       toDelete.push(key);
   }
-  for (const k of toDelete)
+  for (const k of toDelete) {
     chatBookCache.delete(k);
+    entriesCache.delete(k);
+  }
 }
 var ROOT_CANDIDATES_TTL_MS = 8000;
 var rootCandidatesCache = new Map;
@@ -743,9 +786,9 @@ async function listRootCandidates(userId) {
 }
 
 // src/backend/coverage.ts
-async function buildCoverage(chatId, userId, preloadedEntries) {
+async function buildCoverage(chatId, userId, preloadedEntries, includeGhosts = false) {
   const allEntries = preloadedEntries ?? await listLmbEntries(chatId, userId);
-  const entries = allEntries.filter((e) => !e.raw.disabled);
+  const entries = allEntries.filter((e) => !e.raw.disabled || includeGhosts && e.meta.ghost === true);
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);
@@ -848,6 +891,9 @@ function sumEligibleTokens(messages, profile) {
   }
   return n;
 }
+function sizeEligible(messages, unit, profile) {
+  return unit === "tokens" ? sumEligibleTokens(messages, profile) : countEligible(messages, profile);
+}
 function computeCoverageStats(messages, coverage, profile) {
   const totalMessages = messages.length;
   let coveredMessages = 0;
@@ -861,10 +907,10 @@ function computeCoverageStats(messages, coverage, profile) {
   }
   const uncoveredMessages = totalMessages - coveredMessages;
   const uncoveredTail = pickUncoveredTail(messages, coverage);
-  const tailCounted = profile.lagUnit === "tokens" ? sumEligibleTokens(uncoveredTail, profile) : countEligible(uncoveredTail, profile);
+  const tailCounted = sizeEligible(uncoveredTail, profile.lagUnit, profile);
   const lagSatisfied = tailCounted >= profile.lagValue;
   const compressible = trimLagFromTail(uncoveredTail, profile);
-  const headRoom = profile.windowUnit === "tokens" ? sumEligibleTokens(compressible, profile) : countEligible(compressible, profile);
+  const headRoom = sizeEligible(compressible, profile.windowUnit, profile);
   const windowAvailable = headRoom >= profile.windowValue;
   return {
     totalMessages,
@@ -878,7 +924,7 @@ function computeCoverageStats(messages, coverage, profile) {
 function countCompressibleEligible(messages, coverage, profile) {
   const tail = pickUncoveredTail(messages, coverage);
   const compressible = trimLagFromTail(tail, profile);
-  return profile.windowUnit === "tokens" ? sumEligibleTokens(compressible, profile) : countEligible(compressible, profile);
+  return sizeEligible(compressible, profile.windowUnit, profile);
 }
 function trimLagFromTail(uncoveredTail, profile) {
   if (uncoveredTail.length === 0)
@@ -925,6 +971,23 @@ function pickUncoveredTail(messages, coverage) {
   }
   out.reverse();
   return out;
+}
+function sumApproxTokens(messages) {
+  let total = 0;
+  for (const m of messages)
+    total += approximateTokensFromChars((m.content || "").length);
+  return total;
+}
+function liveEndPosition(msgIds, storedLastMsgIdx, posById) {
+  let end = -1;
+  for (const id of msgIds) {
+    const p = posById.get(id);
+    if (typeof p === "number" && p > end)
+      end = p;
+  }
+  if (end !== -1)
+    return end;
+  return typeof storedLastMsgIdx === "number" ? storedLastMsgIdx : Number.MAX_SAFE_INTEGER;
 }
 function selectNextChapterWindow(uncoveredTail, profile) {
   const compressible = trimLagFromTail(uncoveredTail, profile);
@@ -1050,133 +1113,675 @@ async function resyncVisibility(chatId, userId, desiredHiddenForCovered) {
   return { unhidden: unhiddenAfter, hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
 }
 
-// src/backend/injection.ts
-var injectionAnomalyCb = null;
-function registerInjectionAnomalyCallback(cb) {
-  injectionAnomalyCb = cb;
+// src/backend/codex/schema.ts
+function isCodexFileKey(v) {
+  return typeof v === "string" && CODEX_FILE_KEYS.includes(v);
 }
-function isAssembledHistory(lm) {
-  return lm["__isChatHistory"] === true;
+var ENTITY_REF_RE = /^(char|loc|thing):[a-z0-9_]+$/;
+function isEntityRef(v) {
+  return typeof v === "string" && ENTITY_REF_RE.test(v);
 }
-function sourceMessageId(lm) {
-  const v = lm["sourceMessageId"];
-  return typeof v === "string" && v ? v : undefined;
+function looksLikeEntityRef(v) {
+  return /^(char|loc|thing):/.test(v);
 }
-function orderEntries(coverage, msgIdToIdx) {
-  const ordered = [];
-  for (const entry of coverage.activeEntries) {
-    let firstIdx = Number.POSITIVE_INFINITY;
-    let lastIdx = -1;
-    for (const msgId of entry.meta.msgIds) {
-      const idx = msgIdToIdx.get(msgId);
-      if (typeof idx !== "number")
-        continue;
-      if (idx < firstIdx)
-        firstIdx = idx;
-      if (idx > lastIdx)
-        lastIdx = idx;
-    }
-    const haveIdx = firstIdx !== Number.POSITIVE_INFINITY;
-    const resolvedFirst = haveIdx ? firstIdx : typeof entry.meta.firstMsgIdx === "number" ? entry.meta.firstMsgIdx : 0;
-    const resolvedLast = haveIdx ? lastIdx : typeof entry.meta.lastMsgIdx === "number" ? entry.meta.lastMsgIdx : resolvedFirst;
-    const tierName = entry.meta.tier === 3 ? "Volume" : entry.meta.tier === 2 ? "Arc" : "Chapter";
-    const label = entry.raw.comment || (haveIdx ? `${tierName} msgs ${firstIdx + 1}-${lastIdx + 1}` : tierName);
-    ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
+var FILE_NAMESPACE = {
+  characters: "char",
+  locations: "loc",
+  things: "thing"
+};
+function emptyCodexFile(key) {
+  switch (key) {
+    case "characters":
+    case "locations":
+    case "things":
+      return { entities: [] };
+    case "relations":
+      return { relations: [] };
+    case "timeline":
+      return { events: [] };
+    case "threads":
+      return { threads: [], seeds: [] };
+    case "world":
+      return { entries: [] };
+    case "knowledge":
+      return { items: [] };
   }
-  ordered.sort((a, b) => a.firstIdx - b.firstIdx);
-  return ordered;
 }
-async function buildInjection(chatId, llmMessages, userId) {
-  const [activated, allEntries, attachedBookIds] = await Promise.all([
-    spindle.world_books.getActivated(chatId, userId).catch(() => null),
-    listLmbEntries(chatId, userId),
-    getChatAttachedBookIds(chatId, userId).catch(() => null)
-  ]);
-  if (allEntries.length === 0)
-    return null;
-  const ourBookId = allEntries[0].raw.world_book_id;
-  const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
-  const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
-  const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
-  const entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
-  const coverage = await buildCoverage(chatId, userId, entriesForCoverage);
-  if (coverage.activeEntries.length === 0)
-    return null;
-  const chatMessages = await spindle.chat.getMessages(chatId).catch(() => null);
-  if (!chatMessages || chatMessages.length === 0)
-    return null;
-  const msgIdToIdx = new Map;
-  for (let i = 0;i < chatMessages.length; i++)
-    msgIdToIdx.set(chatMessages[i].id, i);
-  const ordered = orderEntries(coverage, msgIdToIdx);
-  if (ordered.length === 0)
-    return null;
-  const hasVisibleMessage = chatMessages.some((m) => !(m.extra && m.extra.hidden));
-  const historyMsgs = llmMessages.filter(isAssembledHistory);
-  if (historyMsgs.length === 0) {
-    if (hasVisibleMessage) {
-      error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. The host most likely clipped all history because max context is too small, skipping injection.`);
-      injectionAnomalyCb?.(userId, "Memoria can't see any chat history, your max context is likely too small");
-    }
-    return null;
+function emptyBundle() {
+  return {
+    characters: { entities: [] },
+    locations: { entities: [] },
+    things: { entities: [] },
+    relations: { relations: [] },
+    timeline: { events: [] },
+    threads: { threads: [], seeds: [] },
+    world: { entries: [] },
+    knowledge: { items: [] }
+  };
+}
+function bundleIsEmpty(bundle) {
+  return bundle.characters.entities.length === 0 && bundle.locations.entities.length === 0 && bundle.things.entities.length === 0 && bundle.relations.relations.length === 0 && bundle.timeline.events.length === 0 && bundle.threads.threads.length === 0 && bundle.threads.seeds.length === 0 && bundle.world.entries.length === 0 && bundle.knowledge.items.length === 0;
+}
+function fail(errors) {
+  return { ok: false, errors };
+}
+function str(ctx, v, path, required) {
+  if (v === undefined || v === null || v === "") {
+    if (required)
+      ctx.errors.push(`${path}: required non-empty string`);
+    return;
   }
-  const plan = [];
-  for (const m of historyMsgs) {
-    const id = sourceMessageId(m);
-    if (id === undefined) {
-      error(`injection: a "__isChatHistory" message is missing sourceMessageId. Host identity contract ` + `looks inconsistent, skipping injection.`);
-      return null;
-    }
-    const idx = msgIdToIdx.get(id);
-    if (idx === undefined) {
-      error(`injection: sourceMessageId "${id}" is not in the chat, skipping injection.`);
-      return null;
-    }
-    const md = chatMessages[idx]?.metadata;
-    const excluded = !!(md && md["lmb_excluded"] === true);
-    plan.push({ idx, covered: excluded ? false : coverage.coveredBy.has(id) });
+  if (typeof v !== "string") {
+    ctx.errors.push(`${path}: expected a string`);
+    return;
+  }
+  const t = v.trim();
+  if (!t && required) {
+    ctx.errors.push(`${path}: required non-empty string`);
+    return;
+  }
+  return t || undefined;
+}
+function strArray(ctx, v, path) {
+  if (v === undefined || v === null)
+    return;
+  if (!Array.isArray(v)) {
+    ctx.errors.push(`${path}: expected an array of strings`);
+    return;
   }
   const out = [];
-  const injectedLabels = new Map;
-  const flushAt = (index, beforePos) => {
-    const block = [];
-    for (const o of ordered) {
-      if (o.emitted || o.lastIdx >= beforePos)
-        continue;
-      o.emitted = true;
-      const msg = { role: "assistant", content: formatEntryForInjection(o.entry) };
-      injectedLabels.set(msg, o.label);
-      block.push(msg);
+  v.forEach((x, i) => {
+    if (typeof x !== "string")
+      ctx.errors.push(`${path}[${i}]: expected a string`);
+    else if (x.trim())
+      out.push(x.trim());
+  });
+  return out.length ? out : undefined;
+}
+function objArray(ctx, v, path) {
+  if (v === undefined || v === null)
+    return [];
+  if (!Array.isArray(v)) {
+    ctx.errors.push(`${path}: expected an array`);
+    return [];
+  }
+  const out = [];
+  v.forEach((x, i) => {
+    if (!x || typeof x !== "object" || Array.isArray(x)) {
+      ctx.errors.push(`${path}[${i}]: expected an object`);
+    } else {
+      out.push(x);
     }
-    if (block.length)
-      out.splice(index, 0, ...block);
-  };
-  let hp = 0;
-  let histEnd = -1;
-  for (const lm of llmMessages) {
-    if (!isAssembledHistory(lm)) {
-      out.push(lm);
+  });
+  return out;
+}
+function asRecord(ctx, raw, path) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    ctx.errors.push(`${path}: expected a JSON object`);
+    return null;
+  }
+  return raw;
+}
+function keepExtras(target, source, known) {
+  for (const [k, v] of Object.entries(source)) {
+    if (known.includes(k))
+      continue;
+    if (k === "__proto__")
+      continue;
+    if (typeof v === "string") {
+      if (v.trim())
+        target[k] = v.trim();
+    } else if (typeof v === "number" && Number.isFinite(v)) {
+      target[k] = v;
+    } else if (typeof v === "boolean") {
+      target[k] = v ? "true" : "false";
+    } else if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+      const arr = v.map((x) => x.trim()).filter(Boolean);
+      if (arr.length)
+        target[k] = arr;
+    }
+  }
+}
+var ENTITY_KNOWN_FIELDS = [
+  "id",
+  "name",
+  "aliases",
+  "kind",
+  "role",
+  "appearance",
+  "description",
+  "traits",
+  "goals",
+  "significance",
+  "status",
+  "ties",
+  "notes"
+];
+function validateEntityFile(key, raw, opts) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, key);
+  if (!root)
+    return fail(ctx.errors);
+  const ns = FILE_NAMESPACE[key];
+  const seen = new Set;
+  const entities = [];
+  for (const [i, e] of objArray(ctx, root["entities"], "entities").entries()) {
+    const path = `entities[${i}]`;
+    const id = str(ctx, e["id"], `${path}.id`, true);
+    const name = str(ctx, e["name"], `${path}.name`, true);
+    if (!id || !name)
+      continue;
+    if (!ENTITY_REF_RE.test(id)) {
+      ctx.errors.push(`${path}.id: "${id}" must match ${ns}:<lowercase_snake_case>`);
       continue;
     }
-    const { idx, covered } = plan[hp++];
-    flushAt(out.length, idx);
-    if (!covered)
-      out.push(lm);
-    histEnd = out.length;
+    if (!id.startsWith(`${ns}:`)) {
+      ctx.errors.push(`${path}.id: "${id}" belongs in another file, ids here must start with "${ns}:"`);
+      continue;
+    }
+    if (seen.has(id)) {
+      ctx.errors.push(`${path}.id: duplicate id "${id}"`);
+      continue;
+    }
+    seen.add(id);
+    const out = { id, name };
+    const aliases = strArray(ctx, e["aliases"], `${path}.aliases`);
+    if (aliases)
+      out.aliases = aliases;
+    for (const f of ["kind", "role", "appearance", "description", "significance", "status", "notes"]) {
+      const v = str(ctx, e[f], `${path}.${f}`, false);
+      if (v)
+        out[f] = v;
+    }
+    for (const f of ["traits", "goals"]) {
+      const v = strArray(ctx, e[f], `${path}.${f}`);
+      if (v)
+        out[f] = v;
+    }
+    const ties = strArray(ctx, e["ties"], `${path}.ties`);
+    if (ties) {
+      if (opts.relationsTable) {
+        ctx.errors.push(`${path}.ties: the relations table is enabled, move these into relations.json rows`);
+      } else {
+        out.ties = ties;
+      }
+    }
+    keepExtras(out, e, ENTITY_KNOWN_FIELDS);
+    entities.push(out);
   }
-  flushAt(histEnd < 0 ? out.length : histEnd, Number.POSITIVE_INFINITY);
-  if (injectedLabels.size === 0)
-    return null;
-  const breakdown = [];
-  for (let i = 0;i < out.length; i++) {
-    const label = injectedLabels.get(out[i]);
-    if (label !== undefined)
-      breakdown.push({ messageIndex: i, name: label });
-  }
-  return { messages: out, breakdown };
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { entities } };
 }
-function formatEntryForInjection(entry) {
-  return entry.raw.content;
+function validateRelationsFile(raw, opts) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, "relations");
+  if (!root)
+    return fail(ctx.errors);
+  const rawLen = Array.isArray(root["relations"]) ? root["relations"].length : 0;
+  if (!opts.relationsTable && rawLen > 0) {
+    return fail(["relations: the relations table is disabled for this profile, keep connections as ties on entity sheets instead"]);
+  }
+  const rows = objArray(ctx, root["relations"], "relations");
+  const relations = [];
+  for (const [i, r] of rows.entries()) {
+    const path = `relations[${i}]`;
+    const type = r["type"];
+    if (type === "pair") {
+      const a = str(ctx, r["a"], `${path}.a`, true);
+      const b = str(ctx, r["b"], `${path}.b`, true);
+      const kind = str(ctx, r["kind"], `${path}.kind`, true);
+      const state = str(ctx, r["state"], `${path}.state`, true);
+      if (!a || !b || !kind || !state)
+        continue;
+      if (!isEntityRef(a))
+        ctx.errors.push(`${path}.a: "${a}" is not a valid entity ref`);
+      if (!isEntityRef(b))
+        ctx.errors.push(`${path}.b: "${b}" is not a valid entity ref`);
+      if (a === b)
+        ctx.errors.push(`${path}: a and b are the same entity`);
+      const history = strArray(ctx, r["history"], `${path}.history`);
+      relations.push({ type: "pair", a, b, kind, state, ...history ? { history } : {} });
+    } else if (type === "group") {
+      const kind = str(ctx, r["kind"], `${path}.kind`, true);
+      const state = str(ctx, r["state"], `${path}.state`, true);
+      const members = [...new Set(strArray(ctx, r["members"], `${path}.members`) ?? [])];
+      if (!kind || !state)
+        continue;
+      if (members.length < 2)
+        ctx.errors.push(`${path}.members: a group needs at least 2 distinct members`);
+      for (const m of members) {
+        if (!isEntityRef(m))
+          ctx.errors.push(`${path}.members: "${m}" is not a valid entity ref`);
+      }
+      let roles;
+      const rawRoles = r["roles"];
+      if (rawRoles !== undefined && rawRoles !== null) {
+        const rec = asRecord(ctx, rawRoles, `${path}.roles`);
+        if (rec) {
+          roles = {};
+          for (const [k, v] of Object.entries(rec)) {
+            if (!isEntityRef(k))
+              ctx.errors.push(`${path}.roles: key "${k}" is not a valid entity ref`);
+            else if (typeof v !== "string" || !v.trim())
+              ctx.errors.push(`${path}.roles["${k}"]: expected a string role`);
+            else
+              roles[k] = v.trim();
+          }
+          if (Object.keys(roles).length === 0)
+            roles = undefined;
+        }
+      }
+      const history = strArray(ctx, r["history"], `${path}.history`);
+      relations.push({
+        type: "group",
+        kind,
+        members,
+        state,
+        ...roles ? { roles } : {},
+        ...history ? { history } : {}
+      });
+    } else {
+      ctx.errors.push(`${path}.type: expected "pair" or "group"`);
+    }
+  }
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { relations } };
+}
+function validateTimelineFile(raw) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, "timeline");
+  if (!root)
+    return fail(ctx.errors);
+  const events = [];
+  for (const [i, e] of objArray(ctx, root["events"], "events").entries()) {
+    const path = `events[${i}]`;
+    const when = str(ctx, e["when"], `${path}.when`, true);
+    const event = str(ctx, e["event"], `${path}.event`, true);
+    if (!when || !event)
+      continue;
+    const out = { when, event };
+    const participants = strArray(ctx, e["participants"], `${path}.participants`);
+    if (participants)
+      out.participants = participants;
+    const where = str(ctx, e["where"], `${path}.where`, false);
+    if (where)
+      out.where = where;
+    const causes = str(ctx, e["causes"], `${path}.causes`, false);
+    if (causes)
+      out.causes = causes;
+    events.push(out);
+  }
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { events } };
+}
+function validateThreadsFile(raw) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, "threads");
+  if (!root)
+    return fail(ctx.errors);
+  const threads = [];
+  for (const [i, t] of objArray(ctx, root["threads"], "threads").entries()) {
+    const path = `threads[${i}]`;
+    const name = str(ctx, t["name"], `${path}.name`, true);
+    const summary = str(ctx, t["summary"], `${path}.summary`, true);
+    const status = t["status"];
+    if (!name || !summary)
+      continue;
+    if (status !== "open" && status !== "stalled" && status !== "resolved" && status !== "abandoned") {
+      ctx.errors.push(`${path}.status: expected open | stalled | resolved | abandoned`);
+      continue;
+    }
+    const out = { name, status, summary };
+    const latest = str(ctx, t["latest"], `${path}.latest`, false);
+    if (latest)
+      out.latest = latest;
+    const planted = strArray(ctx, t["planted"], `${path}.planted`);
+    if (planted)
+      out.planted = planted;
+    threads.push(out);
+  }
+  const seeds = strArray(ctx, root["seeds"], "seeds") ?? [];
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { threads, seeds } };
+}
+function validateWorldFile(raw) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, "world");
+  if (!root)
+    return fail(ctx.errors);
+  const entries = [];
+  for (const [i, e] of objArray(ctx, root["entries"], "entries").entries()) {
+    const path = `entries[${i}]`;
+    const topic = str(ctx, e["topic"], `${path}.topic`, true);
+    const facts = strArray(ctx, e["facts"], `${path}.facts`) ?? [];
+    if (!topic)
+      continue;
+    if (facts.length === 0) {
+      ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
+      continue;
+    }
+    entries.push({ topic, facts });
+  }
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { entries } };
+}
+function validateKnowledgeFile(raw) {
+  const ctx = { errors: [] };
+  const root = asRecord(ctx, raw, "knowledge");
+  if (!root)
+    return fail(ctx.errors);
+  const items = [];
+  for (const [i, k] of objArray(ctx, root["items"], "items").entries()) {
+    const path = `items[${i}]`;
+    const fact = str(ctx, k["fact"], `${path}.fact`, true);
+    if (!fact)
+      continue;
+    const out = { fact };
+    const knownBy = strArray(ctx, k["knownBy"], `${path}.knownBy`);
+    if (knownBy)
+      out.knownBy = knownBy;
+    const hiddenFrom = strArray(ctx, k["hiddenFrom"], `${path}.hiddenFrom`);
+    if (hiddenFrom)
+      out.hiddenFrom = hiddenFrom;
+    const rawBeliefs = k["falseBeliefs"];
+    if (rawBeliefs !== undefined && rawBeliefs !== null) {
+      const beliefs = [];
+      for (const [j, b] of objArray(ctx, rawBeliefs, `${path}.falseBeliefs`).entries()) {
+        const who = str(ctx, b["who"], `${path}.falseBeliefs[${j}].who`, true);
+        const believes = str(ctx, b["believes"], `${path}.falseBeliefs[${j}].believes`, true);
+        if (who && believes)
+          beliefs.push({ who, believes });
+      }
+      if (beliefs.length)
+        out.falseBeliefs = beliefs;
+    }
+    const note = str(ctx, k["note"], `${path}.note`, false);
+    if (note)
+      out.note = note;
+    if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
+      ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
+      continue;
+    }
+    items.push(out);
+  }
+  if (ctx.errors.length)
+    return fail(ctx.errors);
+  return { ok: true, value: { items } };
+}
+function validateCodexFile(key, raw, opts) {
+  switch (key) {
+    case "characters":
+    case "locations":
+    case "things":
+      return validateEntityFile(key, raw, opts);
+    case "relations":
+      return validateRelationsFile(raw, opts);
+    case "timeline":
+      return validateTimelineFile(raw);
+    case "threads":
+      return validateThreadsFile(raw);
+    case "world":
+      return validateWorldFile(raw);
+    case "knowledge":
+      return validateKnowledgeFile(raw);
+  }
+}
+function collectEntityIds(bundle) {
+  const ids = new Set;
+  for (const file of [bundle.characters, bundle.locations, bundle.things]) {
+    for (const e of file.entities)
+      ids.add(e.id);
+  }
+  return ids;
+}
+function collectDangling(bundle) {
+  const ids = collectEntityIds(bundle);
+  const out = [];
+  const check = (ref, path) => {
+    if (looksLikeEntityRef(ref) && !ids.has(ref))
+      out.push({ ref, path });
+  };
+  bundle.relations.relations.forEach((r, i) => {
+    if (r.type === "pair") {
+      check(r.a, `relations[${i}].a`);
+      check(r.b, `relations[${i}].b`);
+    } else {
+      r.members.forEach((m) => check(m, `relations[${i}].members`));
+      for (const k of Object.keys(r.roles ?? {}))
+        check(k, `relations[${i}].roles`);
+    }
+  });
+  bundle.knowledge.items.forEach((k, i) => {
+    (k.knownBy ?? []).forEach((w) => check(w, `knowledge items[${i}].knownBy`));
+    (k.hiddenFrom ?? []).forEach((w) => check(w, `knowledge items[${i}].hiddenFrom`));
+    (k.falseBeliefs ?? []).forEach((b, j) => check(b.who, `knowledge items[${i}].falseBeliefs[${j}].who`));
+  });
+  bundle.timeline.events.forEach((e, i) => {
+    (e.participants ?? []).forEach((p) => check(p, `timeline events[${i}].participants`));
+    if (e.where)
+      check(e.where, `timeline events[${i}].where`);
+  });
+  return out;
+}
+function formatDangling(d) {
+  return `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
+}
+function checkIntegrity(bundle) {
+  return collectDangling(bundle).map(formatDangling);
+}
+function newDanglingErrors(bundle, tolerate) {
+  const used = new Map;
+  const out = [];
+  for (const d of collectDangling(bundle)) {
+    const budget = tolerate.get(d.ref) ?? 0;
+    const spent = used.get(d.ref) ?? 0;
+    used.set(d.ref, spent + 1);
+    if (spent < budget)
+      continue;
+    out.push(formatDangling(d));
+  }
+  return out;
+}
+function danglingRefCounts(bundle) {
+  const m = new Map;
+  for (const d of collectDangling(bundle))
+    m.set(d.ref, (m.get(d.ref) ?? 0) + 1);
+  return m;
+}
+
+// src/backend/codex/store.ts
+var CODEX_DIR = "codex";
+var SIG_CAP = 500;
+function emptyCursor() {
+  return {
+    version: 1,
+    lastMsgId: null,
+    consumedSigs: [],
+    fileStates: {},
+    frozenAtRuns: {},
+    prefixMsgId: null,
+    pendingReconcile: false,
+    reconcileUntilMsgId: null,
+    relationsTableMode: null,
+    lastRunAt: null,
+    lastRunStats: null,
+    runs: 0,
+    updatedAt: 0
+  };
+}
+function normalizeRunStats(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const v = raw;
+  if (typeof v.rounds !== "number" || typeof v.model !== "string")
+    return null;
+  return {
+    rounds: v.rounds,
+    promptTokens: typeof v.promptTokens === "number" ? v.promptTokens : 0,
+    completionTokens: typeof v.completionTokens === "number" ? v.completionTokens : 0,
+    model: v.model,
+    ...typeof v.note === "string" && v.note.trim() ? { note: v.note.trim() } : {}
+  };
+}
+function dir(chatId) {
+  return `${CODEX_DIR}/${chatId}`;
+}
+function filePath(chatId, key) {
+  return `${dir(chatId)}/${key}.json`;
+}
+function cursorPath(chatId) {
+  return `${dir(chatId)}/cursor.json`;
+}
+function msgSig(role, content) {
+  let h = 2166136261;
+  const s = `${role}\x00${content}`;
+  for (let i = 0;i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16);
+}
+async function loadCursor(chatId, userId) {
+  const read = await readJsonFileRaw(cursorPath(chatId), userId);
+  if (read.state === "unreadable") {
+    throw new Error(`The codex cursor is unreadable: ${read.error}`);
+  }
+  const raw = read.state === "ok" ? read.value : null;
+  if (!raw || typeof raw !== "object")
+    return emptyCursor();
+  const base = emptyCursor();
+  const fileStates = {};
+  if (raw.fileStates && typeof raw.fileStates === "object") {
+    for (const [k, v] of Object.entries(raw.fileStates)) {
+      if (v === "on" || v === "noInject" || v === "frozen")
+        fileStates[k] = v;
+    }
+  }
+  const frozenAtRuns = {};
+  if (raw.frozenAtRuns && typeof raw.frozenAtRuns === "object") {
+    for (const [k, v] of Object.entries(raw.frozenAtRuns)) {
+      if (typeof v === "number" && Number.isFinite(v))
+        frozenAtRuns[k] = v;
+    }
+  }
+  return {
+    version: 1,
+    lastMsgId: typeof raw.lastMsgId === "string" && raw.lastMsgId ? raw.lastMsgId : null,
+    consumedSigs: Array.isArray(raw.consumedSigs) ? raw.consumedSigs.filter((x) => !!x && typeof x === "object" && typeof x.id === "string" && typeof x.sig === "string") : base.consumedSigs,
+    fileStates,
+    frozenAtRuns,
+    prefixMsgId: typeof raw.prefixMsgId === "string" && raw.prefixMsgId ? raw.prefixMsgId : null,
+    pendingReconcile: raw.pendingReconcile === true,
+    reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
+    relationsTableMode: typeof raw.relationsTableMode === "boolean" ? raw.relationsTableMode : null,
+    lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : null,
+    lastRunStats: normalizeRunStats(raw.lastRunStats),
+    runs: typeof raw.runs === "number" && Number.isFinite(raw.runs) ? raw.runs : 0,
+    updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : 0
+  };
+}
+async function saveCursor(chatId, cursor, userId) {
+  const overflow = cursor.consumedSigs.length - SIG_CAP;
+  const prefixMsgId = overflow > 0 ? cursor.consumedSigs[overflow - 1].id : cursor.prefixMsgId;
+  const trimmed = {
+    ...cursor,
+    prefixMsgId,
+    consumedSigs: cursor.consumedSigs.slice(-SIG_CAP),
+    updatedAt: Date.now()
+  };
+  await spindle.userStorage.setJson(cursorPath(chatId), trimmed, { indent: 0, userId });
+}
+async function readJsonFileRaw(path, userId) {
+  let exists;
+  try {
+    exists = await spindle.userStorage.exists(path, userId);
+  } catch (err) {
+    return { state: "unreadable", error: describeError(err) };
+  }
+  if (!exists)
+    return { state: "absent" };
+  try {
+    const text = await spindle.userStorage.read(path, userId);
+    return { state: "ok", value: JSON.parse(text) };
+  } catch (err) {
+    return { state: "unreadable", error: describeError(err) };
+  }
+}
+function readCodexFileRaw(chatId, key, userId) {
+  return readJsonFileRaw(filePath(chatId, key), userId);
+}
+async function loadCodex(chatId, userId, opts) {
+  const bundle = emptyBundle();
+  const problems = [];
+  await Promise.all(CODEX_FILE_KEYS.map(async (key) => {
+    const read = await readCodexFileRaw(chatId, key, userId);
+    if (read.state === "absent")
+      return;
+    if (read.state === "unreadable") {
+      problems.push({ file: key, errors: [`unreadable on disk: ${read.error}`] });
+      warn(`codex: ${key}.json for ${chatId.slice(0, 8)} is unreadable: ${read.error}`);
+      return;
+    }
+    const result = validateCodexFile(key, read.value, opts);
+    if (result.ok) {
+      bundle[key] = result.value;
+    } else {
+      problems.push({ file: key, errors: result.errors });
+      warn(`codex: ${key}.json for ${chatId.slice(0, 8)} failed validation, treating as empty: ${result.errors.slice(0, 3).join("; ")}`);
+    }
+  }));
+  return { bundle, problems };
+}
+async function saveCodexFile(chatId, key, value, userId) {
+  await spindle.userStorage.setJson(filePath(chatId, key), value, { indent: 1, userId });
+}
+async function codexExists(chatId, userId) {
+  return spindle.userStorage.exists(cursorPath(chatId), userId).catch(() => false);
+}
+async function deleteCodex(chatId, userId) {
+  const failed = [];
+  for (const key of CODEX_FILE_KEYS) {
+    let exists;
+    try {
+      exists = await spindle.userStorage.exists(filePath(chatId, key), userId);
+    } catch (err) {
+      failed.push(key);
+      warn(`codex: exists() failed for ${key}.json of ${chatId.slice(0, 8)}: ${describeError(err)}`);
+      continue;
+    }
+    if (!exists)
+      continue;
+    try {
+      await spindle.userStorage.delete(filePath(chatId, key), userId);
+    } catch (err) {
+      failed.push(key);
+      warn(`codex: failed to delete ${key}.json for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+    }
+  }
+  if (failed.length === 0) {
+    await spindle.userStorage.delete(cursorPath(chatId), userId).catch((err) => {
+      warn(`codex: failed to delete cursor for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+    });
+  }
+  return failed;
+}
+async function readCodexFilesRaw(chatId, userId) {
+  const out = {};
+  await Promise.all(CODEX_FILE_KEYS.map(async (key) => {
+    const read = await readCodexFileRaw(chatId, key, userId);
+    if (read.state === "unreadable") {
+      warn(`codex: read ${key}.json failed: ${read.error}`);
+      out[key] = `UNREADABLE ${key}.json - the file exists but cannot be parsed (${read.error}). Fix or delete it before saving.`;
+      return;
+    }
+    out[key] = JSON.stringify(read.state === "ok" ? read.value : emptyCodexFile(key), null, 2);
+  }));
+  return out;
 }
 
 // src/backend/regex.ts
@@ -1720,14 +2325,14 @@ function findPresetText(profile, customPresets, category) {
     return builtIn.prompt;
   return builtIns[0]?.prompt ?? "";
 }
-function renderTranscript(messages, includeIndex = true) {
+function renderTranscript(messages, includeIndex = true, indexOffset = 0) {
   const lines = [];
   messages.forEach((m, idx) => {
     const role = m.role === "user" ? "USER" : m.role === "assistant" ? "ASSISTANT" : "SYSTEM";
     const content = (m.content || "").trim();
     if (!content)
       return;
-    const head = includeIndex ? `<<${role} #${idx + 1}>>` : `<<${role}>>`;
+    const head = includeIndex ? `<<${role} #${idx + 1 + indexOffset}>>` : `<<${role}>>`;
     lines.push(`${head}
 ${content}`);
   });
@@ -1785,11 +2390,11 @@ class AbortedSummarizerError extends Error {
     this.name = "AbortedSummarizerError";
   }
 }
-async function runStreamingGeneration(conn, messages, profile, userId, options) {
-  const ttftMs = Math.max(1, profile.ttftTimeoutSecs) * 1000;
+async function consumeGenerationStream(makeStream, options) {
   const controller = new AbortController;
   let firstTokenSeen = false;
   let ttftFired = false;
+  let deadlineFired = false;
   let externalAborted = options.externalSignal.aborted;
   const onExternalAbort = () => {
     externalAborted = true;
@@ -1799,30 +2404,36 @@ async function runStreamingGeneration(conn, messages, profile, userId, options) 
     controller.abort();
   else
     options.externalSignal.addEventListener("abort", onExternalAbort);
-  const ttftTimer = setTimeout(() => {
+  const ttftTimer = options.firstTokenTimeoutMs !== null ? setTimeout(() => {
     if (!firstTokenSeen) {
       ttftFired = true;
       controller.abort();
     }
-  }, ttftMs);
+  }, options.firstTokenTimeoutMs) : null;
+  const deadlineTimer = options.overallDeadlineMs !== null ? setTimeout(() => {
+    deadlineFired = true;
+    controller.abort();
+  }, options.overallDeadlineMs) : null;
+  const base = options.progressBase ?? { chars: 0, thinking: 0 };
   let aggregated = "";
   let thinkingChars = 0;
   let usage;
   try {
-    const request = buildGenerateRequest(conn, messages, profile, userId, controller.signal);
-    const stream = spindle.generate.rawStream(request);
-    for await (const chunk of stream) {
+    for await (const chunk of makeStream(controller.signal)) {
       if (chunk.type === "token" || chunk.type === "reasoning") {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
-          clearTimeout(ttftTimer);
+          if (ttftTimer)
+            clearTimeout(ttftTimer);
         }
         if (chunk.type === "token") {
           aggregated += chunk.token;
+          options.onDelta?.("text", chunk.token);
         } else {
           thinkingChars += chunk.token.length;
+          options.onDelta?.("thinking", chunk.token);
         }
-        options.onProgress?.(aggregated.length, thinkingChars);
+        options.onProgress?.(base.chars + aggregated.length, base.thinking + thinkingChars);
         continue;
       }
       if (chunk.type === "done") {
@@ -1831,26 +2442,52 @@ async function runStreamingGeneration(conn, messages, profile, userId, options) 
         if (chunk.content)
           aggregated = chunk.content;
         usage = chunk.usage;
-        options.onProgress?.(aggregated.length, thinkingChars);
-        return { content: aggregated, usage };
+        let toolChars = 0;
+        for (const tc of chunk.tool_calls ?? []) {
+          try {
+            toolChars += JSON.stringify(tc.args ?? {}).length;
+          } catch {}
+        }
+        base.chars += aggregated.length + toolChars;
+        base.thinking += thinkingChars;
+        options.onProgress?.(base.chars, base.thinking);
+        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
       }
     }
     if (externalAborted)
       throw new AbortedSummarizerError;
-    if (!aggregated.trim())
-      throw new Error("The stream ended before completing");
-    return { content: aggregated, usage };
+    if (options.salvagePartial && aggregated.trim()) {
+      return { content: aggregated, toolCalls: [], usage };
+    }
+    throw new Error("The stream ended before completing");
   } catch (err) {
     if (externalAborted)
       throw new AbortedSummarizerError;
-    if (ttftFired) {
-      throw new Error(`No token within ${Math.round(ttftMs / 1000)}s, the provider may be slow or unreachable`);
+    if (ttftFired && options.firstTokenTimeoutMs !== null) {
+      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+    }
+    if (deadlineFired && options.overallDeadlineMs !== null) {
+      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
     }
     throw err;
   } finally {
-    clearTimeout(ttftTimer);
+    if (ttftTimer)
+      clearTimeout(ttftTimer);
+    if (deadlineTimer)
+      clearTimeout(deadlineTimer);
     options.externalSignal.removeEventListener("abort", onExternalAbort);
   }
+}
+async function runStreamingGeneration(conn, messages, profile, userId, options) {
+  const result = await consumeGenerationStream((signal) => spindle.generate.rawStream(buildGenerateRequest(conn, messages, profile, userId, signal)), {
+    externalSignal: options.externalSignal,
+    onProgress: options.onProgress,
+    onDelta: options.onDelta,
+    firstTokenTimeoutMs: Math.max(1, profile.ttftTimeoutSecs) * 1000,
+    overallDeadlineMs: null,
+    salvagePartial: true
+  });
+  return { content: result.content, usage: result.usage };
 }
 function buildGenerateRequest(conn, messages, profile, userId, signal) {
   const baseParams = buildSamplerParameters(profile);
@@ -2379,10 +3016,598 @@ function repairJson(s) {
   return out;
 }
 
+// src/backend/codex/prompt.ts
+var SCHEMA_TABLE_MODE = `File schemas (JSON, write the COMPLETE file every time):
+
+characters.json / locations.json / things.json
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "", "notes"?: "" } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself.
+Never put relationship info on a sheet, that lives in relations.json.
+
+relations.json
+{ "relations": [
+  { "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
+    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
+  { "type": "pair", "a": "char:elias", "b": "thing:silver_locket", "kind": "owns",
+    "state": "carries it everywhere, would kill to keep it" },
+  { "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
+    "state": "hiding in the attic since the murder" },
+  { "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
+    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
+Pair rows are the default and connect ANY two entities, not just characters:
+character-character (bond, rival, kin, member_of), character-thing (owns, seeks,
+created, guards), character-location (at, rules, banished_from), thing-location
+(hidden_at). Whenever an entity sheet is tempted to mention another entity, that
+connection belongs here as a pair instead. Pairs are directional a->b: use two
+rows when the two sides differ. Use a group row ONLY for a genuinely joint fact
+that would otherwise need 3+ redundant pairs. NEVER store how individual members
+feel about each other in a group row - that is always a pair.`;
+var SCHEMA_INLINE_MODE = `File schemas (JSON, write the COMPLETE file every time):
+
+characters.json / locations.json / things.json
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "",
+  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "" } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Relationships live in each entity's "ties" list
+as short present-tense notes - to other characters, to things, and to places
+alike. Do NOT write relations.json, it is disabled.`;
+var SCHEMA_REST = `timeline.json
+{ "events": [ { "when": "day 12", "event": "Mara sees Elias kill the duke",
+  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
+  "causes"?: "she flees the city" } ] }
+Major events only, oldest first. "when" uses the story's own reckoning.
+
+threads.json
+{ "threads": [ { "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
+  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
+  "seeds": ["unexplained scar on the ferryman's hand"] }
+Threads are storylines. planted/seeds are Chekhov setups awaiting payoff.
+
+world.json
+{ "entries": [ { "topic": "Magic", "facts": ["blood magic costs memories", ...] } ] }
+Rules and lore true of the WORLD itself, not any single entity's state.
+
+knowledge.json
+{ "items": [ { "fact": "Elias killed the duke",
+  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
+  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
+  "note"?: "" } ] }
+ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Facts every
+character knows belong in world or timeline, never here.`;
+function buildCodexSystemPrompt(relationsTable) {
+  return [
+    "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
+    "",
+    "Your three directives, in order:",
+    "1. UPDATE - rewrite every section the new turns have outdated, and add what is new and durable.",
+    "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited.",
+    "3. COMPRESS - strip bloat and prose so every record stays lean, rewriting sections when needed, while losing zero information.",
+    "",
+    "Snapshot rules (absolute):",
+    "- The codex describes the present. When something changes, REPLACE the old text entirely.",
+    '- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.',
+    `- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.`,
+    "- Track what is durable. Skip transient scene staging (who is standing where this instant), weather, and verbatim dialogue unless a line is genuinely load-bearing.",
+    "- Terse phrases beat sentences. Omit empty optional fields entirely. No filler words.",
+    "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
+    "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add.",
+    "",
+    relationsTable ? SCHEMA_TABLE_MODE : SCHEMA_INLINE_MODE,
+    "",
+    SCHEMA_REST,
+    "",
+    "Tools:",
+    "- codex_write(file, content): replace one file with the complete new content. Only call it for files that actually changed.",
+    "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
+    "",
+    "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
+    "If a write is rejected you will get the validation errors back: fix the file and resend only the rejected files."
+  ].join(`
+`);
+}
+function buildCodexUserMessage(bundle, chunk, chunkLabel, chunkFirstIndex, notes, lore, storySoFar) {
+  const parts = [];
+  const special = [];
+  if (notes.reconcile) {
+    special.push("RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.");
+  }
+  if (notes.migrateToTable) {
+    special.push('MIGRATE: the relations table was just enabled. Lift every "ties" note off the entity sheets into relations.json rows, then remove all "ties" fields.');
+  }
+  if (notes.migrateToInline) {
+    special.push('MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.');
+  }
+  if (notes.loadProblems.length) {
+    special.push(`REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: ${notes.loadProblems.join(", ")}.`);
+  }
+  if (notes.frozenFiles?.length) {
+    special.push(`FROZEN: the user locked these files, do NOT write them: ${notes.frozenFiles.join(", ")}.`);
+  }
+  if (special.length)
+    parts.push(special.join(`
+
+`));
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
+${lore}`);
+  }
+  if (storySoFar) {
+    parts.push(`<<STORY SO FAR (chapter summaries, context only - this span is already recorded in the codex)>>
+${storySoFar}`);
+  }
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---
+${JSON.stringify(bundle[key])}`);
+  }
+  parts.push(`<<NEW STORY TURNS (${chunkLabel})>>`);
+  parts.push(renderTranscript(chunk, true, chunkFirstIndex));
+  parts.push("Update the codex now.");
+  return parts.join(`
+
+`);
+}
+function buildCodexTidyMessage(bundle, targets) {
+  const parts = [];
+  parts.push("TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.");
+  parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---
+${JSON.stringify(bundle[key])}`);
+  }
+  parts.push("Rewrite the target files now. Write only files you actually improved, then call codex_done.");
+  return parts.join(`
+
+`);
+}
+var VERIFY_NUDGE = "Verification pass: re-read the files you just wrote against directives 2 and 3. Sweep every file for stale claims the new turns contradict, and compress any section that carries bloat. Resend corrected files if you find anything, otherwise call codex_done.";
+function entityLine(e) {
+  const bits = [];
+  const skip = new Set(["id", "name", "aliases", "ties", "notes"]);
+  if (e.aliases?.length)
+    bits.push(`aka ${e.aliases.join(", ")}`);
+  for (const [k, v] of Object.entries(e)) {
+    if (skip.has(k) || v === undefined)
+      continue;
+    if (Array.isArray(v))
+      bits.push(`${k}: ${v.join(", ")}`);
+    else
+      bits.push(`${k}: ${String(v)}`);
+  }
+  if (e.notes)
+    bits.push(String(e.notes));
+  return `- ${e.name} (${e.id})${bits.length ? ` | ${bits.join(" | ")}` : ""}`;
+}
+var ENTITY_REF_HEAD = /^(?:char|loc|thing):(.+)$/;
+function resolveRefName(names, ref) {
+  const n = names.get(ref);
+  if (n)
+    return n;
+  const m = ENTITY_REF_HEAD.exec(ref);
+  return m ? m[1].replace(/_/g, " ") : ref;
+}
+function relationLine(r, names) {
+  const nameOf = (ref) => resolveRefName(names, ref);
+  if (r.type === "pair") {
+    const hist2 = r.history?.length ? ` (${r.history.join("; ")})` : "";
+    return `- ${nameOf(r.a)} -> ${nameOf(r.b)} [${r.kind}]: ${r.state}${hist2}`;
+  }
+  const members = r.members.map((m) => {
+    const role = r.roles?.[m];
+    return role ? `${nameOf(m)} (${role})` : nameOf(m);
+  });
+  const extras = Object.entries(r.roles ?? {}).filter(([ref]) => !r.members.includes(ref)).map(([ref, role]) => `${role}: ${nameOf(ref)}`);
+  const hist = r.history?.length ? ` (${r.history.join("; ")})` : "";
+  return `- [${r.kind}] ${members.join(", ")}${extras.length ? ` (${extras.join(", ")})` : ""}: ${r.state}${hist}`;
+}
+function renderCodexForInjection(bundle) {
+  const rendered = renderCodexFileSections(bundle);
+  const sections = ["KNOWLEDGE CODEX (current story state, authoritative)"];
+  for (const key of CODEX_FILE_KEYS) {
+    const s = rendered[key];
+    if (s)
+      sections.push(s);
+  }
+  return sections.join(`
+
+`);
+}
+function renderCodexFileSections(bundle) {
+  const names = new Map;
+  for (const f of [bundle.characters, bundle.locations, bundle.things]) {
+    for (const e of f.entities)
+      names.set(e.id, e.name);
+  }
+  const out = {};
+  const entitySection = (key, title, entities) => {
+    if (!entities.length) {
+      out[key] = "";
+      return;
+    }
+    const lines = [`== ${title} ==`];
+    for (const e of entities) {
+      lines.push(entityLine(e));
+      for (const t of e.ties ?? [])
+        lines.push(`  * ${t}`);
+    }
+    out[key] = lines.join(`
+`);
+  };
+  entitySection("characters", "Characters", bundle.characters.entities);
+  entitySection("locations", "Locations", bundle.locations.entities);
+  entitySection("things", "Things", bundle.things.entities);
+  out.relations = bundle.relations.relations.length ? ["== Relations =="].concat(bundle.relations.relations.map((r) => relationLine(r, names))).join(`
+`) : "";
+  if (bundle.timeline.events.length) {
+    const lines = ["== Timeline =="];
+    for (const e of bundle.timeline.events) {
+      const who = e.participants?.length ? ` [${e.participants.map((p) => resolveRefName(names, p)).join(", ")}]` : "";
+      const where = e.where ? ` @ ${resolveRefName(names, e.where)}` : "";
+      const causes = e.causes ? ` -> ${e.causes}` : "";
+      lines.push(`- ${e.when}: ${e.event}${who}${where}${causes}`);
+    }
+    out.timeline = lines.join(`
+`);
+  } else {
+    out.timeline = "";
+  }
+  if (bundle.threads.threads.length || bundle.threads.seeds.length) {
+    const lines = ["== Threads =="];
+    for (const t of bundle.threads.threads) {
+      const latest = t.latest ? ` | latest: ${t.latest}` : "";
+      lines.push(`- ${t.name} (${t.status}): ${t.summary}${latest}`);
+      for (const p of t.planted ?? [])
+        lines.push(`  * planted: ${p}`);
+    }
+    for (const s of bundle.threads.seeds)
+      lines.push(`- planted: ${s}`);
+    out.threads = lines.join(`
+`);
+  } else {
+    out.threads = "";
+  }
+  if (bundle.world.entries.length) {
+    const lines = ["== World =="];
+    for (const w of bundle.world.entries) {
+      lines.push(`- ${w.topic}: ${w.facts.join(" | ")}`);
+    }
+    out.world = lines.join(`
+`);
+  } else {
+    out.world = "";
+  }
+  if (bundle.knowledge.items.length) {
+    const lines = ["== Who knows what =="];
+    const nameList = (refs) => (refs ?? []).map((r) => resolveRefName(names, r)).join(", ");
+    for (const k of bundle.knowledge.items) {
+      const bits = [];
+      if (k.knownBy?.length)
+        bits.push(`known by ${nameList(k.knownBy)}`);
+      if (k.hiddenFrom?.length)
+        bits.push(`hidden from ${nameList(k.hiddenFrom)}`);
+      for (const b of k.falseBeliefs ?? []) {
+        bits.push(`${resolveRefName(names, b.who)} wrongly believes: ${b.believes}`);
+      }
+      if (k.note)
+        bits.push(k.note);
+      lines.push(`- ${k.fact} (${bits.join("; ")})`);
+    }
+    out.knowledge = lines.join(`
+`);
+  } else {
+    out.knowledge = "";
+  }
+  return out;
+}
+
+// src/backend/codex/agent.ts
+var CACHE_EPHEMERAL = { type: "ephemeral" };
+var TOOLS = [
+  {
+    name: "codex_write",
+    description: "Replace one codex file with its complete new content. Call once per changed file, and put every call for this update in a single response.",
+    parameters: {
+      type: "object",
+      properties: {
+        file: { type: "string", enum: [...CODEX_FILE_KEYS] },
+        content: { type: "object", description: "The complete file content matching that file's schema." }
+      },
+      required: ["file", "content"]
+    }
+  },
+  {
+    name: "codex_done",
+    description: "Declare the codex current. Call it alongside your writes, or alone when nothing durable changed.",
+    parameters: {
+      type: "object",
+      properties: {
+        note: { type: "string", description: "One short line on what changed." }
+      },
+      required: []
+    }
+  }
+];
+async function resolveCodexConnection(profile, userId) {
+  if (profile.codexConnectionId) {
+    const list = await listConnections(userId);
+    const picked = list.find((c) => c.id === profile.codexConnectionId) ?? null;
+    if (picked) {
+      const model = typeof picked.model === "string" ? picked.model : "";
+      if (!model.trim()) {
+        throw new FatalSummarizerError(`Codex connection "${picked.name || picked.id}" has no model set, pick one in its settings`);
+      }
+      return picked;
+    }
+    warn(`codex: connection ${profile.codexConnectionId} not found, falling back to the profile connection`);
+  }
+  const conn = await resolveConnection(profile, userId);
+  if (!conn)
+    throw new FatalSummarizerError("No connection available for the codex");
+  return conn;
+}
+var ROUND_DEADLINE_MS = 600000;
+async function runQuietRound(conn, messages, profile, userId, externalSignal, onProgress, onDelta, progressBase) {
+  const model = (conn.model ?? "").trim();
+  const parameters = { ...buildSamplerParameters(profile) };
+  if (model)
+    parameters["model"] = model;
+  const result = await consumeGenerationStream((signal) => spindle.generate.quietStream({
+    type: "quiet",
+    messages,
+    connection_id: conn.id,
+    parameters,
+    tools: TOOLS,
+    userId,
+    signal
+  }), {
+    externalSignal,
+    onProgress,
+    onDelta,
+    firstTokenTimeoutMs: null,
+    overallDeadlineMs: ROUND_DEADLINE_MS,
+    salvagePartial: false,
+    progressBase
+  });
+  return {
+    content: result.content,
+    toolCalls: result.toolCalls,
+    usagePrompt: result.usage?.prompt_tokens ?? 0,
+    usageCompletion: result.usage?.completion_tokens ?? 0
+  };
+}
+function assistantTurn(content, toolCalls) {
+  const parts = [];
+  if (content.trim())
+    parts.push({ type: "text", text: content });
+  for (const call of toolCalls) {
+    parts.push({ type: "tool_use", id: call.call_id, name: call.name, input: call.args });
+  }
+  return { role: "assistant", content: parts };
+}
+async function runCodexAgent(opts) {
+  const { profile, userId, chatId } = opts;
+  const conn = await resolveCodexConnection(profile, userId);
+  const maxRounds = profile.codexThorough ? 4 : 3;
+  const system = buildCodexSystemPrompt(profile.codexRelationsTable);
+  const userText = opts.userTextOverride ?? buildCodexUserMessage(opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar);
+  const frozen = opts.frozenFiles ?? new Set;
+  const conv = [
+    { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
+    { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] }
+  ];
+  const working = { ...opts.bundle };
+  const changed = new Set;
+  const validateOpts = { relationsTable: profile.codexRelationsTable };
+  const progressBase = { chars: 0, thinking: 0 };
+  const baselineDangling = danglingRefCounts(opts.bundle);
+  let usagePrompt = 0;
+  let usageCompletion = 0;
+  let doneNote = null;
+  let verifyRequested = false;
+  let unresolvedErrors = false;
+  const rejectedFiles = new Set;
+  let rounds = 0;
+  while (rounds < maxRounds) {
+    if (opts.externalSignal.aborted)
+      throw new AbortedSummarizerError;
+    rounds++;
+    if (rounds > 1)
+      opts.onDelta?.("text", `
+
+\u2550\u2550\u2550 round ${rounds} \u2550\u2550\u2550
+`);
+    const round = await runQuietRound(conn, conv, profile, userId, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
+    usagePrompt += round.usagePrompt;
+    usageCompletion += round.usageCompletion;
+    for (const call of round.toolCalls) {
+      if (call.name === "codex_write") {
+        const f = typeof call.args["file"] === "string" ? call.args["file"] : "?";
+        let size = 0;
+        try {
+          size = JSON.stringify(call.args["content"] ?? "").length;
+        } catch {}
+        opts.onDelta?.("text", `
+\u27A4 codex_write ${f}.json (${(size / 1000).toFixed(1)}k chars)`);
+      } else if (call.name === "codex_done") {
+        const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` \u2014 ${call.args["note"].trim()}` : "";
+        opts.onDelta?.("text", `
+\u2726 codex_done${note}`);
+      } else {
+        opts.onDelta?.("text", `
+\u2717 unknown tool ${call.name}`);
+      }
+    }
+    if (round.toolCalls.length === 0) {
+      if (rounds === 1 && !round.content.trim()) {
+        throw new Error("The codex agent returned an empty response");
+      }
+      if (unresolvedErrors) {
+        throw new Error(rejectedFiles.size > 0 ? "The codex agent abandoned a rejected write instead of correcting it" : "The codex agent left an unresolved integrity error instead of correcting it");
+      }
+      if (changed.size === 0) {
+        throw new Error("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+      }
+      break;
+    }
+    conv.push(assistantTurn(round.content, round.toolCalls));
+    const outcomes = [];
+    const doneCalls = [];
+    for (const call of round.toolCalls) {
+      if (call.name === "codex_done") {
+        doneCalls.push(call);
+        continue;
+      }
+      if (call.name !== "codex_write") {
+        rejectedFiles.add(`(unknown tool ${call.name})`);
+        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist`] });
+        continue;
+      }
+      const fileRaw = call.args["file"];
+      if (!isCodexFileKey(fileRaw)) {
+        rejectedFiles.add("(invalid file key)");
+        outcomes.push({ callId: call.call_id, file: null, errors: [`file: expected one of ${CODEX_FILE_KEYS.join(", ")}`] });
+        continue;
+      }
+      if (frozen.has(fileRaw)) {
+        outcomes.push({ callId: call.call_id, file: fileRaw, errors: [] });
+        continue;
+      }
+      let content = call.args["content"];
+      if (typeof content === "string") {
+        try {
+          content = JSON.parse(content);
+        } catch {
+          rejectedFiles.add(fileRaw);
+          outcomes.push({ callId: call.call_id, file: fileRaw, errors: ["content: string was not valid JSON, pass the object directly"] });
+          continue;
+        }
+      }
+      const result = validateCodexFile(fileRaw, content, validateOpts);
+      if (!result.ok) {
+        rejectedFiles.add(fileRaw);
+        outcomes.push({ callId: call.call_id, file: fileRaw, errors: result.errors });
+        continue;
+      }
+      working[fileRaw] = result.value;
+      changed.add(fileRaw);
+      rejectedFiles.delete(fileRaw);
+      outcomes.push({ callId: call.call_id, file: fileRaw, errors: [] });
+    }
+    let sawDone = false;
+    for (const call of doneCalls) {
+      if (rejectedFiles.size > 0) {
+        outcomes.push({
+          callId: call.call_id,
+          file: null,
+          errors: [`Corrections still outstanding for: ${[...rejectedFiles].join(", ")}. Resend them before codex_done.`]
+        });
+        continue;
+      }
+      sawDone = true;
+      const note = call.args["note"];
+      if (typeof note === "string" && note.trim())
+        doneNote = note.trim();
+      outcomes.push({ callId: call.call_id, file: null, errors: [] });
+    }
+    const integrityErrors = newDanglingErrors(working, baselineDangling);
+    for (const o of outcomes) {
+      if (o.errors.length)
+        opts.onDelta?.("text", `
+\u2717 rejected${o.file ? ` ${o.file}.json` : ""}: ${o.errors[0]}`);
+    }
+    for (const e of integrityErrors)
+      opts.onDelta?.("text", `
+\u2717 integrity: ${e}`);
+    const hadErrors = outcomes.some((o) => o.errors.length > 0) || integrityErrors.length > 0;
+    unresolvedErrors = hadErrors || rejectedFiles.size > 0;
+    const resultParts = outcomes.map((o) => ({
+      type: "tool_result",
+      tool_use_id: o.callId,
+      content: o.errors.length ? `REJECTED:
+${o.errors.join(`
+`)}` : o.file ? "ok, staged" : "ok",
+      ...o.errors.length ? { is_error: true } : {}
+    }));
+    if (!hadErrors) {
+      const wantVerify = profile.codexThorough && changed.size > 0 && !verifyRequested && !opts.skipVerify;
+      if (sawDone && !wantVerify) {
+        conv.push({ role: "user", content: resultParts });
+        break;
+      }
+      if (wantVerify) {
+        verifyRequested = true;
+        resultParts.push({ type: "text", text: VERIFY_NUDGE });
+        conv.push({ role: "user", content: resultParts });
+        continue;
+      }
+      resultParts.push({ type: "text", text: "Writes staged. Call codex_done, or send corrected files if anything is left." });
+      conv.push({ role: "user", content: resultParts });
+      continue;
+    }
+    const fixup = [];
+    if (integrityErrors.length) {
+      fixup.push(`Cross-file integrity errors:
+${integrityErrors.join(`
+`)}`);
+    }
+    fixup.push("Resend ONLY the rejected or offending files, corrected. Then call codex_done.");
+    resultParts.push({ type: "text", text: fixup.join(`
+
+`) });
+    conv.push({ role: "user", content: resultParts });
+    if (rounds >= maxRounds) {
+      const remaining = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
+      throw new Error(`Codex update failed validation after ${rounds} rounds: ${remaining.slice(0, 3).join("; ")}`);
+    }
+  }
+  if (rejectedFiles.size > 0) {
+    throw new Error(`Codex run ended with unresolved rejections: ${[...rejectedFiles].join(", ")}`);
+  }
+  const finalIntegrity = newDanglingErrors(working, baselineDangling);
+  if (finalIntegrity.length) {
+    throw new Error(`Codex left dangling references: ${finalIntegrity.slice(0, 3).join("; ")}`);
+  }
+  if (opts.notes.migrateToTable) {
+    const leftover = ["characters", "locations", "things"].filter((k) => working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0));
+    if (leftover.length) {
+      throw new Error(`Table migration left ties on ${leftover.map((k) => `${k}.json`).join(", ")}, the run will retry`);
+    }
+  }
+  if (opts.notes.migrateToInline && opts.bundle.relations.relations.length > 0) {
+    const foldedTies = ["characters", "locations", "things"].some((k) => working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0));
+    if (!foldedTies) {
+      throw new Error("Inline migration produced no ties from the relations table, the run will retry");
+    }
+  }
+  for (const key of changed) {
+    try {
+      await saveCodexFile(chatId, key, working[key], userId);
+    } catch (err) {
+      throw new Error(`Failed to save ${key}.json: ${describeError(err)}`);
+    }
+  }
+  return {
+    changedFiles: [...changed],
+    rounds,
+    model: conn.model,
+    usagePromptTokens: usagePrompt,
+    usageCompletionTokens: usageCompletion,
+    doneNote
+  };
+}
+
 // src/backend/hooks.ts
 var CHAPTER_KEY = `${EXTENSION_ID}.latest_chapter`;
 var ARC_KEY = `${EXTENSION_ID}.latest_arc`;
 var VOLUME_KEY = `${EXTENSION_ID}.latest_volume`;
+var CODEX_UPDATED_KEY = `${EXTENSION_ID}.codex_updated`;
+var codexEndpoint = (chatId) => `${EXTENSION_ID}.codex.${chatId}`;
 var registered = false;
 function registerHookEndpoints() {
   if (registered)
@@ -2392,9 +3617,29 @@ function registerHookEndpoints() {
     spindle.rpcPool?.sync?.(CHAPTER_KEY, null, { requires: [] });
     spindle.rpcPool?.sync?.(ARC_KEY, null, { requires: [] });
     spindle.rpcPool?.sync?.(VOLUME_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, null, { requires: [] });
   } catch (err) {
     warn(`rpcPool unavailable: ${describeError(err)}`);
   }
+}
+function publishCodexSnapshot(chatId, snapshot, rendered) {
+  try {
+    spindle.rpcPool?.sync?.(codexEndpoint(chatId), snapshot, { requires: [] });
+    spindle.rpcPool?.sync?.(`${codexEndpoint(chatId)}.rendered`, rendered, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex snapshot: ${describeError(err)}`);
+  }
+}
+function publishCodexUpdated(event) {
+  try {
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, { ...event, updatedAt: Date.now() }, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex_updated: ${describeError(err)}`);
+  }
+}
+function publishCodexWiped(chatId, userId) {
+  publishCodexSnapshot(chatId, null, null);
+  publishCodexUpdated({ chatId, userId, changedFiles: [...CODEX_FILE_KEYS], reason: "wipe" });
 }
 function publishChapterCreated(userId, event) {
   const payload = {
@@ -2621,6 +3866,8 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
     };
   };
   const forkTransform = (entry, ctx) => {
+    if (entry.meta.ghost)
+      return null;
     if (entry.meta.isRoot) {
       return {
         msgIds: entry.meta.msgIds.slice(),
@@ -2709,6 +3956,36 @@ var failureByChat = new Map;
 var previewsByChat = new Map;
 var committingDrafts = new Set;
 var PROGRESS_PUSH_INTERVAL_MS = 250;
+var freedGhostNumbers = new Map;
+var FREED_NUMBERS_CAP = 20;
+var FREED_MAP_CAP = 200;
+function recordFreedGhostNumber(userId, chatId, msgIds, sceneNumber) {
+  const key2 = chatKey(userId, chatId);
+  const list = freedGhostNumbers.get(key2) ?? [];
+  freedGhostNumbers.delete(key2);
+  list.push({ ids: new Set(msgIds), sceneNumber });
+  freedGhostNumbers.set(key2, list.slice(-FREED_NUMBERS_CAP));
+  capMap(freedGhostNumbers, FREED_MAP_CAP);
+}
+function takeFreedGhostNumber(userId, chatId, windowIds) {
+  const key2 = chatKey(userId, chatId);
+  const list = freedGhostNumbers.get(key2);
+  if (!list)
+    return null;
+  const idx = list.findIndex((f) => {
+    for (const id of windowIds)
+      if (f.ids.has(id))
+        return true;
+    return false;
+  });
+  if (idx === -1)
+    return null;
+  const n = list[idx].sceneNumber;
+  list.splice(idx, 1);
+  if (list.length === 0)
+    freedGhostNumbers.delete(key2);
+  return n;
+}
 var commitChain = new Map;
 function withCommitMutex(userId, chatId, tier, fn) {
   const key2 = `${userId}::${chatId}::t${tier}`;
@@ -2751,6 +4028,8 @@ function setBusy(userId, chatId, kind, label) {
   const entry = { kind, chatId, label, startedAt: Date.now() };
   inflight2.set(key2, entry);
   progressState.set(key2, { kind, chars: 0, thinkingChars: 0, userId, chatId });
+  streamBufs.delete(key2);
+  streamLastPush.delete(key2);
   const list = busyByUser.get(userId) ?? [];
   list.push(entry);
   busyByUser.set(userId, list);
@@ -2764,6 +4043,16 @@ function clearBusy(userId, chatId, kind) {
   aborters.delete(key2);
   progressLastPush.delete(key2);
   progressState.delete(key2);
+  if (streamWatchers.has(key2)) {
+    const buf = streamBufs.get(key2);
+    cb?.onStreamText(userId, chatId, kind, {
+      content: buf?.content ?? "",
+      thinking: buf?.thinking ?? "",
+      running: false
+    });
+    streamWatchers.delete(key2);
+  }
+  streamLastPush.delete(key2);
   const fresh = [];
   for (const k of inflight2.keys()) {
     if (!k.startsWith(`${userId}::`))
@@ -2793,48 +4082,24 @@ function formatElapsed(ms) {
   const rem = s % 60;
   return `${m}m${rem.toString().padStart(2, "0")}s`;
 }
-function chapterBusyLabel(chars, thinkingChars, elapsedMs) {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0)
-    return `Memoria is filing a chapter (${t})`;
-  if (tokens === 0 && thinkTokens > 0)
-    return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0)
-    return `Memoria is ~${tokens} tokens into a chapter (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into a chapter (${t})`;
-}
-function arcBusyLabel(chars, thinkingChars, elapsedMs) {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0)
-    return `Memoria is binding an arc (${t})`;
-  if (tokens === 0 && thinkTokens > 0)
-    return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0)
-    return `Memoria is ~${tokens} tokens into an arc (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into an arc (${t})`;
-}
-function volumeBusyLabel(chars, thinkingChars, elapsedMs) {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0)
-    return `Memoria is pressing a volume (${t})`;
-  if (tokens === 0 && thinkTokens > 0)
-    return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0)
-    return `Memoria is ~${tokens} tokens into a volume (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into a volume (${t})`;
-}
+var BUSY_PHRASES = {
+  chapter: { idle: "Memoria is filing a chapter", writing: "Memoria is writing a chapter" },
+  arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
+  volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
+  codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" }
+};
 function formatBusyLabel(state, elapsedMs) {
-  if (state.kind === "arc")
-    return arcBusyLabel(state.chars, state.thinkingChars, elapsedMs);
-  if (state.kind === "volume")
-    return volumeBusyLabel(state.chars, state.thinkingChars, elapsedMs);
-  return chapterBusyLabel(state.chars, state.thinkingChars, elapsedMs);
+  const { idle, writing } = BUSY_PHRASES[state.kind];
+  const tokens = approximateTokensFromChars(state.chars);
+  const thinkTokens = approximateTokensFromChars(state.thinkingChars);
+  const t = formatElapsed(elapsedMs);
+  if (tokens === 0 && thinkTokens === 0)
+    return `${idle} (${t})`;
+  if (tokens === 0 && thinkTokens > 0)
+    return `Memoria is thinking (~${thinkTokens}t, ${t})`;
+  if (thinkTokens > 0)
+    return `${writing} (~${tokens}t written, ~${thinkTokens}t thought, ${t})`;
+  return `${writing} (~${tokens}t, ${t})`;
 }
 function ensureHeartbeat() {
   if (heartbeatTimer)
@@ -2861,6 +4126,49 @@ function ensureHeartbeat() {
       cb?.onBusyChange(userId, list.slice());
     }
   }, HEARTBEAT_INTERVAL_MS);
+}
+var streamBufs = new Map;
+var streamWatchers = new Set;
+var streamLastPush = new Map;
+var STREAM_PUSH_INTERVAL_MS = 350;
+var STREAM_BUF_CAP = 200000;
+function capStreamPart(s) {
+  if (s.length <= STREAM_BUF_CAP)
+    return s;
+  return `[...earlier output trimmed...]
+${s.slice(-STREAM_BUF_CAP)}`;
+}
+function appendStreamText(userId, chatId, kind, deltaKind, delta) {
+  const key2 = busyKey(userId, chatId, kind);
+  if (!inflight2.has(key2))
+    return;
+  const buf = streamBufs.get(key2) ?? { content: "", thinking: "" };
+  if (deltaKind === "text")
+    buf.content = capStreamPart(buf.content + delta);
+  else
+    buf.thinking = capStreamPart(buf.thinking + delta);
+  streamBufs.set(key2, buf);
+  if (!streamWatchers.has(key2))
+    return;
+  const now = Date.now();
+  if (now - (streamLastPush.get(key2) ?? 0) < STREAM_PUSH_INTERVAL_MS)
+    return;
+  streamLastPush.set(key2, now);
+  cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: true });
+}
+function setStreamWatcher(userId, chatId, kind, on) {
+  const key2 = busyKey(userId, chatId, kind);
+  if (!on) {
+    streamWatchers.delete(key2);
+    return;
+  }
+  streamWatchers.add(key2);
+  const buf = streamBufs.get(key2);
+  cb?.onStreamText(userId, chatId, kind, {
+    content: buf?.content ?? "",
+    thinking: buf?.thinking ?? "",
+    running: inflight2.has(key2)
+  });
 }
 function updateProgressNumbers(userId, chatId, kind, chars, thinkingChars) {
   const key2 = busyKey(userId, chatId, kind);
@@ -2972,22 +4280,68 @@ function failToast(userId, kind, err) {
   const noun = kind === "arc" ? "bind the arc" : kind === "volume" ? "press the volume" : "file the chapter";
   cb?.onToast(userId, "error", `Memoria couldn't ${noun}: ${shortErrorText(err)}`);
 }
-async function createChapterAuto(chatId, profile, settings, userId, automation = false) {
+function extraContextActive(profile) {
+  return profile.codexEnabled && profile.codexExtraContext;
+}
+function selectGhostWindow(messages, coverage, effProfile) {
+  const kept = trimLagFromTail(messages, effProfile);
+  let i = 0;
+  while (i < kept.length) {
+    while (i < kept.length && coverage.coveredBy.has(kept[i].id))
+      i++;
+    if (i >= kept.length)
+      return [];
+    const run = [];
+    let boundedByCoverage = false;
+    while (i < kept.length) {
+      const m = kept[i];
+      if (coverage.coveredBy.has(m.id)) {
+        boundedByCoverage = true;
+        break;
+      }
+      run.push(m);
+      i++;
+    }
+    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
+    if (!boundedByCoverage && runSize < effProfile.windowValue)
+      return [];
+    if (runSize === 0)
+      continue;
+    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
+    if (window.length > 0)
+      return window;
+  }
+  return [];
+}
+async function createChapterAuto(chatId, profile, settings, userId, automation = false, ghost = false) {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
     return null;
   try {
+    if (ghost) {
+      const live = await loadSettings(userId);
+      const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
+      if (!liveProfile || !extraContextActive(liveProfile))
+        return null;
+    }
     const messages = await spindle.chat.getMessages(chatId);
     if (!messages || messages.length === 0)
       return null;
-    const coverage = await buildCoverage(chatId, userId);
-    const stats = computeCoverageStats(messages, coverage, profile);
-    if (!stats.lagSatisfied || !stats.windowAvailable)
-      return null;
-    const uncoveredTail = pickUncoveredTail(messages, coverage);
-    const window = selectNextChapterWindow(uncoveredTail, profile);
+    const effProfile = ghost ? { ...profile, lagUnit: profile.codexLagUnit, lagValue: profile.codexLagValue } : profile;
+    const includeGhosts = ghost || extraContextActive(profile);
+    const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
+    let window;
+    if (ghost) {
+      window = selectGhostWindow(messages, coverage, effProfile);
+    } else {
+      const stats = computeCoverageStats(messages, coverage, effProfile);
+      if (!stats.lagSatisfied || !stats.windowAvailable)
+        return null;
+      const uncoveredTail = pickUncoveredTail(messages, coverage);
+      window = selectNextChapterWindow(uncoveredTail, effProfile);
+    }
     if (window.length === 0)
       return null;
-    return await runChapter(chatId, profile, settings, userId, messages, window, { automation });
+    return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
   } finally {
     clearBusy(userId, chatId, "chapter");
   }
@@ -3011,10 +4365,16 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
 async function runChapter(chatId, profile, settings, userId, allMessages, window, opts = {}) {
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
+  const ghost = opts.ghost === true;
   nyaaToast(userId, "fire", automation);
   const entries = await listLmbEntries(chatId, userId);
-  const coverage = await buildCoverage(chatId, userId, entries);
-  const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && typeof e.meta.firstMsgIdx === "number").sort((a, b) => a.meta.firstMsgIdx - b.meta.firstMsgIdx);
+  const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
+  let chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && typeof e.meta.firstMsgIdx === "number").sort((a, b) => a.meta.firstMsgIdx - b.meta.firstMsgIdx);
+  if (ghost) {
+    const windowFirstIdx = allMessages.findIndex((m) => m.id === window[0].id);
+    const posById = new Map(allMessages.map((m, i) => [m.id, i]));
+    chapters = chapters.filter((c) => liveEndPosition(c.meta.msgIds, c.meta.lastMsgIdx, posById) < windowFirstIdx);
+  }
   const previousMemories = profile.previousMemoriesCount > 0 ? chapters.slice(-profile.previousMemoriesCount) : [];
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
   const opener = buildChapterHeader(provisionalSceneNumber, window.length);
@@ -3024,7 +4384,8 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
     try {
       return await summarizeChapter(profile, settings.customPresets, chatId, window, previousMemories, userId, opener, {
         externalSignal: controller.signal,
-        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "chapter", chars, thinking)
+        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "chapter", chars, thinking),
+        onDelta: (kind, delta) => appendStreamText(userId, chatId, "chapter", kind, delta)
       });
     } finally {
       aborters.delete(busyKey(userId, chatId, "chapter"));
@@ -3048,14 +4409,14 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   const result = outcome.value;
   const firstIdx = allMessages.findIndex((m) => m.id === window[0].id);
   const lastIdx = allMessages.findIndex((m) => m.id === window[window.length - 1].id);
-  if (profile.showMemoryPreviews) {
+  if (profile.showMemoryPreviews && !ghost) {
     const draft = makePreview("chapter", chatId, window, result, firstIdx, lastIdx, replacesEntryId);
     pushPreview(userId, chatId, draft);
     cb?.onStateChange(userId, chatId);
     return null;
   }
   try {
-    const entryId = await commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, false, replacesEntryId);
+    const entryId = await commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, false, replacesEntryId, ghost);
     nyaaToast(userId, "success", automation);
     return entryId;
   } catch (err) {
@@ -3066,14 +4427,23 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
     return null;
   }
 }
-async function commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, fromPreview, replacesEntryId) {
+async function commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, fromPreview, replacesEntryId, ghost = false) {
   return withCommitMutex(userId, chatId, 1, async () => {
+    if (ghost) {
+      const live = await loadSettings(userId);
+      const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
+      if (!liveProfile || !extraContextActive(liveProfile)) {
+        throw new Error("Extra context mode was turned off while this ghost was being written");
+      }
+    }
     const freshEntries = await listLmbEntries(chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
-    const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
+    const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
     const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
     if (validWindow.length === 0) {
-      throw new Error("All messages in this window were just bound by another chapter");
+      const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true]));
+      const allGhost = window.every((m) => ghostById.get(freshCoverage.coveredBy.get(m.id) ?? "") === true);
+      throw new Error(allGhost ? "Those messages are already staged as a ghost chapter, it will file on its own" : "All messages in this window were just bound by another chapter");
     }
     if (validWindow.length < window.length) {
       window = validWindow;
@@ -3089,7 +4459,14 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     }
     const book = await ensureBookForChat(chatId, userId);
     const replacedEntry = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
-    const sceneNumber = typeof replacedEntry?.meta.sceneNumber === "number" ? replacedEntry.meta.sceneNumber : await nextSceneNumber(chatId, 1, userId);
+    let sceneNumber;
+    let freedTaken = null;
+    if (typeof replacedEntry?.meta.sceneNumber === "number") {
+      sceneNumber = replacedEntry.meta.sceneNumber;
+    } else {
+      freedTaken = ghost ? takeFreedGhostNumber(userId, chatId, new Set(window.map((m) => m.id))) : null;
+      sceneNumber = freedTaken ?? await nextSceneNumber(chatId, 1, userId);
+    }
     const title = fromPreview ? result.title?.trim() || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}` : deriveTitle(result, firstIdx + 1, lastIdx + 1);
     const msgIds = window.map((m) => m.id);
     const meta = {
@@ -3107,7 +4484,8 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
       shortComment: result.shortComment,
       presetKey: result.presetKey,
       sceneNumber,
-      rawOutput: result.rawOutput
+      rawOutput: result.rawOutput,
+      ...ghost ? { ghost: true, msgSigs: window.map((m) => msgSig(m.role, m.content || "")) } : {}
     };
     const baseComment = meta.title ?? `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`;
     const comment = `#${sceneNumber} - ${baseComment}`;
@@ -3116,7 +4494,14 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     const finalContent = `${opener}
 
 ${result.content}`;
-    const entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries);
+    let entry;
+    try {
+      entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost);
+    } catch (err) {
+      if (freedTaken !== null)
+        recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
+      throw err;
+    }
     invalidateBookCache(userId, chatId);
     if (replacesEntryId) {
       try {
@@ -3126,7 +4511,7 @@ ${result.content}`;
         warn(`regen: failed to delete replaced chapter ${replacesEntryId}: ${describeError(err)}`);
       }
     }
-    if (profile.hideCoveredMessages) {
+    if (profile.hideCoveredMessages && !ghost) {
       try {
         await syncHiddenForCoveredMessages(chatId, allMessages, {
           coveredBy: new Map(window.map((m) => [m.id, entry.id])),
@@ -3139,15 +4524,17 @@ ${result.content}`;
         warn(`setMessagesHidden failed: ${describeError(err)}`);
       }
     }
-    publishChapterCreated(userId, {
-      chatId,
-      chapterEntryId: entry.id,
-      bookId: book.id,
-      sourceMessageIds: meta.msgIds,
-      summaryText: finalContent,
-      model: result.model,
-      title: meta.title
-    });
+    if (!ghost) {
+      publishChapterCreated(userId, {
+        chatId,
+        chapterEntryId: entry.id,
+        bookId: book.id,
+        sourceMessageIds: meta.msgIds,
+        summaryText: finalContent,
+        model: result.model,
+        title: meta.title
+      });
+    }
     cb?.onStateChange(userId, chatId);
     return entry.id;
   });
@@ -3227,7 +4614,8 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
     try {
       return await summarizeArc(profile, settings.customPresets, chatId, selected, userId, opener, {
         externalSignal: controller.signal,
-        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "arc", chars, thinking)
+        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "arc", chars, thinking),
+        onDelta: (kind, delta) => appendStreamText(userId, chatId, "arc", kind, delta)
       });
     } finally {
       aborters.delete(busyKey(userId, chatId, "arc"));
@@ -3398,7 +4786,8 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
     try {
       return await summarizeVolume(profile, settings.customPresets, chatId, selected, userId, opener, {
         externalSignal: controller.signal,
-        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "volume", chars, thinking)
+        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "volume", chars, thinking),
+        onDelta: (kind, delta) => appendStreamText(userId, chatId, "volume", kind, delta)
       });
     } finally {
       aborters.delete(busyKey(userId, chatId, "volume"));
@@ -3554,7 +4943,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
     if (preview.kind === "chapter") {
       const messages = await spindle.chat.getMessages(chatId);
       const acceptEntries = preview.replacesEntryId ? (await listLmbEntries(chatId, userId)).filter((e) => e.raw.id !== preview.replacesEntryId) : undefined;
-      const coverage2 = await buildCoverage(chatId, userId, acceptEntries);
+      const coverage2 = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage2.coveredBy.has(m.id) && !isExcluded(m));
       if (window.length === 0) {
@@ -3638,11 +5027,11 @@ async function acceptPreview(chatId, draftId, profile, userId) {
 }
 var CHAPTER_BACKLOG_CAP = 500;
 var ARC_BACKLOG_CAP = 100;
-async function drainChapterBacklog(chatId, profile, settings, userId, automation = false) {
+async function drainChapterBacklog(chatId, profile, settings, userId, automation = false, ghost = false) {
   let made = 0;
   for (let i = 0;i < CHAPTER_BACKLOG_CAP; i++) {
-    const created = await createChapterAuto(chatId, profile, settings, userId, automation).catch((err) => {
-      warn(`createChapterAuto failed: ${describeError(err)}`);
+    const created = await createChapterAuto(chatId, profile, settings, userId, automation, ghost).catch((err) => {
+      warn(`${ghost ? "ghost " : ""}createChapterAuto failed: ${describeError(err)}`);
       return null;
     });
     if (!created)
@@ -3651,12 +5040,15 @@ async function drainChapterBacklog(chatId, profile, settings, userId, automation
   }
   return made;
 }
+function drainGhostBacklog(chatId, profile, settings, userId, automation = false) {
+  return drainChapterBacklog(chatId, profile, settings, userId, automation, true);
+}
 async function dryRunChapter(chatId, profile, settings, userId) {
   const messages = await spindle.chat.getMessages(chatId);
   if (!messages || messages.length === 0)
     throw new Error("Chat has no messages");
   const entries = await listLmbEntries(chatId, userId);
-  const coverage = await buildCoverage(chatId, userId, entries);
+  const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
   const uncoveredTail = pickUncoveredTail(messages, coverage);
   const window = selectNextChapterWindow(uncoveredTail, profile);
   if (window.length === 0) {
@@ -3705,12 +5097,143 @@ async function drainArcBacklog(chatId, profile, settings, userId, automation = f
   }
   return made;
 }
+async function sweepStaleGhosts(chatId, userId) {
+  const entries = await listLmbEntries(chatId, userId);
+  const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true);
+  if (ghosts.length === 0)
+    return 0;
+  const messages = await spindle.chat.getMessages(chatId);
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  let dropped = 0;
+  for (const g of ghosts) {
+    const sigs = g.meta.msgSigs;
+    const stale = !sigs || sigs.length !== g.meta.msgIds.length ? g.meta.msgIds.some((id) => !byId.has(id)) : g.meta.msgIds.some((id, i) => {
+      const m = byId.get(id);
+      return !m || msgSig(m.role, m.content || "") !== sigs[i];
+    });
+    if (!stale)
+      continue;
+    try {
+      await deleteEntry(g.raw.id, userId);
+      if (typeof g.meta.sceneNumber === "number") {
+        recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+      }
+      dropped++;
+    } catch (err) {
+      warn(`ghost sweep: failed to delete stale ghost ${g.raw.id}: ${describeError(err)}`);
+    }
+  }
+  if (dropped > 0) {
+    invalidateBookCache(userId, chatId);
+    cb?.onStateChange(userId, chatId);
+  }
+  return dropped;
+}
+async function promoteGhostChapters(chatId, profile, userId, automation = false) {
+  return withCommitMutex(userId, chatId, 1, async () => {
+    const entries = await listLmbEntries(chatId, userId);
+    const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+    if (ghosts.length === 0)
+      return 0;
+    const messages = await spindle.chat.getMessages(chatId);
+    const realCoverage = await buildCoverage(chatId, userId, entries);
+    const posById = new Map(messages.map((m, i) => [m.id, i]));
+    const pastLagBoundary = trimLagFromTail(messages, profile).length;
+    const promoted = [];
+    let zombies = 0;
+    for (const g of ghosts) {
+      if (g.meta.msgIds.length === 0)
+        continue;
+      if (g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
+        try {
+          await deleteEntry(g.raw.id, userId);
+          if (typeof g.meta.sceneNumber === "number") {
+            recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+          }
+          zombies++;
+        } catch (err) {
+          warn(`ghost promotion: failed to delete overlapped ghost ${g.raw.id}: ${describeError(err)}`);
+        }
+        continue;
+      }
+      const pastLag = g.meta.msgIds.every((id) => {
+        const p = posById.get(id);
+        return typeof p === "number" && p < pastLagBoundary;
+      });
+      if (!pastLag)
+        continue;
+      try {
+        await promoteGhostEntry(g, userId);
+        promoted.push(g);
+      } catch (err) {
+        warn(`ghost promotion failed for ${g.raw.id}: ${describeError(err)}`);
+      }
+    }
+    if (zombies > 0) {
+      invalidateBookCache(userId, chatId);
+      if (promoted.length === 0)
+        cb?.onStateChange(userId, chatId);
+    }
+    if (promoted.length === 0)
+      return 0;
+    invalidateBookCache(userId, chatId);
+    if (profile.hideCoveredMessages) {
+      const coveredBy = new Map;
+      for (const g of promoted) {
+        for (const id of g.meta.msgIds)
+          coveredBy.set(id, g.raw.id);
+      }
+      await syncHiddenForCoveredMessages(chatId, messages, { coveredBy, activeEntries: [], volumes: [], arcs: [], chapters: [] }, userId, true).catch((err) => warn(`ghost promotion hide failed: ${describeError(err)}`));
+    }
+    for (const g of promoted) {
+      publishChapterCreated(userId, {
+        chatId,
+        chapterEntryId: g.raw.id,
+        bookId: g.raw.world_book_id,
+        sourceMessageIds: g.meta.msgIds,
+        summaryText: g.raw.content || "",
+        model: g.meta.model,
+        title: g.meta.title
+      });
+    }
+    cb?.onToast(userId, "success", `Memoria shelved ${promoted.length} ghost chapter${promoted.length === 1 ? "" : "s"}`, automation);
+    cb?.onStateChange(userId, chatId);
+    return promoted.length;
+  });
+}
+async function cleanupGhostsAfterModeOff(chatId, profile, userId) {
+  const entries = await listLmbEntries(chatId, userId);
+  if (!entries.some((e) => e.meta.tier === 1 && e.meta.ghost === true))
+    return;
+  await sweepStaleGhosts(chatId, userId).catch((err) => warn(`mode-off ghost sweep failed: ${describeError(err)}`));
+  await promoteGhostChapters(chatId, profile, userId, true).catch((err) => warn(`mode-off ghost promotion failed: ${describeError(err)}`));
+  await withCommitMutex(userId, chatId, 1, async () => {
+    const remaining = (await listLmbEntries(chatId, userId)).filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled);
+    for (const g of remaining) {
+      await deleteEntry(g.raw.id, userId).catch((err) => warn(`mode-off ghost cleanup failed for ${g.raw.id}: ${describeError(err)}`));
+    }
+    if (remaining.length > 0) {
+      invalidateBookCache(userId, chatId);
+      cb?.onStateChange(userId, chatId);
+    }
+  });
+}
 async function maybeRunPipeline(chatId, profile, settings, userId) {
+  if (extraContextActive(profile)) {
+    await sweepStaleGhosts(chatId, userId).catch((err) => warn(`ghost sweep failed: ${describeError(err)}`));
+    await promoteGhostChapters(chatId, profile, userId, true).catch((err) => warn(`ghost promotion failed: ${describeError(err)}`));
+  } else {
+    await cleanupGhostsAfterModeOff(chatId, profile, userId).catch((err) => warn(`ghost cleanup failed: ${describeError(err)}`));
+  }
   if (!profile.autoCreate)
     return;
   await ensureForkAdoption(chatId, userId).catch(() => {});
   if (profile.autoCreateChapter) {
-    await drainChapterBacklog(chatId, profile, settings, userId, true);
+    if (extraContextActive(profile)) {
+      await drainGhostBacklog(chatId, profile, settings, userId, true);
+    } else {
+      await drainChapterBacklog(chatId, profile, settings, userId, true);
+    }
   }
   await maybeRunArcCheck(chatId, profile, settings, userId, true);
 }
@@ -3783,6 +5306,687 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
     presetKey: result.presetKey,
     replacesEntryId
   };
+}
+
+// src/backend/codex/index.ts
+var DRAIN_CAP = 10;
+var cb2 = null;
+function registerCodexCallbacks(c) {
+  cb2 = c;
+}
+function nonEmpty(m) {
+  return !!(m.content || "").trim();
+}
+function sizeOf(messages, unit) {
+  return unit === "messages" ? messages.length : sumApproxTokens(messages);
+}
+function trimLag(tail, unit, lagValue) {
+  if (lagValue <= 0)
+    return tail.slice();
+  if (unit === "messages") {
+    return lagValue >= tail.length ? [] : tail.slice(0, tail.length - lagValue);
+  }
+  let reserved = 0;
+  let cutoff = tail.length;
+  for (let i = tail.length - 1;i >= 0; i--) {
+    reserved += approximateTokensFromChars((tail[i].content || "").length);
+    cutoff = i;
+    if (reserved >= lagValue)
+      break;
+  }
+  if (reserved < lagValue)
+    return [];
+  return tail.slice(0, cutoff);
+}
+function takeWindow(compressible, unit, windowValue, tokenBreakpoint) {
+  const budget = unit === "messages" ? Math.max(1000, tokenBreakpoint) : windowValue;
+  const maxCount = unit === "messages" ? Math.max(1, windowValue) : compressible.length;
+  const out = [];
+  let acc = 0;
+  for (const m of compressible) {
+    out.push(m);
+    if (out.length >= maxCount)
+      break;
+    acc += approximateTokensFromChars((m.content || "").length);
+    if (acc >= budget)
+      break;
+  }
+  return out;
+}
+function windowReached(compressible, profile) {
+  if (sizeOf(compressible, profile.codexWindowUnit) >= profile.codexWindowValue)
+    return true;
+  if (profile.codexWindowUnit === "messages" && sumApproxTokens(compressible) >= Math.max(1000, profile.codexTokenBreakpoint))
+    return true;
+  return false;
+}
+async function planRun(chatId, userId, lagUnit, lagValue) {
+  const messages = await spindle.chat.getMessages(chatId);
+  const cursor = await loadCursor(chatId, userId);
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  const posById = new Map(messages.map((m, i) => [m.id, i]));
+  const consumedBeforeRewind = cursor.consumedSigs;
+  let reconcile = cursor.pendingReconcile;
+  let divergedAt = -1;
+  for (let i = 0;i < cursor.consumedSigs.length; i++) {
+    const rec = cursor.consumedSigs[i];
+    const live = byId.get(rec.id);
+    if (!live || msgSig(live.role, live.content || "") !== rec.sig) {
+      divergedAt = i;
+      break;
+    }
+  }
+  const posOf = (id) => id ? posById.get(id) ?? -1 : -1;
+  if (divergedAt >= 0) {
+    let boundaryId = cursor.lastMsgId;
+    if (boundaryId && !byId.has(boundaryId)) {
+      boundaryId = null;
+      for (let j = cursor.consumedSigs.length - 1;j >= 0; j--) {
+        const id = cursor.consumedSigs[j].id;
+        if (byId.has(id)) {
+          boundaryId = id;
+          break;
+        }
+      }
+      if (!boundaryId && messages.length > 0) {
+        boundaryId = messages[messages.length - 1].id;
+      }
+    }
+    if (boundaryId && posOf(boundaryId) > posOf(cursor.reconcileUntilMsgId)) {
+      cursor.reconcileUntilMsgId = boundaryId;
+    }
+    cursor.consumedSigs = cursor.consumedSigs.slice(0, divergedAt);
+    cursor.lastMsgId = cursor.consumedSigs.length ? cursor.consumedSigs[cursor.consumedSigs.length - 1].id : cursor.prefixMsgId;
+    cursor.pendingReconcile = true;
+    reconcile = true;
+  }
+  if (cursor.pendingReconcile && cursor.reconcileUntilMsgId && !byId.has(cursor.reconcileUntilMsgId)) {
+    cursor.reconcileUntilMsgId = messages.length ? messages[messages.length - 1].id : null;
+  }
+  let startPos = 0;
+  if (cursor.lastMsgId) {
+    const idx = posById.get(cursor.lastMsgId);
+    if (idx !== undefined) {
+      startPos = idx + 1;
+    } else {
+      let resume = -1;
+      for (const rec of consumedBeforeRewind) {
+        const p = posById.get(rec.id);
+        if (p !== undefined) {
+          resume = p;
+          break;
+        }
+      }
+      startPos = resume >= 0 ? resume : 0;
+    }
+  }
+  const tail = messages.slice(startPos).filter(nonEmpty);
+  const compressible = trimLag(tail, lagUnit, lagValue);
+  return { messages, cursor, startPos, compressible, reconcile };
+}
+var LORE_CAP_CHARS = 16000;
+async function activatedLoreText(chatId, userId) {
+  const activated = await spindle.world_books.getActivated(chatId, userId).catch(() => null);
+  if (!activated || activated.length === 0)
+    return null;
+  const ourBookId = await findBookForChat(chatId, userId).catch(() => null);
+  const byBook = new Map;
+  for (const a of activated) {
+    if (!a.bookId || a.bookId === ourBookId)
+      continue;
+    const list = byBook.get(a.bookId) ?? [];
+    list.push(a.id);
+    byBook.set(a.bookId, list);
+  }
+  if (byBook.size === 0)
+    return null;
+  const parts = [];
+  let used = 0;
+  let skipped = false;
+  for (const [bookId, entryIds] of byBook) {
+    const entries = await listAllEntries(bookId, userId).catch(() => []);
+    const wanted = new Set(entryIds);
+    for (const entry of entries) {
+      if (!wanted.has(entry.id))
+        continue;
+      const ext = entry.extensions || {};
+      if (ext[EXTENSION_KEY])
+        continue;
+      const content = (entry.content || "").trim();
+      if (!content)
+        continue;
+      const label = (entry.comment || "").trim();
+      const block = label ? `[${label}]
+${content}` : content;
+      if (used + block.length > LORE_CAP_CHARS) {
+        skipped = true;
+        continue;
+      }
+      parts.push(block);
+      used += block.length;
+    }
+  }
+  if (skipped)
+    parts.push("[...more lore omitted for size...]");
+  if (parts.length === 0)
+    return null;
+  return parts.join(`
+
+`);
+}
+async function storySoFarText(chatId, userId, profile, chunkFirstIdx, posById) {
+  if (!profile.codexExtraContext || profile.previousMemoriesCount <= 0)
+    return null;
+  const entries = await listLmbEntries(chatId, userId).catch(() => []);
+  const prior = entries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot && liveEndPosition(e.meta.msgIds, e.meta.lastMsgIdx, posById) < chunkFirstIdx).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0)).slice(-profile.previousMemoriesCount);
+  if (prior.length === 0)
+    return null;
+  return prior.map((c) => c.raw.content || "").filter(Boolean).join(`
+
+`);
+}
+async function getCodexStatus(chatId, userId, profile) {
+  const exists = await codexExists(chatId, userId);
+  if (!profile.codexEnabled && !exists)
+    return { exists: false, backlog: 0, lastRunAt: null };
+  try {
+    const plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
+    return { exists, backlog: plan.compressible.length, lastRunAt: plan.cursor.lastRunAt };
+  } catch (err) {
+    warn(`codex status failed: ${describeError(err)}`);
+    return { exists, backlog: 0, lastRunAt: null };
+  }
+}
+async function runChunk(chatId, userId, profile, plan, chunk, automation, externalSignal) {
+  const prevMode = plan.cursor.relationsTableMode;
+  const diskMode = prevMode ?? profile.codexRelationsTable;
+  const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+  const frozenFiles = new Set(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
+  const notes = {
+    reconcile: plan.reconcile,
+    migrateToTable: prevMode === false && profile.codexRelationsTable,
+    migrateToInline: prevMode === true && !profile.codexRelationsTable,
+    loadProblems: problems.map((p) => `${p.file}.json`),
+    frozenFiles: [...frozenFiles].map((f) => `${f}.json`)
+  };
+  const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
+  const firstIdx = posById.get(chunk[0].id) ?? -1;
+  const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? -1;
+  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const lore = await activatedLoreText(chatId, userId);
+  const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
+  const result = await runCodexAgent({
+    chatId,
+    userId,
+    profile,
+    bundle,
+    chunk: plan.messages.slice(firstIdx, lastIdx + 1),
+    chunkLabel,
+    chunkFirstIndex: firstIdx,
+    notes,
+    lore,
+    storySoFar,
+    frozenFiles,
+    externalSignal,
+    onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+    onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
+  });
+  if (notes.migrateToInline) {
+    await saveCodexFile(chatId, "relations", { relations: [] }, userId).catch((err) => warn(`codex: failed to clear relations.json after inline migration: ${describeError(err)}`));
+  }
+  for (let i = plan.startPos;i <= lastIdx; i++) {
+    const m = plan.messages[i];
+    plan.cursor.consumedSigs.push({ id: m.id, sig: msgSig(m.role, m.content || "") });
+  }
+  plan.cursor.lastMsgId = plan.messages[lastIdx].id;
+  const reconcileUntilPos = plan.cursor.reconcileUntilMsgId ? plan.messages.findIndex((m) => m.id === plan.cursor.reconcileUntilMsgId) : -1;
+  if (!plan.cursor.reconcileUntilMsgId || reconcileUntilPos !== -1 && lastIdx >= reconcileUntilPos) {
+    plan.cursor.pendingReconcile = false;
+    plan.cursor.reconcileUntilMsgId = null;
+  }
+  invalidateCodexInjectionCache(chatId);
+  plan.cursor.relationsTableMode = profile.codexRelationsTable;
+  plan.cursor.lastRunAt = Date.now();
+  plan.cursor.lastRunStats = {
+    rounds: result.rounds,
+    promptTokens: result.usagePromptTokens,
+    completionTokens: result.usageCompletionTokens,
+    model: result.model,
+    ...result.doneNote ? { note: result.doneNote } : {}
+  };
+  plan.cursor.runs += 1;
+  await saveCursor(chatId, plan.cursor, userId);
+  await publishCodexPool(chatId, userId, profile, result.changedFiles, "run");
+  if (result.changedFiles.length > 0) {
+    cb2?.onToast(userId, "success", `Memoria updated the codex (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})`, automation);
+  }
+  cb2?.onStateChange(userId, chatId);
+}
+async function drain(chatId, userId, profile, lagValue, requireWindow, automation) {
+  if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex"))
+    return 0;
+  const controller = new AbortController;
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    let runs = 0;
+    for (let i = 0;i < DRAIN_CAP; i++) {
+      if (controller.signal.aborted)
+        throw new AbortedSummarizerError;
+      const plan = await planRun(chatId, userId, profile.codexLagUnit, lagValue);
+      if (plan.compressible.length === 0)
+        break;
+      if (requireWindow && !windowReached(plan.compressible, profile))
+        break;
+      const chunk = takeWindow(plan.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+      await runChunk(chatId, userId, profile, plan, chunk, automation, controller.signal);
+      runs++;
+    }
+    return runs;
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
+}
+async function maybeRunCodex(chatId, profile, settings, userId) {
+  if (!settings.enabled || !profile.codexEnabled)
+    return;
+  try {
+    await drain(chatId, userId, profile, profile.codexLagValue, true, true);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb2?.onToast(userId, "info", "Memoria closes the codex for now");
+      return;
+    }
+    warn(`codex auto run failed: ${describeError(err)}`);
+    cb2?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+  }
+}
+async function runCodexNow(chatId, profile, userId) {
+  if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
+    cb2?.onToast(userId, "warn", "Memoria is already updating the codex");
+    return;
+  }
+  try {
+    const runs = await drain(chatId, userId, profile, 0, false, false);
+    if (runs === 0) {
+      cb2?.onToast(userId, "info", "The codex is already caught up");
+    } else if (runs >= DRAIN_CAP) {
+      const plan = await planRun(chatId, userId, profile.codexLagUnit, 0).catch(() => null);
+      const left = plan?.compressible.length ?? 0;
+      if (left > 0) {
+        cb2?.onToast(userId, "info", `Memoria paused after ${runs} passes with ${left} messages still waiting, run Update again to continue`);
+      }
+    }
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb2?.onToast(userId, "info", "Memoria closes the codex for now");
+      return;
+    }
+    warn(`codex manual run failed: ${describeError(err)}`);
+    cb2?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+  }
+}
+var INJECTION_CACHE_TTL_MS = 60000;
+var INJECTION_CACHE_CAP = 200;
+var injectionTextCache = new Map;
+var fileTokensCache = new Map;
+function invalidateCodexInjectionCache(chatId) {
+  if (chatId) {
+    injectionTextCache.delete(chatId);
+    fileTokensCache.delete(chatId);
+  } else {
+    injectionTextCache.clear();
+    fileTokensCache.clear();
+  }
+}
+async function getCodexFileTokens(chatId, userId, profile) {
+  const cached = fileTokensCache.get(chatId);
+  if (cached && Date.now() - cached.at < INJECTION_CACHE_TTL_MS)
+    return cached.tokens;
+  const tokens = {};
+  if (await codexExists(chatId, userId)) {
+    const cursor = await loadCursor(chatId, userId);
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const sections = renderCodexFileSections(bundle);
+    for (const key2 of CODEX_FILE_KEYS) {
+      tokens[key2] = sections[key2] ? approximateTokensFromChars(sections[key2].length) : 0;
+    }
+  }
+  fileTokensCache.set(chatId, { at: Date.now(), tokens });
+  while (fileTokensCache.size > INJECTION_CACHE_CAP) {
+    const oldest = fileTokensCache.keys().next().value;
+    if (oldest === undefined)
+      break;
+    fileTokensCache.delete(oldest);
+  }
+  return tokens;
+}
+async function buildCodexInjectionText(chatId, userId, profile) {
+  if (!profile.codexEnabled)
+    return null;
+  const cached = injectionTextCache.get(chatId);
+  if (cached && Date.now() - cached.at < INJECTION_CACHE_TTL_MS)
+    return cached.text;
+  const exists = await codexExists(chatId, userId);
+  let text = null;
+  if (exists) {
+    const cursor = await loadCursor(chatId, userId);
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    for (const key2 of CODEX_FILE_KEYS) {
+      const st = cursor.fileStates[key2];
+      if (st === "noInject" || st === "frozen") {
+        bundle[key2] = emptyCodexFile(key2);
+      }
+    }
+    text = bundleIsEmpty(bundle) ? null : renderCodexForInjection(bundle);
+  }
+  if (injectionTextCache.has(chatId))
+    injectionTextCache.delete(chatId);
+  injectionTextCache.set(chatId, { at: Date.now(), text });
+  while (injectionTextCache.size > INJECTION_CACHE_CAP) {
+    const oldest = injectionTextCache.keys().next().value;
+    if (oldest === undefined)
+      break;
+    injectionTextCache.delete(oldest);
+  }
+  return text;
+}
+async function publishCodexPool(chatId, userId, profile, changedFiles, reason) {
+  try {
+    if (!await codexExists(chatId, userId)) {
+      publishCodexWiped(chatId, userId);
+      return;
+    }
+    const cursor = await loadCursor(chatId, userId);
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const rendered = await buildCodexInjectionText(chatId, userId, profile);
+    publishCodexSnapshot(chatId, {
+      chatId,
+      userId,
+      files: bundle,
+      fileStates: cursor.fileStates,
+      runs: cursor.runs,
+      updatedAt: Date.now()
+    }, rendered);
+    publishCodexUpdated({ chatId, userId, changedFiles, reason });
+  } catch (err) {
+    warn(`codex pool publish failed: ${describeError(err)}`);
+  }
+}
+async function getCodexPanelState(chatId, userId) {
+  const exists = await codexExists(chatId, userId);
+  if (!exists)
+    return { fileStates: {}, staleFiles: [] };
+  const cursor = await loadCursor(chatId, userId);
+  const staleFiles = [];
+  for (const [file, st] of Object.entries(cursor.fileStates)) {
+    if (st !== "frozen")
+      continue;
+    const at = cursor.frozenAtRuns[file];
+    if (typeof at === "number" && cursor.runs > at)
+      staleFiles.push(file);
+  }
+  return { fileStates: cursor.fileStates, staleFiles };
+}
+async function setCodexFileState(chatId, userId, file, state) {
+  const cursor = await loadCursor(chatId, userId);
+  if (state === "on")
+    delete cursor.fileStates[file];
+  else
+    cursor.fileStates[file] = state;
+  if (state === "frozen")
+    cursor.frozenAtRuns[file] = cursor.runs;
+  else
+    delete cursor.frozenAtRuns[file];
+  await saveCursor(chatId, cursor, userId);
+  invalidateCodexInjectionCache(chatId);
+}
+async function rebuildCodex(chatId, profile, userId) {
+  const prev = await loadCursor(chatId, userId).catch(() => emptyCursor());
+  const failed = await deleteCodex(chatId, userId);
+  invalidateCodexInjectionCache(chatId);
+  if (failed.length > 0) {
+    cb2?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, rebuild aborted`);
+    return;
+  }
+  publishCodexWiped(chatId, userId);
+  if (Object.keys(prev.fileStates).length > 0) {
+    const fresh = emptyCursor();
+    fresh.fileStates = prev.fileStates;
+    await saveCursor(chatId, fresh, userId);
+  }
+  await runCodexNow(chatId, profile, userId);
+}
+async function runCodexTidy(chatId, profile, userId, only) {
+  if (!setBusy(userId, chatId, "codex", "Memoria is tidying the codex")) {
+    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController;
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const cursor = await loadCursor(chatId, userId);
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const frozenFiles = new Set(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const broken = new Set(problems.map((p) => p.file));
+    const targets = (only ?? [...CODEX_FILE_KEYS]).filter((k) => !frozenFiles.has(k) && !broken.has(k) && !fileIsEmpty(bundle, k));
+    if (targets.length === 0) {
+      cb2?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
+      return;
+    }
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
+      lore: null,
+      storySoFar: null,
+      frozenFiles,
+      userTextOverride: buildCodexTidyMessage(bundle, targets),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
+    });
+    invalidateCodexInjectionCache(chatId);
+    if (result.changedFiles.length > 0) {
+      await publishCodexPool(chatId, userId, profile, result.changedFiles, "tidy");
+      cb2?.onToast(userId, "success", `Memoria tidied ${result.changedFiles.length} codex file${result.changedFiles.length === 1 ? "" : "s"}`);
+    } else {
+      cb2?.onToast(userId, "info", "Memoria found nothing worth tightening");
+    }
+    cb2?.onStateChange(userId, chatId);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb2?.onToast(userId, "info", "Memoria sets the tidying aside");
+      return;
+    }
+    warn(`codex tidy failed: ${describeError(err)}`);
+    cb2?.onToast(userId, "error", `Memoria couldn't tidy the codex: ${shortErrorText(err)}`);
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
+}
+function fileIsEmpty(bundle, key2) {
+  const v = bundle[key2];
+  return Object.values(v).every((arr) => !Array.isArray(arr) || arr.length === 0);
+}
+
+// src/backend/injection.ts
+var injectionAnomalyCb = null;
+function registerInjectionAnomalyCallback(cb3) {
+  injectionAnomalyCb = cb3;
+}
+function isAssembledHistory(lm) {
+  return lm["__isChatHistory"] === true;
+}
+function sourceMessageId(lm) {
+  const v = lm["sourceMessageId"];
+  return typeof v === "string" && v ? v : undefined;
+}
+function sourceIndexInChat(lm) {
+  const v = lm["sourceIndexInChat"];
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+function orderEntries(coverage, msgIdToIdx) {
+  const ordered = [];
+  for (const entry of coverage.activeEntries) {
+    let firstIdx = Number.POSITIVE_INFINITY;
+    let lastIdx = -1;
+    for (const msgId of entry.meta.msgIds) {
+      const idx = msgIdToIdx.get(msgId);
+      if (typeof idx !== "number")
+        continue;
+      if (idx < firstIdx)
+        firstIdx = idx;
+      if (idx > lastIdx)
+        lastIdx = idx;
+    }
+    const haveIdx = firstIdx !== Number.POSITIVE_INFINITY;
+    const resolvedFirst = haveIdx ? firstIdx : typeof entry.meta.firstMsgIdx === "number" ? entry.meta.firstMsgIdx : 0;
+    const resolvedLast = haveIdx ? lastIdx : typeof entry.meta.lastMsgIdx === "number" ? entry.meta.lastMsgIdx : resolvedFirst;
+    const tierName = entry.meta.tier === 3 ? "Volume" : entry.meta.tier === 2 ? "Arc" : "Chapter";
+    const label = entry.raw.comment || (haveIdx ? `${tierName} msgs ${firstIdx + 1}-${lastIdx + 1}` : tierName);
+    ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
+  }
+  ordered.sort((a, b) => a.firstIdx - b.firstIdx);
+  return ordered;
+}
+async function buildInjection(chatId, llmMessages, userId, profile) {
+  const codexTextPromise = profile ? buildCodexInjectionText(chatId, userId, profile).catch((err) => {
+    warn(`codex injection failed: ${describeError(err)}`);
+    return null;
+  }) : Promise.resolve(null);
+  const [activated, allEntries, attachedBookIds, codexText] = await Promise.all([
+    spindle.world_books.getActivated(chatId, userId).catch(() => null),
+    listLmbEntries(chatId, userId),
+    getChatAttachedBookIds(chatId, userId).catch(() => null),
+    codexTextPromise
+  ]);
+  if (allEntries.length === 0 && !codexText)
+    return null;
+  let coverage = null;
+  if (allEntries.length > 0) {
+    const ourBookId = allEntries[0].raw.world_book_id;
+    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
+    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
+    const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
+    const entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
+    coverage = await buildCoverage(chatId, userId, entriesForCoverage);
+  }
+  if ((!coverage || coverage.activeEntries.length === 0) && !codexText)
+    return null;
+  const historyMsgs = llmMessages.filter(isAssembledHistory);
+  if (historyMsgs.length === 0) {
+    const chatMessages = await spindle.chat.getMessages(chatId).catch(() => null);
+    const hasVisibleMessage = !!chatMessages?.some((m) => !(m.extra && m.extra.hidden));
+    if (hasVisibleMessage) {
+      error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. Possible causes: the host clipped history to fit max context, another ` + `extension reshaped the prompt first, or the active preset has no chat-history block. Skipping injection.`);
+      injectionAnomalyCb?.(userId, "Memoria couldn't find the chat history in this prompt and skipped injecting memories");
+    }
+    return null;
+  }
+  const plan = [];
+  let missingIdx = false;
+  let anyCovered = false;
+  for (const m of historyMsgs) {
+    const id = sourceMessageId(m);
+    if (id === undefined) {
+      error(`injection: a "__isChatHistory" message is missing sourceMessageId. Host identity contract ` + `looks inconsistent, skipping injection.`);
+      return null;
+    }
+    const idx = sourceIndexInChat(m);
+    if (idx === undefined)
+      missingIdx = true;
+    const covered = !!coverage && coverage.coveredBy.has(id);
+    if (covered)
+      anyCovered = true;
+    plan.push({ id, idx, covered });
+  }
+  let msgIdToIdx;
+  if (anyCovered || missingIdx) {
+    const chatMessages = await spindle.chat.getMessages(chatId).catch(() => null);
+    if (!chatMessages || chatMessages.length === 0)
+      return null;
+    msgIdToIdx = new Map;
+    for (let i = 0;i < chatMessages.length; i++)
+      msgIdToIdx.set(chatMessages[i].id, i);
+    for (const p of plan) {
+      const idx = msgIdToIdx.get(p.id);
+      if (idx === undefined) {
+        error(`injection: sourceMessageId "${p.id}" is not in the chat, skipping injection.`);
+        return null;
+      }
+      p.idx = idx;
+      if (p.covered) {
+        const md = chatMessages[idx]?.metadata;
+        if (md && md["lmb_excluded"] === true)
+          p.covered = false;
+      }
+    }
+  } else {
+    msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx]));
+  }
+  const ordered = coverage ? orderEntries(coverage, msgIdToIdx) : [];
+  if (ordered.length === 0 && !codexText)
+    return null;
+  const out = [];
+  const injectedLabels = new Map;
+  const flushAt = (index, beforePos) => {
+    const block = [];
+    for (const o of ordered) {
+      if (o.emitted || o.lastIdx >= beforePos)
+        continue;
+      o.emitted = true;
+      const msg = { role: "assistant", content: formatEntryForInjection(o.entry) };
+      injectedLabels.set(msg, o.label);
+      block.push(msg);
+    }
+    if (block.length)
+      out.splice(index, 0, ...block);
+  };
+  let hp = 0;
+  let histEnd = -1;
+  let firstHistOutIdx = -1;
+  for (const lm of llmMessages) {
+    if (!isAssembledHistory(lm)) {
+      out.push(lm);
+      continue;
+    }
+    if (firstHistOutIdx === -1)
+      firstHistOutIdx = out.length;
+    const p = plan[hp++];
+    flushAt(out.length, p.idx);
+    if (!p.covered)
+      out.push(lm);
+    histEnd = out.length;
+  }
+  flushAt(histEnd < 0 ? out.length : histEnd, Number.POSITIVE_INFINITY);
+  if (codexText) {
+    const codexMsg = { role: "assistant", content: codexText };
+    const at = firstHistOutIdx >= 0 ? firstHistOutIdx : out.length;
+    out.splice(at, 0, codexMsg);
+    injectedLabels.set(codexMsg, "Knowledge Codex");
+  }
+  if (injectedLabels.size === 0)
+    return null;
+  const breakdown = [];
+  for (let i = 0;i < out.length; i++) {
+    const label = injectedLabels.get(out[i]);
+    if (label !== undefined)
+      breakdown.push({ messageIndex: i, name: label });
+  }
+  return { messages: out, breakdown };
+}
+function formatEntryForInjection(entry) {
+  return entry.raw.content;
 }
 
 // src/backend/rebase.ts
@@ -3957,7 +6161,14 @@ async function buildState(userId, requestedChatId) {
     rootOrigin: null,
     rootOriginName: null,
     rootEntryCount: 0,
-    availableRoots: allRootCandidates
+    availableRoots: allRootCandidates,
+    codexExists: false,
+    codexBacklog: 0,
+    codexLastRunAt: null,
+    codexInjectedTokens: 0,
+    codexFileStates: {},
+    codexStaleFiles: [],
+    codexFileTokens: {}
   };
   if (!chat)
     return baseState;
@@ -3976,7 +6187,8 @@ async function buildState(userId, requestedChatId) {
   const entries = await listLmbEntries(chat.id, userId).catch(() => []);
   const coverage = await buildCoverage(chat.id, userId, entries);
   const stats = computeCoverageStats(messages, coverage, activeProfile);
-  const compressibleSize = countCompressibleEligible(messages, coverage, activeProfile);
+  const backlogCoverage = extraContextActive(activeProfile) ? await buildCoverage(chat.id, userId, entries, true) : coverage;
+  const compressibleSize = countCompressibleEligible(messages, backlogCoverage, activeProfile);
   const windowDenom = Math.max(1, activeProfile.windowValue);
   const backlogChapters = Math.max(0, Math.floor(compressibleSize / windowDenom));
   const activeChapterEntries = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot);
@@ -4002,7 +6214,8 @@ async function buildState(userId, requestedChatId) {
       contentTokens: approximateTokensFromChars((e.raw.content || "").length),
       contentChars: (e.raw.content || "").length,
       sourceTokensInput: e.meta.tokenCountInput || 0,
-      isRoot: !!e.meta.isRoot
+      isRoot: !!e.meta.isRoot,
+      isGhost: e.meta.ghost === true
     };
     if (e.meta.tier === 3) {
       volumes.push({ ...view, sourceChapterEntryIds: e.meta.sourceChapterEntryIds ?? [] });
@@ -4041,6 +6254,14 @@ async function buildState(userId, requestedChatId) {
       characterName = character?.name ?? null;
     } catch (_) {}
   }
+  const codexStatus = await getCodexStatus(chat.id, userId, activeProfile).catch((err) => {
+    warn(`codex status failed: ${describeError(err)}`);
+    return { exists: false, backlog: 0, lastRunAt: null };
+  });
+  const codexInjectionText = await buildCodexInjectionText(chat.id, userId, activeProfile).catch(() => null);
+  const codexInjectedTokens = codexInjectionText ? approximateTokensFromChars(codexInjectionText.length) : 0;
+  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [] }));
+  const codexFileTokens = await getCodexFileTokens(chat.id, userId, activeProfile).catch(() => ({}));
   const rootEntries = entries.filter((e) => e.meta.isRoot);
   const rootOrigin = rootEntries.find((e) => e.meta.rootOrigin)?.meta.rootOrigin ?? null;
   const rootOriginName = rootOrigin ? allRootCandidates.find((c) => c.chatId === rootOrigin)?.chatName ?? rootOrigin.slice(0, 8) : null;
@@ -4064,7 +6285,14 @@ async function buildState(userId, requestedChatId) {
     rootOrigin,
     rootOriginName,
     rootEntryCount: rootEntries.length,
-    availableRoots: allRootCandidates.filter((c) => c.chatId !== chat.id)
+    availableRoots: allRootCandidates.filter((c) => c.chatId !== chat.id),
+    codexExists: codexStatus.exists,
+    codexBacklog: codexStatus.backlog,
+    codexLastRunAt: codexStatus.lastRunAt,
+    codexInjectedTokens,
+    codexFileStates: codexPanel.fileStates,
+    codexStaleFiles: codexPanel.staleFiles,
+    codexFileTokens
   };
 }
 function countArcBacklog(activeChapters, profile) {
@@ -4103,7 +6331,8 @@ async function notify(userId, tone, text, automation = false) {
       if (settings && !settings.showAutomationToasts)
         return;
     }
-    hostToast(userId, tone, text);
+    if (tone === "error")
+      error(`toast(error): ${text}`);
     send({ type: "toast", tone, text }, userId);
   } catch (err) {
     warn(`toast delivery failed: ${describeError(err)}`);
@@ -4167,6 +6396,17 @@ registerPipelineCallbacks({
   },
   onStateChange(userId, chatId) {
     pushState(userId, chatId);
+  },
+  onStreamText(userId, chatId, kind, snap) {
+    send({ type: "stream_text", chatId, kind, content: snap.content, thinking: snap.thinking, running: snap.running }, userId);
+  }
+});
+registerCodexCallbacks({
+  onToast(userId, tone, text, automation) {
+    notify(userId, tone, text, automation === true);
+  },
+  onStateChange(userId, chatId) {
+    pushState(userId, chatId);
   }
 });
 spindle.registerWorldInfoInterceptor(async (ctx) => {
@@ -4178,6 +6418,7 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
   }
   return ours.length ? { disabled: ours } : undefined;
 }, 90);
+var INJECTION_BUDGET_MS = 3000;
 spindle.registerInterceptor(async (messages, context) => {
   try {
     const chatId = context && typeof context === "object" && typeof context.chatId === "string" ? context.chatId : null;
@@ -4199,10 +6440,28 @@ spindle.registerInterceptor(async (messages, context) => {
     const settings = await loadSettings(userId);
     if (!settings.enabled)
       return messages;
-    const result = await buildInjection(chatId, messages, userId);
-    if (!result)
-      return messages;
-    return { messages: result.messages, breakdown: result.breakdown };
+    const profile = settings.profiles.find((x) => x.id === settings.activeProfileId) ?? null;
+    let budgetTimer;
+    const budget = new Promise((resolve) => {
+      budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
+    });
+    try {
+      const result = await Promise.race([
+        buildInjection(chatId, messages, userId, profile),
+        budget
+      ]);
+      if (result === "timeout") {
+        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)}, skipping this turn to stay inside the host interceptor budget`);
+        notify(userId, "error", "Memoria took too long assembling memories and skipped this turn");
+        return messages;
+      }
+      if (!result)
+        return messages;
+      return { messages: result.messages, breakdown: result.breakdown };
+    } finally {
+      if (budgetTimer)
+        clearTimeout(budgetTimer);
+    }
   } catch (err) {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;
@@ -4235,6 +6494,9 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
   await reassertChatBinding(p.chatId, userId).catch(() => {});
   await maybeRunPipeline(p.chatId, profile, settings, userId).catch((err) => {
     warn(`pipeline failed: ${describeError(err)}`);
+  });
+  await maybeRunCodex(p.chatId, profile, settings, userId).catch((err) => {
+    warn(`codex run failed: ${describeError(err)}`);
   });
 });
 spindle.on("CHAT_SWITCHED", async (payload, hostUserId) => {
@@ -4311,6 +6573,30 @@ async function handleExternalEntryDeletion(userId, bookId, isBookDeletion) {
   }
   await pushState(userId, chatId);
 }
+async function wipeBooksEntries(chatId, userId) {
+  const entries = await listLmbEntries(chatId, userId);
+  let removed = 0;
+  for (const e of entries) {
+    try {
+      await deleteEntry(e.raw.id, userId);
+      removed++;
+    } catch (err) {
+      warn(`wipe books: failed to delete ${e.raw.id}: ${describeError(err)}`);
+    }
+  }
+  invalidateBookCache(userId, chatId);
+  const settings = await loadSettings(userId);
+  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true).catch((err) => warn(`wipe books: visibility resync failed: ${describeError(err)}`));
+  return removed;
+}
+async function cleanupGhostsIfModeOff(userId, chatId, context) {
+  const after = await loadSettings(userId);
+  const activeProfile = after.profiles.find((p) => p.id === after.activeProfileId);
+  if (!activeProfile || extraContextActive(activeProfile))
+    return;
+  await cleanupGhostsAfterModeOff(chatId, activeProfile, userId).catch((err) => warn(`${context} ghost cleanup failed: ${describeError(err)}`));
+}
 async function collectActiveChapterIds(chatId, userId) {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
@@ -4344,7 +6630,14 @@ async function retryLastFailure(chatId, userId, profile, settings) {
     await createArcFromChapters(chatId, ids, profile, settings, userId);
     return;
   }
-  await createChapterAuto(chatId, profile, settings, userId);
+  if (extraContextActive(profile)) {
+    const made = await drainGhostBacklog(chatId, profile, settings, userId);
+    if (made === 0) {
+      await notify(userId, "info", "Nothing to retry yet, Memoria will catch it after the next message");
+    }
+  } else {
+    await createChapterAuto(chatId, profile, settings, userId);
+  }
   await maybeRunArcCheck(chatId, profile, settings, userId);
 }
 spindle.onFrontendMessage(async (raw, userId) => {
@@ -4371,6 +6664,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         let prevHide = null;
         let nextHide = null;
+        let prevExtra = null;
+        let nextExtra = null;
         let activeBefore = null;
         let missing = false;
         await mutateSettings(userId, (cur) => {
@@ -4385,6 +6680,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
             return cur;
           prevHide = existing.hideCoveredMessages;
           nextHide = merged.hideCoveredMessages;
+          prevExtra = extraContextActive(existing);
+          nextExtra = extraContextActive(merged);
           return { ...cur, profiles: cur.profiles.map((p) => p.id === id ? merged : p) };
         });
         if (missing) {
@@ -4400,6 +6697,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           } catch (err) {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
+        }
+        if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "mode-off");
         }
         await pushState(userId, msg.chatId);
         break;
@@ -4442,6 +6742,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (warned) {
           await notify(userId, "warn", "Memoria keeps at least one profile");
         }
+        if (msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
+        }
         await pushState(userId, msg.chatId);
         break;
       }
@@ -4451,6 +6754,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
+        if (msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-switch");
+        }
         await pushState(userId, msg.chatId);
         break;
       }
@@ -4464,7 +6770,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const chapterMessages = await spindle.chat.getMessages(msg.chatId);
-        const chapterCoverage = await buildCoverage(msg.chatId, userId);
+        const chapterCoverage = await buildCoverage(msg.chatId, userId, undefined, extraContextActive(profile));
         const chapterStats = computeCoverageStats(chapterMessages, chapterCoverage, profile);
         if (!chapterStats.lagSatisfied || !chapterStats.windowAvailable) {
           await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
@@ -4596,6 +6902,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
           }
         }
+        if (entry?.meta.ghost && typeof entry.meta.sceneNumber === "number") {
+          recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
+        }
         await deleteEntry(msg.entryId, userId);
         invalidateBookCache(userId, msg.chatId);
         if (entry) {
@@ -4614,6 +6923,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const entry = entries.find((e) => e.raw.id === msg.entryId);
         if (!entry) {
           await notify(userId, "warn", "Memoria can't find that entry to release");
+          break;
+        }
+        if (entry.meta.ghost) {
+          await notify(userId, "warn", "Memoria can't release a ghost chapter before it's shelved");
           break;
         }
         if (entry.meta.tier !== 1 && !entry.meta.supersededByEntryId && Array.isArray(entry.meta.sourceChapterEntryIds)) {
@@ -4661,6 +6974,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         if (entry.meta.isRoot && tier === 1) {
           await notify(userId, "warn", "Memoria can't regenerate inherited chapters");
+          break;
+        }
+        if (entry.meta.ghost) {
+          await notify(userId, "warn", "Memoria can't regenerate a ghost chapter before it's shelved");
           break;
         }
         const isArc = tier === 2;
@@ -4764,6 +7081,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!aborted) {
           await notify(userId, "warn", "Memoria is not in the middle of anything to abort");
         }
+        break;
+      }
+      case "watch_stream": {
+        setStreamWatcher(userId, msg.chatId, msg.kind, msg.on);
         break;
       }
       case "set_force_constant": {
@@ -4956,6 +7277,168 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         await notify(userId, "info", msg.excluded ? `Memoria will leave ${ids.length} message${ids.length === 1 ? "" : "s"} untouched` : `Memoria will compress ${ids.length} message${ids.length === 1 ? "" : "s"} again`);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_update_now": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in the Profile tab first");
+          break;
+        }
+        await runCodexNow(msg.chatId, profile, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_read": {
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files }, userId);
+        break;
+      }
+      case "codex_write_file": {
+        if (!isCodexFileKey(msg.file)) {
+          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          break;
+        }
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, save again when she finishes");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        const cursor = await loadCursor(msg.chatId, userId);
+        const relationsTable = cursor.relationsTableMode ?? profileMode;
+        let parsed;
+        try {
+          parsed = JSON.parse(msg.content);
+        } catch (err) {
+          await notify(userId, "error", `That is not valid JSON: ${describeError(err)}`);
+          break;
+        }
+        const result = validateCodexFile(msg.file, parsed, { relationsTable });
+        if (!result.ok) {
+          const extra = result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : "";
+          await notify(userId, "error", `Validation failed: ${result.errors[0]}${extra}`);
+          break;
+        }
+        await saveCodexFile(msg.chatId, msg.file, result.value, userId);
+        invalidateCodexInjectionCache(msg.chatId);
+        if (cursor.relationsTableMode === null) {
+          cursor.relationsTableMode = relationsTable;
+          await saveCursor(msg.chatId, cursor, userId);
+        }
+        if (profile)
+          await publishCodexPool(msg.chatId, userId, profile, [msg.file], "edit");
+        const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
+        if (problems.length > 0) {
+          const names = problems.map((p) => `${p.file}.json`).join(", ");
+          await notify(userId, "warn", `Saved, but ${names} could not be read so cross-file checks were skipped`);
+        } else {
+          const dangling = checkIntegrity(bundle);
+          if (dangling.length > 0) {
+            await notify(userId, "warn", `Saved with ${dangling.length} dangling reference${dangling.length === 1 ? "" : "s"} to fix in the other files`);
+          } else {
+            await notify(userId, "success", `Memoria saved ${msg.file}.json`);
+          }
+        }
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_reset": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const failed = await deleteCodex(msg.chatId, userId);
+        invalidateCodexInjectionCache(msg.chatId);
+        if (failed.length > 0) {
+          await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
+        } else {
+          publishCodexWiped(msg.chatId, userId);
+          await notify(userId, "info", "Memoria cleared the codex for this chat");
+        }
+        const wiped = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: wiped }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_rebuild": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        await rebuildCodex(msg.chatId, profile, userId);
+        const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_tidy": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
+        await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_set_file_state": {
+        if (!isCodexFileKey(msg.file)) {
+          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          break;
+        }
+        await setCodexFileState(msg.chatId, userId, msg.file, msg.state);
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (profile)
+          await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "wipe_books": {
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          break;
+        }
+        const removed = await wipeBooksEntries(msg.chatId, userId);
+        await notify(userId, removed > 0 ? "success" : "info", removed > 0 ? `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} from the shelf` : "The shelf is already empty");
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "rebuild_books": {
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        const removed = await wipeBooksEntries(msg.chatId, userId);
+        await notify(userId, "info", `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await pushState(userId, msg.chatId);
+        await drainChapterBacklog(msg.chatId, profile, cur, userId).catch((err) => warn(`rebuild books re-summarize failed: ${describeError(err)}`));
+        await maybeRunArcCheck(msg.chatId, profile, cur, userId).catch(() => {});
+        await resyncVisibility(msg.chatId, userId, profile.hideCoveredMessages).catch(() => {});
         await pushState(userId, msg.chatId);
         break;
       }

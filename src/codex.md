@@ -39,3 +39,28 @@ Every so often, on a schedule you control, LB hands a slice of your story to a l
 3. **Compress.** Strip bloat and prose, duplicate info, verbosity.
 
 You can edit the records yourself in the new and beautiful glass UI.
+
+## For extension developers
+
+LumiBooks publishes the codex to Spindle's shared RPC pool. Read it from any extension backend:
+
+```ts
+// Full snapshot: all 8 files as parsed JSON, plus per-file states.
+const snap = await spindle.rpcPool.read(`lumi_books.codex.${chatId}`);
+// snap: { chatId, userId, files: { characters, locations, things, relations,
+//         timeline, threads, world, knowledge }, fileStates, runs, updatedAt }
+
+// Injection-ready text block, the same one LumiBooks puts in the prompt.
+const text = await spindle.rpcPool.read(`lumi_books.codex.${chatId}.rendered`);
+
+// Change signal: the most recent codex mutation across all chats.
+const evt = await spindle.rpcPool.read("lumi_books.codex_updated");
+// evt: { chatId, userId, changedFiles, reason: "run"|"tidy"|"edit"|"states"|"wipe", updatedAt }
+```
+
+Notes:
+
+- Endpoints appear after the first codex activity of a session. `read` rejects before that, so wrap it in a try/catch.
+- A wiped codex publishes `null` at both chat endpoints.
+- `fileStates` marks files the user switched off (`noInject`) or froze (`frozen`). The `rendered` text already excludes them. If you consume `files` directly, respect these flags.
+- `lumi_books.latest_chapter`, `lumi_books.latest_arc`, and `lumi_books.latest_volume` carry the summary events and were already published.

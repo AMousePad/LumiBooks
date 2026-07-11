@@ -4,6 +4,7 @@ import type { CustomPreset, LMBProfile } from "../../shared";
 import {
   field,
   makeButton,
+  makeSubtabs,
   section,
   select,
   textArea,
@@ -12,13 +13,23 @@ import {
 } from "../components";
 import { confirmDelete, promptForString } from "../modals";
 
-export function renderPromptsTab(
+type PresetCategory = "chapter" | "arc" | "volume";
+
+const CATEGORY_SUBTABS: { key: PresetCategory; label: string }[] = [
+  { key: "chapter", label: "Chapter" },
+  { key: "arc", label: "Arc" },
+  { key: "volume", label: "Volume" },
+];
+
+const local = { category: "chapter" as PresetCategory };
+
+/** Prompts pane, composed into Tuning. Appends into host (no replaceChildren). */
+export function renderPromptsPane(
   host: HTMLElement,
   state: FrontendState,
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  host.replaceChildren();
   const profile = state.activeProfile;
   const setKey = (category: PresetCategory, key: string) => {
     const p: Partial<LMBProfile> = category === "arc"
@@ -28,16 +39,26 @@ export function renderPromptsTab(
         : { chapterPresetKey: key };
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   };
+  const selectedKeyFor = (c: PresetCategory): string =>
+    c === "arc" ? profile.arcPresetKey : c === "volume" ? profile.volumePresetKey : profile.chapterPresetKey;
 
-  renderHelp(host);
-  renderMemoriaOverrides(host, state, send);
-  renderCategory(host, state, ctx, send, "chapter", profile.chapterPresetKey, setKey);
-  renderCategory(host, state, ctx, send, "arc", profile.arcPresetKey, setKey);
-  renderCategory(host, state, ctx, send, "volume", profile.volumePresetKey, setKey);
-  renderImport(host, state, ctx, send);
+  const pane = document.createElement("div");
+  pane.className = "lmb-pane";
+  host.appendChild(pane);
+
+  const draw = (): void => {
+    pane.replaceChildren();
+    pane.appendChild(makeSubtabs(CATEGORY_SUBTABS, local.category, (key) => {
+      local.category = key;
+      draw();
+    }));
+    renderCategory(pane, state, ctx, send, local.category, selectedKeyFor(local.category), setKey);
+    renderMemoriaOverrides(pane, state, send);
+    renderImport(pane, state, ctx, send);
+    renderHelp(pane);
+  };
+  draw();
 }
-
-type PresetCategory = "chapter" | "arc" | "volume";
 
 const ALPHABET_PICK =
   "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}";

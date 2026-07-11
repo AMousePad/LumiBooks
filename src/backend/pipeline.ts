@@ -8,11 +8,16 @@ import {
   buildCoverage,
   computeCoverageStats,
   isExcluded,
+  liveEndPosition,
   pickUncoveredTail,
   selectNextChapterWindow,
+  sizeEligible,
   syncHiddenForCoveredMessages,
+  trimLagFromTail,
+  type CoverageMap,
 } from "./coverage";
-import { createChapterEntry, deleteEntry, ensureBookForChat, invalidateBookCache, listLmbEntries, patchEntryMeta, type LMBEntry } from "./world-book";
+import { createChapterEntry, deleteEntry, ensureBookForChat, invalidateBookCache, listLmbEntries, patchEntryMeta, promoteGhostEntry, type LMBEntry } from "./world-book";
+import { msgSig } from "./codex/store";
 import { loadSettings } from "./storage";
 import {
   AbortedSummarizerError,
@@ -26,7 +31,7 @@ import {
   type DryRunAssembly,
   type SummarizationResult,
 } from "./summarizer";
-import { describeError, info, warn } from "./runtime";
+import { describeError, warn } from "./runtime";
 import { publishChapterCreated, publishArcCreated, publishVolumeCreated } from "./hooks";
 import { pickPhrase, type PhraseKind } from "./memoria";
 import { ensureForkAdoption } from "./fork";
@@ -46,6 +51,37 @@ const previewsByChat = new Map<string, PendingPreview[]>();
 const committingDrafts = new Set<string>();
 
 const PROGRESS_PUSH_INTERVAL_MS = 250;
+
+/** Scene numbers of swept ghosts, keyed by chat, so the refill of the same
+ * span keeps its ordinal instead of jumping to max+1 mid-list. In-memory
+ * only: after a restart the refill falls back to nextSceneNumber. */
+const freedGhostNumbers = new Map<string, { ids: Set<string>; sceneNumber: number }[]>();
+const FREED_NUMBERS_CAP = 20;
+const FREED_MAP_CAP = 200;
+
+export function recordFreedGhostNumber(userId: string, chatId: string, msgIds: string[], sceneNumber: number): void {
+  const key = chatKey(userId, chatId);
+  const list = freedGhostNumbers.get(key) ?? [];
+  freedGhostNumbers.delete(key);
+  list.push({ ids: new Set(msgIds), sceneNumber });
+  freedGhostNumbers.set(key, list.slice(-FREED_NUMBERS_CAP));
+  capMap(freedGhostNumbers, FREED_MAP_CAP);
+}
+
+function takeFreedGhostNumber(userId: string, chatId: string, windowIds: Set<string>): number | null {
+  const key = chatKey(userId, chatId);
+  const list = freedGhostNumbers.get(key);
+  if (!list) return null;
+  const idx = list.findIndex((f) => {
+    for (const id of windowIds) if (f.ids.has(id)) return true;
+    return false;
+  });
+  if (idx === -1) return null;
+  const n = list[idx]!.sceneNumber;
+  list.splice(idx, 1);
+  if (list.length === 0) freedGhostNumbers.delete(key);
+  return n;
+}
 
 const commitChain = new Map<string, Promise<unknown>>();
 function withCommitMutex<T>(userId: string, chatId: string, tier: 1 | 2 | 3, fn: () => Promise<T>): Promise<T> {
@@ -79,10 +115,17 @@ function chatKey(userId: string, chatId: string): string {
   return `${userId}::${chatId}`;
 }
 
+export interface StreamSnapshot {
+  content: string;
+  thinking: string;
+  running: boolean;
+}
+
 export interface PipelineCallbacks {
   onBusyChange(userId: string, entries: BusyEntry[]): void;
   onToast(userId: string, tone: "success" | "info" | "warn" | "error", text: string, automation?: boolean): void;
   onStateChange(userId: string, chatId: string): void;
+  onStreamText(userId: string, chatId: string, kind: BusyKind, snap: StreamSnapshot): void;
 }
 
 let cb: PipelineCallbacks | null = null;
@@ -90,12 +133,14 @@ export function registerPipelineCallbacks(c: PipelineCallbacks): void {
   cb = c;
 }
 
-function setBusy(userId: string, chatId: string, kind: BusyKind, label: string): boolean {
+export function setBusy(userId: string, chatId: string, kind: BusyKind, label: string): boolean {
   const key = busyKey(userId, chatId, kind);
   if (inflight.has(key)) return false;
   const entry: BusyEntry = { kind, chatId, label, startedAt: Date.now() };
   inflight.set(key, entry);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
+  streamBufs.delete(key);
+  streamLastPush.delete(key);
   const list = busyByUser.get(userId) ?? [];
   list.push(entry);
   busyByUser.set(userId, list);
@@ -104,12 +149,22 @@ function setBusy(userId: string, chatId: string, kind: BusyKind, label: string):
   return true;
 }
 
-function clearBusy(userId: string, chatId: string, kind: BusyKind): void {
+export function clearBusy(userId: string, chatId: string, kind: BusyKind): void {
   const key = busyKey(userId, chatId, kind);
   inflight.delete(key);
   aborters.delete(key);
   progressLastPush.delete(key);
   progressState.delete(key);
+  if (streamWatchers.has(key)) {
+    const buf = streamBufs.get(key);
+    cb?.onStreamText(userId, chatId, kind, {
+      content: buf?.content ?? "",
+      thinking: buf?.thinking ?? "",
+      running: false,
+    });
+    streamWatchers.delete(key);
+  }
+  streamLastPush.delete(key);
   const fresh: BusyEntry[] = [];
   for (const k of inflight.keys()) {
     if (!k.startsWith(`${userId}::`)) continue;
@@ -139,40 +194,24 @@ function formatElapsed(ms: number): string {
   return `${m}m${rem.toString().padStart(2, "0")}s`;
 }
 
-function chapterBusyLabel(chars: number, thinkingChars: number, elapsedMs: number): string {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0) return `Memoria is filing a chapter (${t})`;
-  if (tokens === 0 && thinkTokens > 0) return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0) return `Memoria is ~${tokens} tokens into a chapter (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into a chapter (${t})`;
-}
+const BUSY_PHRASES: Record<BusyKind, { idle: string; writing: string }> = {
+  chapter: { idle: "Memoria is filing a chapter", writing: "Memoria is writing a chapter" },
+  arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
+  volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
+  codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" },
+};
 
-function arcBusyLabel(chars: number, thinkingChars: number, elapsedMs: number): string {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0) return `Memoria is binding an arc (${t})`;
-  if (tokens === 0 && thinkTokens > 0) return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0) return `Memoria is ~${tokens} tokens into an arc (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into an arc (${t})`;
-}
-
-function volumeBusyLabel(chars: number, thinkingChars: number, elapsedMs: number): string {
-  const tokens = approximateTokensFromChars(chars);
-  const thinkTokens = approximateTokensFromChars(thinkingChars);
-  const t = formatElapsed(elapsedMs);
-  if (tokens === 0 && thinkTokens === 0) return `Memoria is pressing a volume (${t})`;
-  if (tokens === 0 && thinkTokens > 0) return `Memoria is thinking (~${thinkTokens} tokens, ${t})`;
-  if (thinkTokens > 0) return `Memoria is ~${tokens} tokens into a volume (~${thinkTokens} thinking, ${t})`;
-  return `Memoria is ~${tokens} tokens into a volume (${t})`;
-}
-
+/** Plain words first, telemetry in the parenthetical - the label is read by
+ * users, not developers. */
 function formatBusyLabel(state: ProgressState, elapsedMs: number): string {
-  if (state.kind === "arc") return arcBusyLabel(state.chars, state.thinkingChars, elapsedMs);
-  if (state.kind === "volume") return volumeBusyLabel(state.chars, state.thinkingChars, elapsedMs);
-  return chapterBusyLabel(state.chars, state.thinkingChars, elapsedMs);
+  const { idle, writing } = BUSY_PHRASES[state.kind];
+  const tokens = approximateTokensFromChars(state.chars);
+  const thinkTokens = approximateTokensFromChars(state.thinkingChars);
+  const t = formatElapsed(elapsedMs);
+  if (tokens === 0 && thinkTokens === 0) return `${idle} (${t})`;
+  if (tokens === 0 && thinkTokens > 0) return `Memoria is thinking (~${thinkTokens}t, ${t})`;
+  if (thinkTokens > 0) return `${writing} (~${tokens}t written, ~${thinkTokens}t thought, ${t})`;
+  return `${writing} (~${tokens}t, ${t})`;
 }
 
 function ensureHeartbeat(): void {
@@ -197,7 +236,58 @@ function ensureHeartbeat(): void {
   }, HEARTBEAT_INTERVAL_MS);
 }
 
-function updateProgressNumbers(userId: string, chatId: string, kind: BusyKind, chars: number, thinkingChars: number): void {
+/* ------------------------------------------------------- live stream feed */
+
+interface StreamBuf { content: string; thinking: string }
+const streamBufs = new Map<string, StreamBuf>();
+/** Busy keys a frontend is currently watching. */
+const streamWatchers = new Set<string>();
+const streamLastPush = new Map<string, number>();
+const STREAM_PUSH_INTERVAL_MS = 350;
+/** Per-part cap; the viewer is a window, not an archive. */
+const STREAM_BUF_CAP = 200_000;
+
+function capStreamPart(s: string): string {
+  if (s.length <= STREAM_BUF_CAP) return s;
+  return `[...earlier output trimmed...]\n${s.slice(-STREAM_BUF_CAP)}`;
+}
+
+export function appendStreamText(
+  userId: string,
+  chatId: string,
+  kind: BusyKind,
+  deltaKind: "text" | "thinking",
+  delta: string,
+): void {
+  const key = busyKey(userId, chatId, kind);
+  if (!inflight.has(key)) return;
+  const buf = streamBufs.get(key) ?? { content: "", thinking: "" };
+  if (deltaKind === "text") buf.content = capStreamPart(buf.content + delta);
+  else buf.thinking = capStreamPart(buf.thinking + delta);
+  streamBufs.set(key, buf);
+  if (!streamWatchers.has(key)) return;
+  const now = Date.now();
+  if (now - (streamLastPush.get(key) ?? 0) < STREAM_PUSH_INTERVAL_MS) return;
+  streamLastPush.set(key, now);
+  cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: true });
+}
+
+export function setStreamWatcher(userId: string, chatId: string, kind: BusyKind, on: boolean): void {
+  const key = busyKey(userId, chatId, kind);
+  if (!on) {
+    streamWatchers.delete(key);
+    return;
+  }
+  streamWatchers.add(key);
+  const buf = streamBufs.get(key);
+  cb?.onStreamText(userId, chatId, kind, {
+    content: buf?.content ?? "",
+    thinking: buf?.thinking ?? "",
+    running: inflight.has(key),
+  });
+}
+
+export function updateProgressNumbers(userId: string, chatId: string, kind: BusyKind, chars: number, thinkingChars: number): void {
   const key = busyKey(userId, chatId, kind);
   const ps = progressState.get(key);
   if (!ps) return;
@@ -210,19 +300,6 @@ function updateProgressNumbers(userId: string, chatId: string, kind: BusyKind, c
   if (now - last < PROGRESS_PUSH_INTERVAL_MS) return;
   progressLastPush.set(key, now);
   entry.label = formatBusyLabel(ps, now - entry.startedAt);
-  const list = busyByUser.get(userId) ?? [];
-  cb?.onBusyChange(userId, list.slice());
-}
-
-function updateBusyProgress(userId: string, chatId: string, kind: BusyKind, label: string, force = false): void {
-  const key = busyKey(userId, chatId, kind);
-  const entry = inflight.get(key);
-  if (!entry) return;
-  const now = Date.now();
-  const last = progressLastPush.get(key) ?? 0;
-  if (!force && now - last < PROGRESS_PUSH_INTERVAL_MS) return;
-  progressLastPush.set(key, now);
-  entry.label = label;
   const list = busyByUser.get(userId) ?? [];
   cb?.onBusyChange(userId, list.slice());
 }
@@ -306,7 +383,7 @@ async function runWithRetry<T>(
   return { ok: false, err: lastErr, retries: tries - 1 };
 }
 
-function recordFailure(userId: string, chatId: string, kind: BusyKind, retries: number, err: unknown): void {
+function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown): void {
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key)) failureByChat.delete(key);
   failureByChat.set(key, {
@@ -326,7 +403,7 @@ function nyaaToast(userId: string, kind: PhraseKind, automation: boolean): void 
   cb.onToast(userId, tone, pickPhrase(kind), automation);
 }
 
-function shortErrorText(err: unknown): string {
+export function shortErrorText(err: unknown): string {
   const raw = describeError(err).replace(/\s+/g, " ").trim();
   const firstSentence = raw.split(/(?<=[.!?])\s/, 1)[0] || raw;
   const cleaned = firstSentence.replace(/;/g, ",");
@@ -338,24 +415,92 @@ function failToast(userId: string, kind: BusyKind, err: unknown): void {
   cb?.onToast(userId, "error", `Memoria couldn't ${noun}: ${shortErrorText(err)}`);
 }
 
+/**
+ * Extra-context mode is only in effect while the codex itself is enabled:
+ * ghosts exist to feed the codex agent, so a disabled codex must not keep
+ * paying for ghost generation the user can't see or use.
+ */
+export function extraContextActive(profile: LMBProfile): boolean {
+  return profile.codexEnabled && profile.codexExtraContext;
+}
+
+/**
+ * Ghost windows fill from the EARLIEST uncovered gap rather than the
+ * contiguous tail, so a hole left by a swept or deleted mid-run ghost gets
+ * refilled instead of stranded behind later coverage. A gap bounded by later
+ * coverage files at whatever size it has (it can never grow); an open tail
+ * waits for a full window.
+ */
+function selectGhostWindow(
+  messages: ChatMessageDTO[],
+  coverage: CoverageMap,
+  effProfile: LMBProfile,
+): ChatMessageDTO[] {
+  const kept = trimLagFromTail(messages, effProfile);
+  let i = 0;
+  while (i < kept.length) {
+    while (i < kept.length && coverage.coveredBy.has(kept[i]!.id)) i++;
+    if (i >= kept.length) return [];
+    const run: ChatMessageDTO[] = [];
+    let boundedByCoverage = false;
+    while (i < kept.length) {
+      const m = kept[i]!;
+      if (coverage.coveredBy.has(m.id)) {
+        boundedByCoverage = true;
+        break;
+      }
+      run.push(m);
+      i++;
+    }
+    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
+    if (!boundedByCoverage && runSize < effProfile.windowValue) return [];
+    // A bounded gap with no eligible content (only excluded or system
+    // messages) can never file a real summary: scan past it or drainGhostBacklog
+    // would pay an LLM call to summarize nothing, or worse stall on it forever.
+    if (runSize === 0) continue;
+    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
+    if (window.length > 0) return window;
+  }
+  return [];
+}
+
 export async function createChapterAuto(
   chatId: string,
   profile: LMBProfile,
   settings: LMBSettings,
   userId: string,
   automation = false,
+  ghost = false,
 ): Promise<string | null> {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
   try {
+    // The caller's profile snapshot can be from before a mode toggle; a
+    // drain loop must stop minting ghosts the moment the live mode is off.
+    if (ghost) {
+      const live = await loadSettings(userId);
+      const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
+      if (!liveProfile || !extraContextActive(liveProfile)) return null;
+    }
     const messages = await spindle.chat.getMessages(chatId);
     if (!messages || messages.length === 0) return null;
-    const coverage = await buildCoverage(chatId, userId);
-    const stats = computeCoverageStats(messages, coverage, profile);
-    if (!stats.lagSatisfied || !stats.windowAvailable) return null;
-    const uncoveredTail = pickUncoveredTail(messages, coverage);
-    const window = selectNextChapterWindow(uncoveredTail, profile);
+    // Ghost generation runs against the codex lag (the generation lag); the
+    // profile lag stays the injection lag that promotion answers to.
+    const effProfile: LMBProfile = ghost
+      ? { ...profile, lagUnit: profile.codexLagUnit, lagValue: profile.codexLagValue }
+      : profile;
+    const includeGhosts = ghost || extraContextActive(profile);
+    const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
+    let window: ChatMessageDTO[];
+    if (ghost) {
+      window = selectGhostWindow(messages, coverage, effProfile);
+    } else {
+      const stats = computeCoverageStats(messages, coverage, effProfile);
+      if (!stats.lagSatisfied || !stats.windowAvailable) return null;
+      const uncoveredTail = pickUncoveredTail(messages, coverage);
+      window = selectNextChapterWindow(uncoveredTail, effProfile);
+    }
     if (window.length === 0) return null;
-    return await runChapter(chatId, profile, settings, userId, messages, window, { automation });
+    return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
   } finally {
     clearBusy(userId, chatId, "chapter");
   }
@@ -389,16 +534,25 @@ async function runChapter(
   userId: string,
   allMessages: ChatMessageDTO[],
   window: ChatMessageDTO[],
-  opts: { replacesEntryId?: string; automation?: boolean } = {},
+  opts: { replacesEntryId?: string; automation?: boolean; ghost?: boolean } = {},
 ): Promise<string | null> {
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
+  const ghost = opts.ghost === true;
   nyaaToast(userId, "fire", automation);
   const entries = await listLmbEntries(chatId, userId);
-  const coverage = await buildCoverage(chatId, userId, entries);
-  const chapters = coverage.activeEntries
+  const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
+  let chapters = coverage.activeEntries
     .filter((e) => e.meta.tier === 1 && typeof e.meta.firstMsgIdx === "number")
     .sort((a, b) => (a.meta.firstMsgIdx as number) - (b.meta.firstMsgIdx as number));
+  if (ghost) {
+    // Gap refills summarize mid-story spans: chapters AFTER the window are
+    // future material and must not leak into its previous-memories context.
+    // Compare live positions - stored meta indexes go stale after deletions.
+    const windowFirstIdx = allMessages.findIndex((m) => m.id === window[0]!.id);
+    const posById = new Map(allMessages.map((m, i) => [m.id, i] as const));
+    chapters = chapters.filter((c) => liveEndPosition(c.meta.msgIds, c.meta.lastMsgIdx, posById) < windowFirstIdx);
+  }
   const previousMemories = profile.previousMemoriesCount > 0
     ? chapters.slice(-profile.previousMemoriesCount)
     : [];
@@ -414,6 +568,7 @@ async function runChapter(
         {
           externalSignal: controller.signal,
           onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "chapter", chars, thinking),
+          onDelta: (kind, delta) => appendStreamText(userId, chatId, "chapter", kind, delta),
         },
       );
     } finally {
@@ -441,14 +596,14 @@ async function runChapter(
   const firstIdx = allMessages.findIndex((m) => m.id === window[0]!.id);
   const lastIdx = allMessages.findIndex((m) => m.id === window[window.length - 1]!.id);
 
-  if (profile.showMemoryPreviews) {
+  if (profile.showMemoryPreviews && !ghost) {
     const draft: PendingPreview = makePreview("chapter", chatId, window, result, firstIdx, lastIdx, replacesEntryId);
     pushPreview(userId, chatId, draft);
     cb?.onStateChange(userId, chatId);
     return null;
   }
   try {
-    const entryId = await commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, false, replacesEntryId);
+    const entryId = await commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, false, replacesEntryId, ghost);
     nyaaToast(userId, "success", automation);
     return entryId;
   } catch (err) {
@@ -471,16 +626,32 @@ async function commitChapter(
   allMessages: ChatMessageDTO[],
   fromPreview: boolean,
   replacesEntryId?: string,
+  ghost = false,
 ): Promise<string> {
   return withCommitMutex(userId, chatId, 1, async () => {
+  // The summarize call ran unfenced: if extra mode went off meanwhile, the
+  // cleanup pass already ran and committing this ghost would strand it.
+  if (ghost) {
+    const live = await loadSettings(userId);
+    const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
+    if (!liveProfile || !extraContextActive(liveProfile)) {
+      throw new Error("Extra context mode was turned off while this ghost was being written");
+    }
+  }
   const freshEntries = await listLmbEntries(chatId, userId);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
-  const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
+  const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
   const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
   if (validWindow.length === 0) {
-    throw new Error("All messages in this window were just bound by another chapter");
+    // Distinguish a ghost cover from a real one: a hand-picked range that
+    // lands entirely on a ghost span should not read as "bound by a chapter".
+    const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true] as const));
+    const allGhost = window.every((m) => ghostById.get(freshCoverage.coveredBy.get(m.id) ?? "") === true);
+    throw new Error(allGhost
+      ? "Those messages are already staged as a ghost chapter, it will file on its own"
+      : "All messages in this window were just bound by another chapter");
   }
   if (validWindow.length < window.length) {
     window = validWindow;
@@ -494,11 +665,17 @@ async function commitChapter(
   const book = await ensureBookForChat(chatId, userId);
   // On regenerate, keep the replaced chapter's scene number so a mid-list
   // regen doesn't jump to the end (nextSceneNumber returns max+1, and the
-  // entry being replaced still exists at this point).
+  // entry being replaced still exists at this point). Ghost refills likewise
+  // reuse the number a swept ghost freed for the same span.
   const replacedEntry = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
-  const sceneNumber = typeof replacedEntry?.meta.sceneNumber === "number"
-    ? replacedEntry.meta.sceneNumber
-    : await nextSceneNumber(chatId, 1, userId);
+  let sceneNumber: number;
+  let freedTaken: number | null = null;
+  if (typeof replacedEntry?.meta.sceneNumber === "number") {
+    sceneNumber = replacedEntry.meta.sceneNumber;
+  } else {
+    freedTaken = ghost ? takeFreedGhostNumber(userId, chatId, new Set(window.map((m) => m.id))) : null;
+    sceneNumber = freedTaken ?? await nextSceneNumber(chatId, 1, userId);
+  }
   const title = fromPreview
     ? (result.title?.trim() || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`)
     : deriveTitle(result, firstIdx + 1, lastIdx + 1);
@@ -519,13 +696,22 @@ async function commitChapter(
     presetKey: result.presetKey,
     sceneNumber,
     rawOutput: result.rawOutput,
+    ...(ghost ? { ghost: true, msgSigs: window.map((m) => msgSig(m.role, m.content || "")) } : {}),
   };
   const baseComment = meta.title ?? `Chapter - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
   const comment = `#${sceneNumber} - ${baseComment}`;
   const settings = await loadSettings(userId);
   const opener = buildChapterHeader(sceneNumber, msgIds.length);
   const finalContent = `${opener}\n\n${result.content}`;
-  const entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries);
+  let entry: Awaited<ReturnType<typeof createChapterEntry>>;
+  try {
+    entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost);
+  } catch (err) {
+    // The freed ordinal must survive a failed commit or the retried refill
+    // falls back to max+1 and jumps out of story order.
+    if (freedTaken !== null) recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
+    throw err;
+  }
   invalidateBookCache(userId, chatId);
 
   if (replacesEntryId) {
@@ -537,7 +723,7 @@ async function commitChapter(
     }
   }
 
-  if (profile.hideCoveredMessages) {
+  if (profile.hideCoveredMessages && !ghost) {
     try {
       await syncHiddenForCoveredMessages(
         chatId,
@@ -556,15 +742,19 @@ async function commitChapter(
       warn(`setMessagesHidden failed: ${describeError(err)}`);
     }
   }
-  publishChapterCreated(userId, {
-    chatId,
-    chapterEntryId: entry.id,
-    bookId: book.id,
-    sourceMessageIds: meta.msgIds,
-    summaryText: finalContent,
-    model: result.model,
-    title: meta.title,
-  });
+  // Ghosts announce themselves on promotion instead: to the outside world a
+  // chapter only exists once it starts covering messages.
+  if (!ghost) {
+    publishChapterCreated(userId, {
+      chatId,
+      chapterEntryId: entry.id,
+      bookId: book.id,
+      sourceMessageIds: meta.msgIds,
+      summaryText: finalContent,
+      model: result.model,
+      title: meta.title,
+    });
+  }
   cb?.onStateChange(userId, chatId);
   return entry.id;
   });
@@ -668,6 +858,7 @@ async function runArc(
         {
           externalSignal: controller.signal,
           onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "arc", chars, thinking),
+          onDelta: (kind, delta) => appendStreamText(userId, chatId, "arc", kind, delta),
         },
       );
     } finally {
@@ -879,6 +1070,7 @@ async function runVolume(
         {
           externalSignal: controller.signal,
           onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "volume", chars, thinking),
+          onDelta: (kind, delta) => appendStreamText(userId, chatId, "volume", kind, delta),
         },
       );
     } finally {
@@ -1058,7 +1250,7 @@ export async function acceptPreview(
       const acceptEntries = preview.replacesEntryId
         ? (await listLmbEntries(chatId, userId)).filter((e) => e.raw.id !== preview.replacesEntryId)
         : undefined;
-      const coverage = await buildCoverage(chatId, userId, acceptEntries);
+      const coverage = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage.coveredBy.has(m.id) && !isExcluded(m));
       if (window.length === 0) {
@@ -1165,17 +1357,29 @@ export async function drainChapterBacklog(
   settings: LMBSettings,
   userId: string,
   automation = false,
+  ghost = false,
 ): Promise<number> {
   let made = 0;
   for (let i = 0; i < CHAPTER_BACKLOG_CAP; i++) {
-    const created = await createChapterAuto(chatId, profile, settings, userId, automation).catch((err) => {
-      warn(`createChapterAuto failed: ${describeError(err)}`);
+    const created = await createChapterAuto(chatId, profile, settings, userId, automation, ghost).catch((err) => {
+      warn(`${ghost ? "ghost " : ""}createChapterAuto failed: ${describeError(err)}`);
       return null;
     });
     if (!created) break;
     made++;
   }
   return made;
+}
+
+/** Thin alias so ghost drains read clearly at their call sites. */
+export function drainGhostBacklog(
+  chatId: string,
+  profile: LMBProfile,
+  settings: LMBSettings,
+  userId: string,
+  automation = false,
+): Promise<number> {
+  return drainChapterBacklog(chatId, profile, settings, userId, automation, true);
 }
 
 export async function dryRunChapter(
@@ -1187,7 +1391,8 @@ export async function dryRunChapter(
   const messages = await spindle.chat.getMessages(chatId);
   if (!messages || messages.length === 0) throw new Error("Chat has no messages");
   const entries = await listLmbEntries(chatId, userId);
-  const coverage = await buildCoverage(chatId, userId, entries);
+  // Same coverage the real manual path sees, ghosts included in extra mode.
+  const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
   const uncoveredTail = pickUncoveredTail(messages, coverage);
   const window = selectNextChapterWindow(uncoveredTail, profile);
   if (window.length === 0) {
@@ -1260,16 +1465,217 @@ export async function drainArcBacklog(
   return made;
 }
 
+/**
+ * Extra-context mode: drop ghost chapters whose source messages were edited,
+ * regenerated, or deleted since summarization. Ghosts are invisible, so
+ * dropping and re-summarizing them is free of injection flicker.
+ */
+export async function sweepStaleGhosts(chatId: string, userId: string): Promise<number> {
+  const entries = await listLmbEntries(chatId, userId);
+  const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true);
+  if (ghosts.length === 0) return 0;
+  const messages = await spindle.chat.getMessages(chatId);
+  const byId = new Map(messages.map((m) => [m.id, m] as const));
+  let dropped = 0;
+  for (const g of ghosts) {
+    const sigs = g.meta.msgSigs;
+    const stale = !sigs || sigs.length !== g.meta.msgIds.length
+      ? g.meta.msgIds.some((id) => !byId.has(id))
+      : g.meta.msgIds.some((id, i) => {
+          const m = byId.get(id);
+          return !m || msgSig(m.role, m.content || "") !== sigs[i];
+        });
+    if (!stale) continue;
+    try {
+      await deleteEntry(g.raw.id, userId);
+      if (typeof g.meta.sceneNumber === "number") {
+        recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+      }
+      dropped++;
+    } catch (err) {
+      warn(`ghost sweep: failed to delete stale ghost ${g.raw.id}: ${describeError(err)}`);
+    }
+  }
+  if (dropped > 0) {
+    invalidateBookCache(userId, chatId);
+    // Ghosts are visible in the Books tab, so a deletion-only pass must push
+    // state or the UI keeps showing dead entries.
+    cb?.onStateChange(userId, chatId);
+  }
+  return dropped;
+}
+
+/**
+ * Extra-context mode: activate every ghost chapter whose whole span has aged
+ * past the injection lag. Promotion is pure metadata - the summary was
+ * written at generation time and is reused as-is.
+ */
+export async function promoteGhostChapters(
+  chatId: string,
+  profile: LMBProfile,
+  userId: string,
+  automation = false,
+): Promise<number> {
+  // The overlap check and the flip must not race a concurrent tier-1 commit
+  // (accept_preview, manual filing), or a ghost can promote over a span a
+  // real chapter just took. The commit paths hold this same mutex.
+  return withCommitMutex(userId, chatId, 1, async () => {
+  const entries = await listLmbEntries(chatId, userId);
+  const ghosts = entries
+    .filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled)
+    .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  if (ghosts.length === 0) return 0;
+  const messages = await spindle.chat.getMessages(chatId);
+  const realCoverage = await buildCoverage(chatId, userId, entries);
+  const posById = new Map(messages.map((m, i) => [m.id, i] as const));
+  // "Past the injection lag" is a per-ghost property. Deriving eligibility
+  // from the contiguous uncovered tail would strand any ghost that a later
+  // real chapter landed behind.
+  const pastLagBoundary = trimLagFromTail(messages, profile).length;
+
+  const promoted: LMBEntry[] = [];
+  let zombies = 0;
+  for (const g of ghosts) {
+    if (g.meta.msgIds.length === 0) continue;
+    // A ghost whose span was since covered by a real entry (manual chapter,
+    // arc, rebuild) can never promote and never goes stale - delete it, the
+    // story is already represented there.
+    if (g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
+      try {
+        await deleteEntry(g.raw.id, userId);
+        // Free its ordinal like the sweep path, so if that real coverage is
+        // later released a refill over the same span keeps this number.
+        if (typeof g.meta.sceneNumber === "number") {
+          recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+        }
+        zombies++;
+      } catch (err) {
+        warn(`ghost promotion: failed to delete overlapped ghost ${g.raw.id}: ${describeError(err)}`);
+      }
+      continue;
+    }
+    const pastLag = g.meta.msgIds.every((id) => {
+      const p = posById.get(id);
+      return typeof p === "number" && p < pastLagBoundary;
+    });
+    if (!pastLag) continue;
+    try {
+      await promoteGhostEntry(g, userId);
+      promoted.push(g);
+    } catch (err) {
+      warn(`ghost promotion failed for ${g.raw.id}: ${describeError(err)}`);
+    }
+  }
+  if (zombies > 0) {
+    invalidateBookCache(userId, chatId);
+    if (promoted.length === 0) cb?.onStateChange(userId, chatId);
+  }
+  if (promoted.length === 0) return 0;
+  invalidateBookCache(userId, chatId);
+
+  if (profile.hideCoveredMessages) {
+    const coveredBy = new Map<string, string>();
+    for (const g of promoted) {
+      for (const id of g.meta.msgIds) coveredBy.set(id, g.raw.id);
+    }
+    await syncHiddenForCoveredMessages(
+      chatId,
+      messages,
+      { coveredBy, activeEntries: [], volumes: [], arcs: [], chapters: [] },
+      userId,
+      true,
+    ).catch((err) => warn(`ghost promotion hide failed: ${describeError(err)}`));
+  }
+  for (const g of promoted) {
+    publishChapterCreated(userId, {
+      chatId,
+      chapterEntryId: g.raw.id,
+      bookId: g.raw.world_book_id,
+      sourceMessageIds: g.meta.msgIds,
+      summaryText: g.raw.content || "",
+      model: g.meta.model,
+      title: g.meta.title,
+    });
+  }
+  cb?.onToast(
+    userId,
+    "success",
+    `Memoria shelved ${promoted.length} ghost chapter${promoted.length === 1 ? "" : "s"}`,
+    automation,
+  );
+  cb?.onStateChange(userId, chatId);
+  return promoted.length;
+  });
+}
+
+/**
+ * When extra-context mode is switched off with ghosts pending: promote what
+ * already earned it, delete the rest. Leaving them would double-summarize
+ * their spans (real-chapter coverage ignores ghosts) and strand the entries
+ * as permanent disabled leftovers.
+ */
+export async function cleanupGhostsAfterModeOff(
+  chatId: string,
+  profile: LMBProfile,
+  userId: string,
+): Promise<void> {
+  const entries = await listLmbEntries(chatId, userId);
+  if (!entries.some((e) => e.meta.tier === 1 && e.meta.ghost === true)) return;
+  await sweepStaleGhosts(chatId, userId).catch((err) =>
+    warn(`mode-off ghost sweep failed: ${describeError(err)}`),
+  );
+  await promoteGhostChapters(chatId, profile, userId, true).catch((err) =>
+    warn(`mode-off ghost promotion failed: ${describeError(err)}`),
+  );
+  // The delete pass shares the tier-1 mutex with promotion and refetches
+  // inside it: a concurrent cleanup could otherwise promote a ghost between
+  // this scan and the delete, and we'd destroy an enabled, announced chapter.
+  await withCommitMutex(userId, chatId, 1, async () => {
+    const remaining = (await listLmbEntries(chatId, userId)).filter(
+      (e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled,
+    );
+    for (const g of remaining) {
+      await deleteEntry(g.raw.id, userId).catch((err) =>
+        warn(`mode-off ghost cleanup failed for ${g.raw.id}: ${describeError(err)}`),
+      );
+    }
+    if (remaining.length > 0) {
+      invalidateBookCache(userId, chatId);
+      cb?.onStateChange(userId, chatId);
+    }
+  });
+}
+
 export async function maybeRunPipeline(
   chatId: string,
   profile: LMBProfile,
   settings: LMBSettings,
   userId: string,
 ): Promise<void> {
+  // Ghost lifecycle maintenance runs ahead of the auto-create gates:
+  // promotion completes already-paid summaries and sweep/cleanup drop stale
+  // entries, so no toggle combination may strand ghosts - including flipping
+  // the extra flag off while other chats still hold them. The off-branch is
+  // one entry listing per generation, the same order of cost the injection
+  // interceptor already pays every generation.
+  if (extraContextActive(profile)) {
+    await sweepStaleGhosts(chatId, userId).catch((err) => warn(`ghost sweep failed: ${describeError(err)}`));
+    await promoteGhostChapters(chatId, profile, userId, true).catch((err) => warn(`ghost promotion failed: ${describeError(err)}`));
+  } else {
+    await cleanupGhostsAfterModeOff(chatId, profile, userId).catch((err) =>
+      warn(`ghost cleanup failed: ${describeError(err)}`),
+    );
+  }
   if (!profile.autoCreate) return;
   await ensureForkAdoption(chatId, userId).catch(() => {});
   if (profile.autoCreateChapter) {
-    await drainChapterBacklog(chatId, profile, settings, userId, true);
+    if (extraContextActive(profile)) {
+      // Generation runs at the codex lag (ghosts), injection at the chapter lag
+      // (promotion). Same chapters, two moments.
+      await drainGhostBacklog(chatId, profile, settings, userId, true);
+    } else {
+      await drainChapterBacklog(chatId, profile, settings, userId, true);
+    }
   }
   await maybeRunArcCheck(chatId, profile, settings, userId, true);
 }
@@ -1362,5 +1768,3 @@ function makeGroupPreview(
     replacesEntryId,
   };
 }
-
-void info;

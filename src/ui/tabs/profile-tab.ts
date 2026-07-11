@@ -3,6 +3,10 @@ import type { LMBProfile, SamplerSet } from "../../shared";
 import { SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
 const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", "Defaults");
+// Token-mode blank-field fallbacks for the codex cadence: the shared defaults
+// (6 / 24) are message counts and would be nonsense as token budgets.
+const CODEX_LAG_TOKENS_DEFAULT = 2000;
+const CODEX_WINDOW_TOKENS_DEFAULT = 8000;
 import {
   checkbox,
   field,
@@ -18,40 +22,145 @@ import {
 import { promptForString } from "../modals";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 
-export function renderProfileTab(
+/* Section renderers below are composed into subtab panes by tuning-tab.ts. */
+
+export function renderCodexSettings(
   host: HTMLElement,
   state: FrontendState,
-  ctx: SpindleFrontendContext,
-  send: (msg: FrontendToBackend) => void,
+  profile: LMBProfile,
+  patch: (p: Partial<LMBProfile>) => void,
 ): void {
-  host.replaceChildren();
-  const profile = state.activeProfile;
-  const patch = (p: Partial<LMBProfile>) =>
-    send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
+  const sec = section("Knowledge Codex");
+  const help = document.createElement("div");
+  help.className = "lmb-help";
+  help.textContent =
+    "An agent reads every new turn and keeps per-chat JSON records of characters, locations, things, relations, timeline, threads, world rules, and who-knows-what. The codex is injected into the prompt as a snapshot of the story's present.";
+  sec.body.appendChild(help);
 
-  renderProfilePicker(host, state, ctx, send);
+  sec.body.appendChild(checkbox({
+    checked: profile.codexEnabled,
+    label: "Enabled",
+    hint: "Runs automatically after generations once the backlog fills. Manual updates live in the Books tab.",
+    onChange: (v) => patch({ codexEnabled: v }),
+  }));
 
-  const rest = document.createElement("div");
-  rest.style.display = "flex";
-  rest.style.flexDirection = "column";
-  rest.style.gap = "12px";
-  if (!state.settings.enabled) {
-    rest.classList.add("lmb-greyed");
-    rest.setAttribute("inert", "");
+  const fields = document.createElement("div");
+  fields.className = profile.codexEnabled ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
+  sec.body.appendChild(fields);
+
+  const lagGrid = document.createElement("div");
+  lagGrid.className = "lmb-grid-2";
+  lagGrid.append(
+    labelled("Lag unit", select({
+      value: profile.codexLagUnit,
+      options: [
+        { value: "messages", label: "messages" },
+        { value: "tokens", label: "tokens" },
+      ],
+      onChange: (v) => patch({ codexLagUnit: v === "tokens" ? "tokens" : "messages" }),
+    })),
+    labelled(
+      profile.codexLagUnit === "tokens" ? "Lag tokens" : "Lag messages",
+      numberInput({
+        value: profile.codexLagValue,
+        min: 0,
+        max: profile.codexLagUnit === "tokens" ? 1000000 : 100000,
+        step: profile.codexLagUnit === "tokens" ? 50 : 1,
+        defaultValue: profile.codexLagUnit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue,
+        onBlur: (v) => patch({ codexLagValue: v ?? (profile.codexLagUnit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue) }),
+      }),
+    ),
+  );
+  fields.appendChild(lagGrid);
+
+  const windowGrid = document.createElement("div");
+  windowGrid.className = "lmb-grid-2";
+  windowGrid.append(
+    labelled("Window unit", select({
+      value: profile.codexWindowUnit,
+      options: [
+        { value: "messages", label: "messages" },
+        { value: "tokens", label: "tokens" },
+      ],
+      onChange: (v) => patch({ codexWindowUnit: v === "tokens" ? "tokens" : "messages" }),
+    })),
+    labelled(
+      profile.codexWindowUnit === "tokens" ? "Window tokens" : "Window messages",
+      numberInput({
+        value: profile.codexWindowValue,
+        min: 1,
+        max: profile.codexWindowUnit === "tokens" ? 1000000 : 100000,
+        step: profile.codexWindowUnit === "tokens" ? 100 : 1,
+        defaultValue: profile.codexWindowUnit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue,
+        onBlur: (v) => patch({ codexWindowValue: v ?? (profile.codexWindowUnit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue) }),
+      }),
+    ),
+  );
+  fields.appendChild(windowGrid);
+
+  if (profile.codexWindowUnit === "messages") {
+    fields.appendChild(
+      labelled("Tokens breakpoint", numberInput({
+        value: profile.codexTokenBreakpoint,
+        min: 1000,
+        max: 1000000,
+        step: 5000,
+        defaultValue: PROFILE_DEFAULTS.codexTokenBreakpoint,
+        onBlur: (v) => patch({ codexTokenBreakpoint: v ?? PROFILE_DEFAULTS.codexTokenBreakpoint }),
+      })),
+    );
+    const bpHint = document.createElement("div");
+    bpHint.className = "lmb-field-hint";
+    bpHint.textContent = "The window fires at whichever arrives first: the message count above or this many tokens. Keeps verbose chats from building enormous chunks.";
+    fields.appendChild(bpHint);
   }
-  host.appendChild(rest);
 
-  renderCompressionTargets(rest, profile, patch);
-  renderAutomation(rest, profile, patch);
-  renderConnection(rest, state, profile, patch);
-  renderSamplers(rest, state, profile, send);
-  renderContext(rest, profile, patch);
-  renderRegex(rest, state, profile, patch);
-  renderBehavior(rest, profile, patch);
-  renderResetSettings(rest, state, send);
+  const cadenceHint = document.createElement("div");
+  cadenceHint.className = "lmb-field-hint";
+  cadenceHint.textContent =
+    "Lag is the recent tail the codex leaves alone until it settles. Once a window's worth of older messages piles up behind it, the agent consumes them in one pass. Keep the lag smaller than the chapter lag if you want the codex fresher than the summaries.";
+  fields.appendChild(cadenceHint);
+
+  fields.appendChild(checkbox({
+    checked: profile.codexRelationsTable,
+    label: "Relations table",
+    hint: "Tracks connections between entities as one shared table with integrity checks. When off, relationships live as short notes on each entity sheet instead.",
+    onChange: (v) => patch({ codexRelationsTable: v }),
+  }));
+
+  fields.appendChild(checkbox({
+    checked: profile.codexThorough,
+    label: "Thorough mode",
+    hint: "Spends one extra verification round per update to sweep for stale info and compress bloat.",
+    onChange: (v) => patch({ codexThorough: v }),
+  }));
+
+  fields.appendChild(checkbox({
+    checked: profile.codexExtraContext,
+    label: "Extra context mode",
+    hint: "Summarizes chapters early at the codex lag as ghost chapters. Ghosts feed the agent story-so-far context and are promoted into real chapters once the chapter lag arrives, with no second summarization.",
+    onChange: (v) => patch({ codexExtraContext: v }),
+  }));
+
+  const connOpts = [
+    { value: "", label: "Same as Memoria's connection" },
+    ...state.connections.map((c) => ({
+      value: c.id,
+      label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`,
+    })),
+  ];
+  fields.appendChild(
+    labelled("Codex connection", select({
+      value: profile.codexConnectionId ?? "",
+      options: connOpts,
+      onChange: (v) => patch({ codexConnectionId: v || null }),
+    })),
+  );
+
+  host.appendChild(sec.wrap);
 }
 
-function renderResetSettings(
+export function renderResetSettings(
   host: HTMLElement,
   state: FrontendState,
   send: (msg: FrontendToBackend) => void,
@@ -93,7 +202,7 @@ function renderResetSettings(
   host.appendChild(sec.wrap);
 }
 
-function renderProfilePicker(
+export function renderProfilePicker(
   host: HTMLElement,
   state: FrontendState,
   ctx: SpindleFrontendContext,
@@ -149,7 +258,7 @@ function renderProfilePicker(
   host.appendChild(sec.wrap);
 }
 
-function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Automation");
   const help = document.createElement("div");
   help.className = "lmb-help";
@@ -269,7 +378,7 @@ function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: (p: Par
   host.appendChild(sec.wrap);
 }
 
-function renderCompressionTargets(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderCompressionTargets(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Compression targets");
   const help = document.createElement("div");
   help.className = "lmb-help";
@@ -437,7 +546,7 @@ function renderCompressionTargets(host: HTMLElement, profile: LMBProfile, patch:
   host.appendChild(sec.wrap);
 }
 
-function renderConnection(
+export function renderConnection(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
@@ -470,7 +579,7 @@ function renderConnection(
   host.appendChild(sec.wrap);
 }
 
-function renderSamplers(
+export function renderSamplers(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
@@ -537,7 +646,7 @@ function renderSamplers(
   host.appendChild(sec.wrap);
 }
 
-function renderRegex(
+export function renderRegex(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
@@ -578,7 +687,7 @@ function renderRegex(
   host.appendChild(sec.wrap);
 }
 
-function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Context");
   const f = field("Chapter context");
   f.body.appendChild(
@@ -632,7 +741,7 @@ function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partia
   host.appendChild(sec.wrap);
 }
 
-function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Behavior");
   sec.body.appendChild(checkbox({
     checked: profile.hideCoveredMessages,

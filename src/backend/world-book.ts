@@ -277,7 +277,18 @@ export async function reassertChatBinding(chatId: string, userId: string): Promi
   return true;
 }
 
+/** Short-lived entries cache: the injection interceptor runs on every
+ * generation and must stay well inside the host's interceptor time budget.
+ * Every mutation path already calls invalidateBookCache, which clears this
+ * too; the TTL bounds staleness from external edits we don't hear about. */
+const ENTRIES_CACHE_TTL_MS = 4000;
+const ENTRIES_CACHE_CAP = 300;
+const entriesCache = new Map<string, { at: number; data: LMBEntry[] }>();
+
 export async function listLmbEntries(chatId: string, userId: string): Promise<LMBEntry[]> {
+  const key = cacheKey(userId, chatId);
+  const cached = entriesCache.get(key);
+  if (cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS) return cached.data;
   const bookId = await findBookForChat(chatId, userId);
   if (!bookId) return [];
   const raw = await listAllEntries(bookId, userId);
@@ -288,6 +299,13 @@ export async function listLmbEntries(chatId: string, userId: string): Promise<LM
     if (!meta) continue;
     if (meta.chatId !== chatId) continue;
     out.push({ raw: entry, meta });
+  }
+  if (entriesCache.has(key)) entriesCache.delete(key);
+  entriesCache.set(key, { at: Date.now(), data: out });
+  while (entriesCache.size > ENTRIES_CACHE_CAP) {
+    const oldest = entriesCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    entriesCache.delete(oldest);
   }
   return out;
 }
@@ -300,13 +318,14 @@ export async function createChapterEntry(
   userId: string,
   keys: string[] = [],
   constant: boolean = true,
+  disabled: boolean = false,
 ): Promise<WorldBookEntryDTO> {
   return spindle.world_books.entries.create(
     bookId,
     {
       content,
       comment,
-      disabled: false,
+      disabled,
       constant,
       key: keys,
       keysecondary: [],
@@ -355,6 +374,19 @@ export async function setEntryDisabled(entryId: string, disabled: boolean, userI
   return spindle.world_books.entries.update(entryId, { disabled }, userId);
 }
 
+/** Single-write ghost promotion: clears the ghost markers and enables the
+ * entry in one update, so a partial failure can't strand a disabled entry
+ * that no ghost mechanism recognizes anymore. */
+export async function promoteGhostEntry(entry: LMBEntry, userId: string): Promise<WorldBookEntryDTO> {
+  const nextMeta: LMBEntryMeta = { ...entry.meta, ghost: undefined, msgSigs: undefined };
+  const ext = (entry.raw.extensions || {}) as Record<string, unknown>;
+  return spindle.world_books.entries.update(
+    entry.raw.id,
+    { disabled: false, extensions: { ...ext, [EXTENSION_KEY]: nextMeta } },
+    userId,
+  );
+}
+
 export async function releaseEntry(entry: LMBEntry, userId: string): Promise<WorldBookEntryDTO> {
   const ext = (entry.raw.extensions || {}) as Record<string, unknown>;
   const nextExt: Record<string, unknown> = { ...ext };
@@ -388,6 +420,7 @@ export async function patchEntryMeta(
 
 export function invalidateBookCache(userId: string, chatId: string): void {
   chatBookCache.delete(cacheKey(userId, chatId));
+  entriesCache.delete(cacheKey(userId, chatId));
 }
 
 export function findCachedChatIdForBook(userId: string, bookId: string): string | null {
@@ -416,7 +449,10 @@ export function invalidateAllBookCacheEntriesForBook(userId: string, bookId: str
     if (!key.startsWith(prefix)) continue;
     if (value.bookId === bookId) toDelete.push(key);
   }
-  for (const k of toDelete) chatBookCache.delete(k);
+  for (const k of toDelete) {
+    chatBookCache.delete(k);
+    entriesCache.delete(k);
+  }
 }
 
 export interface RootCandidate {

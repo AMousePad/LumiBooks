@@ -9,7 +9,8 @@ import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "
 import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding, type LMBEntry } from "./world-book";
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
-import { getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
+import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
+import { buildCodexInjectionText, getCodexFileTokens, getCodexPanelState, getCodexStatus } from "./codex/index";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
 import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
@@ -86,6 +87,13 @@ export async function buildState(userId: string, requestedChatId?: string | null
     rootOriginName: null,
     rootEntryCount: 0,
     availableRoots: allRootCandidates,
+    codexExists: false,
+    codexBacklog: 0,
+    codexLastRunAt: null,
+    codexInjectedTokens: 0,
+    codexFileStates: {},
+    codexStaleFiles: [],
+    codexFileTokens: {},
   };
 
   if (!chat) return baseState;
@@ -110,7 +118,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const coverage = await buildCoverage(chat.id, userId, entries);
   const stats = computeCoverageStats(messages, coverage, activeProfile);
 
-  const compressibleSize = countCompressibleEligible(messages, coverage, activeProfile);
+  // The advertised backlog must match what the filing paths can actually
+  // drain, which in extra-context mode means ghost-aware coverage.
+  const backlogCoverage = extraContextActive(activeProfile)
+    ? await buildCoverage(chat.id, userId, entries, true)
+    : coverage;
+  const compressibleSize = countCompressibleEligible(messages, backlogCoverage, activeProfile);
   const windowDenom = Math.max(1, activeProfile.windowValue);
   const backlogChapters = Math.max(0, Math.floor(compressibleSize / windowDenom));
   const activeChapterEntries = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot);
@@ -138,6 +151,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
       contentChars: (e.raw.content || "").length,
       sourceTokensInput: e.meta.tokenCountInput || 0,
       isRoot: !!e.meta.isRoot,
+      isGhost: e.meta.ghost === true,
     };
     if (e.meta.tier === 3) {
       volumes.push({ ...view, sourceChapterEntryIds: e.meta.sourceChapterEntryIds ?? [] });
@@ -179,6 +193,17 @@ export async function buildState(userId: string, requestedChatId?: string | null
     } catch (_) { void _; }
   }
 
+  const codexStatus = await getCodexStatus(chat.id, userId, activeProfile).catch((err) => {
+    warn(`codex status failed: ${describeError(err)}`);
+    return { exists: false, backlog: 0, lastRunAt: null };
+  });
+  // Served from the injection-text cache, so this costs nothing on repeat
+  // pushes. Powers the prompt-composition bar on Home.
+  const codexInjectionText = await buildCodexInjectionText(chat.id, userId, activeProfile).catch(() => null);
+  const codexInjectedTokens = codexInjectionText ? approximateTokensFromChars(codexInjectionText.length) : 0;
+  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [] }));
+  const codexFileTokens = await getCodexFileTokens(chat.id, userId, activeProfile).catch(() => ({}));
+
   const rootEntries = entries.filter((e) => e.meta.isRoot);
   const rootOrigin = rootEntries.find((e) => e.meta.rootOrigin)?.meta.rootOrigin ?? null;
   const rootOriginName = rootOrigin
@@ -206,6 +231,13 @@ export async function buildState(userId: string, requestedChatId?: string | null
     rootOriginName,
     rootEntryCount: rootEntries.length,
     availableRoots: allRootCandidates.filter((c) => c.chatId !== chat.id),
+    codexExists: codexStatus.exists,
+    codexBacklog: codexStatus.backlog,
+    codexLastRunAt: codexStatus.lastRunAt,
+    codexInjectedTokens,
+    codexFileStates: codexPanel.fileStates,
+    codexStaleFiles: codexPanel.staleFiles,
+    codexFileTokens,
   };
 }
 

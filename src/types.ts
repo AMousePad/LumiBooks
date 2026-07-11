@@ -11,6 +11,7 @@ export interface ChapterView {
   contentChars: number;
   sourceTokensInput: number;
   isRoot: boolean;
+  isGhost: boolean;
 }
 
 export interface ArcView extends ChapterView {
@@ -42,7 +43,7 @@ export interface CoverageStats {
 }
 
 export interface BusyEntry {
-  kind: "chapter" | "arc" | "volume";
+  kind: "chapter" | "arc" | "volume" | "codex";
   chatId: string;
   label: string;
   startedAt: number;
@@ -128,6 +129,17 @@ export interface FrontendState {
   rootOriginName: string | null;
   rootEntryCount: number;
   availableRoots: RootSourceOption[];
+  codexExists: boolean;
+  codexBacklog: number;
+  codexLastRunAt: number | null;
+  /** Approx tokens of the rendered codex injection block, 0 when none. */
+  codexInjectedTokens: number;
+  /** Per-file inject/update switches; absent key = "on". */
+  codexFileStates: Record<string, "on" | "noInject" | "frozen">;
+  /** Frozen files that missed at least one codex run since freezing. */
+  codexStaleFiles: string[];
+  /** Approx prompt tokens per codex file, priced on the rendered injection text. */
+  codexFileTokens: Record<string, number>;
 }
 
 export type FrontendToBackend =
@@ -154,7 +166,7 @@ export type FrontendToBackend =
   | { type: "resync_hidden"; chatId: string }
   | { type: "resync_visibility"; chatId: string }
   | { type: "set_force_constant"; value: boolean; chatId?: string | null }
-  | { type: "abort_busy"; chatId: string; kind: "chapter" | "arc" | "volume" }
+  | { type: "abort_busy"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex" }
   | { type: "dry_run_chapter"; chatId: string }
   | { type: "dry_run_arc"; chatId: string }
   | { type: "dry_run_volume"; chatId: string }
@@ -168,7 +180,17 @@ export type FrontendToBackend =
   | { type: "rebase_root"; chatId: string; sourceChatId: string }
   | { type: "rebuild_root"; chatId: string; sourceChatId: string }
   | { type: "detach_root"; chatId: string }
-  | { type: "set_message_excluded"; chatId: string; messageIds: string[]; excluded: boolean };
+  | { type: "set_message_excluded"; chatId: string; messageIds: string[]; excluded: boolean }
+  | { type: "codex_update_now"; chatId: string }
+  | { type: "codex_read"; chatId: string }
+  | { type: "codex_write_file"; chatId: string; file: string; content: string; seq: number }
+  | { type: "codex_reset"; chatId: string }
+  | { type: "codex_rebuild"; chatId: string }
+  | { type: "codex_tidy"; chatId: string; files?: string[] }
+  | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
+  | { type: "wipe_books"; chatId: string }
+  | { type: "rebuild_books"; chatId: string }
+  | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean };
 
 export interface DryRunMessage {
   role: "system" | "user";
@@ -184,4 +206,6 @@ export type BackendToFrontend =
   | { type: "toast"; tone: "success" | "info" | "warn" | "error"; text: string }
   | { type: "busy"; entries: BusyEntry[] }
   | { type: "error"; text: string }
-  | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] };
+  | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
+  | { type: "codex_files"; chatId: string; files: Record<string, string>; savedFile?: string; savedSeq?: number }
+  | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean };

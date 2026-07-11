@@ -78,6 +78,15 @@ export function showDryRunModal(
   const modal = document.createElement("div");
   modal.className = "lmb-preview-modal";
 
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKey);
+
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
@@ -88,7 +97,7 @@ export function showDryRunModal(
   closeBtn.className = "lmb-preview-modal__close";
   closeBtn.textContent = "×";
   closeBtn.setAttribute("aria-label", "Close dry run");
-  closeBtn.addEventListener("click", () => overlay.remove());
+  closeBtn.addEventListener("click", close);
   header.appendChild(closeBtn);
   modal.appendChild(header);
 
@@ -148,7 +157,7 @@ export function showDryRunModal(
 
   overlay.appendChild(modal);
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) close();
   });
   document.body.appendChild(overlay);
 }

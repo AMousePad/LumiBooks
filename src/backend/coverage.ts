@@ -16,9 +16,17 @@ export interface CoverageMap {
   chapters: LMBEntry[];
 }
 
-export async function buildCoverage(chatId: string, userId: string, preloadedEntries?: LMBEntry[]): Promise<CoverageMap> {
+export async function buildCoverage(
+  chatId: string,
+  userId: string,
+  preloadedEntries?: LMBEntry[],
+  includeGhosts = false,
+): Promise<CoverageMap> {
   const allEntries = preloadedEntries ?? (await listLmbEntries(chatId, userId));
-  const entries = allEntries.filter((e) => !e.raw.disabled);
+  // Ghost chapters are disabled entries (never injected, never hiding), but
+  // chapter *generation* must treat them as covering so their span isn't
+  // summarized twice. Callers on the injection/hiding path leave includeGhosts off.
+  const entries = allEntries.filter((e) => !e.raw.disabled || (includeGhosts && e.meta.ghost === true));
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);
@@ -121,6 +129,16 @@ function sumEligibleTokens(messages: ChatMessageDTO[], profile: LMBProfile): num
   return n;
 }
 
+/** The one home for eligibility-weighted size, so window math can't drift
+ * between coverage stats and ghost window selection. */
+export function sizeEligible(
+  messages: ChatMessageDTO[],
+  unit: "messages" | "tokens",
+  profile: LMBProfile,
+): number {
+  return unit === "tokens" ? sumEligibleTokens(messages, profile) : countEligible(messages, profile);
+}
+
 export function computeCoverageStats(
   messages: ChatMessageDTO[],
   coverage: CoverageMap,
@@ -139,17 +157,11 @@ export function computeCoverageStats(
   const uncoveredMessages = totalMessages - coveredMessages;
   const uncoveredTail = pickUncoveredTail(messages, coverage);
 
-  const tailCounted =
-    profile.lagUnit === "tokens"
-      ? sumEligibleTokens(uncoveredTail, profile)
-      : countEligible(uncoveredTail, profile);
+  const tailCounted = sizeEligible(uncoveredTail, profile.lagUnit, profile);
   const lagSatisfied = tailCounted >= profile.lagValue;
 
   const compressible = trimLagFromTail(uncoveredTail, profile);
-  const headRoom =
-    profile.windowUnit === "tokens"
-      ? sumEligibleTokens(compressible, profile)
-      : countEligible(compressible, profile);
+  const headRoom = sizeEligible(compressible, profile.windowUnit, profile);
   const windowAvailable = headRoom >= profile.windowValue;
 
   return {
@@ -169,12 +181,10 @@ export function countCompressibleEligible(
 ): number {
   const tail = pickUncoveredTail(messages, coverage);
   const compressible = trimLagFromTail(tail, profile);
-  return profile.windowUnit === "tokens"
-    ? sumEligibleTokens(compressible, profile)
-    : countEligible(compressible, profile);
+  return sizeEligible(compressible, profile.windowUnit, profile);
 }
 
-function trimLagFromTail(uncoveredTail: ChatMessageDTO[], profile: LMBProfile): ChatMessageDTO[] {
+export function trimLagFromTail(uncoveredTail: ChatMessageDTO[], profile: LMBProfile): ChatMessageDTO[] {
   if (uncoveredTail.length === 0) return [];
   if (profile.lagValue <= 0) return uncoveredTail.slice();
   if (profile.lagUnit === "messages") {
@@ -220,6 +230,26 @@ export function sumApproxTokens(messages: ChatMessageDTO[]): number {
   let total = 0;
   for (const m of messages) total += approximateTokensFromChars((m.content || "").length);
   return total;
+}
+
+/**
+ * An entry's live end position: the highest current index among its source
+ * messages, falling back to the stored meta index when none survive. Shared by
+ * ghost previous-memories and the codex story-so-far filter so the two behind-
+ * the-window boundaries stay in lockstep.
+ */
+export function liveEndPosition(
+  msgIds: string[],
+  storedLastMsgIdx: number | undefined,
+  posById: Map<string, number>,
+): number {
+  let end = -1;
+  for (const id of msgIds) {
+    const p = posById.get(id);
+    if (typeof p === "number" && p > end) end = p;
+  }
+  if (end !== -1) return end;
+  return typeof storedLastMsgIdx === "number" ? storedLastMsgIdx : Number.MAX_SAFE_INTEGER;
 }
 
 export function selectNextChapterWindow(

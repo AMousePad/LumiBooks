@@ -9,7 +9,6 @@ import {
   ensureUserFolders,
   error,
   getBootstrapUserId,
-  hostToast,
   info,
   readChatIdFromMessage,
   rememberChatUser,
@@ -38,6 +37,7 @@ import { buildInjection, registerInjectionAnomalyCallback } from "./injection";
 import {
   abortBusy,
   acceptPreview,
+  cleanupGhostsAfterModeOff,
   createArcFromChapters,
   maybeRunArcCheck,
   createChapterAuto,
@@ -45,7 +45,9 @@ import {
   createVolumeFromArcs,
   drainArcBacklog,
   drainChapterBacklog,
+  drainGhostBacklog,
   dropPendingPreview,
+  extraContextActive,
   dryRunArc,
   dryRunChapter,
   dryRunVolume,
@@ -54,13 +56,27 @@ import {
   getLastFailure,
   maybeRunPipeline,
   patchPendingPreview,
+  recordFreedGhostNumber,
   registerPipelineCallbacks,
+  setStreamWatcher,
 } from "./pipeline";
 import { buildCoverage, computeCoverageStats, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
+import {
+  invalidateCodexInjectionCache,
+  maybeRunCodex,
+  publishCodexPool,
+  rebuildCodex,
+  registerCodexCallbacks,
+  runCodexNow,
+  runCodexTidy,
+  setCodexFileState,
+} from "./codex/index";
+import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor } from "./codex/store";
+import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
 import { invalidateRegexCache } from "./regex";
-import { registerHookEndpoints } from "./hooks";
+import { publishCodexWiped, registerHookEndpoints } from "./hooks";
 import { buildState } from "./state";
 import { parseStmbPresetExport } from "./presets";
 
@@ -75,7 +91,11 @@ async function notify(
       const settings = await loadSettings(userId).catch(() => null);
       if (settings && !settings.showAutomationToasts) return;
     }
-    hostToast(userId, tone, text);
+    // One toast system only: the frontend's styled stack. Doubling up with
+    // the host's toast rendered the same message twice in the same corner.
+    // Errors are additionally logged server-side so they survive even if no
+    // frontend is listening.
+    if (tone === "error") error(`toast(error): ${text}`);
     send({ type: "toast", tone, text }, userId);
   } catch (err) {
     warn(`toast delivery failed: ${describeError(err)}`);
@@ -139,6 +159,18 @@ registerPipelineCallbacks({
   onStateChange(userId, chatId) {
     void pushState(userId, chatId);
   },
+  onStreamText(userId, chatId, kind, snap) {
+    send({ type: "stream_text", chatId, kind, content: snap.content, thinking: snap.thinking, running: snap.running }, userId);
+  },
+});
+
+registerCodexCallbacks({
+  onToast(userId, tone, text, automation) {
+    void notify(userId, tone, text, automation === true);
+  },
+  onStateChange(userId, chatId) {
+    void pushState(userId, chatId);
+  },
 });
 
 spindle.registerWorldInfoInterceptor(async (ctx) => {
@@ -149,6 +181,11 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
   }
   return ours.length ? { disabled: ours } : undefined;
 }, 90);
+
+/** Finish comfortably inside the host's interceptor budget (default 10s,
+ * users run as low as 4s): timing out at the host level drops the injection
+ * anyway but logs a scary host error. Better to skip one turn cleanly. */
+const INJECTION_BUDGET_MS = 3000;
 
 spindle.registerInterceptor(async (messages, context) => {
   try {
@@ -171,9 +208,26 @@ spindle.registerInterceptor(async (messages, context) => {
     if (!userId) return messages;
     const settings = await loadSettings(userId);
     if (!settings.enabled) return messages;
-    const result = await buildInjection(chatId, messages as LlmMessageDTO[], userId);
-    if (!result) return messages;
-    return { messages: result.messages, breakdown: result.breakdown };
+    const profile = settings.profiles.find((x) => x.id === settings.activeProfileId) ?? null;
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+    const budget = new Promise<"timeout">((resolve) => {
+      budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
+    });
+    try {
+      const result = await Promise.race([
+        buildInjection(chatId, messages as LlmMessageDTO[], userId, profile),
+        budget,
+      ]);
+      if (result === "timeout") {
+        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)}, skipping this turn to stay inside the host interceptor budget`);
+        void notify(userId, "error", "Memoria took too long assembling memories and skipped this turn");
+        return messages;
+      }
+      if (!result) return messages;
+      return { messages: result.messages, breakdown: result.breakdown };
+    } finally {
+      if (budgetTimer) clearTimeout(budgetTimer);
+    }
   } catch (err) {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;
@@ -202,6 +256,9 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
   await reassertChatBinding(p.chatId, userId).catch(() => {});
   await maybeRunPipeline(p.chatId, profile, settings, userId).catch((err) => {
     warn(`pipeline failed: ${describeError(err)}`);
+  });
+  await maybeRunCodex(p.chatId, profile, settings, userId).catch((err) => {
+    warn(`codex run failed: ${describeError(err)}`);
   });
 });
 
@@ -272,6 +329,39 @@ async function handleExternalEntryDeletion(userId: string, bookId: string, isBoo
   await pushState(userId, chatId);
 }
 
+/** Delete every LumiBooks-managed entry for a chat (roots and ghosts
+ * included) and let its hidden messages back into the prompt. */
+async function wipeBooksEntries(chatId: string, userId: string): Promise<number> {
+  const entries = await listLmbEntries(chatId, userId);
+  let removed = 0;
+  for (const e of entries) {
+    try {
+      await deleteEntry(e.raw.id, userId);
+      removed++;
+    } catch (err) {
+      warn(`wipe books: failed to delete ${e.raw.id}: ${describeError(err)}`);
+    }
+  }
+  invalidateBookCache(userId, chatId);
+  const settings = await loadSettings(userId);
+  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true).catch((err) =>
+    warn(`wipe books: visibility resync failed: ${describeError(err)}`),
+  );
+  return removed;
+}
+
+/** Shared by the profile handlers: when the resulting active profile lacks
+ * effective extra mode, pending ghosts in this chat must not strand. */
+async function cleanupGhostsIfModeOff(userId: string, chatId: string, context: string): Promise<void> {
+  const after = await loadSettings(userId);
+  const activeProfile = after.profiles.find((p) => p.id === after.activeProfileId);
+  if (!activeProfile || extraContextActive(activeProfile)) return;
+  await cleanupGhostsAfterModeOff(chatId, activeProfile, userId).catch((err) =>
+    warn(`${context} ghost cleanup failed: ${describeError(err)}`),
+  );
+}
+
 async function collectActiveChapterIds(chatId: string, userId: string): Promise<string[]> {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
@@ -316,7 +406,16 @@ async function retryLastFailure(
     await createArcFromChapters(chatId, ids, profile, settings, userId);
     return;
   }
-  await createChapterAuto(chatId, profile, settings, userId);
+  if (extraContextActive(profile)) {
+    // A failed generation in extra mode was a ghost run: retrying through the
+    // real-chapter path would gate on the injection lag and silently no-op.
+    const made = await drainGhostBacklog(chatId, profile, settings, userId);
+    if (made === 0) {
+      await notify(userId, "info", "Nothing to retry yet, Memoria will catch it after the next message");
+    }
+  } else {
+    await createChapterAuto(chatId, profile, settings, userId);
+  }
   await maybeRunArcCheck(chatId, profile, settings, userId);
 }
 
@@ -348,6 +447,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         let prevHide: boolean | null = null;
         let nextHide: boolean | null = null;
+        let prevExtra: boolean | null = null;
+        let nextExtra: boolean | null = null;
         let activeBefore: string | null = null;
         let missing = false;
         await mutateSettings(userId, (cur) => {
@@ -361,6 +462,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (!merged) return cur;
           prevHide = existing.hideCoveredMessages;
           nextHide = merged.hideCoveredMessages;
+          prevExtra = extraContextActive(existing);
+          nextExtra = extraContextActive(merged);
           return { ...cur, profiles: cur.profiles.map((p) => (p.id === id ? merged : p)) };
         });
         if (missing) {
@@ -382,6 +485,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
           } catch (err) {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
+        }
+        // The effective-mode off transition (extra toggle OR codex disable)
+        // must clean up pending ghosts here too, independent of automation.
+        if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "mode-off");
         }
         await pushState(userId, msg.chatId);
         break;
@@ -426,6 +534,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (warned) {
           await notify(userId, "warn", "Memoria keeps at least one profile");
         }
+        // Deleting the active profile falls back to another one, which may
+        // lack effective extra mode: same ghost cleanup as set_active_profile.
+        if (msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
+        }
         await pushState(userId, msg.chatId);
         break;
       }
@@ -435,6 +548,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (!cur.profiles.some((p) => p.id === msg.profileId)) return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
+        // Switching to a profile without effective extra mode strands any
+        // pending ghosts: they belong to the chat, not the profile.
+        if (msg.chatId) {
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-switch");
+        }
         await pushState(userId, msg.chatId);
         break;
       }
@@ -448,7 +566,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const chapterMessages = await spindle.chat.getMessages(msg.chatId);
-        const chapterCoverage = await buildCoverage(msg.chatId, userId);
+        // The gate must see the same coverage createChapterAuto will, ghosts
+        // included, or the click silently no-ops without the toast below.
+        const chapterCoverage = await buildCoverage(msg.chatId, userId, undefined, extraContextActive(profile));
         const chapterStats = computeCoverageStats(chapterMessages, chapterCoverage, profile);
         if (!chapterStats.lagSatisfied || !chapterStats.windowAvailable) {
           await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
@@ -589,6 +709,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
           }
         }
+        // A deleted ghost's span gets refilled by the next drain: keep its
+        // ordinal so the refill doesn't jump to max+1 mid-list.
+        if (entry?.meta.ghost && typeof entry.meta.sceneNumber === "number") {
+          recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
+        }
         await deleteEntry(msg.entryId, userId);
         invalidateBookCache(userId, msg.chatId);
         if (entry) {
@@ -608,6 +733,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const entry = entries.find((e) => e.raw.id === msg.entryId);
         if (!entry) {
           await notify(userId, "warn", "Memoria can't find that entry to release");
+          break;
+        }
+        if (entry.meta.ghost) {
+          await notify(userId, "warn", "Memoria can't release a ghost chapter before it's shelved");
           break;
         }
         if (
@@ -657,6 +786,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         if (entry.meta.isRoot && tier === 1) {
           await notify(userId, "warn", "Memoria can't regenerate inherited chapters");
+          break;
+        }
+        if (entry.meta.ghost) {
+          await notify(userId, "warn", "Memoria can't regenerate a ghost chapter before it's shelved");
           break;
         }
         const isArc = tier === 2;
@@ -765,6 +898,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!aborted) {
           await notify(userId, "warn", "Memoria is not in the middle of anything to abort");
         }
+        break;
+      }
+
+      case "watch_stream": {
+        setStreamWatcher(userId, msg.chatId, msg.kind, msg.on);
         break;
       }
 
@@ -976,6 +1114,184 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await notify(userId, "info", msg.excluded
           ? `Memoria will leave ${ids.length} message${ids.length === 1 ? "" : "s"} untouched`
           : `Memoria will compress ${ids.length} message${ids.length === 1 ? "" : "s"} again`);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_update_now": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in the Profile tab first");
+          break;
+        }
+        await runCodexNow(msg.chatId, profile, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_read": {
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files }, userId);
+        break;
+      }
+
+      case "codex_write_file": {
+        if (!isCodexFileKey(msg.file)) {
+          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          break;
+        }
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, save again when she finishes");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        // Hand-saves validate against the DISK mode so the file stays
+        // consistent with its siblings. Overwriting a non-null recorded mode
+        // here would cancel a pending migration and brick the old-mode files.
+        const cursor = await loadCursor(msg.chatId, userId);
+        const relationsTable = cursor.relationsTableMode ?? profileMode;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(msg.content);
+        } catch (err) {
+          await notify(userId, "error", `That is not valid JSON: ${describeError(err)}`);
+          break;
+        }
+        const result = validateCodexFile(msg.file, parsed, { relationsTable });
+        if (!result.ok) {
+          const extra = result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : "";
+          await notify(userId, "error", `Validation failed: ${result.errors[0]}${extra}`);
+          break;
+        }
+        await saveCodexFile(msg.chatId, msg.file, result.value, userId);
+        invalidateCodexInjectionCache(msg.chatId);
+        // A hand-seeded codex must count as existing: injection and status key
+        // off the cursor.
+        if (cursor.relationsTableMode === null) {
+          cursor.relationsTableMode = relationsTable;
+          await saveCursor(msg.chatId, cursor, userId);
+        }
+        if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "edit");
+        const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
+        if (problems.length > 0) {
+          // A dangling count computed against a bundle missing corrupt siblings
+          // would blame references whose targets are fine on disk. Point at the
+          // real culprit instead.
+          const names = problems.map((p) => `${p.file}.json`).join(", ");
+          await notify(userId, "warn", `Saved, but ${names} could not be read so cross-file checks were skipped`);
+        } else {
+          const dangling = checkIntegrity(bundle);
+          if (dangling.length > 0) {
+            await notify(userId, "warn", `Saved with ${dangling.length} dangling reference${dangling.length === 1 ? "" : "s"} to fix in the other files`);
+          } else {
+            await notify(userId, "success", `Memoria saved ${msg.file}.json`);
+          }
+        }
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_reset": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const failed = await deleteCodex(msg.chatId, userId);
+        invalidateCodexInjectionCache(msg.chatId);
+        if (failed.length > 0) {
+          await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
+        } else {
+          publishCodexWiped(msg.chatId, userId);
+          await notify(userId, "info", "Memoria cleared the codex for this chat");
+        }
+        // The codex tab caches file contents; without a fresh push it keeps
+        // rendering the wiped records.
+        const wiped = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: wiped }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_rebuild": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        await rebuildCodex(msg.chatId, profile, userId);
+        const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_tidy": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
+        await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_set_file_state": {
+        if (!isCodexFileKey(msg.file)) {
+          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          break;
+        }
+        await setCodexFileState(msg.chatId, userId, msg.file, msg.state);
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "wipe_books": {
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          break;
+        }
+        const removed = await wipeBooksEntries(msg.chatId, userId);
+        await notify(userId, removed > 0 ? "success" : "info",
+          removed > 0
+            ? `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} from the shelf`
+            : "The shelf is already empty");
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "rebuild_books": {
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        const removed = await wipeBooksEntries(msg.chatId, userId);
+        await notify(userId, "info", `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await pushState(userId, msg.chatId);
+        await drainChapterBacklog(msg.chatId, profile, cur, userId).catch((err) => warn(`rebuild books re-summarize failed: ${describeError(err)}`));
+        await maybeRunArcCheck(msg.chatId, profile, cur, userId).catch(() => {});
+        await resyncVisibility(msg.chatId, userId, profile.hideCoveredMessages).catch(() => {});
         await pushState(userId, msg.chatId);
         break;
       }

@@ -122,6 +122,11 @@ async function cloneShelfForFork(
   };
 
   const forkTransform: CopyTransform = (entry, ctx) => {
+    // Ghosts don't survive a fork: their spans may cross the fork point (the
+    // summary would narrate the abandoned branch) and their msgSigs would no
+    // longer align with the remapped msgIds. The fork regenerates them
+    // cheaply at the codex lag.
+    if (entry.meta.ghost) return null;
     if (entry.meta.isRoot) {
       return {
         msgIds: entry.meta.msgIds.slice(),

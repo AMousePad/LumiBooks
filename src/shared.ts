@@ -1,5 +1,26 @@
 export const EXTENSION_ID = "lumi_books" as const;
 export const EXTENSION_KEY = "lumibooks" as const;
+
+export type CodexFileKey =
+  | "characters"
+  | "locations"
+  | "things"
+  | "relations"
+  | "timeline"
+  | "threads"
+  | "world"
+  | "knowledge";
+
+export const CODEX_FILE_KEYS: readonly CodexFileKey[] = [
+  "characters",
+  "locations",
+  "things",
+  "relations",
+  "timeline",
+  "threads",
+  "world",
+  "knowledge",
+] as const;
 export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
 export const STORAGE_VERSION = 3 as const;
 export const SETTINGS_PATH = "settings.json" as const;
@@ -57,6 +78,17 @@ export interface LMBProfile {
   shortCommentRulesOverride: string | null;
   memoriaPersonaOverride: string | null;
   ttftTimeoutSecs: number;
+  codexEnabled: boolean;
+  codexLagUnit: CompressionUnit;
+  codexLagValue: number;
+  codexWindowUnit: CompressionUnit;
+  codexWindowValue: number;
+  /** Message-unit windows also fire at this many tokens, whichever first. */
+  codexTokenBreakpoint: number;
+  codexRelationsTable: boolean;
+  codexThorough: boolean;
+  codexConnectionId: string | null;
+  codexExtraContext: boolean;
 }
 
 export interface CustomPreset {
@@ -100,6 +132,11 @@ export interface LMBEntryMeta {
   rawOutput?: string;
   isRoot?: boolean;
   rootOrigin?: string;
+  /** Chapter generated ahead of the injection lag: stored disabled, feeds the
+   * codex agent as context, promoted to a real chapter when the lag arrives. */
+  ghost?: boolean;
+  /** Per-message content signatures (ghosts only), for staleness detection. */
+  msgSigs?: string[];
 }
 
 export const DEFAULT_SAMPLERS: SamplerSet = {
@@ -161,6 +198,16 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     shortCommentRulesOverride: null,
     memoriaPersonaOverride: null,
     ttftTimeoutSecs: 60,
+    codexEnabled: true,
+    codexLagUnit: "messages",
+    codexLagValue: 6,
+    codexWindowUnit: "messages",
+    codexWindowValue: 30,
+    codexTokenBreakpoint: 100000,
+    codexRelationsTable: true,
+    codexThorough: false,
+    codexConnectionId: null,
+    codexExtraContext: false,
   };
 }
 
@@ -260,6 +307,16 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
         ? v.memoriaPersonaOverride
         : null,
     ttftTimeoutSecs: clampInt(v.ttftTimeoutSecs, 10, 600, base.ttftTimeoutSecs),
+    codexEnabled: typeof v.codexEnabled === "boolean" ? v.codexEnabled : base.codexEnabled,
+    codexLagUnit: v.codexLagUnit === "tokens" ? "tokens" : "messages",
+    codexLagValue: clampInt(v.codexLagValue, 0, v.codexLagUnit === "tokens" ? 1000000 : 100000, base.codexLagValue),
+    codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",
+    codexWindowValue: clampInt(v.codexWindowValue, 1, v.codexWindowUnit === "tokens" ? 1000000 : 100000, base.codexWindowValue),
+    codexTokenBreakpoint: clampInt(v.codexTokenBreakpoint, 1000, 1000000, base.codexTokenBreakpoint),
+    codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
+    codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
+    codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
+    codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
   };
 }
 
@@ -324,6 +381,8 @@ export function normalizeEntryMeta(raw: unknown): LMBEntryMeta | null {
     rawOutput: typeof v.rawOutput === "string" ? v.rawOutput : undefined,
     isRoot: v.isRoot === true ? true : undefined,
     rootOrigin: typeof v.rootOrigin === "string" && v.rootOrigin.trim() ? v.rootOrigin : undefined,
+    ghost: v.ghost === true ? true : undefined,
+    msgSigs: Array.isArray(v.msgSigs) ? v.msgSigs.filter((x): x is string => typeof x === "string") : undefined,
   };
 }
 

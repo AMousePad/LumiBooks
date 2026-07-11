@@ -244,6 +244,122 @@ export function pill(text: string, tone?: "ok" | "warn" | "danger"): HTMLElement
   return el;
 }
 
+export interface SubtabDef<K extends string> {
+  key: K;
+  label: string;
+}
+
+/** Horizontal subtab strip used inside every top-level tab. */
+export function makeSubtabs<K extends string>(
+  defs: SubtabDef<K>[],
+  active: K,
+  onPick: (key: K) => void,
+): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "lmb-subtabs";
+  let activeBtn: HTMLButtonElement | null = null;
+  for (const d of defs) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `lmb-subtab${d.key === active ? " active" : ""}`;
+    btn.textContent = d.label;
+    btn.addEventListener("click", () => {
+      if (d.key !== active) onPick(d.key);
+    });
+    bar.appendChild(btn);
+    if (d.key === active) activeBtn = btn;
+  }
+  // After mount: flag overflow (drives the fade mask) and keep the active
+  // subtab in view - a hidden active tab with no scroll hint reads as missing.
+  requestAnimationFrame(() => {
+    if (!bar.isConnected) return;
+    bar.classList.toggle("scrollable", bar.scrollWidth > bar.clientWidth + 1);
+    if (activeBtn && bar.scrollWidth > bar.clientWidth + 1) {
+      activeBtn.scrollIntoView({ inline: "nearest", block: "nearest" });
+    }
+  });
+  return bar;
+}
+
+/** Dashboard stat tile: a big display-font value over a tracked label. */
+export function statTile(value: string, label: string, sub?: string, tooltip?: string): HTMLElement {
+  const tile = document.createElement("div");
+  tile.className = "lmb-tile";
+  if (tooltip) tile.title = tooltip;
+  const v = document.createElement("div");
+  v.className = "lmb-tile-value";
+  v.textContent = value;
+  const l = document.createElement("div");
+  l.className = "lmb-tile-label";
+  l.textContent = label;
+  tile.append(v, l);
+  if (sub) {
+    const s = document.createElement("div");
+    s.className = "lmb-tile-sub";
+    s.textContent = sub;
+    tile.appendChild(s);
+  }
+  return tile;
+}
+
+export interface SearchFieldOpts {
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+}
+
+/** Search input with a magnifier glyph and a clear button - a bare underline
+ * input reads as floating text, and a lingering filter needs an obvious out. */
+export function searchField(opts: SearchFieldOpts): { wrap: HTMLElement; input: HTMLInputElement } {
+  const wrap = document.createElement("div");
+  wrap.className = "lmb-search-row";
+  const glyph = document.createElement("span");
+  glyph.className = "lmb-search-glyph";
+  glyph.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "lmb-search-input";
+  input.value = opts.value;
+  if (opts.placeholder) input.placeholder = opts.placeholder;
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "lmb-search-clear";
+  clear.textContent = "×";
+  clear.title = "Clear search";
+  clear.setAttribute("aria-label", "Clear search");
+  const syncClear = () => { clear.style.visibility = input.value ? "visible" : "hidden"; };
+  syncClear();
+  input.addEventListener("input", () => {
+    syncClear();
+    opts.onChange(input.value);
+  });
+  clear.addEventListener("click", () => {
+    input.value = "";
+    syncClear();
+    opts.onChange("");
+    input.focus();
+  });
+  wrap.append(glyph, input, clear);
+  return { wrap, input };
+}
+
+/** Scroll the pane that hosts `el` back to the top (used on tab/subtab switches). */
+export function scrollPaneTop(el: HTMLElement): void {
+  const sc = findScrollingAncestor(el);
+  if (sc) sc.scrollTop = 0;
+  else window.scrollTo(0, 0);
+}
+
+export function relativeTime(ts: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 export function textNode(text: string, className?: string): HTMLElement {
   const el = document.createElement("div");
   if (className) el.className = className;

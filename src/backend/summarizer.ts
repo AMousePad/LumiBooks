@@ -1,6 +1,6 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
-import type { ConnectionProfileDTO, LlmMessageDTO } from "lumiverse-spindle-types";
+import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
 import type { LMBProfile, CustomPreset } from "../shared";
 import { SAMPLER_DEFAULTS } from "../shared";
 import type { ChatMessage } from "./coverage";
@@ -69,13 +69,13 @@ export function findPresetText(profile: LMBProfile, customPresets: CustomPreset[
   return builtIns[0]?.prompt ?? "";
 }
 
-export function renderTranscript(messages: ChatMessageDTO[], includeIndex = true): string {
+export function renderTranscript(messages: ChatMessageDTO[], includeIndex = true, indexOffset = 0): string {
   const lines: string[] = [];
   messages.forEach((m, idx) => {
     const role = m.role === "user" ? "USER" : m.role === "assistant" ? "ASSISTANT" : "SYSTEM";
     const content = (m.content || "").trim();
     if (!content) return;
-    const head = includeIndex ? `<<${role} #${idx + 1}>>` : `<<${role}>>`;
+    const head = includeIndex ? `<<${role} #${idx + 1 + indexOffset}>>` : `<<${role}>>`;
     lines.push(`${head}\n${content}`);
   });
   return lines.join("\n\n");
@@ -137,7 +137,7 @@ function buildMessages(opts: BuildOpts): { system: string; user: string } {
   return { system, user };
 }
 
-function buildSamplerParameters(profile: LMBProfile): Record<string, unknown> {
+export function buildSamplerParameters(profile: LMBProfile): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const s = profile.samplers;
   out["temperature"] = s.temperature ?? SAMPLER_DEFAULTS.temperature;
@@ -155,15 +155,137 @@ interface StreamedGeneration {
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
+export type StreamDeltaKind = "text" | "thinking";
+
 export interface StreamOptions {
   externalSignal: AbortSignal;
   onProgress?: (chars: number, thinkingChars: number) => void;
+  /** Raw streamed text, for the live viewer. */
+  onDelta?: (kind: StreamDeltaKind, delta: string) => void;
 }
 
 export class AbortedSummarizerError extends Error {
   constructor() {
     super("Aborted by user");
     this.name = "AbortedSummarizerError";
+  }
+}
+
+export interface ConsumeStreamOptions {
+  externalSignal: AbortSignal;
+  onProgress?: (chars: number, thinkingChars: number) => void;
+  onDelta?: (kind: StreamDeltaKind, delta: string) => void;
+  /** Abort when no token/reasoning chunk arrived within this window. Must be
+   * null for tool-call rounds: the host only streams text and reasoning
+   * deltas, so a healthy tool-only response is silent until done. */
+  firstTokenTimeoutMs: number | null;
+  /** Whole-response deadline, the hang guard for silent tool-call rounds. */
+  overallDeadlineMs: number | null;
+  /** Return partial content when the stream ends without a done chunk
+   * instead of throwing (the summarizer can parse a truncated reply). */
+  salvagePartial: boolean;
+  /** Progress offsets carried across multi-round conversations. */
+  progressBase?: { chars: number; thinking: number };
+}
+
+export interface ConsumedStream {
+  content: string;
+  toolCalls: ToolCallDTO[];
+  usage?: StreamedGeneration["usage"];
+}
+
+/**
+ * Shared stream consumer for the summarizer and the codex agent: one home
+ * for the abort wiring, timers, accumulation, and error precedence, so the
+ * two callers can't drift apart. The caller owns request construction and
+ * passes a factory so the request is only issued once abort wiring is live.
+ */
+export async function consumeGenerationStream(
+  makeStream: (signal: AbortSignal) => AsyncGenerator<import("lumiverse-spindle-types").StreamChunkDTO, void, void>,
+  options: ConsumeStreamOptions,
+): Promise<ConsumedStream> {
+  const controller = new AbortController();
+  let firstTokenSeen = false;
+  let ttftFired = false;
+  let deadlineFired = false;
+  let externalAborted = options.externalSignal.aborted;
+  const onExternalAbort = (): void => {
+    externalAborted = true;
+    controller.abort();
+  };
+  if (externalAborted) controller.abort();
+  else options.externalSignal.addEventListener("abort", onExternalAbort);
+  const ttftTimer = options.firstTokenTimeoutMs !== null
+    ? setTimeout(() => {
+        if (!firstTokenSeen) {
+          ttftFired = true;
+          controller.abort();
+        }
+      }, options.firstTokenTimeoutMs)
+    : null;
+  const deadlineTimer = options.overallDeadlineMs !== null
+    ? setTimeout(() => {
+        deadlineFired = true;
+        controller.abort();
+      }, options.overallDeadlineMs)
+    : null;
+
+  const base = options.progressBase ?? { chars: 0, thinking: 0 };
+  let aggregated = "";
+  let thinkingChars = 0;
+  let usage: StreamedGeneration["usage"];
+
+  try {
+    for await (const chunk of makeStream(controller.signal)) {
+      if (chunk.type === "token" || chunk.type === "reasoning") {
+        if (!firstTokenSeen) {
+          firstTokenSeen = true;
+          if (ttftTimer) clearTimeout(ttftTimer);
+        }
+        if (chunk.type === "token") {
+          aggregated += chunk.token;
+          options.onDelta?.("text", chunk.token);
+        } else {
+          thinkingChars += chunk.token.length;
+          options.onDelta?.("thinking", chunk.token);
+        }
+        options.onProgress?.(base.chars + aggregated.length, base.thinking + thinkingChars);
+        continue;
+      }
+      if (chunk.type === "done") {
+        if (externalAborted) throw new AbortedSummarizerError();
+        if (chunk.content) aggregated = chunk.content;
+        usage = chunk.usage;
+        // Tool-call payloads never stream as tokens; without counting them a
+        // codex round reports near-zero output.
+        let toolChars = 0;
+        for (const tc of chunk.tool_calls ?? []) {
+          try { toolChars += JSON.stringify(tc.args ?? {}).length; } catch { /* unserializable args */ }
+        }
+        base.chars += aggregated.length + toolChars;
+        base.thinking += thinkingChars;
+        options.onProgress?.(base.chars, base.thinking);
+        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
+      }
+    }
+    if (externalAborted) throw new AbortedSummarizerError();
+    if (options.salvagePartial && aggregated.trim()) {
+      return { content: aggregated, toolCalls: [], usage };
+    }
+    throw new Error("The stream ended before completing");
+  } catch (err) {
+    if (externalAborted) throw new AbortedSummarizerError();
+    if (ttftFired && options.firstTokenTimeoutMs !== null) {
+      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+    }
+    if (deadlineFired && options.overallDeadlineMs !== null) {
+      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    if (ttftTimer) clearTimeout(ttftTimer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    options.externalSignal.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -174,66 +296,18 @@ async function runStreamingGeneration(
   userId: string,
   options: StreamOptions,
 ): Promise<StreamedGeneration> {
-  const ttftMs = Math.max(1, profile.ttftTimeoutSecs) * 1000;
-  const controller = new AbortController();
-  let firstTokenSeen = false;
-  let ttftFired = false;
-  let externalAborted = options.externalSignal.aborted;
-  const onExternalAbort = (): void => {
-    externalAborted = true;
-    controller.abort();
-  };
-  if (externalAborted) controller.abort();
-  else options.externalSignal.addEventListener("abort", onExternalAbort);
-  const ttftTimer = setTimeout(() => {
-    if (!firstTokenSeen) {
-      ttftFired = true;
-      controller.abort();
-    }
-  }, ttftMs);
-
-  let aggregated = "";
-  let thinkingChars = 0;
-  let usage: StreamedGeneration["usage"];
-
-  try {
-    const request = buildGenerateRequest(conn, messages, profile, userId, controller.signal);
-    const stream = spindle.generate.rawStream(request);
-    for await (const chunk of stream) {
-      if (chunk.type === "token" || chunk.type === "reasoning") {
-        if (!firstTokenSeen) {
-          firstTokenSeen = true;
-          clearTimeout(ttftTimer);
-        }
-        if (chunk.type === "token") {
-          aggregated += chunk.token;
-        } else {
-          thinkingChars += chunk.token.length;
-        }
-        options.onProgress?.(aggregated.length, thinkingChars);
-        continue;
-      }
-      if (chunk.type === "done") {
-        if (externalAborted) throw new AbortedSummarizerError();
-        if (chunk.content) aggregated = chunk.content;
-        usage = chunk.usage;
-        options.onProgress?.(aggregated.length, thinkingChars);
-        return { content: aggregated, usage };
-      }
-    }
-    if (externalAborted) throw new AbortedSummarizerError();
-    if (!aggregated.trim()) throw new Error("The stream ended before completing");
-    return { content: aggregated, usage };
-  } catch (err) {
-    if (externalAborted) throw new AbortedSummarizerError();
-    if (ttftFired) {
-      throw new Error(`No token within ${Math.round(ttftMs / 1000)}s, the provider may be slow or unreachable`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(ttftTimer);
-    options.externalSignal.removeEventListener("abort", onExternalAbort);
-  }
+  const result = await consumeGenerationStream(
+    (signal) => spindle.generate.rawStream(buildGenerateRequest(conn, messages, profile, userId, signal)),
+    {
+      externalSignal: options.externalSignal,
+      onProgress: options.onProgress,
+      onDelta: options.onDelta,
+      firstTokenTimeoutMs: Math.max(1, profile.ttftTimeoutSecs) * 1000,
+      overallDeadlineMs: null,
+      salvagePartial: true,
+    },
+  );
+  return { content: result.content, usage: result.usage };
 }
 
 function buildGenerateRequest(
