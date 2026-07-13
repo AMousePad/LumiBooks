@@ -81,9 +81,9 @@ function makeDefaultProfile(id, name) {
     codexWindowValue: 30,
     codexTokenBreakpoint: 1e5,
     codexRelationsTable: true,
-    codexThorough: false,
+    codexThorough: true,
     codexConnectionId: null,
-    codexExtraContext: false
+    codexExtraContext: true
   };
 }
 var DEFAULT_SETTINGS = {

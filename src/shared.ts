@@ -209,9 +209,9 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexWindowValue: 30,
     codexTokenBreakpoint: 100000,
     codexRelationsTable: true,
-    codexThorough: false,
+    codexThorough: true,
     codexConnectionId: null,
-    codexExtraContext: false,
+    codexExtraContext: true,
   };
 }
 
