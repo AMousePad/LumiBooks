@@ -14,7 +14,7 @@ var CODEX_FILE_KEYS = [
 ];
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
-var STORAGE_VERSION = 3;
+var STORAGE_VERSION = 4;
 var SETTINGS_PATH = "settings.json";
 var CHAT_STATE_DIR = "chats";
 var DEFAULT_SAMPLERS = {
@@ -464,6 +464,33 @@ function withSettingsLock(userId, fn) {
   writeLocks.set(userId, next.catch(() => {}));
   return next;
 }
+var migrationInflight = new Map;
+function migrateToV4(userId, raw, fromVersion) {
+  const running = migrationInflight.get(userId);
+  if (running)
+    return running;
+  const p = (async () => {
+    const flipped = {
+      ...raw,
+      profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => ({
+        ...prof,
+        codexThorough: true,
+        codexExtraContext: true
+      }))
+    };
+    const normalized = normalizeSettings(flipped);
+    try {
+      await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
+      warn(`settings migrated v${fromVersion} -> v${STORAGE_VERSION}: codex thorough and extra context switched on once`);
+    } catch (err) {
+      warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
+    }
+    cacheSettings(userId, normalized);
+    return normalized;
+  })().finally(() => migrationInflight.delete(userId));
+  migrationInflight.set(userId, p);
+  return p;
+}
 async function loadSettings(userId) {
   const cached = settingsCache.get(userId);
   if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
@@ -484,6 +511,9 @@ async function loadSettings(userId) {
   if (diskVersion > STORAGE_VERSION && !warnedNewerForUser.has(userId)) {
     warnedNewerForUser.add(userId);
     warn(`settings on disk are v${diskVersion}, this build understands v${STORAGE_VERSION}`);
+  }
+  if (raw && diskVersion < STORAGE_VERSION) {
+    return migrateToV4(userId, raw, diskVersion);
   }
   const normalized = normalizeSettings(raw);
   const cur = settingsCache.get(userId);

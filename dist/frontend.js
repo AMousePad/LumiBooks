@@ -2972,7 +2972,7 @@ function promptForString(ctx, title, initial) {
 }
 
 // src/shared.ts
-var STORAGE_VERSION = 3;
+var STORAGE_VERSION = 4;
 var DEFAULT_SAMPLERS = {
   temperature: null,
   top_p: null,

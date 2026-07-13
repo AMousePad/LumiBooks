@@ -26,7 +26,10 @@ export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
  * EXTENSION_KEY on purpose: summary entries are host-disabled and re-injected
  * by our interceptor, codex entries ride the host's own keyword activation. */
 export const CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex" as const;
-export const STORAGE_VERSION = 3 as const;
+/** v4: codexThorough and codexExtraContext flipped on once for settings
+ * written by older builds (their off state was the old default, never a
+ * choice new installs can make anymore). */
+export const STORAGE_VERSION = 4 as const;
 export const SETTINGS_PATH = "settings.json" as const;
 export const CHAT_STATE_DIR = "chats" as const;
 
