@@ -114,12 +114,6 @@ interface QuietRound {
   usageCompletion: number;
 }
 
-/** Whole-round hang guard. A first-token timeout cannot be used here: the
- * host streams only text and reasoning deltas, so a healthy tool-only round
- * (the prompt demands exactly that) is silent until the terminal done chunk
- * and a TTFT abort would kill real generations. */
-const ROUND_DEADLINE_MS = 600_000;
-
 async function runQuietRound(
   conn: ConnectionProfileDTO,
   messages: LlmMessageDTO[],
@@ -149,8 +143,13 @@ async function runQuietRound(
       externalSignal,
       onProgress,
       onDelta,
+      // No first-token timeout and no whole-round deadline: the host streams
+      // only text and reasoning deltas, so a healthy tool-only round is
+      // silent until the terminal done chunk, and big passes on slow models
+      // can legitimately run past any fixed budget. Abort on the busy row is
+      // the brake for a round that truly hangs.
       firstTokenTimeoutMs: null,
-      overallDeadlineMs: ROUND_DEADLINE_MS,
+      overallDeadlineMs: null,
       salvagePartial: false,
       progressBase,
     },

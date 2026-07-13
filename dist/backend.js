@@ -6262,7 +6262,6 @@ async function resolveCodexConnection(profile, userId) {
     throw new FatalSummarizerError("No connection available for the codex");
   return conn;
 }
-var ROUND_DEADLINE_MS = 600000;
 async function runQuietRound(conn, messages, profile, userId, externalSignal, onProgress, onDelta, progressBase) {
   const model = (conn.model ?? "").trim();
   const parameters = { ...buildSamplerParameters(profile) };
@@ -6281,7 +6280,7 @@ async function runQuietRound(conn, messages, profile, userId, externalSignal, on
     onProgress,
     onDelta,
     firstTokenTimeoutMs: null,
-    overallDeadlineMs: ROUND_DEADLINE_MS,
+    overallDeadlineMs: null,
     salvagePartial: false,
     progressBase
   });
