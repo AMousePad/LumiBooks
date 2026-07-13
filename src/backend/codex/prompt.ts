@@ -8,7 +8,8 @@ const SCHEMA_TABLE_MODE = `File schemas (JSON, write the COMPLETE file every tim
 characters.json / locations.json / things.json
 { "entities": [ { "id": "char:elias", "name": "Elias",
   "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "", "notes"?: "" } ] }
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "", "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
 fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself.
 Never put relationship info on a sheet, that lives in relations.json.
@@ -30,7 +31,25 @@ created, guards), character-location (at, rules, banished_from), thing-location
 connection belongs here as a pair instead. Pairs are directional a->b: use two
 rows when the two sides differ. Use a group row ONLY for a genuinely joint fact
 that would otherwise need 3+ redundant pairs. NEVER store how individual members
-feel about each other in a group row - that is always a pair.`;
+feel about each other in a group row - that is always a pair.
+
+Relations coverage (mandatory):
+- The table is the story's FULL web, never a hub around one protagonist. Encode
+  every standing connection the story establishes between ANY two entities,
+  however minor. Side characters' links to each other, to places, and to things
+  matter as much as their links to the lead - if two entities are related in any
+  way at all, that relation belongs in the table.
+- Every named character should end up tied to MULTIPLE other entities
+  (characters, locations, things). A character with a single row is usually an
+  under-recorded character: sweep the story for their other connections.
+- Write "state" to survive the story moving on: name the standing arrangement
+  ("owes her a life debt", "banned from the guildhall"), not the scene of the
+  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
+  "history" using the story's own dates so the row stays meaningful as it ages.
+- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
+  the new turns and rewrite any state the story has outdated (demote the old
+  state to "history" only when the shift is pivotal). A row that no longer holds
+  is stale data: correct it, never leave it standing.`;
 
 const SCHEMA_INLINE_MODE = `File schemas (JSON, write the COMPLETE file every time):
 
@@ -38,11 +57,18 @@ characters.json / locations.json / things.json
 { "entities": [ { "id": "char:elias", "name": "Elias",
   "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
   "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "",
-  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "" } ] }
+  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
 fields (e.g. "age") are allowed. Relationships live in each entity's "ties" list
 as short present-tense notes - to other characters, to things, and to places
-alike. Do NOT write relations.json, it is disabled.`;
+alike. Do NOT write relations.json, it is disabled.
+Ties coverage (mandatory): record the story's FULL web, never a hub around one
+protagonist - every standing connection an entity has, to side characters,
+places, and things alike, so each named character carries several ties. Phrase
+ties as standing arrangements that survive scene changes ("owes her a life
+debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
+outdated: a stale tie is an error, never leave one standing.`;
 
 const SCHEMA_REST = `timeline.json
 { "events": [ { "when": "day 12", "event": "Mara sees Elias kill the duke",
@@ -57,16 +83,35 @@ threads.json
 Threads are storylines. planted/seeds are Chekhov setups awaiting payoff.
 
 world.json
-{ "entries": [ { "topic": "Magic", "facts": ["blood magic costs memories", ...] } ] }
+{ "entries": [ { "topic": "Magic", "facts": ["blood magic costs memories", ...],
+  "keywords": ["ritual", "memories", "blood magic"] } ] }
 Rules and lore true of the WORLD itself, not any single entity's state.
 
 knowledge.json
 { "items": [ { "fact": "Elias killed the duke",
   "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
   "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
-  "note"?: "" } ] }
+  "note"?: "",
+  "keywords": ["murder", "dagger", "duke"] } ] }
 ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Facts every
-character knows belong in world or timeline, never here.`;
+character knows belong in world or timeline, never here.
+
+Retrieval keywords (mandatory):
+Every entity sheet, world entry, and knowledge item carries a "keywords" list of
+4-10 tags. Each record is stored as a separate lorebook entry and only enters the
+prompt when the recent story mentions one of its keywords, so a record with weak
+keywords effectively disappears. Rules:
+- Mix generality with specificity: most keywords are SINGLE words the story will
+  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
+  when the single word would be too ambiguous to pin this record ("north tower"
+  when several towers exist). Never longer than 2 words.
+- Concrete nouns tied to THIS record: places, objects, epithets, events.
+- One concept per keyword, retrievable when mentioned alone.
+- The record's own name, aliases, and topic (and a knowledge item's participants)
+  match automatically - never repeat them as keywords.
+- No abstract themes (love, betrayal, tension), no filler verbs.
+- Keep keywords current: when a record's contents change, re-check its keywords.
+timeline.json and threads.json need no keywords, they are always in the prompt.`;
 
 export function buildCodexSystemPrompt(relationsTable: boolean): string {
   return [
@@ -173,6 +218,9 @@ export function buildCodexTidyMessage(
   parts.push(
     "TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.",
   );
+  parts.push(
+    "While you are in there: any target entity sheet, world entry, or knowledge item missing its \"keywords\" list gets one, following the retrieval keyword rules.",
+  );
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
   parts.push("<<CURRENT CODEX>>");
   for (const key of CODEX_FILE_KEYS) {
@@ -187,10 +235,10 @@ export const VERIFY_NUDGE =
 
 function entityLine(e: CodexEntity): string {
   const bits: string[] = [];
-  const skip = new Set(["id", "name", "aliases", "ties", "notes"]);
+  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords"]);
   if (e.aliases?.length) bits.push(`aka ${e.aliases.join(", ")}`);
   for (const [k, v] of Object.entries(e)) {
-    if (skip.has(k) || v === undefined) continue;
+    if (skip.has(k.toLowerCase()) || v === undefined) continue;
     if (Array.isArray(v)) bits.push(`${k}: ${v.join(", ")}`);
     else bits.push(`${k}: ${String(v)}`);
   }
@@ -229,6 +277,189 @@ function relationLine(r: CodexRelation, names: Map<string, string>): string {
     .map(([ref, role]) => `${role}: ${nameOf(ref)}`);
   const hist = r.history?.length ? ` (${r.history.join("; ")})` : "";
   return `- [${r.kind}] ${members.join(", ")}${extras.length ? ` (${extras.join(", ")})` : ""}: ${r.state}${hist}`;
+}
+
+/* ------------------------------------------------- per-record rendering */
+
+/** One codex record rendered for its synced lorebook entry. */
+export interface CodexRecordRender {
+  /** Stable identity of the record among this chat's synced entries. */
+  record: string;
+  file: CodexFileKey;
+  comment: string;
+  content: string;
+  /** Activation keywords; empty for constant records. */
+  keys: string[];
+  constant: boolean;
+}
+
+export interface RenderRecordsOptions {
+  /** False when the relations file is switched off: entity entries then
+   * render without their relation lines. */
+  includeRelations: boolean;
+}
+
+const ENTITY_FILE_LABEL = {
+  characters: "Character",
+  locations: "Location",
+  things: "Thing",
+} as const;
+
+function relationInvolves(r: CodexRelation, id: string): boolean {
+  if (r.type === "pair") return r.a === id || r.b === id;
+  return r.members.includes(id) || Object.prototype.hasOwnProperty.call(r.roles ?? {}, id);
+}
+
+function uniqKeys(parts: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const t = p.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
+/** FNV-1a hex, for record identities whose text slugs to nothing. */
+function fnvHex(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
+function recordKey(prefix: string, raw: string, taken: Set<string>): string {
+  // Non-Latin text slugs to nothing, so fall back to a hash of the raw text.
+  const slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
+  const base = slug || `h${fnvHex(raw)}`;
+  let key = `${prefix}:${base}`;
+  let n = 2;
+  while (taken.has(key)) key = `${prefix}:${base}_${n++}`;
+  taken.add(key);
+  return key;
+}
+
+/**
+ * The codex as retrievable records: one per entity (its relation lines folded
+ * in, both directions), one per world topic, one per knowledge item, plus one
+ * constant record each for timeline and threads. This is the source shape for
+ * the lorebook sync - keys come from names/aliases/participants plus the
+ * record's own agent-written keywords.
+ */
+export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptions): CodexRecordRender[] {
+  const names = new Map<string, string>();
+  for (const f of [bundle.characters, bundle.locations, bundle.things]) {
+    for (const e of f.entities) names.set(e.id, e.name);
+  }
+  const out: CodexRecordRender[] = [];
+  const taken = new Set<string>();
+
+  const foldedRelations = new Set<number>();
+  for (const fileKey of ["characters", "locations", "things"] as const) {
+    const label = ENTITY_FILE_LABEL[fileKey];
+    for (const e of bundle[fileKey].entities) {
+      const lines = [entityLine(e)];
+      for (const t of e.ties ?? []) lines.push(`  * ${t}`);
+      if (opts.includeRelations) {
+        bundle.relations.relations.forEach((r, i) => {
+          if (!relationInvolves(r, e.id)) return;
+          foldedRelations.add(i);
+          lines.push(relationLine(r, names));
+        });
+      }
+      out.push({
+        record: recordKey("ent", e.id, taken),
+        file: fileKey,
+        comment: `[Codex] ${label}: ${e.name}`,
+        content: `[Story Bible - ${label}: ${e.name}]\n${lines.join("\n")}`,
+        keys: uniqKeys([e.name, ...(e.aliases ?? []), ...(e.keywords ?? [])]),
+        constant: false,
+      });
+    }
+  }
+
+  // Rows whose every endpoint dangles fold under no entity: keep them in one record.
+  if (opts.includeRelations) {
+    const orphans = bundle.relations.relations.filter((_, i) => !foldedRelations.has(i));
+    if (orphans.length > 0) {
+      const endpointNames = orphans.flatMap((r) =>
+        r.type === "pair" ? [r.a, r.b] : [...r.members, ...Object.keys(r.roles ?? {})],
+      ).map((ref) => resolveRefName(names, ref));
+      out.push({
+        record: "rel:unlinked",
+        file: "relations",
+        comment: "[Codex] Relations (unlinked)",
+        content: `[Story Bible - Relations]\n${orphans.map((r) => relationLine(r, names)).join("\n")}`,
+        keys: uniqKeys(endpointNames),
+        constant: false,
+      });
+      taken.add("rel:unlinked");
+    }
+  }
+
+  for (const w of bundle.world.entries) {
+    out.push({
+      record: recordKey("world", w.topic, taken),
+      file: "world",
+      comment: `[Codex] World: ${w.topic}`,
+      content: `[Story Bible - World rules: ${w.topic}]\n- ${w.topic}: ${w.facts.join(" | ")}`,
+      keys: uniqKeys([w.topic, ...(w.keywords ?? [])]),
+      constant: false,
+    });
+  }
+
+  for (const k of bundle.knowledge.items) {
+    const bits: string[] = [];
+    if (k.knownBy?.length) bits.push(`known by ${k.knownBy.map((r) => resolveRefName(names, r)).join(", ")}`);
+    if (k.hiddenFrom?.length) bits.push(`hidden from ${k.hiddenFrom.map((r) => resolveRefName(names, r)).join(", ")}`);
+    for (const b of k.falseBeliefs ?? []) {
+      bits.push(`${resolveRefName(names, b.who)} wrongly believes: ${b.believes}`);
+    }
+    if (k.note) bits.push(k.note);
+    // Only ref-shaped participants become activation keys, prose would be junk keys.
+    const participants = [
+      ...(k.knownBy ?? []),
+      ...(k.hiddenFrom ?? []),
+      ...(k.falseBeliefs ?? []).map((b) => b.who),
+    ].filter((r) => ENTITY_REF_HEAD.test(r)).map((r) => resolveRefName(names, r));
+    out.push({
+      record: recordKey("know", k.fact, taken),
+      file: "knowledge",
+      comment: `[Codex] Secret: ${k.fact.slice(0, 60)}`,
+      content: `[Story Bible - Who knows what]\n- ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
+      keys: uniqKeys([...participants, ...(k.keywords ?? [])]),
+      constant: false,
+    });
+  }
+
+  const sections = renderCodexFileSections(bundle);
+  if (sections.timeline) {
+    out.push({
+      record: "timeline",
+      file: "timeline",
+      comment: "[Codex] Timeline",
+      content: `[Story Bible - current story state]\n${sections.timeline}`,
+      keys: [],
+      constant: true,
+    });
+  }
+  if (sections.threads) {
+    out.push({
+      record: "threads",
+      file: "threads",
+      comment: "[Codex] Threads",
+      content: `[Story Bible - current story state]\n${sections.threads}`,
+      keys: [],
+      constant: true,
+    });
+  }
+  return out;
 }
 
 /**

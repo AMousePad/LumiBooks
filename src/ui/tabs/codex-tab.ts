@@ -10,9 +10,10 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import type { FrontendState, FrontendToBackend } from "../../types";
-import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
+import { CODEX_FILE_KEYS, codexLessonGated, type CodexFileKey } from "../../shared";
 import {
   formatTokens,
+  lessonMark,
   makeButton,
   makeSubtabs,
   pill,
@@ -22,11 +23,13 @@ import {
   searchField,
   section,
   select,
+  showToast,
   textArea,
   textInput,
   textNode,
 } from "../components";
 import { confirmDelete } from "../modals";
+import { renderCodexTabLock } from "../lessons/seal";
 
 type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore";
 
@@ -158,8 +161,39 @@ interface RecordDraft {
   kind: RecordKind;
   /** Index in the file's array, -1 for a new record ("seeds" edits the whole list). */
   index: number;
+  /** JSON at draft time, so saves relocate the record after an agent rewrite. */
+  orig?: string;
   fields: Record<string, string>;
   saving: boolean;
+}
+
+function resolveDraftIndex(list: Record<string, unknown>[], draft: RecordDraft): number {
+  if (draft.index < 0) return -1;
+  if (draft.orig !== undefined) {
+    if (draft.index < list.length && JSON.stringify(list[draft.index]) === draft.orig) return draft.index;
+    return list.findIndex((x) => JSON.stringify(x) === draft.orig);
+  }
+  return draft.index < list.length ? draft.index : -1;
+}
+
+function staleDraftAbort(): void {
+  local.recordDraft = null;
+  showToast("warn", "Memoria rewrote that record while you were editing, reopen it to edit the new version");
+  rerender();
+}
+
+function spliceOutIfCurrent(
+  list: Record<string, unknown>[],
+  index: number,
+  expected: Record<string, unknown>,
+): Record<string, unknown>[] | null {
+  const expectedJson = JSON.stringify(expected);
+  if (index < list.length && JSON.stringify(list[index]) === expectedJson) {
+    return list.filter((_, j) => j !== index);
+  }
+  const found = list.findIndex((x) => JSON.stringify(x) === expectedJson);
+  if (found >= 0) return list.filter((_, j) => j !== found);
+  return null;
 }
 
 const local = {
@@ -197,6 +231,51 @@ const TIMELINE_RECENT = 12;
 /** True when a finished codex run for this chat should trigger a re-read. */
 export function codexWantsRefresh(chatId: string): boolean {
   return cache.chatId === chatId;
+}
+
+/** Lesson-stage navigation: pick the subtab before a demo render. Mirrors a
+ * real subtab click so a draft or filter left by free play can't linger. */
+export function setCodexSubtab(key: string): void {
+  if (key === "overview" || key === "entities" || key === "relations"
+    || key === "timeline" || key === "threads" || key === "lore") {
+    if (local.subtab !== key) {
+      local.query = "";
+      local.recordDraft = null;
+      clearExpansions();
+    }
+    local.subtab = key;
+  }
+}
+
+/** Lesson-stage navigation: list or graph in the Relations pane. */
+export function setCodexRelationsView(v: "list" | "graph"): void {
+  local.relationsView = v;
+}
+
+/** Lesson-stage navigation: open an entity sheet before a demo render. */
+export function setCodexExpandedEntity(id: string | null): void {
+  local.expandedEntity = id;
+  local.entityDraft = null;
+}
+
+/** Lesson-stage exit hook: the fixture chat owned this module's cache, so the
+ * real chat must re-read on its next render. */
+export function resetCodexTabLocal(): void {
+  cache.chatId = null;
+  cache.files = null;
+  cache.parsed = null;
+  cache.pending = false;
+  local.subtab = "overview";
+  local.query = "";
+  local.expandedEntity = null;
+  local.entityDraft = null;
+  local.recordDraft = null;
+  local.addFormGroup = null;
+  local.addFormName = "";
+  clearExpansions();
+  local.relationsView = "list";
+  local.showFullTimeline = false;
+  pendingCodexSave = null;
 }
 
 interface RenderArgs {
@@ -280,6 +359,10 @@ export function renderCodexTab(
 ): void {
   lastArgs = { host, state, ctx, send };
   host.replaceChildren();
+  if (codexLessonGated(state.lessons)) {
+    renderCodexTabLock(host, send);
+    return;
+  }
   const chatId = state.activeChatId;
   if (!chatId) {
     const empty = section("Knowledge Codex");
@@ -418,8 +501,13 @@ function tileCount(parsed: ParsedCodex, id: string): number {
 }
 
 function tileState(state: FrontendState, files: CodexFileKey[]): FileState {
-  const s = state.codexFileStates?.[files[0]!];
-  return s === "noInject" || s === "frozen" ? s : "on";
+  const states = files.map((f) => {
+    const s = state.codexFileStates?.[f];
+    return s === "noInject" || s === "frozen" ? s : "on";
+  });
+  if (states.includes("on")) return "on";
+  if (states.includes("noInject")) return "noInject";
+  return "frozen";
 }
 
 const TILE_STATE_LABEL: Record<FileState, string> = {
@@ -443,7 +531,7 @@ function renderOverview(
   bits.push(state.codexExists ? "codex on file" : "no codex yet");
   bits.push(`${state.codexBacklog} message${state.codexBacklog === 1 ? "" : "s"} unindexed`);
   if (state.codexLastRunAt) bits.push(`updated ${relativeTime(state.codexLastRunAt)}`);
-  sec.body.appendChild(textNode(bits.join(" · "), "lmb-help"));
+  sec.body.appendChild(lessonMark(textNode(bits.join(" · "), "lmb-help"), "codex.status"));
 
   if (!profile.codexEnabled) {
     sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Codex.", "lmb-empty"));
@@ -468,24 +556,30 @@ function renderOverview(
     }
     const tiles = document.createElement("div");
     tiles.className = "lmb-tiles";
+    lessonMark(tiles, "codex.tiles");
     for (const def of BIBLE_TILES) {
       tiles.appendChild(renderBibleTile(def, parsed, state, ctx, send, busy));
     }
     sec.body.appendChild(tiles);
     sec.body.appendChild(textNode(
-      "Click a record card to cycle it: injected → kept out of the prompt → frozen. Records stay editable in their sections either way.",
+      "Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.",
+      "lmb-help",
+    ));
+    sec.body.appendChild(textNode(
+      "Shorter and simpler chats often run better with fewer records. Switching off Relations, Characters, or Places · Things spares the agent upkeep the story may not need yet.",
       "lmb-help",
     ));
   }
 
   const row = document.createElement("div");
   row.className = "lmb-actions";
+  lessonMark(row, "codex.actions");
   row.append(
-    makeButton("Update now", () => send({ type: "codex_update_now", chatId }), {
+    lessonMark(makeButton("Update now", () => send({ type: "codex_update_now", chatId }), {
       primary: true,
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
       title: "Consume everything up to the newest message now, ignoring lag and window",
-    }),
+    }), "codex.actions.update"),
     busy
       ? makeButton("Cancel", () => send({ type: "abort_busy", chatId, kind: "codex" }), {
           danger: true,
@@ -530,6 +624,7 @@ function renderBibleTile(
 
   const tile = document.createElement("div");
   tile.className = `lmb-tile lmb-bible-tile ${st}${stale ? " stale" : ""}`;
+  lessonMark(tile, `codex.tile.${def.id}`);
   tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""} - click to cycle`;
 
   const v = document.createElement("div");
@@ -613,7 +708,7 @@ async function cycleTileState(
 
 const ENTITY_TEXT_FIELDS = ["kind", "role", "status", "significance"] as const;
 const ENTITY_LONG_FIELDS = ["appearance", "description", "notes"] as const;
-const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties"] as const;
+const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"] as const;
 const ENTITY_KNOWN = new Set<string>(["id", "name", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 
 function entitySearchText(e: Record<string, unknown>): string[] {
@@ -641,6 +736,7 @@ function renderEntities(
   send: (msg: FrontendToBackend) => void,
 ): void {
   const sec = section("Entities");
+  lessonMark(sec.wrap, "codex.entities");
   sec.body.appendChild(textNode(
     "Click a name to open its sheet. Edits are validated and saved to the codex, Memoria builds on them from her next pass.",
     "lmb-help",
@@ -678,6 +774,7 @@ function renderEntities(
       const addChip = document.createElement("button");
       addChip.type = "button";
       addChip.className = "lmb-chip add";
+      if (g.key === "characters") lessonMark(addChip, "codex.entities.add");
       addChip.textContent = `+ ${g.singular}`;
       addChip.addEventListener("click", () => {
         local.addFormGroup = local.addFormGroup === g.key ? null : g.key;
@@ -711,6 +808,8 @@ function renderAddForm(
 ): HTMLElement {
   const row = document.createElement("div");
   row.className = "lmb-add-form";
+  // Lesson do-steps keep their spotlight on this form as it appears.
+  lessonMark(row, "codex.entities.addform");
   const input = textInput({
     value: local.addFormName,
     placeholder: "Name...",
@@ -824,6 +923,8 @@ function renderEntityForm(
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "lmb-entity-card editing";
+  // Lesson do-steps expand their spotlight onto the open sheet editor.
+  lessonMark(card, "codex.entities.editor");
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
   name.textContent = draft.fields["name"] || "New entity";
@@ -1062,6 +1163,7 @@ function relationDraftFrom(r: Record<string, unknown> | null, index: number): Re
   return {
     kind: "relation",
     index,
+    ...(r ? { orig: JSON.stringify(r) } : {}),
     saving: false,
     fields: {
       type: r?.["type"] === "group" ? "group" : "pair",
@@ -1096,8 +1198,13 @@ function saveRelationDraft(d: RecordDraft, state: FrontendState, send: (m: Front
   if (!parsed) return;
   const rel = buildRelationFromDraft(d);
   if (!rel) return;
-  const next = d.index >= 0
-    ? [...parsed.relations.slice(0, d.index), rel, ...parsed.relations.slice(d.index + 1)]
+  const idx = resolveDraftIndex(parsed.relations, d);
+  if (d.index >= 0 && idx === -1) {
+    staleDraftAbort();
+    return;
+  }
+  const next = idx >= 0
+    ? [...parsed.relations.slice(0, idx), rel, ...parsed.relations.slice(idx + 1)]
     : [...parsed.relations, rel];
   d.saving = true;
   sendCodexWrite("relations", { relations: next }, state, send);
@@ -1130,6 +1237,8 @@ function relationFormEl(
     refListId,
     () => saveRelationDraft(draft, state, send),
   );
+  // Lesson do-steps expand their spotlight onto the open relation form.
+  lessonMark(form, "codex.rel.form");
   // Type flips rebuild the form so the member/pair fields swap.
   form.querySelector("select")?.addEventListener("change", () => rerender());
   return form;
@@ -1149,6 +1258,7 @@ function renderRelations(
 
   const viewRow = document.createElement("div");
   viewRow.className = "lmb-actions";
+  lessonMark(viewRow, "codex.rel.view");
   viewRow.append(
     makeButton("List", () => {
       if (local.relationsView === "list") return;
@@ -1156,23 +1266,23 @@ function renderRelations(
       local.recordDraft = null;
       rerender();
     }, { small: true }),
-    makeButton("Graph", () => {
+    lessonMark(makeButton("Graph", () => {
       if (local.relationsView === "graph") return;
       local.relationsView = "graph";
       // An open editor doesn't exist in graph view: leaving it live would
       // strand a form the user can no longer see the context of.
       local.recordDraft = null;
       rerender();
-    }, { small: true }),
+    }, { small: true }), "codex.rel.graphbtn"),
   );
   (viewRow.children[local.relationsView === "list" ? 0 : 1] as HTMLElement).classList.add("active");
   if (relationsOn && local.relationsView === "list") {
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
-    viewRow.append(spacer, makeButton("+ Relation", () => {
+    viewRow.append(spacer, lessonMark(makeButton("+ Relation", () => {
       local.recordDraft = relationDraftFrom(null, -1);
       rerender();
-    }, { small: true, primary: true }));
+    }, { small: true, primary: true }), "codex.rel.add"));
   }
   sec.body.appendChild(viewRow);
 
@@ -1264,7 +1374,8 @@ function renderRelations(
       row.appendChild(recordItemActions(
         () => { local.recordDraft = relationDraftFrom(r, i); rerender(); },
         () => {
-          const next = parsed.relations.filter((_, j) => j !== i);
+          const next = cache.parsed ? spliceOutIfCurrent(cache.parsed.relations, i, r) : null;
+          if (!next) { staleDraftAbort(); return; }
           sendCodexWrite("relations", { relations: next }, state, send);
         },
         ctx,
@@ -1317,7 +1428,8 @@ interface GraphEdge {
 
 const GRAPH_W = 520;
 const GRAPH_H = 360;
-const GRAPH_PAD = 34;
+/** Hardest zoom-in the camera allows (viewBox width in layout units). */
+const GRAPH_MIN_W = 180;
 const NODE_CLEAR = 14;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -1378,9 +1490,10 @@ function buildGraph(
   return { nodes, edges };
 }
 
-/** d3-force layout, run to completion synchronously, then fitted to the
- * canvas. d3 seeds positions and jiggle from a fixed LCG, so the layout is
- * deterministic for a given codex. */
+/** d3-force layout, run to completion synchronously. d3 seeds positions and
+ * jiggle from a fixed LCG, so the layout is deterministic for a given codex.
+ * Positions stay at natural force scale (labels readable at 1:1), and the
+ * camera below frames them instead of shrinking the layout to fit. */
 function layoutGraph(nodes: GraphNode[], edges: GraphEdge[]): void {
   if (nodes.length === 0) return;
   const ids = new Set(nodes.map((n) => n.id));
@@ -1393,38 +1506,11 @@ function layoutGraph(nodes: GraphNode[], edges: GraphEdge[]): void {
       .distance(85)
       .strength(0.55))
     .force("charge", forceManyBody().strength(-220))
-    .force("collide", forceCollide(30))
+    .force("collide", forceCollide(34))
     .force("x", forceX(GRAPH_W / 2).strength(0.05))
     .force("y", forceY(GRAPH_H / 2).strength(0.09))
     .stop();
   sim.tick(300);
-
-  // Fit the settled layout into the padded viewbox with uniform scale, so
-  // the graph always fills the canvas without touching the frame.
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const n of nodes) {
-    minX = Math.min(minX, n.x);
-    maxX = Math.max(maxX, n.x);
-    minY = Math.min(minY, n.y);
-    maxY = Math.max(maxY, n.y);
-  }
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  const labelPad = 10; // extra room under nodes for their labels
-  const scale = Math.min(
-    (GRAPH_W - GRAPH_PAD * 2) / spanX,
-    (GRAPH_H - GRAPH_PAD * 2 - labelPad) / spanY,
-    2.1, // don't blow tiny graphs up until edges look like chopsticks
-  );
-  const offX = (GRAPH_W - spanX * scale) / 2 - minX * scale;
-  const offY = (GRAPH_H - labelPad - spanY * scale) / 2 - minY * scale;
-  for (const n of nodes) {
-    n.x = n.x * scale + offX;
-    n.y = n.y * scale + offY;
-  }
 }
 
 function edgePath(a: GraphNode, b: GraphNode, e: GraphEdge): string {
@@ -1467,10 +1553,87 @@ function renderRelationGraph(
   layoutGraph(nodes, edges);
   const byId = new Map(nodes.map((node) => [node.id, node] as const));
 
+  // Label-inclusive bounds of the settled layout, in natural units.
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x);
+    maxX = Math.max(maxX, n.x);
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y);
+  }
+  const PAD = 46;
+  const bbox = { x: minX - PAD, y: minY - PAD, w: maxX - minX + PAD * 2, h: maxY - minY + PAD * 2 };
+
   const svg = svgEl("svg");
   svg.setAttribute("class", "lmb-graph");
-  svg.setAttribute("viewBox", `0 0 ${GRAPH_W} ${GRAPH_H}`);
-  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+
+  /* Camera: the viewBox is a movable window over the layout. Drag the
+     background to pan, pinch or scroll or the corner tools to zoom. The
+     default framing shows the whole web only while its labels stay
+     readable, otherwise it opens on a readable window at the center. */
+  let aspect = GRAPH_W / GRAPH_H;
+  const cam = { cx: bbox.x + bbox.w / 2, cy: bbox.y + bbox.h / 2, w: Math.max(bbox.w, GRAPH_W) };
+  const clampNum = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+  const fitW = (): number => Math.max(bbox.w, bbox.h * aspect);
+  const maxW = (): number => fitW() * 1.4 + 160;
+  const applyCamera = (): void => {
+    const h = cam.w / aspect;
+    svg.setAttribute(
+      "viewBox",
+      `${(cam.cx - cam.w / 2).toFixed(1)} ${(cam.cy - h / 2).toFixed(1)} ${cam.w.toFixed(1)} ${h.toFixed(1)}`,
+    );
+  };
+  const clampCenter = (): void => {
+    cam.cx = clampNum(cam.cx, bbox.x - cam.w / 4, bbox.x + bbox.w + cam.w / 4);
+    const h = cam.w / aspect;
+    cam.cy = clampNum(cam.cy, bbox.y - h / 4, bbox.y + bbox.h + h / 4);
+  };
+  const zoomAt = (clientX: number, clientY: number, factor: number): void => {
+    const p = toSvgPoint(clientX, clientY);
+    const newW = clampNum(cam.w / factor, GRAPH_MIN_W, maxW());
+    const scale = newW / cam.w;
+    cam.cx = p.x + (cam.cx - p.x) * scale;
+    cam.cy = p.y + (cam.cy - p.y) * scale;
+    cam.w = newW;
+    clampCenter();
+    applyCamera();
+  };
+  const fitCamera = (): void => {
+    cam.cx = bbox.x + bbox.w / 2;
+    cam.cy = bbox.y + bbox.h / 2;
+    cam.w = clampNum(fitW(), GRAPH_MIN_W, maxW());
+    applyCamera();
+  };
+  applyCamera();
+  requestAnimationFrame(() => {
+    if (!svg.isConnected) return;
+    const r = svg.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) aspect = r.width / r.height;
+    // Readability cap: never open zoomed out past ~1.15 layout units per
+    // screen pixel, big webs start on a legible window instead.
+    cam.w = clampNum(fitW(), GRAPH_MIN_W, Math.max(r.width * 1.15, 340));
+    clampCenter();
+    applyCamera();
+  });
+  // Window resizes bend the element's aspect: keep the viewBox aspect in
+  // step or the "slice" fitting starts cropping and skewing the framing.
+  const graphRo = new ResizeObserver(() => {
+    if (!svg.isConnected) {
+      graphRo.disconnect();
+      return;
+    }
+    const r = svg.getBoundingClientRect();
+    if (r.width > 2 && r.height > 2) {
+      aspect = r.width / r.height;
+      clampCenter();
+      applyCamera();
+    }
+  });
+  graphRo.observe(svg);
 
   const defs = svgEl("defs");
   const marker = svgEl("marker");
@@ -1586,8 +1749,8 @@ function renderRelationGraph(
       if (!dragging) return;
       const p = toSvgPoint(ev.clientX, ev.clientY);
       moved += Math.hypot(p.x - node.x, p.y - node.y);
-      node.x = Math.min(GRAPH_W - 10, Math.max(10, p.x));
-      node.y = Math.min(GRAPH_H - 10, Math.max(10, p.y));
+      node.x = p.x;
+      node.y = p.y;
       g.setAttribute("transform", `translate(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`);
       refreshEdgesFor(node.id);
     });
@@ -1605,9 +1768,76 @@ function renderRelationGraph(
     nodeLayer.appendChild(g);
   }
 
+  // Background pan and pinch zoom. Pointer capture starts only after real
+  // movement, so plain taps still reach the edges and diamonds underneath.
+  const pointers = new Map<number, { x: number; y: number }>();
+  const captured = new Set<number>();
+  let pinch: { dist: number; w: number } | null = null;
+  svg.addEventListener("pointerdown", (e) => {
+    if ((e.target as Element | null)?.closest?.(".lmb-graph-node")) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { dist: Math.max(8, Math.hypot(a.x - b.x, a.y - b.y)), w: cam.w };
+    }
+  });
+  svg.addEventListener("pointermove", (e) => {
+    const prev = pointers.get(e.pointerId);
+    if (!prev) return;
+    const cur = { x: e.clientX, y: e.clientY };
+    pointers.set(e.pointerId, cur);
+    if (!captured.has(e.pointerId) && Math.hypot(cur.x - prev.x, cur.y - prev.y) > 3) {
+      try { svg.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+      captured.add(e.pointerId);
+    }
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.max(8, Math.hypot(a.x - b.x, a.y - b.y));
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const targetW = clampNum(pinch.w * (pinch.dist / dist), GRAPH_MIN_W, maxW());
+      zoomAt(mid.x, mid.y, cam.w / targetW);
+      return;
+    }
+    // Convert both points through the SVG's own transform so a pixel of
+    // cursor travel is exactly a pixel of graph travel at any element size.
+    // Deriving the scale from the element width alone drifts once a window
+    // resize bends the element's aspect away from the viewBox's.
+    const p0 = toSvgPoint(prev.x, prev.y);
+    const p1 = toSvgPoint(cur.x, cur.y);
+    cam.cx -= p1.x - p0.x;
+    cam.cy -= p1.y - p0.y;
+    clampCenter();
+    applyCamera();
+  });
+  const endPointer = (e: PointerEvent): void => {
+    pointers.delete(e.pointerId);
+    captured.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+  };
+  svg.addEventListener("pointerup", endPointer);
+  svg.addEventListener("pointercancel", endPointer);
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0018));
+  }, { passive: false });
+
+  const tools = document.createElement("div");
+  tools.className = "lmb-graph-tools";
+  const viewCenter = (): { x: number; y: number } => {
+    const r = svg.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  };
+  tools.append(
+    makeButton("−", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1 / 1.4); }, { small: true, title: "Zoom out" }),
+    makeButton("+", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1.4); }, { small: true, title: "Zoom in" }),
+    makeButton("Fit", fitCamera, { small: true, title: "Frame the whole web" }),
+  );
+
   const wrap = document.createElement("div");
   wrap.className = "lmb-graph-wrap";
+  lessonMark(wrap, "codex.rel.graph");
   wrap.appendChild(svg);
+  wrap.appendChild(tools);
   host.appendChild(wrap);
   host.appendChild(detail);
 
@@ -1629,7 +1859,10 @@ function renderRelationGraph(
     legend.appendChild(item);
   }
   host.appendChild(legend);
-  host.appendChild(textNode("Tap an edge for the story, tap a diamond to open its sheet, drag to rearrange.", "lmb-help"));
+  host.appendChild(textNode(
+    "Tap an edge for the story, tap a diamond to open its sheet, drag diamonds to rearrange. Drag the background to pan, and pinch or scroll to zoom.",
+    "lmb-help",
+  ));
 }
 
 /* ------------------------------------------------------------- timeline */
@@ -1638,6 +1871,7 @@ function eventDraftFrom(e: Record<string, unknown> | null, index: number): Recor
   return {
     kind: "event",
     index,
+    ...(e ? { orig: JSON.stringify(e) } : {}),
     saving: false,
     fields: {
       when: str(e?.["when"]),
@@ -1662,8 +1896,13 @@ function saveEventDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   if (participants.length) ev["participants"] = participants;
   if (where) ev["where"] = where;
   if (causes) ev["causes"] = causes;
-  const next = d.index >= 0
-    ? [...parsed.events.slice(0, d.index), ev, ...parsed.events.slice(d.index + 1)]
+  const idx = resolveDraftIndex(parsed.events, d);
+  if (d.index >= 0 && idx === -1) {
+    staleDraftAbort();
+    return;
+  }
+  const next = idx >= 0
+    ? [...parsed.events.slice(0, idx), ev, ...parsed.events.slice(idx + 1)]
     : [...parsed.events, ev];
   d.saving = true;
   sendCodexWrite("timeline", { events: next }, state, send);
@@ -1686,6 +1925,7 @@ function renderTimeline(
   send: (msg: FrontendToBackend) => void,
 ): void {
   const sec = section("Timeline");
+  lessonMark(sec.wrap, "codex.tl");
   const nameOf = makeNameResolver(parsed);
   const refListId = ensureRefDatalist(parsed);
 
@@ -1779,7 +2019,8 @@ function renderTimeline(
       const actions = recordItemActions(
         () => { local.recordDraft = eventDraftFrom(e, i); rerender(); },
         () => {
-          const next = parsed.events.filter((_, j) => j !== i);
+          const next = cache.parsed ? spliceOutIfCurrent(cache.parsed.events, i, e) : null;
+          if (!next) { staleDraftAbort(); return; }
           sendCodexWrite("timeline", { events: next }, state, send);
         },
         ctx,
@@ -1817,6 +2058,7 @@ function threadDraftFrom(t: Record<string, unknown> | null, index: number): Reco
   return {
     kind: "thread",
     index,
+    ...(t ? { orig: JSON.stringify(t) } : {}),
     saving: false,
     fields: {
       name: str(t?.["name"]),
@@ -1852,8 +2094,13 @@ function saveThreadDraft(d: RecordDraft, state: FrontendState, send: (m: Fronten
   if (latest) t["latest"] = latest;
   const planted = splitLines(d.fields["planted"] ?? "");
   if (planted.length) t["planted"] = planted;
-  const next = d.index >= 0
-    ? [...parsed.threads.slice(0, d.index), t, ...parsed.threads.slice(d.index + 1)]
+  const idx = resolveDraftIndex(parsed.threads, d);
+  if (d.index >= 0 && idx === -1) {
+    staleDraftAbort();
+    return;
+  }
+  const next = idx >= 0
+    ? [...parsed.threads.slice(0, idx), t, ...parsed.threads.slice(idx + 1)]
     : [...parsed.threads, t];
   d.saving = true;
   sendCodexWrite("threads", { threads: next, seeds: parsed.seeds }, state, send);
@@ -1868,6 +2115,7 @@ function renderThreads(
   send: (msg: FrontendToBackend) => void,
 ): void {
   const sec = section("Threads");
+  lessonMark(sec.wrap, "codex.th");
 
   const toolbar = document.createElement("div");
   toolbar.className = "lmb-actions";
@@ -1959,8 +2207,10 @@ function renderThreads(
       row.appendChild(recordItemActions(
         () => { local.recordDraft = threadDraftFrom(t, i); rerender(); },
         () => {
-          const next = parsed.threads.filter((_, j) => j !== i);
-          sendCodexWrite("threads", { threads: next, seeds: parsed.seeds }, state, send);
+          const cur = cache.parsed;
+          const next = cur ? spliceOutIfCurrent(cur.threads, i, t) : null;
+          if (!cur || !next) { staleDraftAbort(); return; }
+          sendCodexWrite("threads", { threads: next, seeds: cur.seeds }, state, send);
         },
         ctx,
         "Memoria will remove this thread from the codex.",
@@ -1990,10 +2240,12 @@ function worldDraftFrom(w: Record<string, unknown> | null, index: number): Recor
   return {
     kind: "world",
     index,
+    ...(w ? { orig: JSON.stringify(w) } : {}),
     saving: false,
     fields: {
       topic: str(w?.["topic"]),
       facts: strArray(w?.["facts"]).join("\n"),
+      keywords: strArray(w?.["keywords"]).join(", "),
     },
   };
 }
@@ -2005,6 +2257,7 @@ function knowledgeDraftFrom(k: Record<string, unknown> | null, index: number): R
   return {
     kind: "knowledge",
     index,
+    ...(k ? { orig: JSON.stringify(k) } : {}),
     saving: false,
     fields: {
       fact: str(k?.["fact"]),
@@ -2012,6 +2265,7 @@ function knowledgeDraftFrom(k: Record<string, unknown> | null, index: number): R
       hiddenFrom: strArray(k?.["hiddenFrom"]).join(", "),
       falseBeliefs: beliefs,
       note: str(k?.["note"]),
+      keywords: strArray(k?.["keywords"]).join(", "),
     },
   };
 }
@@ -2022,9 +2276,16 @@ function saveWorldDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   const topic = (d.fields["topic"] ?? "").trim();
   const facts = splitLines(d.fields["facts"] ?? "");
   if (!topic || facts.length === 0) return;
-  const entry = { topic, facts };
-  const next = d.index >= 0
-    ? [...parsed.world.slice(0, d.index), entry, ...parsed.world.slice(d.index + 1)]
+  const entry: Record<string, unknown> = { topic, facts };
+  const keywords = splitComma(d.fields["keywords"] ?? "");
+  if (keywords.length) entry["keywords"] = keywords;
+  const idx = resolveDraftIndex(parsed.world, d);
+  if (d.index >= 0 && idx === -1) {
+    staleDraftAbort();
+    return;
+  }
+  const next = idx >= 0
+    ? [...parsed.world.slice(0, idx), entry, ...parsed.world.slice(idx + 1)]
     : [...parsed.world, entry];
   d.saving = true;
   sendCodexWrite("world", { entries: next }, state, send);
@@ -2053,8 +2314,15 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
   if (falseBeliefs.length) item["falseBeliefs"] = falseBeliefs;
   const note = (d.fields["note"] ?? "").trim();
   if (note) item["note"] = note;
-  const next = d.index >= 0
-    ? [...parsed.knowledge.slice(0, d.index), item, ...parsed.knowledge.slice(d.index + 1)]
+  const kws = splitComma(d.fields["keywords"] ?? "");
+  if (kws.length) item["keywords"] = kws;
+  const idx = resolveDraftIndex(parsed.knowledge, d);
+  if (d.index >= 0 && idx === -1) {
+    staleDraftAbort();
+    return;
+  }
+  const next = idx >= 0
+    ? [...parsed.knowledge.slice(0, idx), item, ...parsed.knowledge.slice(idx + 1)]
     : [...parsed.knowledge, item];
   d.saving = true;
   sendCodexWrite("knowledge", { items: next }, state, send);
@@ -2064,6 +2332,7 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
 const WORLD_SPECS: RecordFieldSpec[] = [
   { key: "topic", label: "Topic", widget: "input", placeholder: "Magic" },
   { key: "facts", label: "Facts (one per line)", widget: "lines", placeholder: "blood magic costs memories" },
+  { key: "keywords", label: "Keywords (comma separated, retrieval tags)", widget: "input", placeholder: "ritual, memories, blood magic" },
 ];
 
 const KNOWLEDGE_SPECS: RecordFieldSpec[] = [
@@ -2072,6 +2341,7 @@ const KNOWLEDGE_SPECS: RecordFieldSpec[] = [
   { key: "hiddenFrom", label: "Hidden from (comma separated refs)", widget: "input", refList: true },
   { key: "falseBeliefs", label: "False beliefs (one per line, \"who => belief\")", widget: "lines", placeholder: "char:captain => bandits did it" },
   { key: "note", label: "Note", widget: "input" },
+  { key: "keywords", label: "Keywords (comma separated, retrieval tags)", widget: "input", placeholder: "murder, dagger, duke" },
 ];
 
 function renderLore(
@@ -2086,6 +2356,7 @@ function renderLore(
   const draft = local.recordDraft;
 
   const world = section("World rules");
+  lessonMark(world.wrap, "codex.lore");
   const worldBar = document.createElement("div");
   worldBar.className = "lmb-actions";
   worldBar.appendChild(makeButton("+ Topic", () => {
@@ -2104,7 +2375,7 @@ function renderLore(
   }
   const worldShown = parsed.world
     .map((w, i) => ({ w, i }))
-    .filter(({ w }) => matches(local.query, str(w["topic"]), strArray(w["facts"])));
+    .filter(({ w }) => matches(local.query, str(w["topic"]), strArray(w["facts"]), strArray(w["keywords"])));
   if (parsed.world.length === 0) {
     world.body.appendChild(textNode("No world lore recorded yet", "lmb-empty"));
   } else if (worldShown.length === 0) {
@@ -2144,10 +2415,13 @@ function renderLore(
       rerender();
     });
     if (expanded) {
+      const kws = strArray(w["keywords"]);
+      if (kws.length) block.appendChild(textNode(`keywords: ${kws.join(" · ")}`, "lmb-thread-detail"));
       const actions = recordItemActions(
         () => { local.recordDraft = worldDraftFrom(w, i); rerender(); },
         () => {
-          const next = parsed.world.filter((_, j) => j !== i);
+          const next = cache.parsed ? spliceOutIfCurrent(cache.parsed.world, i, w) : null;
+          if (!next) { staleDraftAbort(); return; }
           sendCodexWrite("world", { entries: next }, state, send);
         },
         ctx,
@@ -2185,6 +2459,7 @@ function renderLore(
       str(k["note"]),
       strArray(k["knownBy"]).map(nameOf),
       strArray(k["hiddenFrom"]).map(nameOf),
+      strArray(k["keywords"]),
     ));
   if (parsed.knowledge.length === 0) {
     secrets.body.appendChild(textNode("No secrets or asymmetric knowledge tracked yet", "lmb-empty"));
@@ -2224,10 +2499,13 @@ function renderLore(
       rerender();
     });
     if (expanded) {
+      const kws = strArray(k["keywords"]);
+      if (kws.length) block.appendChild(textNode(`keywords: ${kws.join(" · ")}`, "lmb-thread-detail"));
       const actions = recordItemActions(
         () => { local.recordDraft = knowledgeDraftFrom(k, i); rerender(); },
         () => {
-          const next = parsed.knowledge.filter((_, j) => j !== i);
+          const next = cache.parsed ? spliceOutIfCurrent(cache.parsed.knowledge, i, k) : null;
+          if (!next) { staleDraftAbort(); return; }
           sendCodexWrite("knowledge", { items: next }, state, send);
         },
         ctx,

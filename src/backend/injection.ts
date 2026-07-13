@@ -1,11 +1,9 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
-import type { LMBProfile } from "../shared";
 import { buildCoverage, type CoverageMap } from "./coverage";
 import { getChatAttachedBookIds, listLmbEntries, type LMBEntry } from "./world-book";
-import { buildCodexInjectionText } from "./codex/index";
-import { describeError, error, warn } from "./runtime";
+import { describeError, error } from "./runtime";
 
 let injectionAnomalyCb: ((userId: string, text: string) => void) | null = null;
 
@@ -71,53 +69,48 @@ export async function buildInjection(
   chatId: string,
   llmMessages: LlmMessageDTO[],
   userId: string,
-  profile?: LMBProfile | null,
 ): Promise<InterceptorResultDTO | null> {
-  const codexTextPromise: Promise<string | null> = profile
-    ? buildCodexInjectionText(chatId, userId, profile).catch((err) => {
-        warn(`codex injection failed: ${describeError(err)}`);
-        return null;
-      })
-    : Promise.resolve(null);
-
-  const [activated, allEntries, attachedBookIds, codexText] = await Promise.all([
+  const [activated, allEntries, attachedBookIds] = await Promise.all([
     spindle.world_books.getActivated(chatId, userId).catch(() => null),
     listLmbEntries(chatId, userId),
     getChatAttachedBookIds(chatId, userId).catch(() => null),
-    codexTextPromise,
   ]);
-  if (allEntries.length === 0 && !codexText) return null;
+  if (allEntries.length === 0) return null;
 
   // Coverage needs no chat messages, so compute it first and short-circuit
   // before the getMessages round-trip when there is nothing to inject: a chat
-  // with entries but no active ones (all superseded/disabled) and no codex
-  // returns here without paying for a message fetch on the hot path.
-  let coverage: CoverageMap | null = null;
-  if (allEntries.length > 0) {
-    const ourBookId = allEntries[0]!.raw.world_book_id;
-    // getActivated reflects only the books the host is actually scanning for this
-    // chat. If our book has been unbound from chat_world_book_ids (e.g. a wholesale
-    // chat-metadata write by another actor dropped it), getActivated reports none
-    // of our entries - and gating on it would then silently drop every memory.
-    // Trust getActivated as the activation authority when the host is clearly
-    // scanning our book (it activated some of our entries, or our book is still
-    // chat-attached); otherwise fall open to enabled entries (still honoring
-    // user-disabled ones). Off-hot-path handlers re-assert the binding.
-    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
-    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
-    const hostScanningOurBook = anyOursActivated || (!!attachedBookIds && attachedBookIds.includes(ourBookId));
-    const entriesForCoverage: LMBEntry[] = activatedIds && hostScanningOurBook
-      ? allEntries.filter((e) => activatedIds.has(e.raw.id))
-      : allEntries.filter((e) => !e.raw.disabled);
-    coverage = await buildCoverage(chatId, userId, entriesForCoverage);
-  }
-  if ((!coverage || coverage.activeEntries.length === 0) && !codexText) return null;
+  // with entries but no active ones (all superseded/disabled) returns here
+  // without paying for a message fetch on the hot path.
+  const ourBookId = allEntries[0]!.raw.world_book_id;
+  // getActivated reflects only the books the host is actually scanning for this
+  // chat. If our book has been unbound from chat_world_book_ids (e.g. a wholesale
+  // chat-metadata write by another actor dropped it), getActivated reports none
+  // of our entries - and gating on it would then silently drop every memory.
+  // Trust getActivated as the activation authority when the host is clearly
+  // scanning our book (it activated some of our entries, or our book is still
+  // chat-attached); otherwise fall open to enabled entries (still honoring
+  // user-disabled ones). Off-hot-path handlers re-assert the binding.
+  const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
+  const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
+  const hostScanningOurBook = anyOursActivated || (!!attachedBookIds && attachedBookIds.includes(ourBookId));
+  const entriesForCoverage: LMBEntry[] = activatedIds && hostScanningOurBook
+    ? allEntries.filter((e) => activatedIds.has(e.raw.id))
+    : allEntries.filter((e) => !e.raw.disabled);
+  const coverage: CoverageMap = await buildCoverage(chatId, userId, entriesForCoverage);
+  if (coverage.activeEntries.length === 0) return null;
 
   const historyMsgs = llmMessages.filter(isAssembledHistory);
   if (historyMsgs.length === 0) {
     // Anomalous shape: verify against the chat before shouting. A fully
     // covered chat legitimately assembles zero history.
-    const chatMessages = await spindle.chat.getMessages(chatId).catch(() => null);
+    let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>> | null = null;
+    try {
+      chatMessages = await spindle.chat.getMessages(chatId);
+    } catch (err) {
+      error(`injection: getMessages failed while verifying an empty history, skipping injection: ${describeError(err)}`);
+      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      return null;
+    }
     const hasVisibleMessage = !!chatMessages?.some(
       (m) => !(m.extra && (m.extra as Record<string, unknown>).hidden),
     );
@@ -152,7 +145,7 @@ export async function buildInjection(
     }
     const idx = sourceIndexInChat(m);
     if (idx === undefined) missingIdx = true;
-    const covered = !!coverage && coverage.coveredBy.has(id);
+    const covered = coverage.coveredBy.has(id);
     if (covered) anyCovered = true;
     plan.push({ id, idx, covered });
   }
@@ -164,8 +157,15 @@ export async function buildInjection(
   // missing - identical behavior to the original.
   let msgIdToIdx: Map<string, number>;
   if (anyCovered || missingIdx) {
-    const chatMessages = await spindle.chat.getMessages(chatId).catch(() => null);
-    if (!chatMessages || chatMessages.length === 0) return null;
+    let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>>;
+    try {
+      chatMessages = await spindle.chat.getMessages(chatId);
+    } catch (err) {
+      error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
+      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      return null;
+    }
+    if (chatMessages.length === 0) return null;
     msgIdToIdx = new Map<string, number>();
     for (let i = 0; i < chatMessages.length; i++) msgIdToIdx.set(chatMessages[i]!.id, i);
     for (const p of plan) {
@@ -184,8 +184,8 @@ export async function buildInjection(
     msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx!] as const));
   }
 
-  const ordered: OrderedEntry[] = coverage ? orderEntries(coverage, msgIdToIdx) : [];
-  if (ordered.length === 0 && !codexText) return null;
+  const ordered: OrderedEntry[] = orderEntries(coverage, msgIdToIdx);
+  if (ordered.length === 0) return null;
 
   const out: LlmMessageDTO[] = [];
   const injectedLabels = new Map<LlmMessageDTO, string>();
@@ -204,13 +204,11 @@ export async function buildInjection(
 
   let hp = 0;
   let histEnd = -1;
-  let firstHistOutIdx = -1;
   for (const lm of llmMessages) {
     if (!isAssembledHistory(lm)) {
       out.push(lm);
       continue;
     }
-    if (firstHistOutIdx === -1) firstHistOutIdx = out.length;
     const p = plan[hp++]!;
     flushAt(out.length, p.idx!);
     if (!p.covered) out.push(lm);
@@ -218,15 +216,6 @@ export async function buildInjection(
   }
 
   flushAt(histEnd < 0 ? out.length : histEnd, Number.POSITIVE_INFINITY);
-
-  // The codex is global state, so it rides ahead of the earliest history
-  // message and every chapter/arc/volume block.
-  if (codexText) {
-    const codexMsg: LlmMessageDTO = { role: "assistant", content: codexText };
-    const at = firstHistOutIdx >= 0 ? firstHistOutIdx : out.length;
-    out.splice(at, 0, codexMsg);
-    injectedLabels.set(codexMsg, "Knowledge Codex");
-  }
 
   if (injectedLabels.size === 0) return null;
 

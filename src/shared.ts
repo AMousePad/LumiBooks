@@ -22,6 +22,10 @@ export const CODEX_FILE_KEYS: readonly CodexFileKey[] = [
   "knowledge",
 ] as const;
 export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
+/** Marker for lorebook entries synced from codex records. Distinct from
+ * EXTENSION_KEY on purpose: summary entries are host-disabled and re-injected
+ * by our interceptor, codex entries ride the host's own keyword activation. */
+export const CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex" as const;
 export const STORAGE_VERSION = 3 as const;
 export const SETTINGS_PATH = "settings.json" as const;
 export const CHAT_STATE_DIR = "chats" as const;
@@ -433,4 +437,145 @@ export function bookNameFor(chatName: string | null | undefined, chatId: string)
   const cleanName = (chatName ?? "").trim();
   const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
   return `${WORLD_BOOK_NAME_PREFIX} - ${suffix}`;
+}
+
+/** The codex mirror book: managed wholesale by sync, hence the loud name. */
+export function codexBookNameFor(chatName: string | null | undefined, chatId: string): string {
+  const cleanName = (chatName ?? "").trim();
+  const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
+  return `${WORLD_BOOK_NAME_PREFIX} Codex [Do Not Edit] - ${suffix}`;
+}
+
+/* ------------------------------------------------- Lessons from Memoria */
+
+export const LESSONS_PATH = "lessons.json" as const;
+/** Fixture chats use this prefix so they can never collide with a real chat. */
+export const LESSON_CHAT_PREFIX = "lesson:" as const;
+
+export type LessonCourseKey = "books" | "codex";
+export type LessonStatus = "todo" | "in_progress" | "done";
+export type LessonAnswer = "gold" | "silver" | "skip";
+export type LessonGrade = "gilded" | "silver" | "bronze" | "apprentice";
+
+export interface LessonCourseState {
+  status: LessonStatus;
+  section: number;
+  step: number;
+  answers: Record<string, LessonAnswer>;
+  attempts: number;
+  bestWrong: number | null;
+  lastWrong: number | null;
+  /** Question count lastWrong was scored against (exam 10, course all). */
+  lastTotal: number | null;
+  grade: LessonGrade | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  signedName: string | null;
+}
+
+export interface LessonsState {
+  version: 1;
+  /** True when this install had no settings.json at first load: automation
+   * starts held and the Course 1 finale flips it on. */
+  freshInstall: boolean;
+  /** The user skipped the Course 1 seal: the archive opens, and a reminder
+   * sits on Home until the course is completed. */
+  booksSealSkipped: boolean;
+  /** The user skipped the Course 2 seal: the codex unlocks (the agent still
+   * needs enabling in Tuning), and a reminder sits on Home until completion. */
+  codexSealSkipped: boolean;
+  books: LessonCourseState;
+  codex: LessonCourseState;
+}
+
+export function emptyLessonCourse(): LessonCourseState {
+  return {
+    status: "todo",
+    section: 0,
+    step: 0,
+    answers: {},
+    attempts: 0,
+    bestWrong: null,
+    lastWrong: null,
+    lastTotal: null,
+    grade: null,
+    startedAt: null,
+    completedAt: null,
+    signedName: null,
+  };
+}
+
+export function makeDefaultLessons(freshInstall: boolean): LessonsState {
+  return { version: 1, freshInstall, booksSealSkipped: false, codexSealSkipped: false, books: emptyLessonCourse(), codex: emptyLessonCourse() };
+}
+
+/** Fail-open state: a broken lessons file must never lock a working install. */
+export function unlockedLessons(): LessonsState {
+  const done = (): LessonCourseState => ({ ...emptyLessonCourse(), status: "done" });
+  return { version: 1, freshInstall: false, booksSealSkipped: false, codexSealSkipped: false, books: done(), codex: done() };
+}
+
+/** The one codex gate check, shared by backend gating and UI locks: the
+ * codex opens on graduation or an explicit seal skip. */
+export function codexLessonGated(lessons: LessonsState): boolean {
+  return lessons.codex.status !== "done" && !lessons.codexSealSkipped;
+}
+
+export function lessonGradeForWrong(wrong: number): LessonGrade {
+  if (wrong <= 1) return "gilded";
+  if (wrong <= 3) return "silver";
+  if (wrong <= 6) return "bronze";
+  return "apprentice";
+}
+
+export const LESSON_GRADE_LABEL: Readonly<Record<LessonGrade, string>> = {
+  gilded: "Gilded",
+  silver: "Silver",
+  bronze: "Bronze",
+  apprentice: "Apprentice",
+};
+
+function normalizeLessonAnswers(raw: unknown): Record<string, LessonAnswer> {
+  const out: Record<string, LessonAnswer> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (v === "gold" || v === "silver" || v === "skip") out[k] = v;
+    }
+  }
+  return out;
+}
+
+export function normalizeLessonCourse(raw: unknown): LessonCourseState {
+  const base = emptyLessonCourse();
+  if (!raw || typeof raw !== "object") return base;
+  const v = raw as Partial<LessonCourseState>;
+  const status = v.status === "done" || v.status === "in_progress" ? v.status : "todo";
+  const grade =
+    v.grade === "gilded" || v.grade === "silver" || v.grade === "bronze" || v.grade === "apprentice" ? v.grade : null;
+  return {
+    status,
+    section: clampInt(v.section, 0, 100, 0),
+    step: clampInt(v.step, 0, 1000, 0),
+    answers: normalizeLessonAnswers(v.answers),
+    attempts: clampInt(v.attempts, 0, 10000, 0),
+    bestWrong: typeof v.bestWrong === "number" && Number.isFinite(v.bestWrong) ? v.bestWrong : null,
+    lastWrong: typeof v.lastWrong === "number" && Number.isFinite(v.lastWrong) ? v.lastWrong : null,
+    lastTotal: typeof v.lastTotal === "number" && Number.isFinite(v.lastTotal) && v.lastTotal > 0 ? Math.round(v.lastTotal) : null,
+    grade,
+    startedAt: typeof v.startedAt === "number" ? v.startedAt : null,
+    completedAt: typeof v.completedAt === "number" ? v.completedAt : null,
+    signedName: typeof v.signedName === "string" && v.signedName.trim() ? v.signedName.trim().slice(0, 60) : null,
+  };
+}
+
+export function normalizeLessons(raw: unknown): LessonsState {
+  const v = raw && typeof raw === "object" ? (raw as Partial<LessonsState>) : {};
+  return {
+    version: 1,
+    freshInstall: v.freshInstall === true,
+    booksSealSkipped: v.booksSealSkipped === true,
+    codexSealSkipped: v.codexSealSkipped === true,
+    books: normalizeLessonCourse(v.books),
+    codex: normalizeLessonCourse(v.codex),
+  };
 }

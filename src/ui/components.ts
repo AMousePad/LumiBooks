@@ -249,7 +249,8 @@ export interface SubtabDef<K extends string> {
   label: string;
 }
 
-/** Horizontal subtab strip used inside every top-level tab. */
+/** Subtab strip used inside every top-level tab; wraps onto extra rows when
+ * the pane is too narrow to fit every button. */
 export function makeSubtabs<K extends string>(
   defs: SubtabDef<K>[],
   active: K,
@@ -257,27 +258,18 @@ export function makeSubtabs<K extends string>(
 ): HTMLElement {
   const bar = document.createElement("div");
   bar.className = "lmb-subtabs";
-  let activeBtn: HTMLButtonElement | null = null;
   for (const d of defs) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `lmb-subtab${d.key === active ? " active" : ""}`;
     btn.textContent = d.label;
+    // Lesson nav steps spotlight subtab buttons and wait for the user's click.
+    lessonMark(btn, `subtab.${d.key}`);
     btn.addEventListener("click", () => {
       if (d.key !== active) onPick(d.key);
     });
     bar.appendChild(btn);
-    if (d.key === active) activeBtn = btn;
   }
-  // After mount: flag overflow (drives the fade mask) and keep the active
-  // subtab in view - a hidden active tab with no scroll hint reads as missing.
-  requestAnimationFrame(() => {
-    if (!bar.isConnected) return;
-    bar.classList.toggle("scrollable", bar.scrollWidth > bar.clientWidth + 1);
-    if (activeBtn && bar.scrollWidth > bar.clientWidth + 1) {
-      activeBtn.scrollIntoView({ inline: "nearest", block: "nearest" });
-    }
-  });
   return bar;
 }
 
@@ -421,3 +413,34 @@ export function preserveScroll(anchor: HTMLElement | null, fn: () => void): void
 }
 
 export const HIDDEN_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.77 19.77 0 0 1 4.22-5.42"/><path d="M22.54 16.88A10.94 10.94 0 0 0 23 12s-4-8-11-8a10.84 10.84 0 0 0-5.34 1.4"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+/** Lesson spotlight anchor. The check script greps for these ids, so mark
+ * elements through this helper only. */
+export function lessonMark<T extends HTMLElement>(el: T, id: string): T {
+  el.dataset["lesson"] = id;
+  return el;
+}
+
+const TOAST_STACK_CAP = 5;
+
+/** The one styled toast stack, shared by app messages and the lesson sandbox. */
+export function showToast(tone: "success" | "info" | "warn" | "error", text: string): void {
+  let stack = document.body.querySelector(":scope > .lmb-toast-stack") as HTMLDivElement | null;
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.className = "lmb-toast-stack";
+    document.body.appendChild(stack);
+  }
+  while (stack.childElementCount >= TOAST_STACK_CAP) {
+    stack.firstElementChild?.remove();
+  }
+  const el = document.createElement("div");
+  el.className = `lmb-toast lmb-toast-${tone}`;
+  el.textContent = text;
+  stack.appendChild(el);
+  const duration = tone === "error" ? 8000 : tone === "warn" ? 6000 : 4000;
+  setTimeout(() => {
+    el.classList.add("lmb-toast-leaving");
+    setTimeout(() => el.remove(), 200);
+  }, duration);
+}

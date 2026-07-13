@@ -55,6 +55,8 @@ export interface CodexEntity {
   /** Inline relationship notes - only legal when the relations table is disabled. */
   ties?: string[];
   notes?: string;
+  /** Retrieval tags for the synced lorebook entry; never rendered into the prompt body. */
+  keywords?: string[];
   [extra: string]: unknown;
 }
 
@@ -115,6 +117,8 @@ export interface CodexThreadsFile {
 export interface CodexWorldEntry {
   topic: string;
   facts: string[];
+  /** Retrieval tags for the synced lorebook entry; never rendered into the prompt body. */
+  keywords?: string[];
 }
 
 export interface CodexWorldFile {
@@ -137,6 +141,8 @@ export interface CodexKnowledgeItem {
   hiddenFrom?: string[];
   falseBeliefs?: CodexFalseBelief[];
   note?: string;
+  /** Retrieval tags for the synced lorebook entry; never rendered into the prompt body. */
+  keywords?: string[];
 }
 
 export interface CodexKnowledgeFile {
@@ -270,14 +276,21 @@ function asRecord(ctx: Ctx, raw: unknown, path: string): Record<string, unknown>
   return raw as Record<string, unknown>;
 }
 
-/** Keep unknown extra fields when they are primitive, so sheets stay flexible. */
+/** Keep primitive extra fields; strict mode rejects the rest instead of dropping them. */
 function keepExtras(
+  ctx: Ctx,
   target: Record<string, unknown>,
   source: Record<string, unknown>,
   known: readonly string[],
+  path: string,
+  strict: boolean,
 ): void {
   for (const [k, v] of Object.entries(source)) {
-    if (known.includes(k)) continue;
+    const lower = k.toLowerCase();
+    if (known.some((f) => f === lower)) {
+      if (k !== lower && strict) ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
+      continue;
+    }
     // JSON.parse can produce an own "__proto__" key; assigning it would hit
     // the prototype accessor instead of storing a field.
     if (k === "__proto__") continue;
@@ -293,19 +306,23 @@ function keepExtras(
     } else if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
       const arr = (v as string[]).map((x) => x.trim()).filter(Boolean);
       if (arr.length) target[k] = arr;
+    } else if (v !== null && v !== undefined && strict) {
+      ctx.errors.push(`${path}.${k}: extra fields must be primitive (string, number, boolean, or string[]), flatten this`);
     }
-    // Anything else (nested objects, null) is dropped: structure stays flat.
+    // Lenient mode drops the rest (nested objects, null): structure stays flat.
   }
 }
 
 const ENTITY_KNOWN_FIELDS = [
   "id", "name", "aliases", "kind", "role", "appearance", "description",
-  "traits", "goals", "significance", "status", "ties", "notes",
+  "traits", "goals", "significance", "status", "ties", "notes", "keywords",
 ] as const;
 
 export interface ValidateOptions {
   /** Whether the relations table is enabled for this profile. */
   relationsTable: boolean;
+  /** On for agent writes, off for loads and hand-saves so legacy files never brick. */
+  strictExtras?: boolean;
 }
 
 function validateEntityFile(
@@ -344,7 +361,7 @@ function validateEntityFile(
       const v = str(ctx, e[f], `${path}.${f}`, false);
       if (v) out[f] = v;
     }
-    for (const f of ["traits", "goals"] as const) {
+    for (const f of ["traits", "goals", "keywords"] as const) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
       if (v) out[f] = v;
     }
@@ -356,7 +373,7 @@ function validateEntityFile(
         out.ties = ties;
       }
     }
-    keepExtras(out, e, ENTITY_KNOWN_FIELDS);
+    keepExtras(ctx, out, e, ENTITY_KNOWN_FIELDS, path, opts.strictExtras === true);
     entities.push(out);
   }
   if (ctx.errors.length) return fail(ctx.errors);
@@ -491,7 +508,8 @@ function validateWorldFile(raw: unknown): ValidationResult<CodexWorldFile> {
       ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
       continue;
     }
-    entries.push({ topic, facts });
+    const keywords = strArray(ctx, e["keywords"], `${path}.keywords`);
+    entries.push({ topic, facts, ...(keywords ? { keywords } : {}) });
   }
   if (ctx.errors.length) return fail(ctx.errors);
   return { ok: true, value: { entries } };
@@ -523,6 +541,8 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
     }
     const note = str(ctx, k["note"], `${path}.note`, false);
     if (note) out.note = note;
+    const keywords = strArray(ctx, k["keywords"], `${path}.keywords`);
+    if (keywords) out.keywords = keywords;
     if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
       ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
       continue;
@@ -567,31 +587,33 @@ function collectEntityIds(bundle: CodexBundle): Set<string> {
 interface DanglingRef {
   path: string;
   ref: string;
+  /** File holding the reference, so tolerance budgets stay per file. */
+  file: CodexFileKey;
 }
 
 function collectDangling(bundle: CodexBundle): DanglingRef[] {
   const ids = collectEntityIds(bundle);
   const out: DanglingRef[] = [];
-  const check = (ref: string, path: string): void => {
-    if (looksLikeEntityRef(ref) && !ids.has(ref)) out.push({ ref, path });
+  const check = (ref: string, path: string, file: CodexFileKey): void => {
+    if (looksLikeEntityRef(ref) && !ids.has(ref)) out.push({ ref, path, file });
   };
   bundle.relations.relations.forEach((r, i) => {
     if (r.type === "pair") {
-      check(r.a, `relations[${i}].a`);
-      check(r.b, `relations[${i}].b`);
+      check(r.a, `relations[${i}].a`, "relations");
+      check(r.b, `relations[${i}].b`, "relations");
     } else {
-      r.members.forEach((m) => check(m, `relations[${i}].members`));
-      for (const k of Object.keys(r.roles ?? {})) check(k, `relations[${i}].roles`);
+      r.members.forEach((m) => check(m, `relations[${i}].members`, "relations"));
+      for (const k of Object.keys(r.roles ?? {})) check(k, `relations[${i}].roles`, "relations");
     }
   });
   bundle.knowledge.items.forEach((k, i) => {
-    (k.knownBy ?? []).forEach((w) => check(w, `knowledge items[${i}].knownBy`));
-    (k.hiddenFrom ?? []).forEach((w) => check(w, `knowledge items[${i}].hiddenFrom`));
-    (k.falseBeliefs ?? []).forEach((b, j) => check(b.who, `knowledge items[${i}].falseBeliefs[${j}].who`));
+    (k.knownBy ?? []).forEach((w) => check(w, `knowledge items[${i}].knownBy`, "knowledge"));
+    (k.hiddenFrom ?? []).forEach((w) => check(w, `knowledge items[${i}].hiddenFrom`, "knowledge"));
+    (k.falseBeliefs ?? []).forEach((b, j) => check(b.who, `knowledge items[${i}].falseBeliefs[${j}].who`, "knowledge"));
   });
   bundle.timeline.events.forEach((e, i) => {
-    (e.participants ?? []).forEach((p) => check(p, `timeline events[${i}].participants`));
-    if (e.where) check(e.where, `timeline events[${i}].where`);
+    (e.participants ?? []).forEach((p) => check(p, `timeline events[${i}].participants`, "timeline"));
+    if (e.where) check(e.where, `timeline events[${i}].where`, "timeline");
   });
   return out;
 }
@@ -613,18 +635,17 @@ export function checkIntegrity(bundle: CodexBundle): string[] {
 
 /**
  * Dangling refs a run must be held responsible for: everything currently
- * broken minus what was already broken on disk (`tolerate`). A pre-existing
- * dangler in a file this run never touched must not stall consumption forever,
- * but tolerance is counted per ref, so a NEW occurrence of an already-broken id
- * (e.g. a fresh row pointing at the same undefined entity) still reports.
+ * broken minus what was already broken on disk. Tolerance is per file and
+ * ref, so a new occurrence can never consume an untouched file's budget.
  */
 export function newDanglingErrors(bundle: CodexBundle, tolerate: Map<string, number>): string[] {
   const used = new Map<string, number>();
   const out: string[] = [];
   for (const d of collectDangling(bundle)) {
-    const budget = tolerate.get(d.ref) ?? 0;
-    const spent = used.get(d.ref) ?? 0;
-    used.set(d.ref, spent + 1);
+    const key = `${d.file}::${d.ref}`;
+    const budget = tolerate.get(key) ?? 0;
+    const spent = used.get(key) ?? 0;
+    used.set(key, spent + 1);
     if (spent < budget) continue; // within the pre-existing count, tolerate
     out.push(formatDangling(d));
   }
@@ -633,6 +654,9 @@ export function newDanglingErrors(bundle: CodexBundle, tolerate: Map<string, num
 
 export function danglingRefCounts(bundle: CodexBundle): Map<string, number> {
   const m = new Map<string, number>();
-  for (const d of collectDangling(bundle)) m.set(d.ref, (m.get(d.ref) ?? 0) + 1);
+  for (const d of collectDangling(bundle)) {
+    const key = `${d.file}::${d.ref}`;
+    m.set(key, (m.get(key) ?? 0) + 1);
+  }
   return m;
 }

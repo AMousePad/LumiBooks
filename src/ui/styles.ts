@@ -1,3 +1,5 @@
+import { LESSON_STYLES } from "./lessons/styles-lessons";
+
 /**
  * LumiBooks visual system - "Gilded Archive".
  *
@@ -177,16 +179,14 @@ export const STYLES = `
 /* --------------------------------------------------------------- subtabs */
 .lmb-subtabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
   background: var(--lmb-fill);
   border: 1px solid var(--lmb-hairline);
   border-radius: var(--lmb-r);
-  overflow-x: auto;
-  scrollbar-width: none;
   flex: 0 0 auto;
 }
-.lmb-subtabs::-webkit-scrollbar { display: none; }
 .lmb-subtab {
   flex: 1;
   background: transparent;
@@ -202,12 +202,6 @@ export const STYLES = `
   cursor: pointer;
   white-space: nowrap;
   transition: color 250ms var(--lmb-ease), background 250ms var(--lmb-ease), box-shadow 250ms var(--lmb-ease);
-}
-/* Right-edge fade when the strip actually overflows (class set from JS),
-   so hidden subtabs announce themselves. */
-.lmb-subtabs.scrollable {
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
 }
 .lmb-subtab:hover { color: var(--lmb-ink); background: var(--lmb-frame-faint); }
 .lmb-subtab.active {
@@ -1257,10 +1251,12 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 }
 
 /* --------------------------------------------------- codex: relation graph */
-.lmb-graph-wrap { position: relative; }
+/* The web gets as much room as the pane can give, and the camera (pan and
+   zoom) frames it, so labels stay readable at any cast size. */
+.lmb-graph-wrap { position: relative; height: clamp(300px, 56vh, 620px); }
 .lmb-graph {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
   background:
     radial-gradient(90% 70% at 50% 40%, var(--lmb-frame-faint), transparent 75%),
@@ -1268,6 +1264,21 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   border: 1px solid var(--lmb-hairline);
   border-radius: var(--lmb-r);
   touch-action: none;
+  cursor: grab;
+}
+.lmb-graph:active { cursor: grabbing; }
+.lmb-graph-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+.lmb-graph-tools .lmb-btn {
+  min-height: 0;
+  padding: 4px 9px 3px;
+  background: var(--lmb-void);
 }
 .lmb-graph-edge {
   stroke: var(--lmb-frame-strong);
@@ -1723,16 +1734,13 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   }
   .lmb-busy-dot { transform: rotate(45deg); }
 }
-`;
+` + LESSON_STYLES;
 
+/** Lucide "book-marked" (ISC license, lucide.dev): a book with a ribbon
+ * bookmark, hinted to stay crisp at drawer-tab size. */
 export const ICON_SVG = `
-<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M12 1.5v2"/>
-  <path d="M7.6 2.4l1 1.7"/>
-  <path d="M16.4 2.4l-1 1.7"/>
-  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-  <path d="M6.5 6H20v16H6.5A2.5 2.5 0 0 1 4 19.5V8.5A2.5 2.5 0 0 1 6.5 6z"/>
-  <path d="M8 11h8"/>
-  <path d="M8 15h6"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M10 2v8l3-3 3 3V2"/>
+  <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
 </svg>
 `;

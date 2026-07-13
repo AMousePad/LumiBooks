@@ -1,7 +1,9 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile } from "../../shared";
-import { checkbox, makeSubtabs, scrollPaneTop, section } from "../components";
+import { codexLessonGated } from "../../shared";
+import { checkbox, lessonMark, makeSubtabs, scrollPaneTop, section } from "../components";
+import { renderCodexPaneLock } from "../lessons/seal";
 import {
   renderAutomation,
   renderBehavior,
@@ -26,6 +28,11 @@ const SUBTABS: { key: TuningSubtab; label: string }[] = [
 ];
 
 const local = { subtab: "profile" as TuningSubtab };
+
+/** Lesson-stage navigation: pick the subtab before a demo render. */
+export function setTuningSubtab(key: string): void {
+  if (key === "profile" || key === "codex" || key === "model" || key === "prompts") local.subtab = key;
+}
 
 export function renderTuningTab(
   host: HTMLElement,
@@ -88,7 +95,8 @@ export function renderTuningTab(
       break;
     }
     case "codex":
-      renderCodexSettings(pane, state, profile, patch);
+      if (codexLessonGated(state.lessons)) renderCodexPaneLock(pane);
+      else renderCodexSettings(pane, state, profile, patch);
       break;
     case "model":
       renderConnection(pane, state, profile, patch);
@@ -121,12 +129,12 @@ function renderGlobalSettings(
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId }),
   }));
 
-  sec.body.appendChild(checkbox({
+  sec.body.appendChild(lessonMark(checkbox({
     checked: state.settings.forceConstantEntries,
     label: "Force constant entries",
     hint: "When on, every LumiBooks lorebook entry (current and future) is marked constant so it activates without keyword matching. Toggling re-flips every existing LumiBooks entry across all chats.",
     onChange: (v) => send({ type: "set_force_constant", value: v, chatId: state.activeChatId }),
-  }));
+  }), "tuning.every.constant"));
 
   host.appendChild(sec.wrap);
 }

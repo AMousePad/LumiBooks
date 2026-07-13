@@ -2,7 +2,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookDTO, WorldBookEntryDTO } from "lumiverse-spindle-types";
 import type { LMBEntryMeta } from "../shared";
-import { EXTENSION_KEY, WORLD_BOOK_NAME_PREFIX, bookNameFor, normalizeEntryMeta } from "../shared";
+import { EXTENSION_KEY, WORLD_BOOK_NAME_PREFIX, bookNameFor, codexBookNameFor, normalizeEntryMeta } from "../shared";
 import { describeError, error, warn } from "./runtime";
 
 const PAGE_LIMIT = 200;
@@ -198,6 +198,9 @@ async function recoverBookForChat(
   const matches: { id: string; count: number }[] = [];
   for (const book of books) {
     const meta = book.metadata as Record<string, unknown> | undefined;
+    // Codex mirror books share the LumiBooks name prefix but are never the
+    // summaries book: re-tagging one here would cross the two systems.
+    if (meta && meta[CODEX_BOOK_META_KEY]) continue;
     const bookChatId = meta && typeof meta["lumibooks_chat_id"] === "string" ? (meta["lumibooks_chat_id"] as string) : null;
     // A book correctly tagged for another chat can't be this chat's lost book.
     // (One tagged for this chat would already have been found; re-checking is harmless.)
@@ -220,28 +223,44 @@ async function recoverBookForChat(
   return { bookId: matches[0]!.id, count: matches[0]!.count, candidates: matches.length };
 }
 
-async function bindBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
-  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
-  if (!chat) return;
-  const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
-  const existing = Array.isArray((metadata as Record<string, unknown>)["chat_world_book_ids"])
-    ? ((metadata as Record<string, unknown>)["chat_world_book_ids"] as string[]).filter((x) => typeof x === "string")
-    : [];
-  const alreadyBound = existing.includes(bookId);
-  const alreadyClaimed = (metadata as Record<string, unknown>)["lumibooks_book_id"] === bookId;
-  if (alreadyBound && alreadyClaimed) return;
-  const nextChatBookIds = alreadyBound ? existing : [...existing, bookId];
-  await spindle.chats.update(
-    chatId,
-    {
-      metadata: {
-        ...(metadata as Record<string, unknown>),
-        chat_world_book_ids: nextChatBookIds,
-        lumibooks_book_id: bookId,
+/** Serializes chat-metadata read-modify-writes per chat within this process. */
+const chatMetaChain = new Map<string, Promise<unknown>>();
+export function withChatMetaLock<T>(userId: string, chatId: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${userId}::${chatId}`;
+  const prev = chatMetaChain.get(key) ?? Promise.resolve();
+  const tail = prev.then(fn, fn);
+  const guarded = tail.catch(() => undefined);
+  chatMetaChain.set(key, guarded);
+  guarded.then(() => {
+    if (chatMetaChain.get(key) === guarded) chatMetaChain.delete(key);
+  });
+  return tail;
+}
+
+function bindBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
+  return withChatMetaLock(userId, chatId, async () => {
+    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    if (!chat) return;
+    const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
+    const existing = Array.isArray((metadata as Record<string, unknown>)["chat_world_book_ids"])
+      ? ((metadata as Record<string, unknown>)["chat_world_book_ids"] as string[]).filter((x) => typeof x === "string")
+      : [];
+    const alreadyBound = existing.includes(bookId);
+    const alreadyClaimed = (metadata as Record<string, unknown>)["lumibooks_book_id"] === bookId;
+    if (alreadyBound && alreadyClaimed) return;
+    const nextChatBookIds = alreadyBound ? existing : [...existing, bookId];
+    await spindle.chats.update(
+      chatId,
+      {
+        metadata: {
+          ...(metadata as Record<string, unknown>),
+          chat_world_book_ids: nextChatBookIds,
+          lumibooks_book_id: bookId,
+        },
       },
-    },
-    userId,
-  );
+      userId,
+    );
+  });
 }
 
 /** The world-book ids the chat has attached at chat scope (chat.metadata.chat_world_book_ids). */
@@ -262,6 +281,9 @@ export async function getChatAttachedBookIds(chatId: string, userId: string): Pr
  * book itself stays intact. Returns true if it re-bound.
  */
 export async function reassertChatBinding(chatId: string, userId: string): Promise<boolean> {
+  // The codex mirror book rides the same reassert cadence: an unbound codex
+  // book silently mutes every codex entry.
+  await reassertCodexBinding(chatId, userId).catch(() => {});
   const bookId = await findBookForChat(chatId, userId).catch(() => null);
   if (!bookId) return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
@@ -421,6 +443,7 @@ export async function patchEntryMeta(
 export function invalidateBookCache(userId: string, chatId: string): void {
   chatBookCache.delete(cacheKey(userId, chatId));
   entriesCache.delete(cacheKey(userId, chatId));
+  codexBookCache.delete(cacheKey(userId, chatId));
 }
 
 export function findCachedChatIdForBook(userId: string, bookId: string): string | null {
@@ -453,6 +476,175 @@ export function invalidateAllBookCacheEntriesForBook(userId: string, bookId: str
     chatBookCache.delete(k);
     entriesCache.delete(k);
   }
+  const codexToDelete: string[] = [];
+  for (const [key, value] of codexBookCache) {
+    if (!key.startsWith(prefix)) continue;
+    if (value.bookId === bookId) codexToDelete.push(key);
+  }
+  for (const k of codexToDelete) codexBookCache.delete(k);
+}
+
+/* --------------------------------------------------------- codex book */
+/* The codex mirror lives in its own book, separate from the summaries book:
+   the host activates its entries natively (keywords + constant), while the
+   summaries book stays host-disabled and hand-injected. Never mix the two. */
+
+const CODEX_BOOK_META_KEY = "lumibooks_codex_chat_id";
+const CODEX_BOOK_CLAIM_KEY = "lumibooks_codex_book_id";
+const codexBookCache = new Map<string, ChatBookCacheEntry>();
+const codexEnsureInflight = new Map<string, Promise<WorldBookDTO>>();
+
+function setCodexBookCache(key: string, value: ChatBookCacheEntry): void {
+  if (codexBookCache.has(key)) codexBookCache.delete(key);
+  codexBookCache.set(key, value);
+  while (codexBookCache.size > CHAT_BOOK_CACHE_CAP) {
+    const oldest = codexBookCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    codexBookCache.delete(oldest);
+  }
+}
+
+function codexBookTaggedFor(book: WorldBookDTO, chatId: string): boolean {
+  return codexBookChatTag(book) === chatId;
+}
+
+/** The chat a codex mirror book belongs to, or null for non-codex books. */
+export function codexBookChatTag(book: WorldBookDTO): string | null {
+  const meta = book.metadata && typeof book.metadata === "object" ? (book.metadata as Record<string, unknown>) : null;
+  const tag = meta ? meta[CODEX_BOOK_META_KEY] : null;
+  return typeof tag === "string" && tag ? tag : null;
+}
+
+export async function findCodexBookForChat(chatId: string, userId: string): Promise<string | null> {
+  const cached = codexBookCache.get(cacheKey(userId, chatId));
+  if (cached && cached.expiresAt > Date.now()) return cached.bookId;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat?.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : null;
+  const claimed = md && typeof md[CODEX_BOOK_CLAIM_KEY] === "string" ? (md[CODEX_BOOK_CLAIM_KEY] as string) : null;
+  if (claimed) {
+    const book = await spindle.world_books.get(claimed, userId).catch(() => null);
+    // The tag check matters on forks: a branched chat inherits the parent's
+    // claim, and honoring it would point the fork at the parent's codex.
+    if (book && codexBookTaggedFor(book, chatId)) {
+      setCodexBookCache(cacheKey(userId, chatId), { bookId: claimed, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
+      return claimed;
+    }
+  }
+  const books = await listAllBooks(userId);
+  for (const book of books) {
+    if (codexBookTaggedFor(book, chatId)) {
+      setCodexBookCache(cacheKey(userId, chatId), { bookId: book.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
+      return book.id;
+    }
+  }
+  return null;
+}
+
+function bindCodexBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
+  return withChatMetaLock(userId, chatId, async () => {
+    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    if (!chat) return;
+    const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
+    const md = metadata as Record<string, unknown>;
+    const existing = Array.isArray(md["chat_world_book_ids"])
+      ? (md["chat_world_book_ids"] as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    const alreadyBound = existing.includes(bookId);
+    const alreadyClaimed = md[CODEX_BOOK_CLAIM_KEY] === bookId;
+    if (alreadyBound && alreadyClaimed) return;
+    await spindle.chats.update(
+      chatId,
+      {
+        metadata: {
+          ...md,
+          chat_world_book_ids: alreadyBound ? existing : [...existing, bookId],
+          [CODEX_BOOK_CLAIM_KEY]: bookId,
+        },
+      },
+      userId,
+    );
+  });
+}
+
+export async function ensureCodexBookForChat(chatId: string, userId: string): Promise<WorldBookDTO> {
+  const key = cacheKey(userId, chatId);
+  const inflight = codexEnsureInflight.get(key);
+  if (inflight) return inflight;
+  const p = doEnsureCodexBookForChat(chatId, userId).finally(() => {
+    codexEnsureInflight.delete(key);
+  });
+  codexEnsureInflight.set(key, p);
+  return p;
+}
+
+async function doEnsureCodexBookForChat(chatId: string, userId: string): Promise<WorldBookDTO> {
+  const existingId = await findCodexBookForChat(chatId, userId);
+  if (existingId) {
+    // Uncaught on purpose: creating on a transport fault would mint a duplicate book.
+    const existing = await spindle.world_books.get(existingId, userId);
+    if (existing) {
+      await bindCodexBookToChat(chatId, existing.id, userId);
+      return existing;
+    }
+  }
+  const chat = await spindle.chats.get(chatId, userId);
+  if (!chat) throw new Error(`Chat ${chatId} not found for user`);
+  const book = await spindle.world_books.create(
+    {
+      name: codexBookNameFor(chat.name, chatId),
+      description:
+        "Managed by LumiBooks. This book mirrors the Knowledge Codex as retrievable entries and is rewritten on every codex update - edits made here WILL be overwritten. Edit records in the LumiBooks Codex tab instead.",
+      metadata: {
+        [CODEX_BOOK_META_KEY]: chatId,
+        lumibooks_created_at: Date.now(),
+      },
+    },
+    userId,
+  );
+  setCodexBookCache(cacheKey(userId, chatId), { bookId: book.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
+  await bindCodexBookToChat(chatId, book.id, userId);
+  return book;
+}
+
+/** Remove one book from a chat's scanned set (and its codex claim if it held
+ * it). Used on forks, where the branch copies the parent's attachments. */
+export function unbindBookFromChat(chatId: string, bookId: string, userId: string): Promise<void> {
+  return withChatMetaLock(userId, chatId, async () => {
+    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    if (!chat) return;
+    const md = (chat.metadata && typeof chat.metadata === "object") ? { ...(chat.metadata as Record<string, unknown>) } : {};
+    const existing = Array.isArray(md["chat_world_book_ids"])
+      ? (md["chat_world_book_ids"] as unknown[]).filter((x): x is string => typeof x === "string")
+      : [];
+    const filtered = existing.filter((id) => id !== bookId);
+    const claimHeld = md[CODEX_BOOK_CLAIM_KEY] === bookId;
+    if (filtered.length === existing.length && !claimHeld) return;
+    md["chat_world_book_ids"] = filtered;
+    if (claimHeld) delete md[CODEX_BOOK_CLAIM_KEY];
+    await spindle.chats.update(chatId, { metadata: md }, userId);
+  });
+}
+
+/** Claim-fast-path rebind for the codex book, mirroring reassertChatBinding:
+ * a wholesale chat-metadata write can drop the book from the scanned set,
+ * which silently mutes every codex entry. Full recovery (claim stripped too)
+ * happens on the next sync via ensureCodexBookForChat. */
+export async function reassertCodexBinding(chatId: string, userId: string): Promise<boolean> {
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  if (!chat) return false;
+  const md = chat.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : {};
+  const claimed = typeof md[CODEX_BOOK_CLAIM_KEY] === "string" ? (md[CODEX_BOOK_CLAIM_KEY] as string) : null;
+  if (!claimed) return false;
+  const attached = Array.isArray(md["chat_world_book_ids"])
+    ? (md["chat_world_book_ids"] as unknown[]).filter((x): x is string => typeof x === "string")
+    : [];
+  if (attached.includes(claimed)) return false;
+  const book = await spindle.world_books.get(claimed, userId).catch(() => null);
+  if (!book || !codexBookTaggedFor(book, chatId)) return false;
+  await bindCodexBookToChat(chatId, claimed, userId).catch((err) => {
+    warn(`reassertCodexBinding: failed to rebind ${claimed} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
+  });
+  return true;
 }
 
 export interface RootCandidate {

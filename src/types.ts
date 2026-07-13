@@ -1,4 +1,15 @@
-import type { CustomPreset, LMBProfile, LMBSettings, LMBEntryMeta, SamplerSet } from "./shared";
+import type {
+  CustomPreset,
+  LMBProfile,
+  LMBSettings,
+  LMBEntryMeta,
+  LessonAnswer,
+  LessonCourseKey,
+  LessonCourseState,
+  LessonGrade,
+  LessonsState,
+  SamplerSet,
+} from "./shared";
 
 export interface ChapterView {
   entryId: string;
@@ -132,7 +143,8 @@ export interface FrontendState {
   codexExists: boolean;
   codexBacklog: number;
   codexLastRunAt: number | null;
-  /** Approx tokens of the rendered codex injection block, 0 when none. */
+  /** Approx tokens of the constant codex entries (timeline + threads); the
+   * keyword-retrieved records cost extra only when a scene activates them. */
   codexInjectedTokens: number;
   /** Per-file inject/update switches; absent key = "on". */
   codexFileStates: Record<string, "on" | "noInject" | "frozen">;
@@ -140,6 +152,8 @@ export interface FrontendState {
   codexStaleFiles: string[];
   /** Approx prompt tokens per codex file, priced on the rendered injection text. */
   codexFileTokens: Record<string, number>;
+  /** Lessons from Memoria progress, account-wide. */
+  lessons: LessonsState;
 }
 
 export type FrontendToBackend =
@@ -190,7 +204,27 @@ export type FrontendToBackend =
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
-  | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean };
+  | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean }
+  | { type: "lesson_patch"; course: LessonCourseKey; patch: Partial<LessonCourseState>; chatId?: string | null }
+  | {
+      type: "lesson_complete";
+      course: LessonCourseKey;
+      wrong: number;
+      total: number;
+      grade: LessonGrade;
+      signedName: string | null;
+      answers?: Record<string, LessonAnswer>;
+      chatId?: string | null;
+    }
+  | {
+      type: "lesson_reset";
+      course: LessonCourseKey;
+      mode: "course" | "section";
+      section?: number;
+      answerIds?: string[];
+      chatId?: string | null;
+    }
+  | { type: "lesson_seal_skip"; course?: LessonCourseKey; chatId?: string | null };
 
 export interface DryRunMessage {
   role: "system" | "user";

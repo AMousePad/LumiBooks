@@ -40,6 +40,15 @@ Every so often, on a schedule you control, LB hands a slice of your story to a l
 
 You can edit the records yourself in the new and beautiful glass UI.
 
+## How it reaches the prompt
+
+The codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host's native lorebook activation decides what enters the prompt:
+
+- **Entities, world topics, and secrets** are keyword-triggered entries. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically).
+- **Timeline and threads** are constant entries as keyword matching doesn't make as much sense here.
+
+The mirror book is rewritten by LumiBooks often, so don't edit it by hand. Edit records in the Codex tab (or the JSON files) instead.
+
 ## For extension developers
 
 LumiBooks publishes the codex to Spindle's shared RPC pool. Read it from any extension backend:
@@ -50,7 +59,9 @@ const snap = await spindle.rpcPool.read(`lumi_books.codex.${chatId}`);
 // snap: { chatId, userId, files: { characters, locations, things, relations,
 //         timeline, threads, world, knowledge }, fileStates, runs, updatedAt }
 
-// Injection-ready text block, the same one LumiBooks puts in the prompt.
+// The whole codex rendered as one text block. Note LumiBooks itself no longer
+// injects this block: records reach the prompt as lorebook entries (see
+// "How it reaches the prompt"), so this is a convenience view for consumers.
 const text = await spindle.rpcPool.read(`lumi_books.codex.${chatId}.rendered`);
 
 // Change signal: the most recent codex mutation across all chats.

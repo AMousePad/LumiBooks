@@ -11,6 +11,7 @@ import {
   checkbox,
   field,
   labelled,
+  lessonMark,
   makeButton,
   multiSelect,
   numberInput,
@@ -34,15 +35,15 @@ export function renderCodexSettings(
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "An agent reads every new turn and keeps per-chat JSON records of characters, locations, things, relations, timeline, threads, world rules, and who-knows-what. The codex is injected into the prompt as a snapshot of the story's present.";
+    "An agent reads new turns and keeps per-chat lorebook records of characters, locations, things, relations, timeline, threads, world rules, and who-knows-what.";
   sec.body.appendChild(help);
 
-  sec.body.appendChild(checkbox({
+  sec.body.appendChild(lessonMark(checkbox({
     checked: profile.codexEnabled,
     label: "Enabled",
-    hint: "Runs automatically after generations once the backlog fills. Manual updates live in the Books tab.",
+    hint: "Runs automatically after generations once the backlog fills. Manual updates live on Home and the Codex tab.",
     onChange: (v) => patch({ codexEnabled: v }),
-  }));
+  }), "tuning.codex.enabled"));
 
   const fields = document.createElement("div");
   fields.className = profile.codexEnabled ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
@@ -50,6 +51,7 @@ export function renderCodexSettings(
 
   const lagGrid = document.createElement("div");
   lagGrid.className = "lmb-grid-2";
+  lessonMark(lagGrid, "tuning.codex.lag");
   lagGrid.append(
     labelled("Lag unit", select({
       value: profile.codexLagUnit,
@@ -75,6 +77,7 @@ export function renderCodexSettings(
 
   const windowGrid = document.createElement("div");
   windowGrid.className = "lmb-grid-2";
+  lessonMark(windowGrid, "tuning.codex.window");
   windowGrid.append(
     labelled("Window unit", select({
       value: profile.codexWindowUnit,
@@ -100,14 +103,14 @@ export function renderCodexSettings(
 
   if (profile.codexWindowUnit === "messages") {
     fields.appendChild(
-      labelled("Tokens breakpoint", numberInput({
+      lessonMark(labelled("Tokens breakpoint", numberInput({
         value: profile.codexTokenBreakpoint,
         min: 1000,
         max: 1000000,
         step: 5000,
         defaultValue: PROFILE_DEFAULTS.codexTokenBreakpoint,
         onBlur: (v) => patch({ codexTokenBreakpoint: v ?? PROFILE_DEFAULTS.codexTokenBreakpoint }),
-      })),
+      })), "tuning.codex.breakpoint"),
     );
     const bpHint = document.createElement("div");
     bpHint.className = "lmb-field-hint";
@@ -121,26 +124,26 @@ export function renderCodexSettings(
     "Lag is the recent tail the codex leaves alone until it settles. Once a window's worth of older messages piles up behind it, the agent consumes them in one pass. Keep the lag smaller than the chapter lag if you want the codex fresher than the summaries.";
   fields.appendChild(cadenceHint);
 
-  fields.appendChild(checkbox({
+  fields.appendChild(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: "Relations table",
     hint: "Tracks connections between entities as one shared table with integrity checks. When off, relationships live as short notes on each entity sheet instead.",
     onChange: (v) => patch({ codexRelationsTable: v }),
-  }));
+  }), "tuning.codex.relations"));
 
-  fields.appendChild(checkbox({
+  fields.appendChild(lessonMark(checkbox({
     checked: profile.codexThorough,
     label: "Thorough mode",
     hint: "Spends one extra verification round per update to sweep for stale info and compress bloat.",
     onChange: (v) => patch({ codexThorough: v }),
-  }));
+  }), "tuning.codex.thorough"));
 
-  fields.appendChild(checkbox({
+  fields.appendChild(lessonMark(checkbox({
     checked: profile.codexExtraContext,
     label: "Extra context mode",
     hint: "Summarizes chapters early at the codex lag as ghost chapters. Ghosts feed the agent story-so-far context and are promoted into real chapters once the chapter lag arrives, with no second summarization.",
     onChange: (v) => patch({ codexExtraContext: v }),
-  }));
+  }), "tuning.codex.extra"));
 
   const connOpts = [
     { value: "", label: "Same as Memoria's connection" },
@@ -150,12 +153,16 @@ export function renderCodexSettings(
     })),
   ];
   fields.appendChild(
-    labelled("Codex connection", select({
+    lessonMark(labelled("Codex connection", select({
       value: profile.codexConnectionId ?? "",
       options: connOpts,
       onChange: (v) => patch({ codexConnectionId: v || null }),
-    })),
+    })), "tuning.codex.connection"),
   );
+  const connHint = document.createElement("div");
+  connHint.className = "lmb-field-hint";
+  connHint.textContent = "The codex model must support tool calls, the agent writes its files through them.";
+  fields.appendChild(connHint);
 
   host.appendChild(sec.wrap);
 }
@@ -211,6 +218,7 @@ export function renderProfilePicker(
   const sec = section("Profile");
   const row = document.createElement("div");
   row.className = "lmb-field-row";
+  lessonMark(row, "tuning.profile.select");
 
   const grow = document.createElement("div");
   grow.className = "lmb-grow";
@@ -260,9 +268,10 @@ export function renderProfilePicker(
 
 export function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Automation");
+  lessonMark(sec.wrap, "tuning.auto");
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "Everything in this section runs in the background after each generation. Manual actions in the Books and Make tabs always work regardless of these toggles.";
+  help.textContent = "Everything in this section runs in the background after each generation. Manual actions on Home and in Books → Compose always work regardless of these toggles.";
   sec.body.appendChild(help);
 
   sec.body.appendChild(checkbox({
@@ -341,6 +350,7 @@ export function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: 
 
   const arcGrid = document.createElement("div");
   arcGrid.className = "lmb-grid-2";
+  lessonMark(arcGrid, "tuning.arc");
   arcGrid.append(
     labelled("Trigger", select({
       value: profile.arcTrigger,
@@ -392,6 +402,7 @@ export function renderCompressionTargets(host: HTMLElement, profile: LMBProfile,
 
   const windowGrid = document.createElement("div");
   windowGrid.className = "lmb-grid-2";
+  lessonMark(windowGrid, "tuning.window");
   windowGrid.append(
     labelled("Window unit", select({
       value: profile.windowUnit,
@@ -511,7 +522,7 @@ export function renderCompressionTargets(host: HTMLElement, profile: LMBProfile,
 
   const volumeHint = document.createElement("div");
   volumeHint.className = "lmb-field-hint";
-  volumeHint.textContent = "Volumes are manual only. Turn arcs into a volume from the Make tab.";
+  volumeHint.textContent = "Volumes are manual only. Press arcs into a volume from Books → Compose.";
   sec.body.appendChild(volumeHint);
 
   const volumeRatioGrid = document.createElement("div");
@@ -553,6 +564,7 @@ export function renderConnection(
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
   const sec = section("Connection");
+  lessonMark(sec.wrap, "tuning.model.connection");
   const opts = [
     { value: "", label: state.connections.length ? "Default connection" : "No connections available" },
     ...state.connections.map((c) => ({
@@ -689,6 +701,7 @@ export function renderRegex(
 
 export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section("Context");
+  lessonMark(sec.wrap, "tuning.ctx");
   const f = field("Chapter context");
   f.body.appendChild(
     numberInput({
@@ -749,11 +762,11 @@ export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p
     hint: "Greys out covered messages in the chat. Enforcement runs in the interceptor either way.",
     onChange: (v) => patch({ hideCoveredMessages: v }),
   }));
-  sec.body.appendChild(checkbox({
+  sec.body.appendChild(lessonMark(checkbox({
     checked: profile.showMemoryPreviews,
     label: "Preview before saving",
-    hint: "Memoria stages new chapters and arcs in the Books tab for your approval.",
+    hint: "Memoria stages new chapters and arcs in Home → Pending previews for your approval.",
     onChange: (v) => patch({ showMemoryPreviews: v }),
-  }));
+  }), "tuning.behavior.preview"));
   host.appendChild(sec.wrap);
 }

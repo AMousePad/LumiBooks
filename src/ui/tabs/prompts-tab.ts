@@ -3,6 +3,7 @@ import type { FrontendState, FrontendToBackend } from "../../types";
 import type { CustomPreset, LMBProfile } from "../../shared";
 import {
   field,
+  lessonMark,
   makeButton,
   makeSubtabs,
   section,
@@ -182,6 +183,7 @@ function renderCategory(
   setKey: (cat: PresetCategory, key: string) => void,
 ): void {
   const sec = section(category === "arc" ? "Arc prompt" : category === "volume" ? "Volume prompt" : "Chapter prompt");
+  lessonMark(sec.wrap, "tuning.prompts");
 
   const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : state.chapterPresets;
   const customs = state.customPresets.filter((p) => p.category === category);

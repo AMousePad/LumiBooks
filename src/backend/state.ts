@@ -10,7 +10,8 @@ import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBindin
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
-import { buildCodexInjectionText, getCodexFileTokens, getCodexPanelState, getCodexStatus } from "./codex/index";
+import { getCodexFileTokens, getCodexPanelState, getCodexStatus } from "./codex/index";
+import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
 import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
@@ -21,6 +22,10 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const settings = await loadSettings(userId);
   const activeProfile =
     settings.profiles.find((p) => p.id === settings.activeProfileId) ?? settings.profiles[0]!;
+  const lessons = await ensureLessons(userId);
+  // Codex-derived fields respect the Course 2 gate; the raw profile still
+  // ships so Tuning shows the user's real values.
+  const codexProfile = effectiveProfile(activeProfile, lessons);
 
   let chat;
   if (requestedChatId) {
@@ -94,6 +99,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexFileStates: {},
     codexStaleFiles: [],
     codexFileTokens: {},
+    lessons,
   };
 
   if (!chat) return baseState;
@@ -193,16 +199,20 @@ export async function buildState(userId: string, requestedChatId?: string | null
     } catch (_) { void _; }
   }
 
-  const codexStatus = await getCodexStatus(chat.id, userId, activeProfile).catch((err) => {
+  const codexStatus = await getCodexStatus(chat.id, userId, codexProfile).catch((err) => {
     warn(`codex status failed: ${describeError(err)}`);
     return { exists: false, backlog: 0, lastRunAt: null };
   });
-  // Served from the injection-text cache, so this costs nothing on repeat
-  // pushes. Powers the prompt-composition bar on Home.
-  const codexInjectionText = await buildCodexInjectionText(chat.id, userId, activeProfile).catch(() => null);
-  const codexInjectedTokens = codexInjectionText ? approximateTokensFromChars(codexInjectionText.length) : 0;
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [] }));
-  const codexFileTokens = await getCodexFileTokens(chat.id, userId, activeProfile).catch(() => ({}));
+  const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
+  // Constant entries only (timeline + threads), keyworded records cost per scene.
+  const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
+    ? (["timeline", "threads"] as const).reduce((acc, k) => {
+        const st = (codexPanel.fileStates as Record<string, string>)[k];
+        if (st === "noInject" || st === "frozen") return acc;
+        return acc + (codexFileTokens[k] ?? 0);
+      }, 0)
+    : 0;
 
   const rootEntries = entries.filter((e) => e.meta.isRoot);
   const rootOrigin = rootEntries.find((e) => e.meta.rootOrigin)?.meta.rootOrigin ?? null;

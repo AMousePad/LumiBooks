@@ -7,7 +7,8 @@
   "scripts": {
     "build:backend": "bun build src/backend.ts --outfile dist/backend.js --target bun",
     "build:frontend": "bun build src/frontend.ts --outfile dist/frontend.js --target browser",
-    "build": "bun run build:backend && bun run build:frontend",
+    "build": "bun run build:backend && bun run build:frontend && bun run check:lessons",
+    "check:lessons": "bun run scripts/check-lessons.ts",
     "typecheck": "tsc --noEmit",
     "deploy": "powershell.exe -File local/scripts/deploy.ps1"
   },

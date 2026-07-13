@@ -1,8 +1,10 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { ArcView, ChapterView, FrontendState, FrontendToBackend, PendingPreview } from "../../types";
+import { LESSON_CHAT_PREFIX, codexLessonGated } from "../../shared";
 import {
   field,
   formatTokens,
+  lessonMark,
   makeButton,
   pill,
   relativeTime,
@@ -13,6 +15,7 @@ import {
   textInput,
   textNode,
 } from "../components";
+import { memoriaSprite, requestLesson } from "../lessons/seal";
 
 const inflightBusyLabels = new Map<string, HTMLSpanElement>();
 
@@ -117,6 +120,20 @@ export function tryUpdateBusyLabelsInPlace(entries: { kind: string; chatId: stri
   return true;
 }
 
+function lessonReminder(text: string, course: "books" | "codex"): HTMLElement {
+  const strip = document.createElement("div");
+  strip.className = "lmb-lesson-reminder";
+  strip.appendChild(memoriaSprite(28));
+  const label = document.createElement("span");
+  label.className = "lmb-grow";
+  label.textContent = text;
+  strip.append(label, makeButton("Take a Lesson", () => requestLesson({ course, mode: "lesson" }), {
+    small: true,
+    primary: true,
+  }));
+  return strip;
+}
+
 export function renderHomeTab(
   host: HTMLElement,
   state: FrontendState,
@@ -125,6 +142,13 @@ export function renderHomeTab(
 ): void {
   void ctx;
   host.replaceChildren();
+
+  if (state.lessons.books.status !== "done" && state.lessons.booksSealSkipped) {
+    host.appendChild(lessonReminder("My lesson is still waiting for you", "books"));
+  }
+  if (state.lessons.codex.status !== "done" && state.lessons.codexSealSkipped) {
+    host.appendChild(lessonReminder("The codex lesson is still waiting for you", "codex"));
+  }
 
   if (!state.activeChatId) {
     const empty = section("Overview");
@@ -273,14 +297,80 @@ async function fetchDryRun(chatId: string): Promise<HostBreakdown> {
   return data;
 }
 
+/** Static stand-in for the lesson sandbox. The real panel fetches host
+ * endpoints that a fixture chat id must never reach. */
+function renderLessonPromptPanel(body: HTMLElement): void {
+  const groups: { label: string; color: string; tokens: number }[] = [
+    { label: "Prompt blocks", color: "#8a7fb0", tokens: 2400 },
+    { label: "Chat history", color: "#d4a842", tokens: 31200 },
+    { label: "World info", color: "#68b87a", tokens: 3800 },
+    { label: "Extensions", color: "#5bc0c0", tokens: 2100 },
+  ];
+  const max = 200000;
+  const total = groups.reduce((a, g) => a + g.tokens, 0);
+  const bar = document.createElement("div");
+  bar.className = "lmb-spine";
+  for (const g of groups) {
+    const seg = document.createElement("div");
+    seg.className = "lmb-spine-seg";
+    seg.style.flexGrow = String(g.tokens);
+    seg.style.background = g.color;
+    seg.style.opacity = "0.75";
+    seg.title = `${g.label} · ${formatTokens(g.tokens)} tokens`;
+    bar.appendChild(seg);
+  }
+  const free = document.createElement("div");
+  free.className = "lmb-spine-seg free";
+  free.style.flexGrow = String(max - total);
+  bar.appendChild(free);
+  body.appendChild(bar);
+  const list = document.createElement("div");
+  list.className = "lmb-breakdown";
+  for (const g of groups) {
+    const row = document.createElement("div");
+    row.className = "lmb-breakdown-row";
+    const swatch = document.createElement("span");
+    swatch.className = "lmb-spine-swatch";
+    swatch.style.background = g.color;
+    const l = document.createElement("span");
+    l.className = "lmb-breakdown-label";
+    l.textContent = g.label;
+    const t = document.createElement("span");
+    t.className = "lmb-breakdown-tokens";
+    t.textContent = formatTokens(g.tokens);
+    row.append(swatch, l, t);
+    list.appendChild(row);
+  }
+  const totalRow = document.createElement("div");
+  totalRow.className = "lmb-breakdown-row total";
+  const pad = document.createElement("span");
+  pad.className = "lmb-spine-swatch";
+  pad.style.visibility = "hidden";
+  const tl = document.createElement("span");
+  tl.className = "lmb-breakdown-label";
+  tl.textContent = "Prompt vs context window";
+  const tt = document.createElement("span");
+  tt.className = "lmb-breakdown-tokens";
+  tt.textContent = `${formatTokens(total)} / ${formatTokens(max)} (${Math.round((total / max) * 100)}%)`;
+  totalRow.append(pad, tl, tt);
+  list.appendChild(totalRow);
+  body.appendChild(list);
+  body.appendChild(textNode("Simulated example, the live panel reads your host's real prompt.", "lmb-help"));
+}
+
 function renderPromptPanel(host: HTMLElement, state: FrontendState): void {
   const chatId = state.activeChatId;
   if (!chatId) return;
   const sec = section("The Prompt");
+  lessonMark(sec.wrap, "home.prompt");
   const body = document.createElement("div");
   body.className = "lmb-pane";
   sec.body.appendChild(body);
   host.appendChild(sec.wrap);
+  if (chatId.startsWith(LESSON_CHAT_PREFIX)) {
+    renderLessonPromptPanel(body);
+    return;
+  }
 
   const newestMsgId = state.messages.length ? state.messages[state.messages.length - 1]!.id : null;
   const chatChanged = promptCache.chatId !== chatId;
@@ -596,7 +686,8 @@ function renderSpine(body: HTMLElement, state: FrontendState): void {
   if (state.messages.length === 0 && codexTokens === 0) return;
   const info = collectEntryInfo(state);
   const segs = buildSpine(state, info);
-  // The codex is global state and injects ahead of all history.
+  // Constant codex entries (timeline + threads); keyword-retrieved records
+  // only cost when a scene activates them, so they stay out of the spine.
   if (codexTokens > 0) {
     segs.unshift({ kind: "codex", count: 0, from: -1, to: -1, entryId: null, tokens: codexTokens });
   }
@@ -604,6 +695,7 @@ function renderSpine(body: HTMLElement, state: FrontendState): void {
 
   const spine = document.createElement("div");
   spine.className = "lmb-spine";
+  lessonMark(spine, "home.spine");
   for (const s of segs) {
     const seg = document.createElement("div");
     seg.className = `lmb-spine-seg ${s.kind}`;
@@ -620,7 +712,7 @@ function renderSpine(body: HTMLElement, state: FrontendState): void {
     spine.appendChild(seg);
   }
   body.appendChild(spine);
-  body.appendChild(renderBreakdown(state));
+  body.appendChild(lessonMark(renderBreakdown(state), "home.breakdown"));
 }
 
 /** Loom-style itemization of Memoria's contribution to the prompt. Computed
@@ -667,7 +759,7 @@ function renderBreakdown(state: FrontendState): HTMLElement {
     }
   }
 
-  if (codexTokens > 0) wrap.appendChild(row("codex", "Knowledge Codex", codexTokens, true));
+  if (codexTokens > 0) wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, true));
   if (activeVolumes.length) wrap.appendChild(row("volume", `Volumes (${activeVolumes.length})`, volTokens, false));
   if (activeArcs.length) wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, false));
   if (activeChapters.length) wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, false));
@@ -693,6 +785,7 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   const pct = cov.totalMessages > 0 ? Math.round((cov.coveredMessages / cov.totalMessages) * 100) : 0;
   const tiles = document.createElement("div");
   tiles.className = "lmb-tiles";
+  lessonMark(tiles, "home.tiles");
   tiles.appendChild(statTile(`${pct}%`, "Filed", `${cov.coveredMessages} of ${cov.totalMessages} msgs`,
     "Share of this chat's messages already compressed into the shelf"));
   tiles.appendChild(statTile(`~${formatTokens(cov.approxUncoveredTokens)}`, "Tail", `${cov.uncoveredMessages} msgs uncompressed`,
@@ -704,7 +797,13 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   };
   tiles.appendChild(statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap",
     "Volumes, arcs, and chapters Memoria has filed for this chat"));
-  if (state.activeProfile.codexEnabled || state.codexExists) {
+  if (codexLessonGated(state.lessons)) {
+    const locked = statTile("🔒", "Codex", "take a lesson",
+      "The Knowledge Codex unlocks after Memoria's codex lesson");
+    locked.classList.add("lmb-bible-tile");
+    locked.addEventListener("click", () => requestLesson({ course: "codex", mode: "lesson" }));
+    tiles.appendChild(lessonMark(locked, "home.tile.codex"));
+  } else if (state.activeProfile.codexEnabled || state.codexExists) {
     const value = state.codexBacklog > 0 ? String(state.codexBacklog) : "✓";
     const subText = state.codexBacklog > 0
       ? "msgs unindexed"
@@ -727,6 +826,7 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   for (const b of state.busy) {
     const row = document.createElement("div");
     row.className = "lmb-busy";
+    lessonMark(row, "home.busy");
     const dot = document.createElement("div");
     dot.className = "lmb-busy-dot";
     const labelSpan = document.createElement("span");
@@ -780,6 +880,7 @@ function renderFailure(host: HTMLElement, state: FrontendState, send: (m: Fronte
   const f = state.lastFailure;
   const sec = document.createElement("div");
   sec.className = "lmb-failure";
+  lessonMark(sec, "home.failure");
   const head = document.createElement("div");
   head.style.fontWeight = "600";
   head.textContent = f.kind === "arc" ? "Last arc attempt failed"
@@ -891,6 +992,7 @@ function renderActions(host: HTMLElement, state: FrontendState, send: (m: Fronte
 
   const readiness = document.createElement("div");
   readiness.className = "lmb-actions";
+  lessonMark(readiness, "home.pills");
   readiness.append(
     pill(state.coverage.lagSatisfied ? "lag ready" : "lag building", state.coverage.lagSatisfied ? "ok" : "warn"),
     pill(state.coverage.windowAvailable ? "window ready" : "window building", state.coverage.windowAvailable ? "ok" : "warn"),
@@ -901,12 +1003,13 @@ function renderActions(host: HTMLElement, state: FrontendState, send: (m: Fronte
 
   const row = document.createElement("div");
   row.className = "lmb-actions";
+  lessonMark(row, "home.actions");
   row.append(
-    makeButton("File chapter", () => send({ type: "create_chapter", chatId }), {
+    lessonMark(makeButton("File chapter", () => send({ type: "create_chapter", chatId }), {
       primary: true,
       disabled,
       title: "Compress the oldest uncovered window into a new chapter using the current profile",
-    }),
+    }), "home.actions.file"),
   );
   if (state.backlogChapters > 1) {
     row.append(
@@ -930,12 +1033,18 @@ function renderActions(host: HTMLElement, state: FrontendState, send: (m: Fronte
       }),
     );
   }
-  if (state.activeProfile.codexEnabled) {
+  if (codexLessonGated(state.lessons)) {
+    const lockedBtn = makeButton("🔒 Codex · take a lesson", () => requestLesson({ course: "codex", mode: "lesson" }), {
+      title: "The codex unlocks after Memoria's codex lesson",
+    });
+    lockedBtn.classList.add("lmb-locked-btn");
+    row.append(lessonMark(lockedBtn, "home.actions.updatecodex"));
+  } else if (state.activeProfile.codexEnabled) {
     row.append(
-      makeButton("Update codex", () => send({ type: "codex_update_now", chatId }), {
+      lessonMark(makeButton("Update codex", () => send({ type: "codex_update_now", chatId }), {
         disabled: disabled || state.busy.some((b) => b.kind === "codex" && b.chatId === chatId),
         title: "Consume everything up to the newest message now, ignoring lag and window",
-      }),
+      }), "home.actions.updatecodex"),
     );
   }
   sec.body.appendChild(row);
@@ -950,6 +1059,7 @@ function renderActions(host: HTMLElement, state: FrontendState, send: (m: Fronte
 
   const shelfRow = document.createElement("div");
   shelfRow.className = "lmb-actions";
+  lessonMark(shelfRow, "home.bookpill");
   if (!state.bookId) {
     const empty = pill("No book yet", "warn");
     empty.title = "Memoria will create this chat's world book the first time a chapter is filed";
@@ -972,4 +1082,19 @@ function addRow(grid: HTMLElement, label: string, value: string): void {
   v.className = "lmb-value";
   v.textContent = value;
   grid.append(l, v);
+}
+
+/** Lesson-stage exit hook: the fixture chat polluted this module's caches. */
+export function resetHomeTabLocal(): void {
+  inflightBusyLabels.clear();
+  streamWatch = null;
+  streamEls = null;
+  streamData = { content: "", thinking: "", running: false };
+  promptCache.chatId = null;
+  promptCache.newestMsgId = null;
+  promptCache.data = null;
+  promptCache.source = null;
+  promptCache.error = null;
+  promptCache.loading = false;
+  promptCache.expanded.clear();
 }

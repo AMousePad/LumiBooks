@@ -253,6 +253,25 @@ export async function codexExists(chatId: string, userId: string): Promise<boole
   return spindle.userStorage.exists(cursorPath(chatId), userId).catch(() => false);
 }
 
+/** Throws on storage faults: only a confirmed absence may wipe the mirror. */
+export async function codexPresence(chatId: string, userId: string): Promise<"present" | "absent"> {
+  const exists = await spindle.userStorage.exists(cursorPath(chatId), userId);
+  return exists ? "present" : "absent";
+}
+
+const cursorChain = new Map<string, Promise<unknown>>();
+export function withCursorLock<T>(chatId: string, userId: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${userId}::${chatId}`;
+  const prev = cursorChain.get(key) ?? Promise.resolve();
+  const tail = prev.then(fn, fn);
+  const guarded = tail.catch(() => undefined);
+  cursorChain.set(key, guarded);
+  guarded.then(() => {
+    if (cursorChain.get(key) === guarded) cursorChain.delete(key);
+  });
+  return tail;
+}
+
 /**
  * Returns the files that could not be deleted. The cursor is only removed
  * when every data file went: otherwise a surviving stale file would
@@ -285,6 +304,52 @@ export async function deleteCodex(chatId: string, userId: string): Promise<Codex
     });
   }
   return failed;
+}
+
+/**
+ * Fork adoption: copy the parent chat's codex to the fork. Data files are
+ * chat-agnostic and copy verbatim; the cursor's message ids are remapped onto
+ * the fork's ids by chat position. Consumption past the fork point (ids with
+ * no fork counterpart) is dropped, and everything up to the fork tip is
+ * flagged for reconciliation since the codex may describe events the fork
+ * abandoned. No-op when the parent has no codex or the fork already has one.
+ */
+export async function inheritCodex(
+  fromChatId: string,
+  toChatId: string,
+  userId: string,
+  remapId: (parentMsgId: string) => string | null,
+  reconcileUntilId: string | null,
+): Promise<boolean> {
+  if (!(await codexExists(fromChatId, userId))) return false;
+  if (await codexExists(toChatId, userId)) return false;
+  const cursor = await loadCursor(fromChatId, userId);
+  for (const key of CODEX_FILE_KEYS) {
+    const read = await readCodexFileRaw(fromChatId, key, userId);
+    // Absent or unreadable in the parent: the fork starts that file empty.
+    if (read.state !== "ok") continue;
+    await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
+  }
+  // Only the contiguous mapped prefix survives: a gap would let divergence
+  // detection anchor consumption past messages it never verified.
+  const sigs: ConsumedSig[] = [];
+  for (const rec of cursor.consumedSigs) {
+    const mapped = remapId(rec.id);
+    if (!mapped) break;
+    sigs.push({ id: mapped, sig: rec.sig });
+  }
+  const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
+  const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
+  const next: CodexCursor = {
+    ...cursor,
+    consumedSigs: sigs,
+    lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1]!.id : mappedPrefix),
+    prefixMsgId: mappedPrefix,
+    pendingReconcile: true,
+    reconcileUntilMsgId: reconcileUntilId,
+  };
+  await saveCursor(toChatId, next, userId);
+  return true;
 }
 
 /** Raw file contents for the UI viewer: pretty JSON, empty scaffold when

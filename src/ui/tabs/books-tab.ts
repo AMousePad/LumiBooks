@@ -3,6 +3,7 @@ import type { ArcView, ChapterView, FrontendState, FrontendToBackend, MessageStu
 import {
   HIDDEN_ICON,
   formatTokens,
+  lessonMark,
   makeButton,
   makeSubtabs,
   preserveScroll,
@@ -60,6 +61,29 @@ export function focusShelfEntry(entryId: string): void {
   localState.shelfQuery = "";
   localState.expandedEntries.add(entryId);
   pendingFocusEntry = entryId;
+}
+
+/** Lesson-stage navigation: pick the subtab before a demo render. */
+export function setBooksSubtab(key: string): void {
+  if (key === "shelf" || key === "compose" || key === "continuity") localState.subtab = key;
+}
+
+/** Lesson-stage exit hook: the fixture chat polluted this module's state. */
+export function resetBooksTabLocal(): void {
+  localState.subtab = "shelf";
+  localState.shelfQuery = "";
+  localState.expandedEntries.clear();
+  localState.showAllGroups.clear();
+  localState.selectedMessages.clear();
+  localState.selectedChapters.clear();
+  localState.selectedArcs.clear();
+  localState.messageFilter = "uncovered";
+  localState.messageQuery = "";
+  localState.pickerShown = PICKER_PAGE;
+  localState.anchorMessageId = null;
+  localState.rebaseSourceId = "";
+  localState.lastChatId = null;
+  pendingFocusEntry = null;
 }
 
 export function renderBooksTab(
@@ -143,6 +167,7 @@ function renderShelf(
   sec.body.appendChild(search.wrap);
   const listHost = document.createElement("div");
   listHost.className = "lmb-pane";
+  lessonMark(listHost, "books.shelf.list");
   sec.body.appendChild(listHost);
 
   const groups: { key: ShelfGroup; title: string; kind: "volume" | "arc" | "chapter"; items: (ChapterView | ArcView)[] }[] = [
@@ -229,6 +254,8 @@ function renderEntryRow(
   const head = document.createElement("button");
   head.type = "button";
   head.className = "lmb-entry-row";
+  // Lesson nav steps spotlight a specific entry row by its id.
+  lessonMark(head, `books.entry.${view.entryId}`);
   const tag = document.createElement("span");
   tag.className = `lmb-entry-tag ${kind}${view.isGhost ? " ghost" : ""}`;
   tag.textContent = view.isGhost ? "GHOST" : kind.toUpperCase();
@@ -295,6 +322,7 @@ function renderEntryDetail(
   const chatId = state.activeChatId;
   const actions = document.createElement("div");
   actions.className = "lmb-entry-actions";
+  lessonMark(actions, "books.entry.actions");
   actions.append(
     makeButton("Edit", () => {
       openEditModal(ctx, kind === "arc" ? "Edit arc" : kind === "volume" ? "Edit volume" : "Edit chapter", {
@@ -325,7 +353,12 @@ function renderEntryDetail(
         send({ type: "regenerate_entry", chatId, entryId: view.entryId });
       }, { small: true, title: "Delete and resummarize the same range" }),
       makeButton("Release", async () => {
-        const ok = await confirmDelete(ctx, "Release to lorebook?", "Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. Those messages will become uncovered.");
+        const freed = kind === "chapter"
+          ? "Its messages return to the prompt unless a higher tier still covers them."
+          : kind === "arc"
+            ? "Its chapters revive and keep covering those messages."
+            : "Its arcs revive and keep covering those messages.";
+        const ok = await confirmDelete(ctx, "Release to lorebook?", `Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. ${freed}`);
         if (!ok || !chatId) return;
         send({ type: "release_entry", chatId, entryId: view.entryId });
       }, { small: true, title: "Strip the LumiBooks marker so the entry becomes a regular lorebook entry" }),
@@ -335,7 +368,11 @@ function renderEntryDetail(
     makeButton("Delete", async () => {
       const ok = await confirmDelete(ctx, "Delete?", view.isGhost
         ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass."
-        : "Memoria will let those messages back into the prompt.");
+        : kind === "chapter"
+          ? "Memoria will let those messages back into the prompt."
+          : kind === "arc"
+            ? "Its chapters revive and keep covering those messages."
+            : "Its arcs revive and keep covering those messages.");
       if (!ok || !chatId) return;
       send({ type: "delete_entry", chatId, entryId: view.entryId });
     }, { small: true, danger: true }),
@@ -420,20 +457,20 @@ function renderChapterPicker(
     return true;
   };
 
-  const compressBtn = makeButton("Compress", () => {
+  const compressBtn = lessonMark(makeButton("Compress", () => {
     const ids = Array.from(localState.selectedMessages);
     if (ids.length === 0) return;
     send({ type: "create_chapter_range", chatId, messageIds: ids });
     localState.selectedMessages.clear();
     localState.anchorMessageId = null;
     redraw();
-  }, { primary: true, disabled: localState.selectedMessages.size === 0 });
+  }, { primary: true, disabled: localState.selectedMessages.size === 0 }), "books.compose.compress");
 
-  const excludeBtn = makeButton("Exclude", () => {
+  const excludeBtn = lessonMark(makeButton("Exclude", () => {
     const ids = Array.from(localState.selectedMessages);
     if (ids.length === 0) return;
     send({ type: "set_message_excluded", chatId, messageIds: ids, excluded: !allSelectedExcluded() });
-  }, { title: "Toggle exclusion for the selected messages. Excluded messages are never hidden, replaced, or summarized, and they split compression. Click again to allow compression." });
+  }, { title: "Toggle exclusion for the selected messages. Excluded messages are never hidden, replaced, or summarized, and they split compression. Click again to allow compression." }), "books.compose.exclude");
 
   const syncControls = (): void => {
     const tokens = sumSelectedTokens(state);
@@ -446,6 +483,7 @@ function renderChapterPicker(
 
   const listEl = document.createElement("div");
   listEl.className = "lmb-message-list";
+  lessonMark(listEl, "books.compose.list");
   listEl.replaceChildren(...buildRows(state, syncControls, redraw));
   sec.body.appendChild(listEl);
   syncControls();
@@ -646,6 +684,7 @@ function renderArcPicker(
   redraw: () => void,
 ): void {
   const sec = section("Bind chapters into an arc");
+  lessonMark(sec.wrap, "books.compose.arcs");
   // Ghosts sit in state.chapters as inactive, so the gate must count
   // bindable chapters or an all-ghost list renders dead controls.
   const bindable = state.chapters.filter((ch) => ch.active);
@@ -726,6 +765,7 @@ function renderVolumePicker(
   redraw: () => void,
 ): void {
   const sec = section("Press arcs into a volume");
+  lessonMark(sec.wrap, "books.compose.volumes");
   const activeArcs = state.arcs.filter((a) => a.active && !a.isRoot);
   if (activeArcs.length === 0) {
     sec.body.appendChild(textNode("Memoria has no unbound arcs to press yet", "lmb-empty"));
@@ -821,12 +861,14 @@ function renderContinuity(
   const candidates = state.availableRoots;
   if (!hasRoot && candidates.length === 0) {
     const sec = section("Continuity (root)");
+    lessonMark(sec.wrap, "books.cont.root");
     sec.body.appendChild(textNode("No other chat has memories to inherit from yet", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
 
   const sec = section("Continuity (root)");
+  lessonMark(sec.wrap, "books.cont.root");
 
   if (hasRoot) {
     const status = document.createElement("div");
@@ -924,6 +966,7 @@ function renderMaintenance(
   const chatId = state.activeChatId!;
   const disabled = state.busy.length > 0 || !state.settings.enabled;
   const sec = section("Maintenance");
+  lessonMark(sec.wrap, "books.maint");
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent = "Repair tools for when the shelf and the chat drift apart, e.g. after editing entries in the Lorebook drawer.";

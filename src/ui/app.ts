@@ -1,36 +1,19 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
-import { preserveScroll, scrollPaneTop } from "./components";
+import { preserveScroll, scrollPaneTop, showToast } from "./components";
 import { showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
 import { codexWantsRefresh, deliverCodexFiles, renderCodexTab } from "./tabs/codex-tab";
 import { renderTuningTab } from "./tabs/tuning-tab";
 import { renderAboutTab } from "./tabs/about-tab";
+import { createLessonEngine } from "./lessons/engine";
+import type { LessonRequestDetail } from "./lessons/seal";
+import { clearSealBusy, renderSealPanel, updateSealBusy } from "./lessons/seal";
+import { APP_TABS, type AppTabKey } from "./tab-meta";
 
-type TabKey = "home" | "books" | "codex" | "tuning" | "stuff";
-
-const TAB_ICONS: Record<TabKey, string> = {
-  // Sunburst over a horizon: the at-a-glance dashboard.
-  home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v3"/><path d="M5.6 6.6l2.1 2.1"/><path d="M18.4 6.6l-2.1 2.1"/><path d="M7 15a5 5 0 0 1 10 0"/><path d="M3 19h18"/></svg>`,
-  // The shelf: a bound book.
-  books: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5V4.5A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h6"/></svg>`,
-  // Compass rose diamond: the story bible.
-  codex: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l10 10-10 10L2 12z"/><path d="M12 7.5l4.5 4.5-4.5 4.5L7.5 12z"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>`,
-  // Sliders: settings.
-  tuning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v6"/><path d="M6 14v6"/><path d="M12 4v2"/><path d="M12 10v10"/><path d="M18 4v8"/><path d="M18 16v4"/><path d="M4 10h4"/><path d="M10 6h4"/><path d="M16 12h4"/></svg>`,
-  // Four-point sparkle: extras and lore.
-  stuff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l0.9 2.1L22 19l-2.1 0.9L19 22l-0.9-2.1L16 19l2.1-0.9z"/></svg>`,
-};
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "home", label: "Home" },
-  { key: "books", label: "Books" },
-  { key: "codex", label: "Codex" },
-  { key: "tuning", label: "Tuning" },
-  { key: "stuff", label: "Stuff" },
-];
+type TabKey = AppTabKey;
 
 const FONT_LINK_ID = "lmb-deco-fonts";
 
@@ -81,13 +64,64 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   let renderPending = false;
   const tabButtons = new Map<TabKey, HTMLButtonElement>();
 
-  for (const t of TABS) {
+  const send = (msg: FrontendToBackend) => ctx.sendToBackend(msg);
+
+  const engine = createLessonEngine({
+    ctx,
+    send,
+    getState: () => lastState,
+    onModeChange: () => {
+      refreshTabStyles();
+      doRender();
+    },
+    applyLessons: (course, patch) => {
+      if (!lastState) return;
+      const cur = lastState.lessons[course];
+      lastState = {
+        ...lastState,
+        lessons: {
+          ...lastState.lessons,
+          [course]: {
+            ...cur,
+            ...patch,
+            answers: patch.answers ? { ...cur.answers, ...patch.answers } : cur.answers,
+          },
+        },
+      };
+    },
+  });
+
+  type ViewMode = "tabs" | "sealed" | "lesson";
+  /** The one render-mode rule: every render entry point consults this. */
+  const viewMode = (): ViewMode => {
+    if (engine.isActive()) return "lesson";
+    if (
+      lastState
+      && lastState.lessons
+      && lastState.lessons.books.status !== "done"
+      && !lastState.lessons.booksSealSkipped
+    ) {
+      return "sealed";
+    }
+    return "tabs";
+  };
+
+  const refreshTabStyles = () => {
+    for (const [key, btn] of tabButtons) {
+      btn.classList.toggle("active", key === activeTab);
+    }
+    // The lesson stage carries its own working tab strip: leaving the real
+    // one visible above it reads as a duplicate nav bar.
+    strip.style.display = engine.isActive() ? "none" : "";
+  };
+
+  for (const t of APP_TABS) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "lmb-tab";
     const icon = document.createElement("span");
     icon.className = "lmb-tab-icon";
-    icon.innerHTML = TAB_ICONS[t.key];
+    icon.innerHTML = t.icon;
     const label = document.createElement("span");
     label.className = "lmb-tab-label";
     label.textContent = t.label;
@@ -104,14 +138,6 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     tabButtons.set(t.key, btn);
   }
 
-  const send = (msg: FrontendToBackend) => ctx.sendToBackend(msg);
-
-  const refreshTabStyles = () => {
-    for (const [key, btn] of tabButtons) {
-      btn.classList.toggle("active", key === activeTab);
-    }
-  };
-
   const hasFocusedEditableChild = () => {
     const active = document.activeElement;
     if (!active || !content.contains(active)) return false;
@@ -124,6 +150,15 @@ export function setup(ctx: SpindleFrontendContext): () => void {
       || type === "password";
   };
 
+  const renderTabInto = (host: HTMLElement) => {
+    if (!lastState) return;
+    if (activeTab === "home") renderHomeTab(host, lastState, ctx, send);
+    else if (activeTab === "books") renderBooksTab(host, lastState, ctx, send);
+    else if (activeTab === "codex") renderCodexTab(host, lastState, ctx, send);
+    else if (activeTab === "tuning") renderTuningTab(host, lastState, ctx, send);
+    else renderAboutTab(host, lastState, send);
+  };
+
   let lastRenderedTab: TabKey | null = null;
   const doRender = () => {
     if (!lastState) {
@@ -131,13 +166,29 @@ export function setup(ctx: SpindleFrontendContext): () => void {
       lastRenderedTab = null;
       return;
     }
-    const renderInner = () => {
-      if (activeTab === "home") renderHomeTab(content, lastState!, ctx, send);
-      else if (activeTab === "books") renderBooksTab(content, lastState!, ctx, send);
-      else if (activeTab === "codex") renderCodexTab(content, lastState!, ctx, send);
-      else if (activeTab === "tuning") renderTuningTab(content, lastState!, ctx, send);
-      else renderAboutTab(content, lastState!, send);
-    };
+    const mode = viewMode();
+    if (mode === "lesson") {
+      lastRenderedTab = null;
+      clearSealBusy();
+      engine.mount(content);
+      return;
+    }
+    if (mode === "sealed") {
+      lastRenderedTab = null;
+      content.replaceChildren();
+      const wrap = document.createElement("div");
+      wrap.className = "lmb-seal-wrap";
+      const under = document.createElement("div");
+      under.className = "lmb-seal-under";
+      under.setAttribute("inert", "");
+      renderTabInto(under);
+      wrap.appendChild(under);
+      renderSealPanel(wrap, lastState, send);
+      content.appendChild(wrap);
+      return;
+    }
+    clearSealBusy();
+    const renderInner = () => renderTabInto(content);
     if (lastRenderedTab === activeTab) {
       preserveScroll(content, renderInner);
     } else {
@@ -147,6 +198,10 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   };
 
   const renderActive = () => {
+    if (viewMode() === "lesson") {
+      engine.onHostState();
+      return;
+    }
     if (hasFocusedEditableChild()) {
       renderPending = true;
       return;
@@ -157,6 +212,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
 
   content.addEventListener("focusout", () => {
     if (!renderPending) return;
+    if (viewMode() === "lesson") return;
     setTimeout(() => {
       if (hasFocusedEditableChild()) return;
       renderPending = false;
@@ -177,7 +233,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         if (msg.tone === "error") console.error(`[LumiBooks] ${msg.text}`);
         else if (msg.tone === "warn") console.warn(`[LumiBooks] ${msg.text}`);
         else console.info(`[LumiBooks] ${msg.tone}: ${msg.text}`);
-        showInlineToast(root, msg.tone, msg.text);
+        showToast(msg.tone, msg.text);
         break;
       case "busy":
         if (lastState) {
@@ -196,6 +252,15 @@ export function setup(ctx: SpindleFrontendContext): () => void {
           }
           for (const chatId of finishedCodexChats) {
             if (codexWantsRefresh(chatId)) send({ type: "codex_read", chatId });
+          }
+          const mode = viewMode();
+          if (mode === "lesson") {
+            engine.onHostState();
+            break;
+          }
+          if (mode === "sealed") {
+            updateSealBusy(lastState);
+            break;
           }
           const sameShape =
             prev.length === next.length
@@ -220,7 +285,9 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         break;
       case "codex_files":
         deliverCodexFiles(msg.chatId, msg.files, msg.savedFile, msg.savedSeq);
-        if (activeTab === "codex" && lastState) renderActive();
+        if (viewMode() === "tabs" && activeTab === "codex" && lastState) renderActive();
+        // A real-mode lesson pane showing the codex needs the fresh files too.
+        else if (viewMode() === "lesson") engine.onHostState();
         break;
       case "stream_text":
         deliverStreamText(msg);
@@ -231,6 +298,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   // Home's coverage spine dispatches this to jump straight to an entry on
   // the Books shelf.
   const onRevealEntry = (e: Event): void => {
+    if (viewMode() !== "tabs") return;
     const entryId = (e as CustomEvent<{ entryId?: string }>).detail?.entryId;
     if (!entryId || !lastState) return;
     focusShelfEntry(entryId);
@@ -241,36 +309,28 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   };
   document.addEventListener("lmb-reveal-entry", onRevealEntry);
 
+  // Sealed surfaces and the Academy request lessons through this event, the
+  // tabs cannot import the engine without a cycle.
+  const onLessonRequest = (e: Event): void => {
+    // The fixture renders the real locked codex surfaces, and their seal
+    // buttons dispatch this event. Starting a course from inside a course
+    // would eat the running one.
+    if (engine.isActive()) return;
+    const detail = (e as CustomEvent<LessonRequestDetail>).detail;
+    if (!detail || (detail.course !== "books" && detail.course !== "codex")) return;
+    engine.start(detail.course, { mode: detail.mode ?? "lesson", section: detail.section, fresh: detail.fresh });
+  };
+  document.addEventListener("lmb-lesson-request", onLessonRequest);
+
   send({ type: "ready", chatId: null });
   const unsubActivate = tab.onActivate(() => send({ type: "refresh", chatId: null }));
 
   return () => {
+    try { if (engine.isActive()) engine.exit(); } catch (_) { void _; }
     try { unsub(); } catch (_) { void _; }
     try { unsubActivate?.(); } catch (_) { void _; }
     try { document.removeEventListener("lmb-reveal-entry", onRevealEntry); } catch (_) { void _; }
+    try { document.removeEventListener("lmb-lesson-request", onLessonRequest); } catch (_) { void _; }
     try { tab.destroy?.(); } catch (_) { void _; }
   };
-}
-
-const TOAST_STACK_CAP = 5;
-function showInlineToast(host: HTMLElement, tone: "success" | "info" | "warn" | "error", text: string): void {
-  void host;
-  let stack = document.body.querySelector(":scope > .lmb-toast-stack") as HTMLDivElement | null;
-  if (!stack) {
-    stack = document.createElement("div");
-    stack.className = "lmb-toast-stack";
-    document.body.appendChild(stack);
-  }
-  while (stack.childElementCount >= TOAST_STACK_CAP) {
-    stack.firstElementChild?.remove();
-  }
-  const el = document.createElement("div");
-  el.className = `lmb-toast lmb-toast-${tone}`;
-  el.textContent = text;
-  stack.appendChild(el);
-  const duration = tone === "error" ? 8000 : tone === "warn" ? 6000 : 4000;
-  setTimeout(() => {
-    el.classList.add("lmb-toast-leaving");
-    setTimeout(() => el.remove(), 200);
-  }, duration);
 }

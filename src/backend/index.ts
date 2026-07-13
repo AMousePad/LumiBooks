@@ -2,7 +2,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LlmMessageDTO } from "lumiverse-spindle-types";
 import type { FrontendToBackend } from "../types";
-import { EXTENSION_KEY, normalizeProfile, normalizeCustomPreset } from "../shared";
+import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, normalizeProfile, normalizeCustomPreset } from "../shared";
 import {
   debug,
   describeError,
@@ -18,6 +18,16 @@ import {
   warn,
 } from "./runtime";
 import { loadSettings, mutateSettings, patchSettings } from "./storage";
+import {
+  codexGated,
+  completeLessonCourse,
+  effectiveProfile,
+  ensureLessons,
+  patchLessonCourse,
+  registerLessonsAnomalyCallback,
+  resetLessonCourse,
+  skipCourseSeal,
+} from "./lessons";
 import {
   applyConstantToAllLmbEntries,
   ensureBookForChat,
@@ -72,7 +82,10 @@ import {
   setCodexFileState,
 } from "./codex/index";
 import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor } from "./codex/store";
+import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { shortErrorText } from "./pipeline";
 import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
+import { registerForkAnomalyCallback } from "./fork";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
 import { invalidateRegexCache } from "./regex";
@@ -175,9 +188,42 @@ registerCodexCallbacks({
 
 spindle.registerWorldInfoInterceptor(async (ctx) => {
   const ours: string[] = [];
+  const codexIds: string[] = [];
   for (const entry of ctx.entries) {
     const ext = entry.extensions as Record<string, unknown> | undefined;
-    if (ext && ext[EXTENSION_KEY]) ours.push(entry.id);
+    if (!ext) continue;
+    if (ext[EXTENSION_KEY]) ours.push(entry.id);
+    else if (ext[CODEX_ENTRY_EXTENSION_KEY]) codexIds.push(entry.id);
+  }
+  // The codex gate is evaluated per activation and timeboxed: the host drops
+  // every vote on handler timeout, summary disables included.
+  if (codexIds.length > 0) {
+    const userId = ctx.userId ?? resolveUserId(ctx.chatId);
+    if (userId) {
+      let gateTimer: ReturnType<typeof setTimeout> | undefined;
+      const gate = (async (): Promise<boolean> => {
+        const settings = await loadSettings(userId);
+        const rawProfile = settings.profiles.find((p) => p.id === settings.activeProfileId) ?? null;
+        const profile = rawProfile ? effectiveProfile(rawProfile, await ensureLessons(userId)) : null;
+        return !settings.enabled || !profile || !profile.codexEnabled;
+      })();
+      gate.catch(() => {});
+      const deadline = new Promise<"timeout">((resolve) => {
+        gateTimer = setTimeout(() => resolve("timeout"), 1500);
+      });
+      try {
+        const off = await Promise.race([gate, deadline]);
+        if (off === "timeout") {
+          warn("world-info codex gate timed out, leaving codex entries active this turn");
+        } else if (off) {
+          ours.push(...codexIds);
+        }
+      } catch (err) {
+        warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
+      } finally {
+        if (gateTimer) clearTimeout(gateTimer);
+      }
+    }
   }
   return ours.length ? { disabled: ours } : undefined;
 }, 90);
@@ -208,14 +254,13 @@ spindle.registerInterceptor(async (messages, context) => {
     if (!userId) return messages;
     const settings = await loadSettings(userId);
     if (!settings.enabled) return messages;
-    const profile = settings.profiles.find((x) => x.id === settings.activeProfileId) ?? null;
     let budgetTimer: ReturnType<typeof setTimeout> | undefined;
     const budget = new Promise<"timeout">((resolve) => {
       budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
     });
     try {
       const result = await Promise.race([
-        buildInjection(chatId, messages as LlmMessageDTO[], userId, profile),
+        buildInjection(chatId, messages as LlmMessageDTO[], userId),
         budget,
       ]);
       if (result === "timeout") {
@@ -251,8 +296,9 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
   await ensureUserFolders(userId).catch(() => {});
   const settings = await loadSettings(userId).catch(() => null);
   if (!settings?.enabled) return;
-  const profile = settings.profiles.find((x) => x.id === settings.activeProfileId);
-  if (!profile) return;
+  const rawProfile = settings.profiles.find((x) => x.id === settings.activeProfileId);
+  if (!rawProfile) return;
+  const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
   await maybeRunPipeline(p.chatId, profile, settings, userId).catch((err) => {
     warn(`pipeline failed: ${describeError(err)}`);
@@ -559,8 +605,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "create_chapter": {
         const cur = await loadSettings(userId);
-        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
-        if (!profile) break;
+        const rawProfile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!rawProfile) break;
+        const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
           await notify(userId, "warn", "Memoria is already filing a chapter");
           break;
@@ -679,8 +726,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "retry_last_failure": {
         const cur = await loadSettings(userId);
-        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
-        if (!profile) break;
+        const rawProfile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!rawProfile) break;
+        const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
         await retryLastFailure(msg.chatId, userId, profile, cur);
         await pushState(userId, msg.chatId);
         break;
@@ -1119,11 +1167,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_update_now": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in the Profile tab first");
+          await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
         await runCodexNow(msg.chatId, profile, userId);
@@ -1176,6 +1228,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await saveCursor(msg.chatId, cursor, userId);
         }
         if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, relationsTable);
+        } catch (err) {
+          warn(`codex_write_file entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
         const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
         if (problems.length > 0) {
           // A dangling count computed against a bundle missing corrupt siblings
@@ -1208,6 +1266,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
         } else {
           publishCodexWiped(msg.chatId, userId);
+          try {
+            await wipeCodexEntries(msg.chatId, userId);
+          } catch (err) {
+            warn(`codex_reset entry wipe failed: ${describeError(err)}`);
+            await notify(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+          }
           await notify(userId, "info", "Memoria cleared the codex for this chat");
         }
         // The codex tab caches file contents; without a fresh push it keeps
@@ -1219,6 +1283,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_rebuild": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
@@ -1238,6 +1306,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_tidy": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
@@ -1306,6 +1378,45 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
+      case "lesson_patch": {
+        if (msg.course !== "books" && msg.course !== "codex") break;
+        // Persist silently: a state push here would re-render over the stage.
+        await patchLessonCourse(userId, msg.course, msg.patch ?? {});
+        break;
+      }
+
+      case "lesson_complete": {
+        if (msg.course !== "books" && msg.course !== "codex") break;
+        const grade =
+          msg.grade === "gilded" || msg.grade === "silver" || msg.grade === "bronze" || msg.grade === "apprentice"
+            ? msg.grade
+            : "apprentice";
+        const wrong = typeof msg.wrong === "number" && Number.isFinite(msg.wrong) ? Math.max(0, Math.round(msg.wrong)) : 0;
+        const total = typeof msg.total === "number" && Number.isFinite(msg.total) ? Math.max(0, Math.round(msg.total)) : 0;
+        await completeLessonCourse(userId, msg.course, wrong, total, grade, msg.signedName ?? null, msg.answers);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "lesson_reset": {
+        if (msg.course !== "books" && msg.course !== "codex") break;
+        await resetLessonCourse(
+          userId,
+          msg.course,
+          msg.mode === "section" ? "section" : "course",
+          msg.section,
+          msg.answerIds,
+        );
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "lesson_seal_skip": {
+        await skipCourseSeal(userId, msg.course === "codex" ? "codex" : "books");
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
       default:
         debug(userId, `unknown frontend msg type`, (msg as { type?: string }).type);
     }
@@ -1321,6 +1432,14 @@ registerBookAnomalyCallback((userId, tone, text) => {
 });
 
 registerInjectionAnomalyCallback((userId, text) => {
+  void notify(userId, "error", text);
+});
+
+registerLessonsAnomalyCallback((userId, text) => {
+  void notify(userId, "error", text);
+});
+
+registerForkAnomalyCallback((userId, text) => {
   void notify(userId, "error", text);
 });
 

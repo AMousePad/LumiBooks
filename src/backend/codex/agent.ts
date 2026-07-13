@@ -68,6 +68,11 @@ export interface CodexAgentOptions {
   userTextOverride?: string;
   /** Suppress the thorough-mode verification round (tidy passes). */
   skipVerify?: boolean;
+  /** Cumulative progress counters owned by the caller. A drain passes one
+   * object across all its queued chunks so the busy label keeps counting up
+   * in step with the stream viewer instead of resetting (and appearing
+   * frozen) at each chunk boundary. */
+  progressBase?: { chars: number; thinking: number };
   externalSignal: AbortSignal;
   onProgress?: (chars: number, thinkingChars: number) => void;
   onDelta?: (kind: "text" | "thinking", delta: string) => void;
@@ -171,6 +176,8 @@ interface WriteOutcome {
   callId: string;
   file: CodexFileKey | null;
   errors: string[];
+  /** Dropped without staging (frozen file), the ack must say so. */
+  skipped?: boolean;
 }
 
 /**
@@ -196,8 +203,8 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
 
   const working: CodexBundle = { ...opts.bundle };
   const changed = new Set<CodexFileKey>();
-  const validateOpts = { relationsTable: profile.codexRelationsTable };
-  const progressBase = { chars: 0, thinking: 0 };
+  const validateOpts = { relationsTable: profile.codexRelationsTable, strictExtras: true };
+  const progressBase = opts.progressBase ?? { chars: 0, thinking: 0 };
   // Dangling refs already on disk (a hand-saved file can carry one). The run
   // is only held responsible for refs it introduces or leaves after touching
   // the file - tolerating pre-existing danglers keeps an untouched
@@ -288,7 +295,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       if (frozen.has(fileRaw)) {
         // A frozen write is dropped, not retried: the agent should simply
         // move on without that file.
-        outcomes.push({ callId: call.call_id, file: fileRaw, errors: [] });
+        outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
       let content = call.args["content"];
@@ -344,9 +351,11 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       tool_use_id: o.callId,
       content: o.errors.length
         ? `REJECTED:\n${o.errors.join("\n")}`
-        : o.file
-          ? "ok, staged"
-          : "ok",
+        : o.skipped
+          ? `skipped, ${o.file}.json is frozen by the user - do not resend it`
+          : o.file
+            ? "ok, staged"
+            : "ok",
       ...(o.errors.length ? { is_error: true } : {}),
     }));
 
