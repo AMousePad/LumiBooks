@@ -552,9 +552,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
           const idx = cur.profiles.findIndex((p) => p.id === msg.profileId);
           if (idx === -1) return cur;
           const current = cur.profiles[idx]!;
-          const merged = { ...current.samplers, ...msg.samplers };
           const profiles = cur.profiles.slice();
-          profiles[idx] = { ...current, samplers: merged };
+          if (msg.target === "codex") {
+            profiles[idx] = { ...current, codexSamplers: { ...current.codexSamplers, ...msg.samplers } };
+          } else {
+            profiles[idx] = { ...current, samplers: { ...current.samplers, ...msg.samplers } };
+          }
           return { ...cur, profiles };
         });
         await pushState(userId, msg.chatId);

@@ -161,7 +161,7 @@ export type FrontendToBackend =
   | { type: "refresh"; chatId?: string | null }
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }
   | { type: "save_profile"; profile: Partial<LMBProfile> & { id: string }; chatId?: string | null }
-  | { type: "save_samplers"; profileId: string; samplers: Partial<SamplerSet>; chatId?: string | null }
+  | { type: "save_samplers"; profileId: string; samplers: Partial<SamplerSet>; target?: "main" | "codex"; chatId?: string | null }
   | { type: "create_profile"; name: string; chatId?: string | null }
   | { type: "delete_profile"; profileId: string; chatId?: string | null }
   | { type: "set_active_profile"; profileId: string; chatId?: string | null }

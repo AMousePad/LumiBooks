@@ -2991,6 +2991,15 @@ var SAMPLER_DEFAULTS = {
   frequency_penalty: 0,
   presence_penalty: 0
 };
+var CODEX_SAMPLER_DEFAULTS = {
+  temperature: 0.4,
+  top_p: 1,
+  top_k: 0,
+  max_tokens: 1e5,
+  max_input_tokens: 500000,
+  frequency_penalty: 0,
+  presence_penalty: 0
+};
 function makeDefaultProfile(id, name) {
   return {
     id,
@@ -3039,7 +3048,8 @@ function makeDefaultProfile(id, name) {
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
-    codexExtraContext: true
+    codexExtraContext: true,
+    codexSamplers: { ...DEFAULT_SAMPLERS }
   };
 }
 var DEFAULT_SETTINGS = {
@@ -8624,6 +8634,75 @@ function renderSamplers(host, state, profile, send) {
   sec.body.appendChild(sampleGrid);
   host.appendChild(sec.wrap);
 }
+function renderCodexSamplers(host, state, profile, send) {
+  const sec = section("Codex samplers");
+  const help = document.createElement("div");
+  help.className = "lmb-help";
+  help.textContent = "Samplers for the codex agent only, separate from Memoria's summarizing samplers on the Model pane. Empty fields use codex defaults.";
+  sec.body.appendChild(help);
+  const saveSampler = (key) => (v) => {
+    const patch = { [key]: v };
+    send({ type: "save_samplers", profileId: profile.id, samplers: patch, target: "codex", chatId: state.activeChatId });
+  };
+  const grid = document.createElement("div");
+  grid.className = "lmb-grid-2";
+  grid.append(labelled("Max input tokens", numberInput({
+    value: profile.codexSamplers.max_input_tokens,
+    min: 256,
+    max: 4000000,
+    step: 1024,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.max_input_tokens),
+    onBlur: saveSampler("max_input_tokens")
+  })), labelled("Max output tokens", numberInput({
+    value: profile.codexSamplers.max_tokens,
+    min: 1,
+    max: 1e6,
+    step: 256,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.max_tokens),
+    onBlur: saveSampler("max_tokens")
+  })));
+  sec.body.appendChild(grid);
+  const sampleGrid = document.createElement("div");
+  sampleGrid.className = "lmb-grid-3";
+  sampleGrid.append(labelled("Temperature", numberInput({
+    value: profile.codexSamplers.temperature,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.temperature),
+    onBlur: saveSampler("temperature")
+  })), labelled("Top P", numberInput({
+    value: profile.codexSamplers.top_p,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.top_p),
+    onBlur: saveSampler("top_p")
+  })), labelled("Top K", numberInput({
+    value: profile.codexSamplers.top_k,
+    min: 0,
+    max: 1000,
+    step: 1,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.top_k),
+    onBlur: saveSampler("top_k")
+  })), labelled("Freq penalty", numberInput({
+    value: profile.codexSamplers.frequency_penalty,
+    min: -2,
+    max: 2,
+    step: 0.05,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.frequency_penalty),
+    onBlur: saveSampler("frequency_penalty")
+  })), labelled("Pres penalty", numberInput({
+    value: profile.codexSamplers.presence_penalty,
+    min: -2,
+    max: 2,
+    step: 0.05,
+    placeholder: String(CODEX_SAMPLER_DEFAULTS.presence_penalty),
+    onBlur: saveSampler("presence_penalty")
+  })));
+  sec.body.appendChild(sampleGrid);
+  host.appendChild(sec.wrap);
+}
 function renderRegex(host, state, profile, patch) {
   const sec = section("Regex");
   if (state.regexScripts.length === 0) {
@@ -9127,8 +9206,15 @@ function renderTuningTab(host, state, ctx, send) {
     case "codex":
       if (codexLessonGated(state.lessons))
         renderCodexPaneLock(pane);
-      else
+      else {
         renderCodexSettings(pane, state, profile, patch);
+        const samplerHost = document.createElement("div");
+        samplerHost.className = profile.codexEnabled ? "lmb-pane" : "lmb-pane lmb-greyed";
+        if (!profile.codexEnabled)
+          samplerHost.setAttribute("inert", "");
+        pane.appendChild(samplerHost);
+        renderCodexSamplers(samplerHost, state, profile, send);
+      }
       break;
     case "model":
       renderConnection(pane, state, profile, patch);

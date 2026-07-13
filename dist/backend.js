@@ -35,6 +35,15 @@ var SAMPLER_DEFAULTS = {
   frequency_penalty: 0,
   presence_penalty: 0
 };
+var CODEX_SAMPLER_DEFAULTS = {
+  temperature: 0.4,
+  top_p: 1,
+  top_k: 0,
+  max_tokens: 1e5,
+  max_input_tokens: 500000,
+  frequency_penalty: 0,
+  presence_penalty: 0
+};
 function makeDefaultProfile(id, name) {
   return {
     id,
@@ -83,7 +92,8 @@ function makeDefaultProfile(id, name) {
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
-    codexExtraContext: true
+    codexExtraContext: true,
+    codexSamplers: { ...DEFAULT_SAMPLERS }
   };
 }
 var DEFAULT_SETTINGS = {
@@ -174,7 +184,8 @@ function normalizeProfile(raw) {
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
-    codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext
+    codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
+    codexSamplers: normalizeSamplers(v.codexSamplers)
   };
 }
 function normalizeSamplers(raw) {
@@ -3112,6 +3123,22 @@ function buildSamplerParameters(profile) {
     out["presence_penalty"] = s.presence_penalty;
   return out;
 }
+function buildCodexSamplerParameters(profile) {
+  const out = {};
+  const s = profile.codexSamplers;
+  out["temperature"] = s.temperature ?? CODEX_SAMPLER_DEFAULTS.temperature;
+  out["max_tokens"] = s.max_tokens ?? CODEX_SAMPLER_DEFAULTS.max_tokens;
+  out["max_context_length"] = s.max_input_tokens ?? CODEX_SAMPLER_DEFAULTS.max_input_tokens;
+  if (s.top_p !== null)
+    out["top_p"] = s.top_p;
+  if (s.top_k !== null)
+    out["top_k"] = s.top_k;
+  if (s.frequency_penalty !== null)
+    out["frequency_penalty"] = s.frequency_penalty;
+  if (s.presence_penalty !== null)
+    out["presence_penalty"] = s.presence_penalty;
+  return out;
+}
 
 class AbortedSummarizerError extends Error {
   constructor() {
@@ -4036,6 +4063,7 @@ function buildCodexSystemPrompt(relationsTable) {
     "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
     "",
     "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
+    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
     "If a write is rejected you will get the validation errors back: fix the file and resend only the rejected files."
   ].join(`
 `);
@@ -6294,7 +6322,7 @@ async function resolveCodexConnection(profile, userId) {
 }
 async function runQuietRound(conn, messages, profile, userId, externalSignal, onProgress, onDelta, progressBase) {
   const model = (conn.model ?? "").trim();
-  const parameters = { ...buildSamplerParameters(profile) };
+  const parameters = { ...buildCodexSamplerParameters(profile) };
   if (model)
     parameters["model"] = model;
   const result = await consumeGenerationStream((signal) => spindle.generate.quietStream({
@@ -7935,9 +7963,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (idx === -1)
             return cur;
           const current = cur.profiles[idx];
-          const merged = { ...current.samplers, ...msg.samplers };
           const profiles = cur.profiles.slice();
-          profiles[idx] = { ...current, samplers: merged };
+          if (msg.target === "codex") {
+            profiles[idx] = { ...current, codexSamplers: { ...current.codexSamplers, ...msg.samplers } };
+          } else {
+            profiles[idx] = { ...current, samplers: { ...current.samplers, ...msg.samplers } };
+          }
           return { ...cur, profiles };
         });
         await pushState(userId, msg.chatId);

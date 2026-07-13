@@ -7,6 +7,7 @@ import { renderCodexPaneLock } from "../lessons/seal";
 import {
   renderAutomation,
   renderBehavior,
+  renderCodexSamplers,
   renderCodexSettings,
   renderCompressionTargets,
   renderConnection,
@@ -96,7 +97,15 @@ export function renderTuningTab(
     }
     case "codex":
       if (codexLessonGated(state.lessons)) renderCodexPaneLock(pane);
-      else renderCodexSettings(pane, state, profile, patch);
+      else {
+        renderCodexSettings(pane, state, profile, patch);
+        // Greys with the codex switch like the settings subgroup above it.
+        const samplerHost = document.createElement("div");
+        samplerHost.className = profile.codexEnabled ? "lmb-pane" : "lmb-pane lmb-greyed";
+        if (!profile.codexEnabled) samplerHost.setAttribute("inert", "");
+        pane.appendChild(samplerHost);
+        renderCodexSamplers(samplerHost, state, profile, send);
+      }
       break;
     case "model":
       renderConnection(pane, state, profile, patch);

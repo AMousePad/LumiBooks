@@ -1,6 +1,6 @@
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
-import { SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
+import { CODEX_SAMPLER_DEFAULTS, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
 const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", "Defaults");
 // Token-mode blank-field fallbacks for the codex cadence: the shared defaults
@@ -651,6 +651,76 @@ export function renderSamplers(
     labelled("Pres penalty", numberInput({
       value: profile.samplers.presence_penalty, min: -2, max: 2, step: 0.05,
       placeholder: String(SAMPLER_DEFAULTS.presence_penalty),
+      onBlur: saveSampler("presence_penalty"),
+    })),
+  );
+  sec.body.appendChild(sampleGrid);
+  host.appendChild(sec.wrap);
+}
+
+/** Mirror of renderSamplers for the codex agent's own sampler set. The codex
+ * rewrites whole files against a big context, so its wire fallbacks
+ * (CODEX_SAMPLER_DEFAULTS) run far larger than the summarizer's. */
+export function renderCodexSamplers(
+  host: HTMLElement,
+  state: FrontendState,
+  profile: LMBProfile,
+  send: (msg: FrontendToBackend) => void,
+): void {
+  const sec = section("Codex samplers");
+  const help = document.createElement("div");
+  help.className = "lmb-help";
+  help.textContent =
+    "Samplers for the codex agent only, separate from Memoria's summarizing samplers on the Model pane. Empty fields use codex defaults.";
+  sec.body.appendChild(help);
+
+  const saveSampler = (key: keyof SamplerSet) => (v: number | null) => {
+    const patch = { [key]: v } as Partial<SamplerSet>;
+    send({ type: "save_samplers", profileId: profile.id, samplers: patch, target: "codex", chatId: state.activeChatId });
+  };
+
+  const grid = document.createElement("div");
+  grid.className = "lmb-grid-2";
+  grid.append(
+    labelled("Max input tokens", numberInput({
+      value: profile.codexSamplers.max_input_tokens, min: 256, max: 4000000, step: 1024,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.max_input_tokens),
+      onBlur: saveSampler("max_input_tokens"),
+    })),
+    labelled("Max output tokens", numberInput({
+      value: profile.codexSamplers.max_tokens, min: 1, max: 1000000, step: 256,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.max_tokens),
+      onBlur: saveSampler("max_tokens"),
+    })),
+  );
+  sec.body.appendChild(grid);
+
+  const sampleGrid = document.createElement("div");
+  sampleGrid.className = "lmb-grid-3";
+  sampleGrid.append(
+    labelled("Temperature", numberInput({
+      value: profile.codexSamplers.temperature, min: 0, max: 2, step: 0.05,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.temperature),
+      onBlur: saveSampler("temperature"),
+    })),
+    labelled("Top P", numberInput({
+      value: profile.codexSamplers.top_p, min: 0, max: 1, step: 0.01,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.top_p),
+      onBlur: saveSampler("top_p"),
+    })),
+    labelled("Top K", numberInput({
+      value: profile.codexSamplers.top_k, min: 0, max: 1000, step: 1,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.top_k),
+      onBlur: saveSampler("top_k"),
+    })),
+    labelled("Freq penalty", numberInput({
+      value: profile.codexSamplers.frequency_penalty, min: -2, max: 2, step: 0.05,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.frequency_penalty),
+      onBlur: saveSampler("frequency_penalty"),
+    })),
+    labelled("Pres penalty", numberInput({
+      value: profile.codexSamplers.presence_penalty, min: -2, max: 2, step: 0.05,
+      placeholder: String(CODEX_SAMPLER_DEFAULTS.presence_penalty),
       onBlur: saveSampler("presence_penalty"),
     })),
   );

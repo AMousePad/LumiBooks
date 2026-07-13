@@ -12,7 +12,7 @@ import { saveCodexFile } from "./store";
 import {
   AbortedSummarizerError,
   FatalSummarizerError,
-  buildSamplerParameters,
+  buildCodexSamplerParameters,
   consumeGenerationStream,
   listConnections,
   resolveConnection,
@@ -125,7 +125,7 @@ async function runQuietRound(
   progressBase: { chars: number; thinking: number },
 ): Promise<QuietRound> {
   const model = (conn.model ?? "").trim();
-  const parameters: Record<string, unknown> = { ...buildSamplerParameters(profile) };
+  const parameters: Record<string, unknown> = { ...buildCodexSamplerParameters(profile) };
   if (model) parameters["model"] = model;
 
   const result = await consumeGenerationStream(

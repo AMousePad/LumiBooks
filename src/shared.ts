@@ -96,6 +96,9 @@ export interface LMBProfile {
   codexThorough: boolean;
   codexConnectionId: string | null;
   codexExtraContext: boolean;
+  /** Sampler overrides for codex agent calls; null fields fall back to
+   * CODEX_SAMPLER_DEFAULTS on the wire, mirroring `samplers`. */
+  codexSamplers: SamplerSet;
 }
 
 export interface CustomPreset {
@@ -166,6 +169,19 @@ export const SAMPLER_DEFAULTS: Readonly<Record<keyof SamplerSet, number>> = {
   presence_penalty: 0,
 };
 
+/** Wire fallbacks for codex agent calls. The codex re-reads the whole bible
+ * plus a story chunk per pass and rewrites whole files, so both budgets run
+ * far past the summarizer's. */
+export const CODEX_SAMPLER_DEFAULTS: Readonly<Record<keyof SamplerSet, number>> = {
+  temperature: 0.4,
+  top_p: 1,
+  top_k: 0,
+  max_tokens: 100000,
+  max_input_tokens: 500000,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+};
+
 export function makeDefaultProfile(id: string, name: string): LMBProfile {
   return {
     id,
@@ -215,6 +231,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
+    codexSamplers: { ...DEFAULT_SAMPLERS },
   };
 }
 
@@ -324,6 +341,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
+    codexSamplers: normalizeSamplers(v.codexSamplers),
   };
 }
 

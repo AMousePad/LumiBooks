@@ -140,6 +140,7 @@ export function buildCodexSystemPrompt(relationsTable: boolean): string {
     "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
     "",
     "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
+    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
     "If a write is rejected you will get the validation errors back: fix the file and resend only the rejected files.",
   ].join("\n");
 }

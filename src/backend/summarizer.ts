@@ -2,7 +2,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
 import type { LMBProfile, CustomPreset } from "../shared";
-import { SAMPLER_DEFAULTS } from "../shared";
+import { CODEX_SAMPLER_DEFAULTS, SAMPLER_DEFAULTS } from "../shared";
 import type { ChatMessage } from "./coverage";
 import type { LMBEntry } from "./world-book";
 import { applySelectedRegex } from "./regex";
@@ -143,6 +143,21 @@ export function buildSamplerParameters(profile: LMBProfile): Record<string, unkn
   out["temperature"] = s.temperature ?? SAMPLER_DEFAULTS.temperature;
   out["max_tokens"] = s.max_tokens ?? SAMPLER_DEFAULTS.max_tokens;
   out["max_context_length"] = s.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens;
+  if (s.top_p !== null) out["top_p"] = s.top_p;
+  if (s.top_k !== null) out["top_k"] = s.top_k;
+  if (s.frequency_penalty !== null) out["frequency_penalty"] = s.frequency_penalty;
+  if (s.presence_penalty !== null) out["presence_penalty"] = s.presence_penalty;
+  return out;
+}
+
+/** Same wire shape as buildSamplerParameters, sourced from the profile's
+ * codex sampler set with the codex-sized fallbacks. */
+export function buildCodexSamplerParameters(profile: LMBProfile): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const s = profile.codexSamplers;
+  out["temperature"] = s.temperature ?? CODEX_SAMPLER_DEFAULTS.temperature;
+  out["max_tokens"] = s.max_tokens ?? CODEX_SAMPLER_DEFAULTS.max_tokens;
+  out["max_context_length"] = s.max_input_tokens ?? CODEX_SAMPLER_DEFAULTS.max_input_tokens;
   if (s.top_p !== null) out["top_p"] = s.top_p;
   if (s.top_k !== null) out["top_k"] = s.top_k;
   if (s.frequency_penalty !== null) out["frequency_penalty"] = s.frequency_penalty;
