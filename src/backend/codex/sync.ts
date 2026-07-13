@@ -86,7 +86,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
   if (problems.length > 0) {
-    throw new Error(`codex sync skipped, unreadable file${problems.length === 1 ? "" : "s"}: ${problems.map((p) => `${p.file}.json`).join(", ")}`);
+    throw new Error(`codex sync skipped, unreadable or invalid file${problems.length === 1 ? "" : "s"}: ${problems.map((p) => `${p.file}.json`).join(", ")}`);
   }
 
   const relState = cursor.fileStates["relations"];
@@ -110,16 +110,17 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
 
   const existing = await listSyncedEntries(bookId, chatId, userId);
   const byRecord = new Map<string, { raw: WorldBookEntryDTO; meta: CodexEntryMeta }>();
+  let failedDeletes = 0;
   for (const e of existing) {
     const dup = byRecord.get(e.meta.record);
     if (!dup) {
       byRecord.set(e.meta.record, e);
       continue;
     }
-    // Duplicate identity (interrupted older sync): keep one, drop the rest.
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) =>
-      warn(`codex sync: failed to delete duplicate entry ${e.raw.id}: ${describeError(err)}`),
-    );
+    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+      failedDeletes++;
+      warn(`codex sync: failed to delete duplicate entry ${e.raw.id}: ${describeError(err)}`);
+    });
   }
 
   const seen = new Set<string>();
@@ -180,9 +181,13 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
 
   for (const [record, e] of byRecord) {
     if (seen.has(record)) continue;
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) =>
-      warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`),
-    );
+    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+      failedDeletes++;
+      warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`);
+    });
+  }
+  if (failedDeletes > 0) {
+    throw new Error(`failed to delete ${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"}`);
   }
 }
 
@@ -195,10 +200,15 @@ async function doWipe(chatId: string, userId: string): Promise<void> {
   const bookId = await findCodexBookForChat(chatId, userId);
   if (!bookId) return;
   const existing = await listSyncedEntries(bookId, chatId, userId);
+  let failed = 0;
   for (const e of existing) {
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) =>
-      warn(`codex wipe: failed to delete entry ${e.raw.id}: ${describeError(err)}`),
-    );
+    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+      failed++;
+      warn(`codex wipe: failed to delete entry ${e.raw.id}: ${describeError(err)}`);
+    });
+  }
+  if (failed > 0) {
+    throw new Error(`failed to delete ${failed} codex entr${failed === 1 ? "y" : "ies"}, they may still inject`);
   }
 }
 

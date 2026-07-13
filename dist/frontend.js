@@ -6145,7 +6145,7 @@ function resolveDraftIndex(list, draft) {
 }
 function staleDraftAbort() {
   local.recordDraft = null;
-  showToast("warn", "Memoria rewrote that record while you were editing, reopen it to edit the new version");
+  showToast("warn", "Memoria rewrote that record while you were working, redo the change on the new version");
   rerender();
 }
 function spliceOutIfCurrent(list, index2, expected) {
@@ -6236,8 +6236,11 @@ function deliverCodexFiles(chatId, files, savedFile, savedSeq) {
   }
   if (pendingCodexSave && savedFile === pendingCodexSave.file && savedSeq === pendingCodexSave.seq) {
     pendingCodexSave = null;
-    local.entityDraft = null;
-    local.recordDraft = null;
+    if (savedFile === "characters" || savedFile === "locations" || savedFile === "things") {
+      local.entityDraft = null;
+    } else {
+      local.recordDraft = null;
+    }
   }
 }
 function sendCodexWrite(file, value, state, send) {
@@ -6269,7 +6272,7 @@ function sendCodexWrite(file, value, state, send) {
     }
     if (touched)
       rerender();
-  }, 15000);
+  }, 5000);
 }
 function renderCodexTab(host, state, ctx, send) {
   lastArgs = { host, state, ctx, send };
@@ -6749,7 +6752,7 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
     const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
     if (!ok)
       return;
-    const next = parsed[group].filter((x3) => str(x3["id"]) !== id);
+    const next = (cache.parsed ?? parsed)[group].filter((x3) => str(x3["id"]) !== id);
     sendCodexWrite(group, { entities: next }, state, send);
   }, { danger: true, small: true }));
   card.appendChild(actions);
@@ -6828,7 +6831,7 @@ function renderEntityForm(draft, state, send) {
   actions.append(saveBtn, makeButton("Cancel", () => {
     local.entityDraft = null;
     rerender();
-  }, { small: true, disabled: draft.saving }));
+  }, { small: true }));
   card.appendChild(actions);
   return card;
 }
@@ -6937,7 +6940,7 @@ function renderRecordForm(title, specs, draft, refListId, onSave) {
   }, { primary: true, small: true, disabled: draft.saving }), makeButton("Cancel", () => {
     local.recordDraft = null;
     rerender();
-  }, { small: true, disabled: draft.saving }));
+  }, { small: true }));
   card.appendChild(actions);
   return card;
 }
@@ -11873,13 +11876,13 @@ function createLessonEngine(deps) {
     head.className = "lmb-lesson-head";
     const title = document.createElement("span");
     title.className = "lmb-lesson-title";
-    title.textContent = active.mode === "exam" ? `${active.course.title} · Exam` : active.course.title;
+    title.textContent = active.mode === "exam" ? `${active.course.title} Â· Exam` : active.course.title;
     headLabel = document.createElement("span");
     headLabel.className = "lmb-lesson-headlabel";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "lmb-lesson-close";
-    close.textContent = "✕";
+    close.textContent = "âœ•";
     close.title = active.mode === "exam" ? "Leave the exam, an unfinished exam is not saved" : deps.getState()?.lessons?.[active.key]?.status === "done" ? "Leave anytime, your diploma and previous grade stand" : "Leave the lesson, progress is saved";
     close.setAttribute("aria-label", "Leave the lesson");
     close.addEventListener("click", exit);
@@ -11965,7 +11968,7 @@ function createLessonEngine(deps) {
     if (headLabel) {
       if (active.phase === "steps") {
         const sec = active.main[active.sIdx];
-        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} · ${sec.title}` : "";
+        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} Â· ${sec.title}` : "";
       } else if (active.phase === "finale") {
         headLabel.textContent = active.finale?.title ?? "";
       } else {
@@ -12241,7 +12244,7 @@ function createLessonEngine(deps) {
     title.textContent = active.course.title;
     const orn = document.createElement("div");
     orn.className = "lmb-lesson-cover-orn";
-    orn.textContent = "◆ ◇ ◆";
+    orn.textContent = "â—† â—‡ â—†";
     cover.append(title, orn);
     const secTitle = subtitle ?? (active.mode === "lesson" && active.phase === "steps" ? active.main[active.sIdx]?.title : undefined);
     if (secTitle) {
@@ -12315,7 +12318,7 @@ function createLessonEngine(deps) {
       const step = currentStep();
       const chip = step?.kind === "quiz" ? step.chip : step?.kind === "nav" && active?.doPhase === "idle" ? "tap" : undefined;
       if (chip) {
-        spotTag.textContent = `◆ ${chip}`;
+        spotTag.textContent = `â—† ${chip}`;
         spotTag.style.display = "";
         const tagTop = top - 27;
         spotTag.style.top = tagTop < 4 ? `${bottom + 7}px` : `${tagTop}px`;
@@ -12405,7 +12408,7 @@ function createLessonEngine(deps) {
     content.appendChild(text);
     const nav = document.createElement("div");
     nav.className = "lmb-lesson-nav";
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.appendChild(spacer);
@@ -12415,7 +12418,7 @@ function createLessonEngine(deps) {
       }
       const hint = document.createElement("span");
       hint.className = "lmb-lesson-waiting";
-      hint.textContent = active.doPhase === "running" ? "working…" : "your move…";
+      hint.textContent = active.doPhase === "running" ? "workingâ€¦" : "your moveâ€¦";
       nav.appendChild(hint);
     } else {
       nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
@@ -12446,7 +12449,7 @@ function createLessonEngine(deps) {
       note.className = "lmb-lesson-why";
       note.textContent = already === "gold" ? "Already stamped gold, from the exam or an earlier pass." : "Answered on an earlier pass.";
       content.appendChild(note);
-      nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+      nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
       const spacer2 = document.createElement("span");
       spacer2.className = "lmb-spacer";
       nav.appendChild(spacer2);
@@ -12482,7 +12485,7 @@ function createLessonEngine(deps) {
         }
         if (!o.correct)
           btn.classList.add("wrong");
-        verdict.textContent = o.correct ? "Filed! ◆" : "Not quite.";
+        verdict.textContent = o.correct ? "Filed! â—†" : "Not quite.";
         verdict.classList.add(o.correct ? "ok" : "miss");
         const why = document.createElement("div");
         why.className = "lmb-lesson-why";
@@ -12507,7 +12510,7 @@ function createLessonEngine(deps) {
       recordAnswer(q, "skip");
       advance();
     });
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.append(spacer, skipLink);
@@ -12575,11 +12578,8 @@ function createLessonEngine(deps) {
   function back() {
     if (!active || atStart())
       return;
-    if (active.mode === "exam") {
-      active.examIdx = Math.max(0, active.examIdx - 1);
-      renderStep();
+    if (active.mode === "exam")
       return;
-    }
     for (let guard = 0;guard < 50; guard++) {
       if (atStart())
         break;
@@ -12667,6 +12667,7 @@ function createLessonEngine(deps) {
       status: "done",
       grade: active.grade,
       lastWrong: active.wrong,
+      lastTotal: active.total,
       signedName: active.signedName,
       completedAt: active.completedAt,
       answers: { ...active.answers }

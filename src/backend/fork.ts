@@ -24,6 +24,8 @@ const MAX_ANCESTRY_HOPS = 100;
 
 const checked = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
+const retryAt = new Map<string, number>();
+const RETRY_BACKOFF_MS = 30_000;
 
 let forkAnomalyCb: ((userId: string, text: string) => void) | null = null;
 export function registerForkAnomalyCallback(cb: (userId: string, text: string) => void): void {
@@ -37,14 +39,22 @@ function key(userId: string, chatId: string): string {
 export async function ensureForkAdoption(chatId: string, userId: string): Promise<void> {
   const k = key(userId, chatId);
   if (checked.has(k)) return;
+  const nextTry = retryAt.get(k);
+  if (nextTry && Date.now() < nextTry) return;
   const existing = inflight.get(k);
   if (existing) return existing;
   const p = (async () => {
     try {
       // Only a fully settled adoption stops the retries.
       const settled = await doForkAdoption(chatId, userId);
-      if (settled) checked.add(k);
+      if (settled) {
+        checked.add(k);
+        retryAt.delete(k);
+      } else {
+        retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
+      }
     } catch (err) {
+      retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
       warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
     } finally {
       inflight.delete(k);
@@ -52,6 +62,16 @@ export async function ensureForkAdoption(chatId: string, userId: string): Promis
   })();
   inflight.set(k, p);
   return p;
+}
+
+export async function forkCodexPending(chatId: string, userId: string): Promise<boolean> {
+  if (checked.has(key(userId, chatId))) return false;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat && chat.metadata && typeof chat.metadata === "object"
+    ? (chat.metadata as Record<string, unknown>)
+    : null;
+  if (!md || typeof md["branched_from"] !== "string") return false;
+  return md[CODEX_ADOPTED_FLAG] !== true;
 }
 
 async function doForkAdoption(forkChatId: string, userId: string): Promise<boolean> {
@@ -132,7 +152,7 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
     }
 
     // Copying mid-commit would mix pre- and post-run files.
-    if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === ancestorChatId)) {
+    if (getBusy(userId).some((b) => b.kind === "codex" && (b.chatId === ancestorChatId || b.chatId === forkChatId))) {
       return false;
     }
 
@@ -161,8 +181,10 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
       if (m.index_in_chat > tipIdx) { tipIdx = m.index_in_chat; forkTip = m.id; }
     }
     const inherited = await inheritCodex(ancestorChatId, forkChatId, userId, remapToFork, forkTip);
+    // Sync runs whether or not this attempt inherited: a prior attempt may
+    // have inherited files and then failed exactly here.
+    await syncCodexEntries(forkChatId, userId);
     if (inherited) {
-      await syncCodexEntries(forkChatId, userId);
       info(`fork adoption: inherited codex from ${ancestorChatId.slice(0, 8)} into ${forkChatId.slice(0, 8)}`);
     }
     await markCodexAdopted(forkChatId, userId);

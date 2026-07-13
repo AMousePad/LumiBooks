@@ -1,4 +1,4 @@
-import type { SpindleFrontendContext } from "lumiverse-spindle-types";
+﻿import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LessonAnswer, LessonCourseKey, LessonCourseState, LessonGrade } from "../../shared";
 import { lessonGradeForWrong } from "../../shared";
@@ -349,13 +349,13 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     head.className = "lmb-lesson-head";
     const title = document.createElement("span");
     title.className = "lmb-lesson-title";
-    title.textContent = active.mode === "exam" ? `${active.course.title} · Exam` : active.course.title;
+    title.textContent = active.mode === "exam" ? `${active.course.title} Â· Exam` : active.course.title;
     headLabel = document.createElement("span");
     headLabel.className = "lmb-lesson-headlabel";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "lmb-lesson-close";
-    close.textContent = "✕";
+    close.textContent = "âœ•";
     close.title = active.mode === "exam"
       ? "Leave the exam, an unfinished exam is not saved"
       : deps.getState()?.lessons?.[active.key]?.status === "done"
@@ -451,7 +451,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     if (headLabel) {
       if (active.phase === "steps") {
         const sec = active.main[active.sIdx];
-        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} · ${sec.title}` : "";
+        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} Â· ${sec.title}` : "";
       } else if (active.phase === "finale") {
         headLabel.textContent = active.finale?.title ?? "";
       } else {
@@ -733,7 +733,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     title.textContent = active.course.title;
     const orn = document.createElement("div");
     orn.className = "lmb-lesson-cover-orn";
-    orn.textContent = "◆ ◇ ◆";
+    orn.textContent = "â—† â—‡ â—†";
     cover.append(title, orn);
     const secTitle = subtitle
       ?? (active.mode === "lesson" && active.phase === "steps" ? active.main[active.sIdx]?.title : undefined);
@@ -818,7 +818,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           ? "tap"
           : undefined;
       if (chip) {
-        spotTag.textContent = `◆ ${chip}`;
+        spotTag.textContent = `â—† ${chip}`;
         spotTag.style.display = "";
         const tagTop = top - 27;
         spotTag.style.top = tagTop < 4 ? `${bottom + 7}px` : `${tagTop}px`;
@@ -918,7 +918,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
 
     const nav = document.createElement("div");
     nav.className = "lmb-lesson-nav";
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.appendChild(spacer);
@@ -928,7 +928,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       }
       const hint = document.createElement("span");
       hint.className = "lmb-lesson-waiting";
-      hint.textContent = active.doPhase === "running" ? "working…" : "your move…";
+      hint.textContent = active.doPhase === "running" ? "workingâ€¦" : "your moveâ€¦";
       nav.appendChild(hint);
     } else {
       nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
@@ -965,7 +965,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         ? "Already stamped gold, from the exam or an earlier pass."
         : "Answered on an earlier pass.";
       content.appendChild(note);
-      nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+      nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
       const spacer = document.createElement("span");
       spacer.className = "lmb-spacer";
       nav.appendChild(spacer);
@@ -999,7 +999,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           if (wasCorrect) b.classList.add("correct");
         }
         if (!o.correct) btn.classList.add("wrong");
-        verdict.textContent = o.correct ? "Filed! ◆" : "Not quite.";
+        verdict.textContent = o.correct ? "Filed! â—†" : "Not quite.";
         verdict.classList.add(o.correct ? "ok" : "miss");
         const why = document.createElement("div");
         why.className = "lmb-lesson-why";
@@ -1024,7 +1024,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       recordAnswer(q, "skip");
       advance();
     });
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() }));
+    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.append(spacer, skipLink);
@@ -1092,11 +1092,9 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
 
   function back(): void {
     if (!active || atStart()) return;
-    if (active.mode === "exam") {
-      active.examIdx = Math.max(0, active.examIdx - 1);
-      renderStep();
-      return;
-    }
+    // Exams are forward-only: answers reveal the correct option, so walking
+    // Back would let any fail be converted into a flawless pass.
+    if (active.mode === "exam") return;
     // Walk back past steps that do not apply (fresh-install-only), otherwise
     // renderStep bounces forward and Back looks dead.
     for (let guard = 0; guard < 50; guard++) {
@@ -1190,6 +1188,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       status: "done",
       grade: active.grade,
       lastWrong: active.wrong,
+      lastTotal: active.total,
       signedName: active.signedName,
       completedAt: active.completedAt,
       answers: { ...active.answers },

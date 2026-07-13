@@ -5,7 +5,7 @@ import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars } 
 import type { ChatMessage } from "../coverage";
 import { liveEndPosition, sumApproxTokens } from "../coverage";
 import type { CodexCursor, CodexFileState } from "./store";
-import { codexExists, deleteCodex, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
+import { codexExists, codexPresence, deleteCodex, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
 import { runCodexAgent } from "./agent";
 import { buildCodexTidyMessage, renderCodexFileSections, renderCodexForInjection, type CodexRunNotes } from "./prompt";
@@ -14,6 +14,7 @@ import { AbortedSummarizerError } from "../summarizer";
 import { appendStreamText, clearBusy, getBusy, registerAborter, setBusy, shortErrorText, updateProgressNumbers } from "../pipeline";
 import { findBookForChat, listAllEntries, listLmbEntries } from "../world-book";
 import { publishCodexSnapshot, publishCodexUpdated, publishCodexWiped, type CodexChangeReason } from "../hooks";
+import { forkCodexPending } from "../fork";
 import { describeError, warn } from "../runtime";
 
 
@@ -320,7 +321,7 @@ export interface CodexStatus {
 }
 
 export async function getCodexStatus(chatId: string, userId: string, profile: LMBProfile): Promise<CodexStatus> {
-  const exists = await codexExists(chatId, userId);
+  const exists = (await codexPresence(chatId, userId)) === "present";
   if (!profile.codexEnabled && !exists) return { exists: false, backlog: 0, lastRunAt: null };
   try {
     const plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
@@ -416,7 +417,10 @@ async function runChunk(
   invalidateCodexInjectionCache(chatId);
   // File switches are user-owned and can flip mid-chunk: re-read them at save time.
   await withCursorLock(chatId, userId, async () => {
-    const liveCursor = await loadCursor(chatId, userId).catch(() => null);
+    const liveCursor = await loadCursor(chatId, userId).catch((err) => {
+      warn(`codex: live cursor re-read failed before save: ${describeError(err)}`);
+      return null;
+    });
     if (liveCursor) {
       plan.cursor.fileStates = liveCursor.fileStates;
       plan.cursor.frozenAtRuns = liveCursor.frozenAtRuns;
@@ -494,6 +498,8 @@ export async function maybeRunCodex(
   userId: string,
 ): Promise<void> {
   if (!settings.enabled || !profile.codexEnabled) return;
+  // A fork drain before inheritance settles would forfeit the ancestor's codex.
+  if (await forkCodexPending(chatId, userId).catch(() => false)) return;
   await ensureCodexEntriesSynced(chatId, userId, profile);
   try {
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
@@ -511,6 +517,10 @@ export async function maybeRunCodex(
 export async function runCodexNow(chatId: string, profile: LMBProfile, userId: string): Promise<void> {
   if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
     cb?.onToast(userId, "warn", "Memoria is already updating the codex");
+    return;
+  }
+  if (await forkCodexPending(chatId, userId).catch(() => false)) {
+    cb?.onToast(userId, "info", "Memoria is still carrying the codex into this fork, try again in a moment");
     return;
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
@@ -554,7 +564,14 @@ export async function getCodexFileTokens(chatId: string, userId: string, profile
   const cached = fileTokensCache.get(chatId);
   if (cached && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.tokens;
   const tokens: Record<string, number> = {};
-  if (await codexExists(chatId, userId)) {
+  let exists: boolean;
+  try {
+    exists = (await codexPresence(chatId, userId)) === "present";
+  } catch (err) {
+    warn(`codex file tokens skipped, storage fault: ${describeError(err)}`);
+    return tokens;
+  }
+  if (exists) {
     const cursor = await loadCursor(chatId, userId);
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
     const { bundle } = await loadCodex(chatId, userId, { relationsTable: diskMode });
@@ -581,7 +598,13 @@ export async function buildCodexInjectionText(
   if (!profile.codexEnabled) return null;
   const cached = injectionTextCache.get(chatId);
   if (cached && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.text;
-  const exists = await codexExists(chatId, userId);
+  let exists: boolean;
+  try {
+    exists = (await codexPresence(chatId, userId)) === "present";
+  } catch (err) {
+    warn(`codex injection text skipped, storage fault: ${describeError(err)}`);
+    return null;
+  }
   let text: string | null = null;
   if (exists) {
     // Validate with the mode the files were written under, not the profile's
@@ -619,7 +642,14 @@ export async function publishCodexPool(
   reason: CodexChangeReason,
 ): Promise<void> {
   try {
-    if (!(await codexExists(chatId, userId))) {
+    let presence: "present" | "absent";
+    try {
+      presence = await codexPresence(chatId, userId);
+    } catch (err) {
+      warn(`codex pool publish skipped, storage fault: ${describeError(err)}`);
+      return;
+    }
+    if (presence === "absent") {
       publishCodexWiped(chatId, userId);
       return;
     }
@@ -692,6 +722,17 @@ export async function rebuildCodex(chatId: string, profile: LMBProfile, userId: 
   }
   try {
     const prev = await loadCursor(chatId, userId).catch(() => emptyCursor());
+    // Frozen means "no updates", not "erase": their contents survive the wipe.
+    const frozenKeys = CODEX_FILE_KEYS.filter((k) => prev.fileStates[k] === "frozen");
+    const kept: Partial<Record<CodexFileKey, CodexFileValue>> = {};
+    if (frozenKeys.length > 0) {
+      const diskMode = prev.relationsTableMode ?? profile.codexRelationsTable;
+      const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+      const broken = new Set(problems.map((p) => p.file));
+      for (const k of frozenKeys) {
+        if (!broken.has(k)) kept[k] = bundle[k];
+      }
+    }
     const failed = await deleteCodex(chatId, userId);
     invalidateCodexInjectionCache(chatId);
     if (failed.length > 0) {
@@ -699,16 +740,22 @@ export async function rebuildCodex(chatId: string, profile: LMBProfile, userId: 
       return;
     }
     publishCodexWiped(chatId, userId);
-    // The synced entries must go with the files: a drain that consumes nothing
-    // (short chat) would otherwise leave the old story in the lorebook.
     await wipeCodexEntries(chatId, userId).catch((err) => {
       warn(`codex rebuild: entry wipe failed: ${describeError(err)}`);
       cb?.onToast(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
     });
-    if (Object.keys(prev.fileStates).length > 0) {
-      const fresh = emptyCursor();
-      fresh.fileStates = prev.fileStates;
-      await saveCursor(chatId, fresh, userId);
+    const keptKeys = Object.keys(kept) as CodexFileKey[];
+    if (Object.keys(prev.fileStates).length > 0 || keptKeys.length > 0) {
+      await withCursorLock(chatId, userId, async () => {
+        const fresh = emptyCursor();
+        fresh.fileStates = prev.fileStates;
+        for (const k of keptKeys) fresh.frozenAtRuns[k] = 0;
+        if (keptKeys.length > 0) fresh.relationsTableMode = prev.relationsTableMode;
+        await saveCursor(chatId, fresh, userId);
+      });
+      for (const k of keptKeys) {
+        await saveCodexFile(chatId, k, kept[k]!, userId);
+      }
     }
   } finally {
     clearBusy(userId, chatId, "codex");

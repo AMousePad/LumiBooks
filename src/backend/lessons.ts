@@ -113,21 +113,36 @@ async function applyGateFlags(userId: string, freshInstall: boolean): Promise<vo
   }));
 }
 
+async function tryReadRealLessons(userId: string): Promise<LessonsState | null> {
+  try {
+    const exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
+    if (!exists) return null;
+    const raw = await spindle.userStorage.read(LESSONS_PATH, userId);
+    return normalizeLessons(JSON.parse(raw) as unknown);
+  } catch {
+    return null;
+  }
+}
+
 async function mutateLessons(userId: string, fn: (cur: LessonsState) => LessonsState): Promise<LessonsState> {
   return withLessonsLock(userId, async () => {
     let cur = await ensureLessons(userId);
     if (failOpenUsers.has(userId)) {
-      cache.delete(userId);
-      cur = await ensureLessons(userId);
+      const real = await tryReadRealLessons(userId);
+      if (real) {
+        failOpenUsers.delete(userId);
+        cur = real;
+      }
     }
     const next = fn(cur);
-    cache.set(userId, next);
     if (failOpenUsers.has(userId)) {
+      cache.set(userId, next);
       warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
       anomalyCb?.(userId, "Memoria couldn't read her lesson register so this change is not saved to disk yet");
       return next;
     }
     await spindle.userStorage.setJson(LESSONS_PATH, next, { indent: 0, userId });
+    cache.set(userId, next);
     return next;
   });
 }

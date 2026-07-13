@@ -321,35 +321,39 @@ export async function inheritCodex(
   remapId: (parentMsgId: string) => string | null,
   reconcileUntilId: string | null,
 ): Promise<boolean> {
-  if (!(await codexExists(fromChatId, userId))) return false;
-  if (await codexExists(toChatId, userId)) return false;
-  const cursor = await loadCursor(fromChatId, userId);
-  for (const key of CODEX_FILE_KEYS) {
-    const read = await readCodexFileRaw(fromChatId, key, userId);
-    // Absent or unreadable in the parent: the fork starts that file empty.
-    if (read.state !== "ok") continue;
-    await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
-  }
-  // Only the contiguous mapped prefix survives: a gap would let divergence
-  // detection anchor consumption past messages it never verified.
-  const sigs: ConsumedSig[] = [];
-  for (const rec of cursor.consumedSigs) {
-    const mapped = remapId(rec.id);
-    if (!mapped) break;
-    sigs.push({ id: mapped, sig: rec.sig });
-  }
-  const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
-  const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
-  const next: CodexCursor = {
-    ...cursor,
-    consumedSigs: sigs,
-    lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1]!.id : mappedPrefix),
-    prefixMsgId: mappedPrefix,
-    pendingReconcile: true,
-    reconcileUntilMsgId: reconcileUntilId,
-  };
-  await saveCursor(toChatId, next, userId);
-  return true;
+  if ((await codexPresence(fromChatId, userId)) !== "present") return false;
+  return withCursorLock(toChatId, userId, async () => {
+    if ((await codexPresence(toChatId, userId)) === "present") return false;
+    const cursor = await loadCursor(fromChatId, userId);
+    for (const key of CODEX_FILE_KEYS) {
+      const read = await readCodexFileRaw(fromChatId, key, userId);
+      if (read.state === "unreadable") {
+        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+      }
+      if (read.state === "absent") continue;
+      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
+    }
+    // Only the contiguous mapped prefix survives: a gap would let divergence
+    // detection anchor consumption past messages it never verified.
+    const sigs: ConsumedSig[] = [];
+    for (const rec of cursor.consumedSigs) {
+      const mapped = remapId(rec.id);
+      if (!mapped) break;
+      sigs.push({ id: mapped, sig: rec.sig });
+    }
+    const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
+    const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
+    const next: CodexCursor = {
+      ...cursor,
+      consumedSigs: sigs,
+      lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1]!.id : mappedPrefix),
+      prefixMsgId: mappedPrefix,
+      pendingReconcile: true,
+      reconcileUntilMsgId: reconcileUntilId,
+    };
+    await saveCursor(toChatId, next, userId);
+    return true;
+  });
 }
 
 /** Raw file contents for the UI viewer: pretty JSON, empty scaffold when

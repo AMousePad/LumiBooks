@@ -1,6 +1,6 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
-import type { LlmMessageDTO } from "lumiverse-spindle-types";
+import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
 import type { FrontendToBackend } from "../types";
 import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, normalizeProfile, normalizeCustomPreset } from "../shared";
 import {
@@ -68,8 +68,10 @@ import {
   patchPendingPreview,
   recordFreedGhostNumber,
   registerPipelineCallbacks,
+  setBusy,
   setStreamWatcher,
 } from "./pipeline";
+import { clearBusy } from "./pipeline";
 import { buildCoverage, computeCoverageStats, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
 import {
   invalidateCodexInjectionCache,
@@ -81,7 +83,7 @@ import {
   runCodexTidy,
   setCodexFileState,
 } from "./codex/index";
-import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor } from "./codex/store";
+import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
 import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
@@ -240,35 +242,39 @@ spindle.registerInterceptor(async (messages, context) => {
         ? ((context as { chatId?: unknown }).chatId as string)
         : null;
     if (!chatId) return messages;
-    let userId = resolveUserId(chatId);
-    if (!userId) {
-      const bootstrap = getBootstrapUserId();
-      if (bootstrap) {
-        const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
-        if (chat) {
-          rememberChatUser(chatId, bootstrap);
-          userId = bootstrap;
-        }
-      }
-    }
-    if (!userId) return messages;
-    const settings = await loadSettings(userId);
-    if (!settings.enabled) return messages;
     let budgetTimer: ReturnType<typeof setTimeout> | undefined;
     const budget = new Promise<"timeout">((resolve) => {
       budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
     });
+    // The whole path sits inside the timebox: the settings read and bootstrap
+    // chat lookup can stall just like assembly can.
+    const work = (async (): Promise<InterceptorResultDTO | "skip" | null> => {
+      let userId = resolveUserId(chatId);
+      if (!userId) {
+        const bootstrap = getBootstrapUserId();
+        if (bootstrap) {
+          const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
+          if (chat) {
+            rememberChatUser(chatId, bootstrap);
+            userId = bootstrap;
+          }
+        }
+      }
+      if (!userId) return "skip";
+      const settings = await loadSettings(userId);
+      if (!settings.enabled) return "skip";
+      return buildInjection(chatId, messages as LlmMessageDTO[], userId);
+    })();
+    work.catch(() => {});
     try {
-      const result = await Promise.race([
-        buildInjection(chatId, messages as LlmMessageDTO[], userId),
-        budget,
-      ]);
+      const result = await Promise.race([work, budget]);
       if (result === "timeout") {
         error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)}, skipping this turn to stay inside the host interceptor budget`);
-        void notify(userId, "error", "Memoria took too long assembling memories and skipped this turn");
+        const toastUser = resolveUserId(chatId);
+        if (toastUser) void notify(toastUser, "error", "Memoria took too long assembling memories and skipped this turn");
         return messages;
       }
-      if (!result) return messages;
+      if (result === "skip" || !result) return messages;
       return { messages: result.messages, breakdown: result.breakdown };
     } finally {
       if (budgetTimer) clearTimeout(budgetTimer);
@@ -1223,10 +1229,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         invalidateCodexInjectionCache(msg.chatId);
         // A hand-seeded codex must count as existing: injection and status key
         // off the cursor.
-        if (cursor.relationsTableMode === null) {
-          cursor.relationsTableMode = relationsTable;
-          await saveCursor(msg.chatId, cursor, userId);
-        }
+        await withCursorLock(msg.chatId, userId, async () => {
+          const cur = await loadCursor(msg.chatId, userId);
+          if (cur.relationsTableMode === null) {
+            cur.relationsTableMode = relationsTable;
+            await saveCursor(msg.chatId, cur, userId);
+          }
+        });
         if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "edit");
         try {
           await syncCodexEntries(msg.chatId, userId, relationsTable);
@@ -1256,23 +1265,31 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_reset": {
-        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+        if (!setBusy(userId, msg.chatId, "codex", "Memoria is clearing the codex")) {
           await notify(userId, "warn", "Memoria is updating the codex, abort that first");
           break;
         }
-        const failed = await deleteCodex(msg.chatId, userId);
-        invalidateCodexInjectionCache(msg.chatId);
-        if (failed.length > 0) {
-          await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
-        } else {
-          publishCodexWiped(msg.chatId, userId);
-          try {
-            await wipeCodexEntries(msg.chatId, userId);
-          } catch (err) {
-            warn(`codex_reset entry wipe failed: ${describeError(err)}`);
-            await notify(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+        try {
+          const failed = await deleteCodex(msg.chatId, userId);
+          invalidateCodexInjectionCache(msg.chatId);
+          if (failed.length > 0) {
+            await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
+          } else {
+            publishCodexWiped(msg.chatId, userId);
+            let entriesCleared = true;
+            try {
+              await wipeCodexEntries(msg.chatId, userId);
+            } catch (err) {
+              entriesCleared = false;
+              warn(`codex_reset entry wipe failed: ${describeError(err)}`);
+              await notify(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+            }
+            if (entriesCleared) {
+              await notify(userId, "info", "Memoria cleared the codex for this chat");
+            }
           }
-          await notify(userId, "info", "Memoria cleared the codex for this chat");
+        } finally {
+          clearBusy(userId, msg.chatId, "codex");
         }
         // The codex tab caches file contents; without a fresh push it keeps
         // rendering the wiped records.

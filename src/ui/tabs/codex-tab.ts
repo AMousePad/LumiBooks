@@ -178,7 +178,7 @@ function resolveDraftIndex(list: Record<string, unknown>[], draft: RecordDraft):
 
 function staleDraftAbort(): void {
   local.recordDraft = null;
-  showToast("warn", "Memoria rewrote that record while you were editing, reopen it to edit the new version");
+  showToast("warn", "Memoria rewrote that record while you were working, redo the change on the new version");
   rerender();
 }
 
@@ -314,8 +314,11 @@ export function deliverCodexFiles(
     && savedSeq === pendingCodexSave.seq
   ) {
     pendingCodexSave = null;
-    local.entityDraft = null;
-    local.recordDraft = null;
+    if (savedFile === "characters" || savedFile === "locations" || savedFile === "things") {
+      local.entityDraft = null;
+    } else {
+      local.recordDraft = null;
+    }
   }
 }
 
@@ -346,7 +349,7 @@ function sendCodexWrite(
     if (local.entityDraft?.saving) { local.entityDraft.saving = false; touched = true; }
     if (local.recordDraft?.saving) { local.recordDraft.saving = false; touched = true; }
     if (touched) rerender();
-  }, 15000);
+  }, 5000);
 }
 
 /* ------------------------------------------------------------ rendering */
@@ -908,7 +911,7 @@ function renderEntityCard(
     makeButton("Delete", async () => {
       const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
       if (!ok) return;
-      const next = parsed[group].filter((x) => str(x["id"]) !== id);
+      const next = (cache.parsed ?? parsed)[group].filter((x) => str(x["id"]) !== id);
       sendCodexWrite(group, { entities: next }, state, send);
     }, { danger: true, small: true }),
   );
@@ -997,7 +1000,7 @@ function renderEntityForm(
     makeButton("Cancel", () => {
       local.entityDraft = null;
       rerender();
-    }, { small: true, disabled: draft.saving }),
+    }, { small: true }),
   );
   card.appendChild(actions);
   return card;
@@ -1126,7 +1129,7 @@ function renderRecordForm(
     makeButton("Cancel", () => {
       local.recordDraft = null;
       rerender();
-    }, { small: true, disabled: draft.saving }),
+    }, { small: true }),
   );
   card.appendChild(actions);
   return card;

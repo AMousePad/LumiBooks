@@ -112,7 +112,9 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
   if (existingId) {
     const existing = await spindle.world_books.get(existingId, userId);
     if (existing) {
-      await bindBookToChat(chatId, existing.id, userId).catch(() => {});
+      await bindBookToChat(chatId, existing.id, userId).catch((err) =>
+        warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
+      );
       return existing;
     }
   }
@@ -136,7 +138,9 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
           warn(`book recovery: failed to re-tag ${existing.id}: ${describeError(err)}`);
         });
       }
-      await bindBookToChat(chatId, existing.id, userId).catch(() => {});
+      await bindBookToChat(chatId, existing.id, userId).catch((err) =>
+        warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
+      );
       setBookCache(cacheKey(userId, chatId), { bookId: existing.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
       error(
         `book recovery: re-linked book ${existing.id} for chat ${chatId.slice(0, 8)} ` +
@@ -178,7 +182,9 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
     userId,
   );
 
-  await bindBookToChat(chatId, book.id, userId).catch(() => {});
+  await bindBookToChat(chatId, book.id, userId).catch((err) =>
+    warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
+  );
 
   setBookCache(cacheKey(userId, chatId), { bookId: book.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
   return book;

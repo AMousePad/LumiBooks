@@ -1,8 +1,8 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBSettings } from "../shared";
-import { DEFAULT_SETTINGS, SETTINGS_PATH, STORAGE_VERSION, diskVersionFor, normalizeSettings } from "../shared";
-import { warn } from "./runtime";
+import { SETTINGS_PATH, STORAGE_VERSION, diskVersionFor, normalizeSettings } from "../shared";
+import { describeError, warn } from "./runtime";
 
 const warnedNewerForUser = new Set<string>();
 const writeLocks = new Map<string, Promise<unknown>>();
@@ -25,16 +25,29 @@ function withSettingsLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
 export async function loadSettings(userId: string): Promise<LMBSettings> {
   const cached = settingsCache.get(userId);
   if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS) return cached.data;
-  const raw = await spindle.userStorage
-    .getJson<Partial<LMBSettings>>(SETTINGS_PATH, { fallback: DEFAULT_SETTINGS, userId })
-    .catch(() => DEFAULT_SETTINGS as Partial<LMBSettings>);
+  const started = Date.now();
+  // Transport faults propagate: a locked mutation reading defaults here would
+  // persist them over the user's file. Corrupt JSON is deterministic and
+  // falls back to defaults so the next save can recover the install.
+  const exists = await spindle.userStorage.exists(SETTINGS_PATH, userId);
+  let raw: Partial<LMBSettings> | null = null;
+  if (exists) {
+    const text = await spindle.userStorage.read(SETTINGS_PATH, userId);
+    try {
+      raw = JSON.parse(text) as Partial<LMBSettings>;
+    } catch (err) {
+      warn(`settings.json is corrupt, using defaults until the next save: ${describeError(err)}`);
+      raw = null;
+    }
+  }
   const diskVersion = diskVersionFor(raw);
   if (diskVersion > STORAGE_VERSION && !warnedNewerForUser.has(userId)) {
     warnedNewerForUser.add(userId);
     warn(`settings on disk are v${diskVersion}, this build understands v${STORAGE_VERSION}`);
   }
   const normalized = normalizeSettings(raw);
-  cacheSettings(userId, normalized);
+  const cur = settingsCache.get(userId);
+  if (!cur || cur.at <= started) cacheSettings(userId, normalized);
   return normalized;
 }
 
