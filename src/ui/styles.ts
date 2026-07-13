@@ -1460,6 +1460,41 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 
 .lmb-greyed { opacity: 0.35; pointer-events: none; filter: saturate(0.5); }
 
+/* ------------------------------------------------------- sampler switch */
+/* Large two-way toggle on the Model pane: summary samplers vs codex
+   samplers. Oversized on purpose so nobody edits the wrong set. */
+.lmb-sampler-switch {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  background: var(--lmb-fill);
+  border: 1px solid var(--lmb-hairline);
+  border-radius: var(--lmb-r-lg);
+}
+.lmb-sampler-switch button {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--lmb-r-lg) - 3px);
+  color: var(--lmb-ink-dim);
+  font-family: var(--lmb-display-font);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 12px 8px 10px;
+  cursor: pointer;
+  transition: color 250ms var(--lmb-ease), background 250ms var(--lmb-ease),
+    border-color 250ms var(--lmb-ease), box-shadow 350ms var(--lmb-ease);
+}
+.lmb-sampler-switch button:hover:not(.active) { color: var(--lmb-ink); background: var(--lmb-frame-faint); }
+.lmb-sampler-switch button.active {
+  color: var(--lmb-gold);
+  background: var(--lmb-wash);
+  border-color: var(--lmb-frame-strong);
+  box-shadow: var(--lmb-glow);
+  text-shadow: 0 0 10px var(--lmb-frame-strong);
+}
+
 /* ---------------------------------------------------------------- toasts */
 .lmb-toast-stack {
   position: fixed;

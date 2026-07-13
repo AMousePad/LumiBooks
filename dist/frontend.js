@@ -2140,6 +2140,41 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 
 .lmb-greyed { opacity: 0.35; pointer-events: none; filter: saturate(0.5); }
 
+/* ------------------------------------------------------- sampler switch */
+/* Large two-way toggle on the Model pane: summary samplers vs codex
+   samplers. Oversized on purpose so nobody edits the wrong set. */
+.lmb-sampler-switch {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  background: var(--lmb-fill);
+  border: 1px solid var(--lmb-hairline);
+  border-radius: var(--lmb-r-lg);
+}
+.lmb-sampler-switch button {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(var(--lmb-r-lg) - 3px);
+  color: var(--lmb-ink-dim);
+  font-family: var(--lmb-display-font);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 12px 8px 10px;
+  cursor: pointer;
+  transition: color 250ms var(--lmb-ease), background 250ms var(--lmb-ease),
+    border-color 250ms var(--lmb-ease), box-shadow 350ms var(--lmb-ease);
+}
+.lmb-sampler-switch button:hover:not(.active) { color: var(--lmb-ink); background: var(--lmb-frame-faint); }
+.lmb-sampler-switch button.active {
+  color: var(--lmb-gold);
+  background: var(--lmb-wash);
+  border-color: var(--lmb-frame-strong);
+  box-shadow: var(--lmb-glow);
+  text-shadow: 0 0 10px var(--lmb-frame-strong);
+}
+
 /* ---------------------------------------------------------------- toasts */
 .lmb-toast-stack {
   position: fixed;
@@ -8222,6 +8257,10 @@ function renderCodexSettings(host, state, profile, patch) {
   connHint.className = "lmb-field-hint";
   connHint.textContent = "The codex model must support tool calls, the agent writes its files through them.";
   fields.appendChild(connHint);
+  const samplerHint = document.createElement("div");
+  samplerHint.className = "lmb-field-hint";
+  samplerHint.textContent = "The codex agent's samplers live on the Model pane, behind the Codex toggle.";
+  fields.appendChild(samplerHint);
   host.appendChild(sec.wrap);
 }
 function renderResetSettings(host, state, send) {
@@ -8566,10 +8605,10 @@ function renderConnection(host, state, profile, patch) {
   host.appendChild(sec.wrap);
 }
 function renderSamplers(host, state, profile, send) {
-  const sec = section("Samplers");
+  const sec = section("Summary samplers");
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "LumiBooks ships with its own sampler defaults tuned for summarization (low temperature, generous output budget). Empty fields use those defaults - placeholders show what will be sent. Temperature, max output, and max input are always sent on the wire; top_p / top_k / penalties are only sent when you set them.";
+  help.textContent = "Used when Memoria writes chapters, arcs, and volumes. Empty fields use defaults tuned for summarization - placeholders show what will be sent. Temperature, max output, and max input are always sent on the wire; top_p / top_k / penalties are only sent when you set them.";
   sec.body.appendChild(help);
   const saveSampler = (key) => (v) => {
     const patch = { [key]: v };
@@ -8634,11 +8673,49 @@ function renderSamplers(host, state, profile, send) {
   sec.body.appendChild(sampleGrid);
   host.appendChild(sec.wrap);
 }
+var samplerView = "main";
+function renderSamplersSwitch(host, state, profile, send) {
+  const wrap = document.createElement("div");
+  wrap.className = "lmb-pane";
+  const switchRow = document.createElement("div");
+  switchRow.className = "lmb-sampler-switch";
+  const body = document.createElement("div");
+  body.className = "lmb-pane";
+  const options = [
+    { key: "main", label: "Summaries" },
+    { key: "codex", label: "Codex" }
+  ];
+  const sync = () => {
+    for (const o of options)
+      o.btn?.classList.toggle("active", samplerView === o.key);
+    body.replaceChildren();
+    if (samplerView === "main")
+      renderSamplers(body, state, profile, send);
+    else
+      renderCodexSamplers(body, state, profile, send);
+  };
+  for (const o of options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = o.label;
+    btn.addEventListener("click", () => {
+      if (samplerView === o.key)
+        return;
+      samplerView = o.key;
+      sync();
+    });
+    o.btn = btn;
+    switchRow.appendChild(btn);
+  }
+  wrap.append(switchRow, body);
+  host.appendChild(wrap);
+  sync();
+}
 function renderCodexSamplers(host, state, profile, send) {
   const sec = section("Codex samplers");
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "Samplers for the codex agent only, separate from Memoria's summarizing samplers on the Model pane. Empty fields use codex defaults.";
+  help.textContent = "Samplers for the codex agent only, separate from the summary samplers. Empty fields use codex defaults.";
   sec.body.appendChild(help);
   const saveSampler = (key) => (v) => {
     const patch = { [key]: v };
@@ -9206,19 +9283,12 @@ function renderTuningTab(host, state, ctx, send) {
     case "codex":
       if (codexLessonGated(state.lessons))
         renderCodexPaneLock(pane);
-      else {
+      else
         renderCodexSettings(pane, state, profile, patch);
-        const samplerHost = document.createElement("div");
-        samplerHost.className = profile.codexEnabled ? "lmb-pane" : "lmb-pane lmb-greyed";
-        if (!profile.codexEnabled)
-          samplerHost.setAttribute("inert", "");
-        pane.appendChild(samplerHost);
-        renderCodexSamplers(samplerHost, state, profile, send);
-      }
       break;
     case "model":
       renderConnection(pane, state, profile, patch);
-      renderSamplers(pane, state, profile, send);
+      renderSamplersSwitch(pane, state, profile, send);
       renderRegex(pane, state, profile, patch);
       break;
     case "prompts":

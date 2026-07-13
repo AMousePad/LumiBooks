@@ -164,6 +164,11 @@ export function renderCodexSettings(
   connHint.textContent = "The codex model must support tool calls, the agent writes its files through them.";
   fields.appendChild(connHint);
 
+  const samplerHint = document.createElement("div");
+  samplerHint.className = "lmb-field-hint";
+  samplerHint.textContent = "The codex agent's samplers live on the Model pane, behind the Codex toggle.";
+  fields.appendChild(samplerHint);
+
   host.appendChild(sec.wrap);
 }
 
@@ -597,11 +602,11 @@ export function renderSamplers(
   profile: LMBProfile,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Samplers");
+  const sec = section("Summary samplers");
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "LumiBooks ships with its own sampler defaults tuned for summarization (low temperature, generous output budget). Empty fields use those defaults - placeholders show what will be sent. Temperature, max output, and max input are always sent on the wire; top_p / top_k / penalties are only sent when you set them.";
+    "Used when Memoria writes chapters, arcs, and volumes. Empty fields use defaults tuned for summarization - placeholders show what will be sent. Temperature, max output, and max input are always sent on the wire; top_p / top_k / penalties are only sent when you set them.";
   sec.body.appendChild(help);
 
   const saveSampler = (key: keyof SamplerSet) => (v: number | null) => {
@@ -658,6 +663,49 @@ export function renderSamplers(
   host.appendChild(sec.wrap);
 }
 
+let samplerView: "main" | "codex" = "main";
+
+export function renderSamplersSwitch(
+  host: HTMLElement,
+  state: FrontendState,
+  profile: LMBProfile,
+  send: (msg: FrontendToBackend) => void,
+): void {
+  const wrap = document.createElement("div");
+  wrap.className = "lmb-pane";
+  const switchRow = document.createElement("div");
+  switchRow.className = "lmb-sampler-switch";
+  const body = document.createElement("div");
+  body.className = "lmb-pane";
+
+  const options: { key: "main" | "codex"; label: string; btn?: HTMLButtonElement }[] = [
+    { key: "main", label: "Summaries" },
+    { key: "codex", label: "Codex" },
+  ];
+  const sync = (): void => {
+    for (const o of options) o.btn?.classList.toggle("active", samplerView === o.key);
+    body.replaceChildren();
+    if (samplerView === "main") renderSamplers(body, state, profile, send);
+    else renderCodexSamplers(body, state, profile, send);
+  };
+  for (const o of options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = o.label;
+    btn.addEventListener("click", () => {
+      if (samplerView === o.key) return;
+      samplerView = o.key;
+      sync();
+    });
+    o.btn = btn;
+    switchRow.appendChild(btn);
+  }
+
+  wrap.append(switchRow, body);
+  host.appendChild(wrap);
+  sync();
+}
+
 /** Mirror of renderSamplers for the codex agent's own sampler set. The codex
  * rewrites whole files against a big context, so its wire fallbacks
  * (CODEX_SAMPLER_DEFAULTS) run far larger than the summarizer's. */
@@ -671,7 +719,7 @@ export function renderCodexSamplers(
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Samplers for the codex agent only, separate from Memoria's summarizing samplers on the Model pane. Empty fields use codex defaults.";
+    "Samplers for the codex agent only, separate from the summary samplers. Empty fields use codex defaults.";
   sec.body.appendChild(help);
 
   const saveSampler = (key: keyof SamplerSet) => (v: number | null) => {
