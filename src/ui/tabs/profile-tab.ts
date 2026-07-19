@@ -148,14 +148,14 @@ export function renderCodexSettings(
 
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";
-  modelHint.textContent = "The codex agent's connection and samplers live on the Profile pane, behind the Codex toggle.";
+  modelHint.textContent = "The codex agent's connection and samplers live on the Connection pane, behind the Codex toggle.";
   fields.appendChild(modelHint);
 
   host.appendChild(sec.wrap);
 }
 
 /** The codex agent's own connection plus its tool-calling switch. Lives on
- * the Profile pane behind the Codex toggle, next to the codex samplers. */
+ * the Connection pane behind the Codex toggle, next to the codex samplers. */
 export function renderCodexConnection(
   host: HTMLElement,
   state: FrontendState,
@@ -681,8 +681,8 @@ export function renderSamplers(
 
 let samplerView: "main" | "codex" = "main";
 
-/** Lesson-stage navigation: pin the Profile pane's sampler toggle before a
- * demo render, so anchors on one side can't hide behind the other. */
+/** Lesson-stage navigation: pin the Connection pane's sampler toggle before
+ * a demo render, so anchors on one side can't hide behind the other. */
 export function setSamplerView(v: "main" | "codex"): void {
   samplerView = v;
 }
@@ -703,7 +703,7 @@ export function renderSamplersSwitch(
   body.className = "lmb-pane";
 
   const options: { key: "main" | "codex"; label: string; btn?: HTMLButtonElement }[] = [
-    { key: "main", label: "Summaries" },
+    { key: "main", label: "Books" },
     { key: "codex", label: "Codex" },
   ];
   const sync = (): void => {

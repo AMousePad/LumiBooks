@@ -202,7 +202,7 @@ export function showCodexToolsHintModal(
   const paragraphs = [
     "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
     "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
-    "You can change this anytime under Tuning → Profile → Codex → Use tool calls, or pick a tool-capable model under Codex connection.",
+    "You can change this anytime under Tuning → Connection → Codex → Use tool calls, or pick a tool-capable model under Codex connection.",
   ];
   for (const text of paragraphs) {
     const p = document.createElement("div");

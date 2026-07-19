@@ -21,7 +21,7 @@ type BooksSubtab = "shelf" | "compose" | "continuity";
 const SUBTABS: { key: BooksSubtab; label: string }[] = [
   { key: "shelf", label: "Shelf" },
   { key: "compose", label: "Compose" },
-  { key: "continuity", label: "Continuity" },
+  { key: "continuity", label: "Advanced" },
 ];
 
 type ShelfGroup = "volumes" | "arcs" | "chapters";

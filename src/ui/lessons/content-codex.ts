@@ -313,7 +313,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Profile pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them.",
+          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them.",
         },
         {
           kind: "say",
@@ -336,7 +336,7 @@ export const COURSE_CODEX: LessonCourseDef = {
             { text: "A codex file is corrupted" },
             { text: "The Relations table is off" },
           ],
-          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Profile pane, Codex toggle) returns me to JSON mode, which works on every connection.",
+          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
         },
         {
           kind: "quiz",

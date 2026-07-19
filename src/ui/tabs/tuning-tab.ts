@@ -20,7 +20,7 @@ import { renderPromptsPane } from "./prompts-tab";
 type TuningSubtab = "profile" | "settings" | "prompts";
 
 const SUBTABS: { key: TuningSubtab; label: string }[] = [
-  { key: "profile", label: "Profile" },
+  { key: "profile", label: "Connection" },
   { key: "settings", label: "Settings" },
   { key: "prompts", label: "Prompts" },
 ];
@@ -53,7 +53,7 @@ export function renderTuningTab(
 ): void {
   host.replaceChildren();
 
-  // The full profile-management block lives in the Profile pane; the other
+  // The full profile-management block lives in the Connection pane; the other
   // panes get a one-line context strip so it doesn't repeat above everything.
   if (local.subtab !== "profile") {
     const strip = document.createElement("div");
@@ -65,7 +65,7 @@ export function renderTuningTab(
     if (!state.settings.enabled) {
       strip.appendChild(document.createTextNode("· extension off"));
     }
-    strip.title = "Switch or manage profiles in the Profile pane";
+    strip.title = "Switch or manage profiles in the Connection pane";
     host.appendChild(strip);
   }
 
@@ -97,10 +97,8 @@ export function renderTuningTab(
         rest.setAttribute("inert", "");
       }
       pane.appendChild(rest);
-      // The model contents live under the Profile box: connections sit
-      // inside the switch, Summaries and Codex each above their samplers.
+      // Connections sit inside the switch, Books and Codex each above their samplers.
       renderSamplersSwitch(rest, state, profile, send);
-      renderRegex(rest, state, profile, patch);
       break;
     }
     case "settings": {
@@ -120,6 +118,7 @@ export function renderTuningTab(
           renderAutomation(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
+          renderRegex(body, state, profile, patch);
           renderGlobalSettings(body, state, send);
           renderResetSettings(body, state, send);
         } else if (codexLessonGated(state.lessons)) {

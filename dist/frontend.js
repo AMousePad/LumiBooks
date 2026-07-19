@@ -2998,7 +2998,7 @@ function showCodexToolsHintModal(profileId, send) {
   const paragraphs = [
     "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
     "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
-    "You can change this anytime under Tuning → Profile → Codex → Use tool calls, or pick a tool-capable model under Codex connection."
+    "You can change this anytime under Tuning → Connection → Codex → Use tool calls, or pick a tool-capable model under Codex connection."
   ];
   for (const text of paragraphs) {
     const p = document.createElement("div");
@@ -4476,7 +4476,7 @@ function resetHomeTabLocal() {
 var SUBTABS = [
   { key: "shelf", label: "Shelf" },
   { key: "compose", label: "Compose" },
-  { key: "continuity", label: "Continuity" }
+  { key: "continuity", label: "Advanced" }
 ];
 var localState = {
   subtab: "shelf",
@@ -8553,7 +8553,7 @@ function renderCodexSettings(host, state, profile, patch) {
   }), "tuning.codex.extra"));
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";
-  modelHint.textContent = "The codex agent's connection and samplers live on the Profile pane, behind the Codex toggle.";
+  modelHint.textContent = "The codex agent's connection and samplers live on the Connection pane, behind the Codex toggle.";
   fields.appendChild(modelHint);
   host.appendChild(sec.wrap);
 }
@@ -9002,7 +9002,7 @@ function renderSamplersSwitch(host, state, profile, send) {
   const body = document.createElement("div");
   body.className = "lmb-pane";
   const options = [
-    { key: "main", label: "Summaries" },
+    { key: "main", label: "Books" },
     { key: "codex", label: "Codex" }
   ];
   const sync = () => {
@@ -9577,7 +9577,7 @@ function renderHelp(host) {
 
 // src/ui/tabs/tuning-tab.ts
 var SUBTABS3 = [
-  { key: "profile", label: "Profile" },
+  { key: "profile", label: "Connection" },
   { key: "settings", label: "Settings" },
   { key: "prompts", label: "Prompts" }
 ];
@@ -9608,7 +9608,7 @@ function renderTuningTab(host, state, ctx, send) {
     if (!state.settings.enabled) {
       strip.appendChild(document.createTextNode("· extension off"));
     }
-    strip.title = "Switch or manage profiles in the Profile pane";
+    strip.title = "Switch or manage profiles in the Connection pane";
     host.appendChild(strip);
   }
   host.appendChild(makeSubtabs(SUBTABS3, local3.subtab, (key) => {
@@ -9636,7 +9636,6 @@ function renderTuningTab(host, state, ctx, send) {
       }
       pane.appendChild(rest);
       renderSamplersSwitch(rest, state, profile, send);
-      renderRegex(rest, state, profile, patch);
       break;
     }
     case "settings": {
@@ -9657,6 +9656,7 @@ function renderTuningTab(host, state, ctx, send) {
           renderAutomation(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
+          renderRegex(body, state, profile, patch);
           renderGlobalSettings(body, state, send);
           renderResetSettings(body, state, send);
         } else if (codexLessonGated(state.lessons)) {
@@ -10110,7 +10110,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "continuity" },
           path: ["subtab.continuity"],
           arrive: "books.cont.root",
-          text: "One pane left here. Tap Continuity.",
+          text: "One pane left here. Tap Advanced.",
           done: "The continuity desk."
         },
         {
@@ -10201,7 +10201,7 @@ var COURSE_BOOKS = {
             setSamplerView("main");
           },
           anchor: "tuning.model.connection",
-          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course. Regex scripts can rewrite what I read and what I write."
+          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course."
         },
         {
           kind: "nav",
@@ -10270,7 +10270,7 @@ var COURSE_BOOKS = {
             setSettingsView("books");
           },
           anchor: "tuning.behavior.preview",
-          text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Below that, Everywhere holds switches for your whole account, like Force constant."
+          text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Regex scripts can rewrite what I read and what I write. Below that, Everywhere holds switches for your whole account, like Force constant."
         },
         {
           kind: "quiz",
@@ -10761,7 +10761,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Profile pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them."
+          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them."
         },
         {
           kind: "say",
@@ -10784,7 +10784,7 @@ var COURSE_CODEX = {
             { text: "A codex file is corrupted" },
             { text: "The Relations table is off" }
           ],
-          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Profile pane, Codex toggle) returns me to JSON mode, which works on every connection."
+          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection."
         },
         {
           kind: "quiz",
@@ -10917,8 +10917,8 @@ function renderAboutTab(host, state, send) {
   host.appendChild(how.wrap);
   const where = section("Where things live");
   for (const l of [
-    "Settings and toggles moved to Tuning (profile, codex, model, prompts, account-wide switches).",
-    "Shelf repair tools live under Books → Continuity."
+    "Settings and toggles moved to Tuning (Connection, Settings, Prompts).",
+    "Shelf repair tools live under Books → Advanced."
   ]) {
     where.body.appendChild(textNode(l, "lmb-about-line"));
   }

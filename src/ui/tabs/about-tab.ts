@@ -51,8 +51,8 @@ export function renderAboutTab(
 
   const where = section("Where things live");
   for (const l of [
-    "Settings and toggles moved to Tuning (profile, codex, model, prompts, account-wide switches).",
-    "Shelf repair tools live under Books → Continuity.",
+    "Settings and toggles moved to Tuning (Connection, Settings, Prompts).",
+    "Shelf repair tools live under Books → Advanced.",
   ]) {
     where.body.appendChild(textNode(l, "lmb-about-line"));
   }

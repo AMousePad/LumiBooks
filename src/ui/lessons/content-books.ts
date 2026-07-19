@@ -407,7 +407,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
           fixture: { variant: "continuity" },
           path: ["subtab.continuity"],
           arrive: "books.cont.root",
-          text: "One pane left here. Tap Continuity.",
+          text: "One pane left here. Tap Advanced.",
           done: "The continuity desk.",
         },
         {
@@ -498,7 +498,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
             setSamplerView("main");
           },
           anchor: "tuning.model.connection",
-          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course. Regex scripts can rewrite what I read and what I write.",
+          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course.",
         },
         {
           kind: "nav",
@@ -567,7 +567,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
             setSettingsView("books");
           },
           anchor: "tuning.behavior.preview",
-          text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Below that, Everywhere holds switches for your whole account, like Force constant.",
+          text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Regex scripts can rewrite what I read and what I write. Below that, Everywhere holds switches for your whole account, like Force constant.",
         },
         {
           kind: "quiz",
