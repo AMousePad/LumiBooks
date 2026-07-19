@@ -14,7 +14,7 @@ var CODEX_FILE_KEYS = [
 ];
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
-var STORAGE_VERSION = 4;
+var STORAGE_VERSION = 6;
 var SETTINGS_PATH = "settings.json";
 var CHAT_STATE_DIR = "chats";
 var DEFAULT_SAMPLERS = {
@@ -87,13 +87,15 @@ function makeDefaultProfile(id, name) {
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
-    codexWindowValue: 30,
+    codexWindowValue: 20,
     codexTokenBreakpoint: 1e5,
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
-    codexSamplers: { ...DEFAULT_SAMPLERS }
+    codexSamplers: { ...DEFAULT_SAMPLERS },
+    codexUseTools: false,
+    codexDirectivesOverride: null
   };
 }
 var DEFAULT_SETTINGS = {
@@ -104,8 +106,28 @@ var DEFAULT_SETTINGS = {
   customPresets: [],
   debugLog: false,
   forceConstantEntries: true,
-  showAutomationToasts: true
+  showAutomationToasts: true,
+  suppressToolCallingPrompt: false
 };
+var DEFAULT_CODEX_DIRECTIVES = [
+  "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
+  "",
+  "Your three directives, in order:",
+  "1. UPDATE - patch every record the new turns have outdated, and add what is new and durable.",
+  "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it.",
+  "3. COMPRESS - keep every record lean. Terse phrases beat sentences, no filler words.",
+  "",
+  "Snapshot rules (absolute):",
+  "- The codex describes the present. When something changes, REPLACE the old text entirely.",
+  '- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.',
+  `- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.`,
+  "- Record only what is durable. Sheets and records hold stable, medium-to-long-lived facts. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.",
+  "- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.",
+  "- Omit empty optional fields entirely.",
+  "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
+  "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add."
+].join(`
+`);
 function diskVersionFor(raw) {
   const v = raw && typeof raw === "object" ? raw : {};
   return typeof v.version === "number" ? v.version : 1;
@@ -127,7 +149,8 @@ function normalizeSettings(raw) {
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
-    showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts
+    showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
+    suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt
   };
 }
 function normalizeProfile(raw) {
@@ -185,7 +208,9 @@ function normalizeProfile(raw) {
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
-    codexSamplers: normalizeSamplers(v.codexSamplers)
+    codexSamplers: normalizeSamplers(v.codexSamplers),
+    codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
+    codexDirectivesOverride: typeof v.codexDirectivesOverride === "string" && v.codexDirectivesOverride.trim() !== "" ? v.codexDirectivesOverride : null
   };
 }
 function normalizeSamplers(raw) {
@@ -476,27 +501,39 @@ function withSettingsLock(userId, fn) {
   return next;
 }
 var migrationInflight = new Map;
-function migrateToV4(userId, raw, fromVersion) {
+function migrateSettings(userId, raw, fromVersion) {
   const running = migrationInflight.get(userId);
   if (running)
     return running;
   const p = (async () => {
+    const started = Date.now();
     const flipped = {
       ...raw,
-      profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => ({
-        ...prof,
-        codexThorough: true,
-        codexExtraContext: true
-      }))
+      profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => {
+        const next = { ...prof };
+        if (fromVersion < 4) {
+          next.codexThorough = true;
+          next.codexExtraContext = true;
+        }
+        if (fromVersion < 5 && (next.codexWindowUnit === "messages" || next.codexWindowUnit === undefined) && next.codexWindowValue === 30) {
+          next.codexWindowValue = 20;
+        }
+        if (fromVersion < 6) {
+          next.codexUseTools = false;
+        }
+        return next;
+      })
     };
     const normalized = normalizeSettings(flipped);
     try {
       await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
-      warn(`settings migrated v${fromVersion} -> v${STORAGE_VERSION}: codex thorough and extra context switched on once`);
+      warn(`settings migrated v${fromVersion} -> v${STORAGE_VERSION}`);
     } catch (err) {
       warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
     }
-    cacheSettings(userId, normalized);
+    const cur = settingsCache.get(userId);
+    if (!cur || cur.at <= started)
+      cacheSettings(userId, normalized);
     return normalized;
   })().finally(() => migrationInflight.delete(userId));
   migrationInflight.set(userId, p);
@@ -524,7 +561,7 @@ async function loadSettings(userId) {
     warn(`settings on disk are v${diskVersion}, this build understands v${STORAGE_VERSION}`);
   }
   if (raw && diskVersion < STORAGE_VERSION) {
-    return migrateToV4(userId, raw, diskVersion);
+    return migrateSettings(userId, raw, diskVersion);
   }
   const normalized = normalizeSettings(raw);
   const cur = settingsCache.get(userId);
@@ -962,6 +999,7 @@ async function reassertChatBinding(chatId, userId) {
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
   if (!chat)
     return false;
+  await syncManagedBookNames(chatId, chat.name ?? null, bookId, userId).catch((err) => warn(`book name sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`));
   const md = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : {};
   const attached = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
   if (attached.includes(bookId) && md["lumibooks_book_id"] === bookId)
@@ -970,6 +1008,30 @@ async function reassertChatBinding(chatId, userId) {
     warn(`reassertChatBinding: failed to rebind ${bookId} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
   });
   return true;
+}
+var nameSyncAt = new Map;
+var NAME_SYNC_TTL_MS = 60000;
+async function syncManagedBookNames(chatId, chatName, shelfBookId, userId) {
+  const key = cacheKey(userId, chatId);
+  const last = nameSyncAt.get(key);
+  if (last && Date.now() - last < NAME_SYNC_TTL_MS)
+    return;
+  if (nameSyncAt.size > 500)
+    nameSyncAt.clear();
+  nameSyncAt.set(key, Date.now());
+  const wantedShelf = bookNameFor(chatName, chatId);
+  const shelf = await spindle.world_books.get(shelfBookId, userId).catch(() => null);
+  if (shelf && (shelf.name || "") !== wantedShelf) {
+    await spindle.world_books.update(shelfBookId, { name: wantedShelf }, userId);
+  }
+  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
+  if (codexBookId) {
+    const wantedCodex = codexBookNameFor(chatName, chatId);
+    const codexBook = await spindle.world_books.get(codexBookId, userId).catch(() => null);
+    if (codexBook && (codexBook.name || "") !== wantedCodex) {
+      await spindle.world_books.update(codexBookId, { name: wantedCodex }, userId);
+    }
+  }
 }
 var ENTRIES_CACHE_TTL_MS = 4000;
 var ENTRIES_CACHE_CAP = 300;
@@ -1932,8 +1994,19 @@ var ENTITY_KNOWN_FIELDS = [
   "status",
   "ties",
   "notes",
-  "keywords"
+  "keywords",
+  "locked",
+  "rid"
 ];
+function ridOf(ctx, v, path) {
+  if (v === undefined || v === null)
+    return;
+  if (typeof v !== "string" || !v.trim()) {
+    ctx.errors.push(`${path}.rid: expected a short string`);
+    return;
+  }
+  return v.trim().slice(0, 24);
+}
 function validateEntityFile(key, raw, opts) {
   const ctx = { errors: [] };
   const root = asRecord(ctx, raw, key);
@@ -1965,10 +2038,15 @@ function validateEntityFile(key, raw, opts) {
     const aliases = strArray(ctx, e["aliases"], `${path}.aliases`);
     if (aliases)
       out.aliases = aliases;
-    for (const f of ["kind", "role", "appearance", "description", "significance", "status", "notes"]) {
+    for (const f of ["kind", "role", "appearance", "description", "significance", "notes"]) {
       const v = str(ctx, e[f], `${path}.${f}`, false);
       if (v)
         out[f] = v;
+    }
+    if (e["locked"] === true || e["locked"] === "true")
+      out.locked = true;
+    if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
+      ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }
     for (const f of ["traits", "goals", "keywords"]) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
@@ -1977,7 +2055,7 @@ function validateEntityFile(key, raw, opts) {
     }
     const ties = strArray(ctx, e["ties"], `${path}.ties`);
     if (ties) {
-      if (opts.relationsTable) {
+      if (opts.relationsTable && !out.locked) {
         ctx.errors.push(`${path}.ties: the relations table is enabled, move these into relations.json rows`);
       } else {
         out.ties = ties;
@@ -2004,6 +2082,7 @@ function validateRelationsFile(raw, opts) {
   for (const [i, r] of rows.entries()) {
     const path = `relations[${i}]`;
     const type = r["type"];
+    const rid = ridOf(ctx, r["rid"], path);
     if (type === "pair") {
       const a = str(ctx, r["a"], `${path}.a`, true);
       const b = str(ctx, r["b"], `${path}.b`, true);
@@ -2018,7 +2097,7 @@ function validateRelationsFile(raw, opts) {
       if (a === b)
         ctx.errors.push(`${path}: a and b are the same entity`);
       const history = strArray(ctx, r["history"], `${path}.history`);
-      relations.push({ type: "pair", a, b, kind, state, ...history ? { history } : {} });
+      relations.push({ type: "pair", ...rid ? { rid } : {}, a, b, kind, state, ...history ? { history } : {} });
     } else if (type === "group") {
       const kind = str(ctx, r["kind"], `${path}.kind`, true);
       const state = str(ctx, r["state"], `${path}.state`, true);
@@ -2052,6 +2131,7 @@ function validateRelationsFile(raw, opts) {
       const history = strArray(ctx, r["history"], `${path}.history`);
       relations.push({
         type: "group",
+        ...rid ? { rid } : {},
         kind,
         members,
         state,
@@ -2076,9 +2156,10 @@ function validateTimelineFile(raw) {
     const path = `events[${i}]`;
     const when = str(ctx, e["when"], `${path}.when`, true);
     const event = str(ctx, e["event"], `${path}.event`, true);
+    const rid = ridOf(ctx, e["rid"], path);
     if (!when || !event)
       continue;
-    const out = { when, event };
+    const out = { ...rid ? { rid } : {}, when, event };
     const participants = strArray(ctx, e["participants"], `${path}.participants`);
     if (participants)
       out.participants = participants;
@@ -2105,13 +2186,14 @@ function validateThreadsFile(raw) {
     const name = str(ctx, t["name"], `${path}.name`, true);
     const summary = str(ctx, t["summary"], `${path}.summary`, true);
     const status = t["status"];
+    const rid = ridOf(ctx, t["rid"], path);
     if (!name || !summary)
       continue;
     if (status !== "open" && status !== "stalled" && status !== "resolved" && status !== "abandoned") {
       ctx.errors.push(`${path}.status: expected open | stalled | resolved | abandoned`);
       continue;
     }
-    const out = { name, status, summary };
+    const out = { ...rid ? { rid } : {}, name, status, summary };
     const latest = str(ctx, t["latest"], `${path}.latest`, false);
     if (latest)
       out.latest = latest;
@@ -2135,6 +2217,7 @@ function validateWorldFile(raw) {
     const path = `entries[${i}]`;
     const topic = str(ctx, e["topic"], `${path}.topic`, true);
     const facts = strArray(ctx, e["facts"], `${path}.facts`) ?? [];
+    const rid = ridOf(ctx, e["rid"], path);
     if (!topic)
       continue;
     if (facts.length === 0) {
@@ -2142,7 +2225,7 @@ function validateWorldFile(raw) {
       continue;
     }
     const keywords = strArray(ctx, e["keywords"], `${path}.keywords`);
-    entries.push({ topic, facts, ...keywords ? { keywords } : {} });
+    entries.push({ ...rid ? { rid } : {}, topic, facts, ...keywords ? { keywords } : {} });
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
@@ -2157,9 +2240,10 @@ function validateKnowledgeFile(raw) {
   for (const [i, k] of objArray(ctx, root["items"], "items").entries()) {
     const path = `items[${i}]`;
     const fact = str(ctx, k["fact"], `${path}.fact`, true);
+    const rid = ridOf(ctx, k["rid"], path);
     if (!fact)
       continue;
-    const out = { fact };
+    const out = { ...rid ? { rid } : {}, fact };
     const knownBy = strArray(ctx, k["knownBy"], `${path}.knownBy`);
     if (knownBy)
       out.knownBy = knownBy;
@@ -2250,7 +2334,7 @@ function collectDangling(bundle) {
   return out;
 }
 function formatDangling(d) {
-  return `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
+  return d.file === "relations" ? `${d.path}: "${d.ref}" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)` : `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
 }
 function checkIntegrity(bundle) {
   return collectDangling(bundle).map(formatDangling);
@@ -2277,6 +2361,47 @@ function danglingRefCounts(bundle) {
   }
   return m;
 }
+var FILE_ROW_KEY = {
+  characters: { field: "entities", key: "id" },
+  locations: { field: "entities", key: "id" },
+  things: { field: "entities", key: "id" },
+  relations: { field: "relations", key: "rid" },
+  timeline: { field: "events", key: "rid" },
+  threads: { field: "threads", key: "rid" },
+  world: { field: "entries", key: "rid" },
+  knowledge: { field: "items", key: "rid" }
+};
+function fileRows(value, key) {
+  const arr = value[FILE_ROW_KEY[key].field];
+  return Array.isArray(arr) ? arr : [];
+}
+function assignMissingRids(key, value) {
+  if (FILE_ROW_KEY[key].key !== "rid")
+    return;
+  const rows = fileRows(value, key);
+  let max = 0;
+  const seen = new Set;
+  for (const row of rows) {
+    const rid = typeof row["rid"] === "string" ? row["rid"] : "";
+    if (!rid || seen.has(rid)) {
+      delete row["rid"];
+      continue;
+    }
+    seen.add(rid);
+    const m = /^r(\d+)$/.exec(rid);
+    if (m)
+      max = Math.max(max, parseInt(m[1], 10));
+  }
+  for (const row of rows) {
+    if (typeof row["rid"] === "string" && row["rid"])
+      continue;
+    let next = `r${++max}`;
+    while (seen.has(next))
+      next = `r${++max}`;
+    row["rid"] = next;
+    seen.add(next);
+  }
+}
 
 // src/backend/codex/store.ts
 var CODEX_DIR = "codex";
@@ -2288,6 +2413,7 @@ function emptyCursor() {
     consumedSigs: [],
     fileStates: {},
     frozenAtRuns: {},
+    refreshPending: [],
     prefixMsgId: null,
     pendingReconcile: false,
     reconcileUntilMsgId: null,
@@ -2359,6 +2485,7 @@ async function loadCursor(chatId, userId) {
     consumedSigs: Array.isArray(raw.consumedSigs) ? raw.consumedSigs.filter((x) => !!x && typeof x === "object" && typeof x.id === "string" && typeof x.sig === "string") : base.consumedSigs,
     fileStates,
     frozenAtRuns,
+    refreshPending: Array.isArray(raw.refreshPending) ? [...new Set(raw.refreshPending.filter((x) => typeof x === "string" && CODEX_FILE_KEYS.includes(x)))] : [],
     prefixMsgId: typeof raw.prefixMsgId === "string" && raw.prefixMsgId ? raw.prefixMsgId : null,
     pendingReconcile: raw.pendingReconcile === true,
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
@@ -2413,6 +2540,7 @@ async function loadCodex(chatId, userId, opts) {
     }
     const result = validateCodexFile(key, read.value, opts);
     if (result.ok) {
+      assignMissingRids(key, result.value);
       bundle[key] = result.value;
     } else {
       problems.push({ file: key, errors: result.errors });
@@ -3636,6 +3764,15 @@ function parseSummaryJson(raw) {
   }
   throw new Error("The model didn't return valid JSON");
 }
+function parseLooseJsonObject(raw) {
+  const normalized = normalizeText(stripThinkBlocks(raw));
+  for (const cand of collectJsonCandidates(normalized)) {
+    const obj = tryParseJsonObject(cand);
+    if (obj)
+      return obj;
+  }
+  return null;
+}
 function stripThinkBlocks(raw) {
   return raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
 }
@@ -3929,35 +4066,37 @@ async function createClone(bookId, source, meta, userId, commentOverride) {
 }
 
 // src/backend/codex/prompt.ts
-var SCHEMA_TABLE_MODE = `File schemas (JSON, write the COMPLETE file every time):
+var SCHEMA_TABLE_MODE = `File schemas (JSON):
 
 characters.json / locations.json / things.json
 { "entities": [ { "id": "char:elias", "name": "Elias",
   "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "", "notes"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
   "keywords": ["locket", "duke", "murder", "north tower"] } ] }
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself.
-Never put relationship info on a sheet, that lives in relations.json.
+fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
+and only its stable, medium-to-long-lived facts - never the state of the current
+scene. Never put relationship info on a sheet, that lives in relations.json. An
+entity carrying "locked": true is user-owned: never set or drop it.
 
 relations.json
 { "relations": [
-  { "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
+  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
     "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
-  { "type": "pair", "a": "char:elias", "b": "thing:silver_locket", "kind": "owns",
-    "state": "carries it everywhere, would kill to keep it" },
-  { "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
+  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
     "state": "hiding in the attic since the murder" },
-  { "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
+  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
     "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
-Pair rows are the default and connect ANY two entities, not just characters:
-character-character (bond, rival, kin, member_of), character-thing (owns, seeks,
-created, guards), character-location (at, rules, banished_from), thing-location
-(hidden_at). Whenever an entity sheet is tempted to mention another entity, that
-connection belongs here as a pair instead. Pairs are directional a->b: use two
-rows when the two sides differ. Use a group row ONLY for a genuinely joint fact
-that would otherwise need 3+ redundant pairs. NEVER store how individual members
-feel about each other in a group row - that is always a pair.
+Rows connect ANY entities, not just characters: character-character (bond,
+rival, kin), character-thing (owns, seeks, guards), character-location (at,
+rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
+tempted to mention another entity, that connection belongs here instead.
+Prefer ONE group row whenever a fact is genuinely shared by several entities
+(a faction, a pact, a household, a shared secret): it replaces a pile of
+redundant pairs and keeps future edits to one row. Use a pair only when the
+relationship is purely binary or directional a->b (two pair rows when the two
+sides differ). Never store how one member individually feels about another
+inside a group row - that stance is its own pair.
 
 Relations coverage (mandatory):
 - The table is the story's FULL web, never a hub around one protagonist. Encode
@@ -3976,18 +4115,20 @@ Relations coverage (mandatory):
   the new turns and rewrite any state the story has outdated (demote the old
   state to "history" only when the shift is pivotal). A row that no longer holds
   is stale data: correct it, never leave it standing.`;
-var SCHEMA_INLINE_MODE = `File schemas (JSON, write the COMPLETE file every time):
+var SCHEMA_INLINE_MODE = `File schemas (JSON):
 
 characters.json / locations.json / things.json
 { "entities": [ { "id": "char:elias", "name": "Elias",
   "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "status"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "",
   "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
   "keywords": ["locket", "duke", "murder", "north tower"] } ] }
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Relationships live in each entity's "ties" list
-as short present-tense notes - to other characters, to things, and to places
-alike. Do NOT write relations.json, it is disabled.
+fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
+facts, never the state of the current scene. An entity carrying "locked": true
+is user-owned: never set or drop it. Relationships live in each entity's "ties"
+list as short present-tense notes - to other characters, to things, and to
+places alike. Do NOT write relations.json, it is disabled.
 Ties coverage (mandatory): record the story's FULL web, never a hub around one
 protagonist - every standing connection an entity has, to side characters,
 places, and things alike, so each named character carries several ties. Phrase
@@ -3995,30 +4136,36 @@ ties as standing arrangements that survive scene changes ("owes her a life
 debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
 outdated: a stale tie is an error, never leave one standing.`;
 var SCHEMA_REST = `timeline.json
-{ "events": [ { "when": "day 12", "event": "Mara sees Elias kill the duke",
+{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
   "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
   "causes"?: "she flees the city" } ] }
-Major events only, oldest first. "when" uses the story's own reckoning.
+Major events only, oldest first. "when" uses the story's own reckoning. The
+timeline is append-only in practice: add new events, and touch an existing row
+only to correct an outright error.
 
 threads.json
-{ "threads": [ { "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
+{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
   "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
   "seeds": ["unexplained scar on the ferryman's hand"] }
-Threads are storylines. planted/seeds are Chekhov setups awaiting payoff.
+Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
+thread you mark resolved leaves your view from the next pass on - the app
+archives it for the user - so never re-add a storyline you already resolved.
 
 world.json
-{ "entries": [ { "topic": "Magic", "facts": ["blood magic costs memories", ...],
+{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
   "keywords": ["ritual", "memories", "blood magic"] } ] }
-Rules and lore true of the WORLD itself, not any single entity's state.
+Rules and lore true of the WORLD itself, not any single entity's state. A topic
+needs at least one fact - drop the topic when its last fact goes.
 
 knowledge.json
-{ "items": [ { "fact": "Elias killed the duke",
+{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
   "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
   "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
   "note"?: "",
   "keywords": ["murder", "dagger", "duke"] } ] }
-ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Facts every
-character knows belong in world or timeline, never here.
+ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
+item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
+belong in world or timeline, never here.
 
 Retrieval keywords (mandatory):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
@@ -4036,40 +4183,68 @@ keywords effectively disappears. Rules:
 - No abstract themes (love, betrayal, tension), no filler verbs.
 - Keep keywords current: when a record's contents change, re-check its keywords.
 timeline.json and threads.json need no keywords, they are always in the prompt.`;
-function buildCodexSystemPrompt(relationsTable) {
+function protocolBlock(useTools) {
+  const patchRules = [
+    '- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.',
+    '- "drop": keys (ids or rids) of rows to delete.',
+    '- "seeds": threads.json only, replaces the whole seeds list when provided.',
+    '- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.'
+  ];
+  if (useTools) {
+    return [
+      "Tools:",
+      "- codex_write(file, set?, drop?, seeds?, content?): edit one file.",
+      ...patchRules,
+      "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
+      "",
+      "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
+      "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
+      "A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it."
+    ];
+  }
   return [
-    "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
-    "",
-    "Your three directives, in order:",
-    "1. UPDATE - rewrite every section the new turns have outdated, and add what is new and durable.",
-    "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited.",
-    "3. COMPRESS - strip bloat and prose so every record stays lean, rewriting sections when needed, while losing zero information.",
-    "",
-    "Snapshot rules (absolute):",
-    "- The codex describes the present. When something changes, REPLACE the old text entirely.",
-    '- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.',
-    `- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.`,
-    "- Track what is durable. Skip transient scene staging (who is standing where this instant), weather, and verbatim dialogue unless a line is genuinely load-bearing.",
-    "- Terse phrases beat sentences. Omit empty optional fields entirely. No filler words.",
-    "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
-    "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add.",
+    "Output protocol (JSON only, no tools):",
+    "Respond with exactly ONE JSON object and nothing else, in this shape:",
+    '{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }',
+    '"writes" holds one item per file you change. Each item may carry:',
+    ...patchRules,
+    '- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.',
+    "Do not narrate, do not explain your edits, do not wrap the object in prose.",
+    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the object - re-checking a bulletproof plan again is pure waste.",
+    "A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it."
+  ];
+}
+function buildCodexSystemPrompt(relationsTable, useTools, directivesOverride) {
+  return [
+    directivesOverride?.trim() ? directivesOverride : DEFAULT_CODEX_DIRECTIVES,
     "",
     relationsTable ? SCHEMA_TABLE_MODE : SCHEMA_INLINE_MODE,
     "",
     SCHEMA_REST,
     "",
-    "Tools:",
-    "- codex_write(file, content): replace one file with the complete new content. Only call it for files that actually changed.",
-    "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
-    "",
-    "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
-    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
-    "If a write is rejected you will get the validation errors back: fix the file and resend only the rejected files."
+    ...protocolBlock(useTools)
   ].join(`
 `);
 }
-function buildCodexUserMessage(bundle, chunk, chunkLabel, chunkFirstIndex, notes, lore, storySoFar) {
-  const parts = [];
+function agentFileJson(bundle, key) {
+  if (key === "threads") {
+    return JSON.stringify({
+      threads: bundle.threads.threads.filter((t) => t.status !== "resolved"),
+      seeds: bundle.threads.seeds
+    });
+  }
+  return JSON.stringify(bundle[key]);
+}
+function lockedEntityIds(bundle) {
+  const out = [];
+  for (const f of [bundle.characters, bundle.locations, bundle.things]) {
+    for (const e of f.entities)
+      if (e.locked === true)
+        out.push(e.id);
+  }
+  return out;
+}
+function specialNotes(bundle, notes) {
   const special = [];
   if (notes.reconcile) {
     special.push("RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.");
@@ -4086,10 +4261,19 @@ function buildCodexUserMessage(bundle, chunk, chunkLabel, chunkFirstIndex, notes
   if (notes.frozenFiles?.length) {
     special.push(`FROZEN: the user locked these files, do NOT write them: ${notes.frozenFiles.join(", ")}.`);
   }
-  if (special.length)
-    parts.push(special.join(`
+  const locked = lockedEntityIds(bundle);
+  if (locked.length) {
+    special.push(`LOCKED: the user owns these entities, do NOT set or drop them: ${locked.join(", ")}.`);
+  }
+  return special.length ? special.join(`
 
-`));
+`) : null;
+}
+function buildCodexUserMessage(bundle, chunk, chunkLabel, chunkFirstIndex, notes, lore, storySoFar) {
+  const parts = [];
+  const special = specialNotes(bundle, notes);
+  if (special)
+    parts.push(special);
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
 ${lore}`);
@@ -4101,7 +4285,7 @@ ${storySoFar}`);
   parts.push("<<CURRENT CODEX>>");
   for (const key of CODEX_FILE_KEYS) {
     parts.push(`--- ${key}.json ---
-${JSON.stringify(bundle[key])}`);
+${agentFileJson(bundle, key)}`);
   }
   parts.push(`<<NEW STORY TURNS (${chunkLabel})>>`);
   parts.push(renderTranscript(chunk, true, chunkFirstIndex));
@@ -4110,25 +4294,116 @@ ${JSON.stringify(bundle[key])}`);
 
 `);
 }
-function buildCodexTidyMessage(bundle, targets) {
+function buildCodexSummaryCatchupMessage(bundle, blocks, chunkLabel, notes) {
   const parts = [];
-  parts.push("TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.");
-  parts.push('While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.');
-  parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
+  const special = specialNotes(bundle, notes);
+  if (special)
+    parts.push(special);
+  parts.push(`CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering ${chunkLabel}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
   parts.push("<<CURRENT CODEX>>");
   for (const key of CODEX_FILE_KEYS) {
     parts.push(`--- ${key}.json ---
-${JSON.stringify(bundle[key])}`);
+${agentFileJson(bundle, key)}`);
   }
-  parts.push("Rewrite the target files now. Write only files you actually improved, then call codex_done.");
+  parts.push(`<<STORY (${chunkLabel}, compressed)>>`);
+  parts.push(blocks.join(`
+
+`));
+  parts.push("Update the codex now.");
   return parts.join(`
 
 `);
 }
-var VERIFY_NUDGE = "Verification pass: re-read the files you just wrote against directives 2 and 3. Sweep every file for stale claims the new turns contradict, and compress any section that carries bloat. Resend corrected files if you find anything, otherwise call codex_done.";
+function buildCodexUltraMessage(bundle, books, tailTranscript, chunkLabel, notes, lore) {
+  const parts = [];
+  const special = specialNotes(bundle, notes);
+  if (special)
+    parts.push(special);
+  const shape = books.length && tailTranscript ? "The story arrives as its filed summaries, oldest first, followed by the raw newest turns." : books.length ? "The story arrives as its filed summaries, oldest first." : "The story arrives as raw turns.";
+  parts.push(`CATCH-UP: this single pass covers ${chunkLabel}. ${shape} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
+${lore}`);
+  }
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---
+${agentFileJson(bundle, key)}`);
+  }
+  if (books.length) {
+    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
+${books.join(`
+
+`)}`);
+  }
+  if (tailTranscript) {
+    parts.push("<<NEWEST STORY TURNS (raw)>>");
+    parts.push(tailTranscript);
+  }
+  parts.push("Update the codex now.");
+  return parts.join(`
+
+`);
+}
+function buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, useTools) {
+  const parts = [];
+  const special = specialNotes(bundle, notes);
+  if (special)
+    parts.push(special);
+  const list = targets.map((t) => `${t}.json`).join(", ");
+  const shape = books.length && tailTranscript ? "its filed summaries, oldest first, followed by the raw newest turns" : books.length ? "its filed summaries, oldest first" : "raw turns";
+  parts.push(`REFRESH PASS: the user re-enabled ${list} after ${targets.length === 1 ? "it" : "they"} missed updates, so ${targets.length === 1 ? "it lags" : "they lag"} the story. The story arrives as ${shape}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
+${lore}`);
+  }
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---
+${agentFileJson(bundle, key)}`);
+  }
+  if (books.length) {
+    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
+${books.join(`
+
+`)}`);
+  }
+  if (tailTranscript) {
+    parts.push("<<NEWEST STORY TURNS (raw)>>");
+    parts.push(tailTranscript);
+  }
+  parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
+  parts.push(useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  return parts.join(`
+
+`);
+}
+function buildCodexTidyMessage(bundle, targets, useTools) {
+  const parts = [];
+  parts.push("TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.");
+  parts.push('A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).');
+  parts.push('While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.');
+  const locked = lockedEntityIds(bundle);
+  if (locked.length) {
+    parts.push(`LOCKED: the user owns these entities, reproduce them untouched: ${locked.join(", ")}.`);
+  }
+  parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---
+${agentFileJson(bundle, key)}`);
+  }
+  parts.push(useTools ? "Rewrite the target files now. Write only files you actually improved, then call codex_done." : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
+  return parts.join(`
+
+`);
+}
+function verifyNudge(useTools) {
+  return "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated. " + (useTools ? "Resend corrections if you find anything, otherwise call codex_done." : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.');
+}
 function entityLine(e) {
   const bits = [];
-  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords"]);
+  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords", "locked"]);
   if (e.aliases?.length)
     bits.push(`aka ${e.aliases.join(", ")}`);
   for (const [k, v] of Object.entries(e)) {
@@ -4324,13 +4599,15 @@ ${sections.threads}`,
 }
 function renderCodexForInjection(bundle) {
   const rendered = renderCodexFileSections(bundle);
-  const sections = ["KNOWLEDGE CODEX (current story state, authoritative)"];
+  const sections = [];
   for (const key of CODEX_FILE_KEYS) {
     const s = rendered[key];
     if (s)
       sections.push(s);
   }
-  return sections.join(`
+  if (sections.length === 0)
+    return "";
+  return ["KNOWLEDGE CODEX (current story state, authoritative)", ...sections].join(`
 
 `);
 }
@@ -4373,9 +4650,10 @@ function renderCodexFileSections(bundle) {
   } else {
     out.timeline = "";
   }
-  if (bundle.threads.threads.length || bundle.threads.seeds.length) {
+  const liveThreads = bundle.threads.threads.filter((t) => t.status !== "resolved");
+  if (liveThreads.length || bundle.threads.seeds.length) {
     const lines = ["== Threads =="];
-    for (const t of bundle.threads.threads) {
+    for (const t of liveThreads) {
       const latest = t.latest ? ` | latest: ${t.latest}` : "";
       lines.push(`- ${t.name} (${t.status}): ${t.summary}${latest}`);
       for (const p of t.planted ?? [])
@@ -4619,12 +4897,18 @@ async function ensureForkAdoption(chatId, userId) {
     try {
       const settled = await doForkAdoption(chatId, userId);
       if (settled) {
+        if (checked.size > 5000)
+          checked.clear();
         checked.add(k);
         retryAt.delete(k);
       } else {
+        if (retryAt.size > 1000)
+          retryAt.clear();
         retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
       }
     } catch (err) {
+      if (retryAt.size > 1000)
+        retryAt.clear();
       retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
       warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
     } finally {
@@ -4634,6 +4918,21 @@ async function ensureForkAdoption(chatId, userId) {
   inflight2.set(k, p);
   return p;
 }
+async function forkShelfPending(chatId, userId) {
+  if (checked.has(key(userId, chatId)))
+    return false;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+  if (!md || typeof md["branched_from"] !== "string")
+    return false;
+  const flag = md[FORK_ADOPTED_FLAG];
+  if (flag === chatId)
+    return false;
+  if (flag === true) {
+    return await findBookForChat(chatId, userId).catch(() => null) === null;
+  }
+  return true;
+}
 async function forkCodexPending(chatId, userId) {
   if (checked.has(key(userId, chatId)))
     return false;
@@ -4641,7 +4940,13 @@ async function forkCodexPending(chatId, userId) {
   const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
   if (!md || typeof md["branched_from"] !== "string")
     return false;
-  return md[CODEX_ADOPTED_FLAG] !== true;
+  const flag = md[CODEX_ADOPTED_FLAG];
+  if (flag === chatId)
+    return false;
+  if (flag === true) {
+    return await codexPresence(chatId, userId).catch(() => "absent") !== "present";
+  }
+  return true;
 }
 async function doForkAdoption(forkChatId, userId) {
   const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
@@ -4652,11 +4957,13 @@ async function doForkAdoption(forkChatId, userId) {
   if (!branchedFrom)
     return true;
   let shelfSettled = true;
-  if (meta?.[FORK_ADOPTED_FLAG] !== true) {
+  if (meta?.[FORK_ADOPTED_FLAG] !== forkChatId) {
     const owned = await findBookForChat(forkChatId, userId).catch(() => null);
     if (!owned) {
       const ancestor = await findAncestorBook(branchedFrom, userId);
-      if (ancestor) {
+      if (ancestor === "fault") {
+        shelfSettled = false;
+      } else if (ancestor) {
         try {
           await cloneShelfForFork(forkChatId, chat.name ?? null, ancestor.chatId, userId);
         } catch (err) {
@@ -4664,7 +4971,11 @@ async function doForkAdoption(forkChatId, userId) {
           warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
           forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
         }
+      } else {
+        await markShelfAdopted(forkChatId, userId).catch(() => {});
       }
+    } else {
+      await markShelfAdopted(forkChatId, userId).catch(() => {});
     }
   }
   const codexSettled = await adoptForkCodex(forkChatId, branchedFrom, userId);
@@ -4676,8 +4987,13 @@ async function adoptForkCodex(forkChatId, branchedFrom, userId) {
     if (!chat)
       return false;
     const md = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-    if (md?.[CODEX_ADOPTED_FLAG] === true)
+    const flag = md?.[CODEX_ADOPTED_FLAG];
+    if (flag === forkChatId)
       return true;
+    if (flag === true && await codexPresence(forkChatId, userId) === "present") {
+      await markCodexAdopted(forkChatId, userId);
+      return true;
+    }
     const attached = Array.isArray(md?.["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
     for (const bookId of attached) {
       const book = await spindle.world_books.get(bookId, userId);
@@ -4757,15 +5073,27 @@ async function adoptForkCodex(forkChatId, branchedFrom, userId) {
     return false;
   }
 }
+async function markShelfAdopted(forkChatId, userId) {
+  await withChatMetaLock(userId, forkChatId, async () => {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat)
+      return;
+    const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
+    if (md[FORK_ADOPTED_FLAG] === forkChatId)
+      return;
+    md[FORK_ADOPTED_FLAG] = forkChatId;
+    await spindle.chats.update(forkChatId, { metadata: md }, userId);
+  });
+}
 async function markCodexAdopted(forkChatId, userId) {
   await withChatMetaLock(userId, forkChatId, async () => {
     const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
     if (!chat)
       throw new Error("fork chat vanished while recording codex adoption");
     const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
-    if (md[CODEX_ADOPTED_FLAG] === true)
+    if (md[CODEX_ADOPTED_FLAG] === forkChatId)
       return;
-    md[CODEX_ADOPTED_FLAG] = true;
+    md[CODEX_ADOPTED_FLAG] = forkChatId;
     await spindle.chats.update(forkChatId, { metadata: md }, userId);
   });
 }
@@ -4779,10 +5107,20 @@ async function findAncestorBook(startChatId, userId) {
       break;
     seen.add(chatId);
     hops++;
-    const bookId = await findBookForChat(chatId, userId).catch(() => null);
+    let bookId;
+    try {
+      bookId = await findBookForChat(chatId, userId);
+    } catch {
+      return "fault";
+    }
     if (bookId)
       return { chatId, bookId };
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    let chat;
+    try {
+      chat = await spindle.chats.get(chatId, userId);
+    } catch {
+      return "fault";
+    }
     const meta = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
     cur = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
   }
@@ -4906,7 +5244,7 @@ async function rebindForkShelf(forkChatId, newBookId, userId) {
     nextBookIds.push(newBookId);
     metadata["chat_world_book_ids"] = nextBookIds;
     metadata["lumibooks_book_id"] = newBookId;
-    metadata[FORK_ADOPTED_FLAG] = true;
+    metadata[FORK_ADOPTED_FLAG] = forkChatId;
     await spindle.chats.update(forkChatId, { metadata }, userId);
   });
 }
@@ -5929,7 +6267,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
         title: preview.title,
         opener: "",
         content: preview.content,
-        keywords: [],
+        keywords: preview.keywords ?? [],
         shortComment: preview.shortComment,
         usagePromptTokens: preview.tokenCountInput,
         usageCompletionTokens: preview.tokenCountOutput,
@@ -5968,7 +6306,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
       title: preview.title,
       opener: "",
       content: preview.content,
-      keywords: [],
+      keywords: preview.keywords ?? [],
       shortComment: preview.shortComment,
       usagePromptTokens: preview.tokenCountInput,
       usageCompletionTokens: preview.tokenCountOutput,
@@ -6195,6 +6533,8 @@ async function maybeRunPipeline(chatId, profile, settings, userId) {
   if (!profile.autoCreate)
     return;
   await ensureForkAdoption(chatId, userId).catch(() => {});
+  if (await forkShelfPending(chatId, userId).catch(() => false))
+    return;
   if (profile.autoCreateChapter) {
     if (extraContextActive(profile)) {
       await drainGhostBacklog(chatId, profile, settings, userId, true);
@@ -6244,6 +6584,7 @@ function makePreview(kind, chatId, window, result, firstIdx, lastIdx, replacesEn
     title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
     content: result.content,
     shortComment: result.shortComment,
+    keywords: result.keywords ?? [],
     sourceMessageIds: window.map((m) => m.id),
     model: result.model,
     connectionId: result.connectionId,
@@ -6262,6 +6603,7 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
     title: result.title || `${kind === "volume" ? "Volume" : "Arc"} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
     content: result.content,
     shortComment: result.shortComment,
+    keywords: result.keywords ?? [],
     sourceMessageIds: selected.flatMap((c) => c.meta.msgIds),
     sourceChapterEntryIds: selected.map((c) => c.raw.id),
     model: result.model,
@@ -6276,18 +6618,42 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
 }
 
 // src/backend/codex/agent.ts
+class ToolProtocolError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ToolProtocolError";
+  }
+}
 var CACHE_EPHEMERAL = { type: "ephemeral" };
 var TOOLS = [
   {
     name: "codex_write",
-    description: "Replace one codex file with its complete new content. Call once per changed file, and put every call for this update in a single response.",
+    description: "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
     parameters: {
       type: "object",
       properties: {
         file: { type: "string", enum: [...CODEX_FILE_KEYS] },
-        content: { type: "object", description: "The complete file content matching that file's schema." }
+        set: {
+          type: "array",
+          items: { type: "object" },
+          description: "Rows to add or replace, each complete on its own, keyed by entity id or rid. Only rows that actually changed."
+        },
+        drop: {
+          type: "array",
+          items: { type: "string" },
+          description: "Entity ids or rids of rows to delete."
+        },
+        seeds: {
+          type: "array",
+          items: { type: "string" },
+          description: "threads.json only: the complete replacement seeds list."
+        },
+        content: {
+          type: "object",
+          description: "The complete new file content, replacing everything. Only for a ground-up rewrite; never combined with set or drop."
+        }
       },
-      required: ["file", "content"]
+      required: ["file"]
     }
   },
   {
@@ -6320,7 +6686,7 @@ async function resolveCodexConnection(profile, userId) {
     throw new FatalSummarizerError("No connection available for the codex");
   return conn;
 }
-async function runQuietRound(conn, messages, profile, userId, externalSignal, onProgress, onDelta, progressBase) {
+async function runQuietRound(conn, messages, profile, userId, useTools, externalSignal, onProgress, onDelta, progressBase) {
   const model = (conn.model ?? "").trim();
   const parameters = { ...buildCodexSamplerParameters(profile) };
   if (model)
@@ -6330,7 +6696,7 @@ async function runQuietRound(conn, messages, profile, userId, externalSignal, on
     messages,
     connection_id: conn.id,
     parameters,
-    tools: TOOLS,
+    ...useTools ? { tools: TOOLS } : {},
     userId,
     signal
   }), {
@@ -6358,11 +6724,223 @@ function assistantTurn(content, toolCalls) {
   }
   return { role: "assistant", content: parts };
 }
+function parseJsonModeCalls(raw) {
+  const obj = parseLooseJsonObject(raw);
+  if (!obj)
+    return [];
+  const calls = [];
+  const writes = Array.isArray(obj["writes"]) ? obj["writes"] : [];
+  writes.forEach((w, i) => {
+    const args = w && typeof w === "object" && !Array.isArray(w) ? w : {};
+    calls.push({ call_id: `json_w${i}`, name: "codex_write", args });
+  });
+  if (obj["done"] === true) {
+    const args = typeof obj["note"] === "string" ? { note: obj["note"] } : {};
+    calls.push({ call_id: "json_done", name: "codex_done", args });
+  }
+  return calls;
+}
+function clone(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+function stageWrite(file, args, current, validateOpts) {
+  const errors = [];
+  const lockedKept = [];
+  const dropMisses = [];
+  const archivedKept = [];
+  const keyField = FILE_ROW_KEY[file].key;
+  const arg = (k) => {
+    const v = args[k];
+    return v === null ? undefined : v;
+  };
+  const rawContent = arg("content");
+  const rawSet = arg("set");
+  const rawDrop = arg("drop");
+  const rawSeeds = arg("seeds");
+  const hasPatch = rawSet !== undefined || rawDrop !== undefined || rawSeeds !== undefined;
+  const lockedRows = new Map;
+  if (keyField === "id") {
+    for (const row of fileRows(current, file)) {
+      if (row["locked"] === true && typeof row["id"] === "string")
+        lockedRows.set(row["id"], row);
+    }
+  }
+  const hiddenResolved = file === "threads" ? current.threads.filter((t) => t.status === "resolved") : [];
+  if (rawContent !== undefined) {
+    if (hasPatch) {
+      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, dropMisses, archivedKept };
+    }
+    let content = rawContent;
+    if (typeof content === "string") {
+      try {
+        content = JSON.parse(content);
+      } catch {
+        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, dropMisses, archivedKept };
+      }
+    }
+    const result2 = validateCodexFile(file, content, validateOpts);
+    if (!result2.ok)
+      return { errors: result2.errors, lockedKept, dropMisses, archivedKept };
+    const value2 = result2.value;
+    if (lockedRows.size > 0) {
+      const rows2 = fileRows(value2, file);
+      for (const [id, orig] of lockedRows) {
+        const idx = rows2.findIndex((r) => r["id"] === id);
+        if (idx >= 0) {
+          if (JSON.stringify(rows2[idx]) !== JSON.stringify(orig))
+            lockedKept.push(id);
+          rows2[idx] = clone(orig);
+        } else {
+          lockedKept.push(id);
+          rows2.push(clone(orig));
+        }
+      }
+    }
+    if (keyField === "id") {
+      for (const row of fileRows(value2, file)) {
+        if (row["locked"] === true && !lockedRows.has(String(row["id"] ?? "")))
+          delete row["locked"];
+      }
+    }
+    if (file === "threads" && hiddenResolved.length > 0) {
+      const t = value2;
+      const hiddenRids = new Set(hiddenResolved.map((h) => h.rid).filter(Boolean));
+      for (const row of t.threads) {
+        if (row.rid && hiddenRids.has(row.rid))
+          archivedKept.push(row.rid);
+      }
+      t.threads = t.threads.filter((row) => !(row.rid && hiddenRids.has(row.rid)));
+      t.threads.push(...hiddenResolved.map((h) => clone(h)));
+    }
+    assignMissingRids(file, value2);
+    return { value: value2, errors, lockedKept, dropMisses, archivedKept };
+  }
+  if (!hasPatch) {
+    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, dropMisses, archivedKept };
+  }
+  if (rawSeeds !== undefined && file !== "threads") {
+    errors.push("seeds: only threads.json has a seeds list");
+  }
+  const setRows = [];
+  if (rawSet !== undefined) {
+    if (!Array.isArray(rawSet))
+      errors.push("set: expected an array of rows");
+    else
+      rawSet.forEach((r, i) => {
+        let row = r;
+        if (typeof row === "string") {
+          try {
+            row = JSON.parse(row);
+          } catch {}
+        }
+        if (!row || typeof row !== "object" || Array.isArray(row))
+          errors.push(`set[${i}]: expected a row object`);
+        else
+          setRows.push(row);
+      });
+  }
+  const dropKeys = [];
+  if (rawDrop !== undefined) {
+    if (!Array.isArray(rawDrop))
+      errors.push("drop: expected an array of keys");
+    else
+      rawDrop.forEach((k, i) => {
+        if (typeof k !== "string" || !k.trim())
+          errors.push(`drop[${i}]: expected a key string`);
+        else
+          dropKeys.push(k.trim());
+      });
+  }
+  let seeds = null;
+  if (rawSeeds !== undefined && file === "threads") {
+    if (!Array.isArray(rawSeeds) || rawSeeds.some((s) => typeof s !== "string")) {
+      errors.push("seeds: expected an array of strings");
+    } else {
+      seeds = rawSeeds.map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (setRows.length === 0 && dropKeys.length === 0 && seeds === null && errors.length === 0) {
+    errors.push("empty write: set and drop held nothing - provide rows, keys, seeds, or content");
+  }
+  if (errors.length)
+    return { errors, lockedKept, dropMisses, archivedKept };
+  let rows = fileRows(current, file).map((r) => clone(r));
+  if (file === "threads")
+    rows = rows.filter((r) => r["status"] !== "resolved");
+  const isArchivedRid = (key2) => file === "threads" && hiddenResolved.some((h) => h.rid === key2);
+  for (const key2 of dropKeys) {
+    if (lockedRows.has(key2)) {
+      lockedKept.push(key2);
+      continue;
+    }
+    if (isArchivedRid(key2)) {
+      archivedKept.push(key2);
+      continue;
+    }
+    const idx = rows.findIndex((r) => r[keyField] === key2);
+    if (idx === -1) {
+      dropMisses.push(key2);
+      continue;
+    }
+    rows.splice(idx, 1);
+  }
+  setRows.forEach((row, i) => {
+    const key2 = row[keyField];
+    if (typeof key2 === "string" && key2) {
+      if (lockedRows.has(key2)) {
+        lockedKept.push(key2);
+        return;
+      }
+      const idx = rows.findIndex((r) => r[keyField] === key2);
+      if (idx >= 0) {
+        rows[idx] = row;
+        return;
+      }
+      if (keyField === "rid") {
+        if (isArchivedRid(key2)) {
+          archivedKept.push(key2);
+          return;
+        }
+        errors.push(`set[${i}]: rid "${key2}" does not exist in ${file}.json - omit rid to add a new row`);
+        return;
+      }
+      rows.push(row);
+      return;
+    }
+    if (keyField === "id") {
+      errors.push(`set[${i}]: missing "id"`);
+      return;
+    }
+    rows.push(row);
+  });
+  if (errors.length)
+    return { errors, lockedKept, dropMisses, archivedKept };
+  const candidate = { [FILE_ROW_KEY[file].field]: rows };
+  if (file === "threads") {
+    candidate["seeds"] = seeds ?? current.seeds;
+  }
+  const result = validateCodexFile(file, candidate, validateOpts);
+  if (!result.ok)
+    return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+  const value = result.value;
+  if (keyField === "id") {
+    for (const row of fileRows(value, file)) {
+      if (row["locked"] === true && !lockedRows.has(String(row["id"] ?? "")))
+        delete row["locked"];
+    }
+  }
+  if (file === "threads" && hiddenResolved.length > 0) {
+    value.threads.push(...hiddenResolved.map((h) => clone(h)));
+  }
+  assignMissingRids(file, value);
+  return { value, errors, lockedKept, dropMisses, archivedKept };
+}
 async function runCodexAgent(opts) {
   const { profile, userId, chatId } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const maxRounds = profile.codexThorough ? 4 : 3;
-  const system = buildCodexSystemPrompt(profile.codexRelationsTable);
+  const useTools = profile.codexUseTools;
+  const system = buildCodexSystemPrompt(profile.codexRelationsTable, useTools, profile.codexDirectivesOverride);
   const userText = opts.userTextOverride ?? buildCodexUserMessage(opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar);
   const frozen = opts.frozenFiles ?? new Set;
   const conv = [
@@ -6390,18 +6968,34 @@ async function runCodexAgent(opts) {
 
 \u2550\u2550\u2550 round ${rounds} \u2550\u2550\u2550
 `);
-    const round = await runQuietRound(conn, conv, profile, userId, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
+    const round = await runQuietRound(conn, conv, profile, userId, useTools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
     usageCompletion += round.usageCompletion;
-    for (const call of round.toolCalls) {
+    const calls = useTools ? round.toolCalls : parseJsonModeCalls(round.content);
+    for (const call of calls) {
       if (call.name === "codex_write") {
         const f = typeof call.args["file"] === "string" ? call.args["file"] : "?";
-        let size = 0;
-        try {
-          size = JSON.stringify(call.args["content"] ?? "").length;
-        } catch {}
+        let label;
+        if (call.args["content"] !== undefined) {
+          let size = 0;
+          try {
+            size = JSON.stringify(call.args["content"] ?? "").length;
+          } catch {}
+          label = `full rewrite, ${(size / 1000).toFixed(1)}k chars`;
+        } else {
+          const bits = [];
+          const setN = Array.isArray(call.args["set"]) ? call.args["set"].length : 0;
+          const dropN = Array.isArray(call.args["drop"]) ? call.args["drop"].length : 0;
+          if (setN)
+            bits.push(`${setN} set`);
+          if (dropN)
+            bits.push(`${dropN} drop`);
+          if (call.args["seeds"] !== undefined)
+            bits.push("seeds");
+          label = bits.join(", ") || "empty";
+        }
         opts.onDelta?.("text", `
-\u27A4 codex_write ${f}.json (${(size / 1000).toFixed(1)}k chars)`);
+\u27A4 codex_write ${f}.json (${label})`);
       } else if (call.name === "codex_done") {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` \u2014 ${call.args["note"].trim()}` : "";
         opts.onDelta?.("text", `
@@ -6411,7 +7005,7 @@ async function runCodexAgent(opts) {
 \u2717 unknown tool ${call.name}`);
       }
     }
-    if (round.toolCalls.length === 0) {
+    if (calls.length === 0) {
       if (rounds === 1 && !round.content.trim()) {
         throw new Error("The codex agent returned an empty response");
       }
@@ -6419,53 +7013,51 @@ async function runCodexAgent(opts) {
         throw new Error(rejectedFiles.size > 0 ? "The codex agent abandoned a rejected write instead of correcting it" : "The codex agent left an unresolved integrity error instead of correcting it");
       }
       if (changed.size === 0) {
-        throw new Error("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+        if (useTools) {
+          throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+        }
+        throw new Error("The codex agent replied without a parsable JSON update");
       }
       break;
     }
-    conv.push(assistantTurn(round.content, round.toolCalls));
+    conv.push(useTools ? assistantTurn(round.content, calls) : { role: "assistant", content: round.content });
     const outcomes = [];
     const doneCalls = [];
-    for (const call of round.toolCalls) {
+    for (const call of calls) {
       if (call.name === "codex_done") {
         doneCalls.push(call);
         continue;
       }
       if (call.name !== "codex_write") {
-        rejectedFiles.add(`(unknown tool ${call.name})`);
-        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist`] });
+        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist - resend the payload through codex_write`] });
         continue;
       }
       const fileRaw = call.args["file"];
       if (!isCodexFileKey(fileRaw)) {
-        rejectedFiles.add("(invalid file key)");
-        outcomes.push({ callId: call.call_id, file: null, errors: [`file: expected one of ${CODEX_FILE_KEYS.join(", ")}`] });
+        outcomes.push({ callId: call.call_id, file: null, errors: [`file: expected one of ${CODEX_FILE_KEYS.join(", ")} - resend this write under the right file`] });
         continue;
       }
       if (frozen.has(fileRaw)) {
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
-      let content = call.args["content"];
-      if (typeof content === "string") {
-        try {
-          content = JSON.parse(content);
-        } catch {
-          rejectedFiles.add(fileRaw);
-          outcomes.push({ callId: call.call_id, file: fileRaw, errors: ["content: string was not valid JSON, pass the object directly"] });
-          continue;
-        }
-      }
-      const result = validateCodexFile(fileRaw, content, validateOpts);
-      if (!result.ok) {
+      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts);
+      if (!staged.value) {
         rejectedFiles.add(fileRaw);
-        outcomes.push({ callId: call.call_id, file: fileRaw, errors: result.errors });
+        outcomes.push({ callId: call.call_id, file: fileRaw, errors: staged.errors });
         continue;
       }
-      working[fileRaw] = result.value;
+      working[fileRaw] = staged.value;
       changed.add(fileRaw);
       rejectedFiles.delete(fileRaw);
-      outcomes.push({ callId: call.call_id, file: fileRaw, errors: [] });
+      outcomes.push({
+        callId: call.call_id,
+        file: fileRaw,
+        errors: [],
+        ...staged.lockedKept.length ? { lockedKept: staged.lockedKept } : {},
+        ...staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {},
+        ...staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}
+      });
     }
     let sawDone = false;
     for (const call of doneCalls) {
@@ -6494,28 +7086,52 @@ async function runCodexAgent(opts) {
 \u2717 integrity: ${e}`);
     const hadErrors = outcomes.some((o) => o.errors.length > 0) || integrityErrors.length > 0;
     unresolvedErrors = hadErrors || rejectedFiles.size > 0;
+    const lockedNote = (o) => {
+      const bits = [];
+      if (o.lockedKept?.length)
+        bits.push(`locked, left untouched: ${o.lockedKept.join(", ")} - do not resend them`);
+      if (o.dropMisses?.length)
+        bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
+      if (o.archivedKept?.length)
+        bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
+      return bits.length ? ` (${bits.join("; ")})` : "";
+    };
     const resultParts = outcomes.map((o) => ({
       type: "tool_result",
       tool_use_id: o.callId,
-      content: o.errors.length ? `REJECTED:
+      content: o.errors.length ? `REJECTED, nothing from this write was staged - resend it corrected in full:
 ${o.errors.join(`
-`)}` : o.skipped ? `skipped, ${o.file}.json is frozen by the user - do not resend it` : o.file ? "ok, staged" : "ok",
+`)}` : o.skipped ? `skipped, ${o.file}.json is frozen by the user - do not resend it` : o.file ? `ok, staged${lockedNote(o)}` : "ok",
       ...o.errors.length ? { is_error: true } : {}
     }));
+    const feedbackLines = outcomes.map((o) => o.errors.length ? `REJECTED ${o.file ? `${o.file}.json` : "write"}, nothing from it was staged - resend it corrected in full:
+${o.errors.join(`
+`)}` : o.skipped ? `${o.file}.json skipped, it is frozen by the user - do not resend it` : o.file ? `${o.file}.json staged.${lockedNote(o)}` : "done acknowledged.");
+    const pushFeedback = (extra) => {
+      if (useTools) {
+        if (extra)
+          resultParts.push({ type: "text", text: extra });
+        conv.push({ role: "user", content: resultParts });
+      } else {
+        conv.push({ role: "user", content: [...feedbackLines, extra].filter(Boolean).join(`
+
+`) });
+      }
+    };
     if (!hadErrors) {
       const wantVerify = profile.codexThorough && changed.size > 0 && !verifyRequested && !opts.skipVerify;
       if (sawDone && !wantVerify) {
-        conv.push({ role: "user", content: resultParts });
+        if (useTools)
+          conv.push({ role: "user", content: resultParts });
         break;
       }
       if (wantVerify) {
         verifyRequested = true;
-        resultParts.push({ type: "text", text: VERIFY_NUDGE });
-        conv.push({ role: "user", content: resultParts });
+        pushFeedback(verifyNudge(useTools));
         continue;
       }
-      resultParts.push({ type: "text", text: "Writes staged. Call codex_done, or send corrected files if anything is left." });
-      conv.push({ role: "user", content: resultParts });
+      const roundStaged = outcomes.some((o) => o.file !== null && !o.skipped && o.errors.length === 0);
+      pushFeedback(roundStaged ? useTools ? "Writes staged. Call codex_done, or send corrected files if anything is left." : 'Writes staged. Respond with a JSON object: any corrected files in "writes", and "done": true to finish.' : useTools ? "Nothing was staged this round. Call codex_done, or send writes for unfrozen files." : 'Nothing was staged this round. Respond with a JSON object: writes for unfrozen files if needed, and "done": true.');
       continue;
     }
     const fixup = [];
@@ -6524,11 +7140,10 @@ ${o.errors.join(`
 ${integrityErrors.join(`
 `)}`);
     }
-    fixup.push("Resend ONLY the rejected or offending files, corrected. Then call codex_done.");
-    resultParts.push({ type: "text", text: fixup.join(`
+    fixup.push(useTools ? "Resend ONLY the rejected or offending files, corrected. Then call codex_done." : 'Respond with a JSON object containing ONLY the rejected or offending files, corrected, in "writes". Set "done": true once everything is fixed.');
+    pushFeedback(fixup.join(`
 
-`) });
-    conv.push({ role: "user", content: resultParts });
+`));
     if (rounds >= maxRounds) {
       const remaining = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
       throw new Error(`Codex update failed validation after ${rounds} rounds: ${remaining.slice(0, 3).join("; ")}`);
@@ -6542,14 +7157,16 @@ ${integrityErrors.join(`
     throw new Error(`Codex left dangling references: ${finalIntegrity.slice(0, 3).join("; ")}`);
   }
   if (opts.notes.migrateToTable) {
-    const leftover = ["characters", "locations", "things"].filter((k) => working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0));
+    const leftover = ["characters", "locations", "things"].filter((k) => working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0));
     if (leftover.length) {
       throw new Error(`Table migration left ties on ${leftover.map((k) => `${k}.json`).join(", ")}, the run will retry`);
     }
   }
   if (opts.notes.migrateToInline && opts.bundle.relations.relations.length > 0) {
-    const foldedTies = ["characters", "locations", "things"].some((k) => working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0));
-    if (!foldedTies) {
+    const foldedTies = ["characters", "locations", "things"].some((k) => working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0));
+    const lockedIds = new Set(["characters", "locations", "things"].flatMap((k) => working[k].entities.filter((e) => e.locked === true).map((e) => e.id)));
+    const foldable = opts.bundle.relations.relations.some((r) => (r.type === "pair" ? [r.a, r.b] : r.members).some((m) => !lockedIds.has(m)));
+    if (!foldedTies && foldable) {
       throw new Error("Inline migration produced no ties from the relations table, the run will retry");
     }
   }
@@ -6571,6 +7188,11 @@ ${integrityErrors.join(`
 }
 
 // src/backend/codex/index.ts
+function reportCodexFailure(userId, chatId, verb, err) {
+  cb2?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
+  if (err instanceof ToolProtocolError)
+    cb2?.onToolsHint?.(userId, chatId);
+}
 var cb2 = null;
 function registerCodexCallbacks(c) {
   cb2 = c;
@@ -6778,16 +7400,25 @@ async function storySoFarText(chatId, userId, profile, chunkFirstIdx, posById) {
 async function getCodexStatus(chatId, userId, profile) {
   const exists = await codexPresence(chatId, userId) === "present";
   if (!profile.codexEnabled && !exists)
-    return { exists: false, backlog: 0, lastRunAt: null };
+    return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   try {
     const plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
-    return { exists, backlog: plan.compressible.length, lastRunAt: plan.cursor.lastRunAt };
+    let backlogPasses = 0;
+    let rest = plan.compressible;
+    while (rest.length > 0 && backlogPasses < 99) {
+      const w = takeWindow(rest, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+      if (w.length === 0)
+        break;
+      rest = rest.slice(w.length);
+      backlogPasses++;
+    }
+    return { exists, backlog: plan.compressible.length, lastRunAt: plan.cursor.lastRunAt, backlogPasses };
   } catch (err) {
     warn(`codex status failed: ${describeError(err)}`);
-    return { exists, backlog: 0, lastRunAt: null };
+    return { exists, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   }
 }
-async function runChunk(chatId, userId, profile, plan, chunk, automation, externalSignal, progress) {
+async function runChunk(chatId, userId, profile, plan, chunk, automation, externalSignal, progress, buildUserText, wantLore = false) {
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
@@ -6799,12 +7430,18 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     loadProblems: problems.map((p) => `${p.file}.json`),
     frozenFiles: [...frozenFiles].map((f) => `${f}.json`)
   };
+  if (notes.migrateToTable || notes.migrateToInline) {
+    const blocked = ["characters", "locations", "things", "relations"].filter((k) => frozenFiles.has(k));
+    if (blocked.length) {
+      throw new Error(`The relations format changed - unfreeze ${blocked.map((k) => `${k}.json`).join(", ")} so Memoria can migrate`);
+    }
+  }
   const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
   const firstIdx = posById.get(chunk[0].id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? -1;
   const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
-  const lore = await activatedLoreText(chatId, userId);
-  const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
+  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId) : null;
+  const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
   appendStreamText(userId, chatId, "codex", "text", `${progress.chars > 0 ? `
 
 ` : ""}\u2501\u2501\u2501 ${chunkLabel} \u2501\u2501\u2501
@@ -6821,12 +7458,18 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     lore,
     storySoFar,
     frozenFiles,
+    ...buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {},
     progressBase: progress,
     externalSignal,
     onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
     onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
   });
   if (notes.migrateToInline) {
+    const lockedIds = new Set(["characters", "locations", "things"].flatMap((k) => bundle[k].entities.filter((e) => e.locked === true).map((e) => e.id)));
+    const stuck = bundle.relations.relations.filter((r) => (r.type === "pair" ? [r.a, r.b] : r.members).every((m) => lockedIds.has(m))).length;
+    if (stuck > 0) {
+      cb2?.onToast(userId, "warn", `${stuck} relation${stuck === 1 ? "" : "s"} between locked entries could not be folded onto their sheets and will be dropped`);
+    }
     await saveCodexFile(chatId, "relations", { relations: [] }, userId).catch((err) => warn(`codex: failed to clear relations.json after inline migration: ${describeError(err)}`));
   }
   for (let i = plan.startPos;i <= lastIdx; i++) {
@@ -6870,7 +7513,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
 }
 async function drain(chatId, userId, profile, lagValue, requireWindow, automation) {
   if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex"))
-    return 0;
+    return null;
   const controller = new AbortController;
   registerAborter(userId, chatId, "codex", controller);
   try {
@@ -6916,10 +7559,11 @@ async function maybeRunCodex(chatId, profile, settings, userId) {
       return;
     }
     warn(`codex auto run failed: ${describeError(err)}`);
-    cb2?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "update", err);
   }
 }
-async function runCodexNow(chatId, profile, userId) {
+var CONTEXT_ERROR_RE = /context[ _](?:window|length|size|limit)|maximum context|prompt is too long|too many tokens|max(?:imum)? (?:input )?tokens|token limit|input is too (?:long|large)/i;
+async function runCodexNow(chatId, profile, userId, mode = "slow", settings = null) {
   if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
     cb2?.onToast(userId, "warn", "Memoria is already updating the codex");
     return;
@@ -6930,9 +7574,13 @@ async function runCodexNow(chatId, profile, userId) {
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
   try {
-    const runs = await drain(chatId, userId, profile, 0, false, false);
-    if (runs === 0) {
-      cb2?.onToast(userId, "info", "The codex is already caught up");
+    if (mode === "slow") {
+      const runs = await drain(chatId, userId, profile, 0, false, false);
+      if (runs === 0) {
+        cb2?.onToast(userId, "info", "The codex is already caught up");
+      }
+    } else {
+      await catchupCodex(chatId, profile, settings, userId, mode);
     }
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
@@ -6940,7 +7588,189 @@ async function runCodexNow(chatId, profile, userId) {
       return;
     }
     warn(`codex manual run failed: ${describeError(err)}`);
-    cb2?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "update", err);
+    if (mode !== "slow" && CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb2?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
+    }
+  }
+}
+var CATCHUP_PASS_CAP = 200;
+function liveSpan(e, posById) {
+  let start = Number.MAX_SAFE_INTEGER;
+  let end = -1;
+  for (const id of e.meta.msgIds) {
+    const p = posById.get(id);
+    if (p === undefined)
+      continue;
+    if (p < start)
+      start = p;
+    if (p > end)
+      end = p;
+  }
+  return { start, end };
+}
+function entryBlock(e) {
+  const head = (e.raw.comment || "").trim();
+  const text = (e.raw.content || "").trim();
+  return head ? `[${head}]
+${text}` : text;
+}
+function nextSummaryBatch(plan, chapters, profile) {
+  const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
+  const spans = chapters.map((e) => ({ e, ...liveSpan(e, posById) })).filter((s) => s.end >= plan.startPos && s.start !== Number.MAX_SAFE_INTEGER).sort((a, b) => a.start - b.start || a.end - b.end);
+  if (spans.length === 0)
+    return null;
+  const budget = Math.max(4000, profile.codexTokenBreakpoint);
+  const blocks = [];
+  let used = 0;
+  let pos = plan.startPos;
+  let endIdx = -1;
+  for (const s of spans) {
+    if (s.end < pos)
+      continue;
+    if (s.start > pos) {
+      let gapEnd = s.start - 1;
+      if (blocks.length === 0) {
+        let acc = 0;
+        for (let i = pos;i < s.start; i++) {
+          acc += approximateTokensFromChars((plan.messages[i].content || "").length);
+          if (acc >= budget && i < s.start - 1) {
+            gapEnd = i;
+            break;
+          }
+        }
+      }
+      const gapText = renderTranscript(plan.messages.slice(pos, gapEnd + 1), true, pos);
+      if (gapText.trim()) {
+        const gapTokens = approximateTokensFromChars(gapText.length);
+        if (blocks.length > 0 && used + gapTokens > budget)
+          break;
+        blocks.push(`RAW TURNS (no chapter covers messages ${pos + 1}-${gapEnd + 1} of ${plan.messages.length}):
+${gapText}`);
+        used += gapTokens;
+      }
+      pos = gapEnd + 1;
+      endIdx = Math.max(endIdx, gapEnd);
+      if (gapEnd < s.start - 1)
+        break;
+      if (used >= budget)
+        break;
+    }
+    const block = entryBlock(s.e);
+    const tokens = approximateTokensFromChars(block.length);
+    if (blocks.length > 0 && used + tokens > budget)
+      break;
+    blocks.push(block);
+    used += tokens;
+    pos = Math.max(pos, s.end + 1);
+    endIdx = Math.max(endIdx, s.end);
+    if (used >= budget)
+      break;
+  }
+  if (endIdx < plan.startPos || blocks.length === 0)
+    return null;
+  return { endIdx, blocks };
+}
+async function activeStoryContext(chatId, userId, messages) {
+  const entries = await listLmbEntries(chatId, userId);
+  const coverage = await buildCoverage(chatId, userId, entries, true);
+  const posById = new Map(messages.map((m, i) => [m.id, i]));
+  const items = coverage.activeEntries.map((e) => {
+    const s = liveSpan(e, posById);
+    return { pos: s.start !== Number.MAX_SAFE_INTEGER ? s.start : e.meta.firstMsgIdx ?? 0, text: entryBlock(e) };
+  }).filter((b) => b.text);
+  let lastCovered = -1;
+  for (let i = 0;i < messages.length; i++) {
+    if (coverage.coveredBy.has(messages[i].id))
+      lastCovered = i;
+  }
+  const tailStart = lastCovered + 1;
+  let runStart = -1;
+  let runHasContent = false;
+  const flushRun = (endIdx) => {
+    if (runStart !== -1 && runHasContent) {
+      const text = renderTranscript(messages.slice(runStart, endIdx + 1), true, runStart);
+      if (text.trim()) {
+        items.push({ pos: runStart, text: `RAW TURNS (no summary covers messages ${runStart + 1}-${endIdx + 1}):
+${text}` });
+      }
+    }
+    runStart = -1;
+    runHasContent = false;
+  };
+  for (let i = 0;i < tailStart; i++) {
+    const m = messages[i];
+    if (coverage.coveredBy.has(m.id)) {
+      flushRun(i - 1);
+      continue;
+    }
+    if (runStart === -1)
+      runStart = i;
+    if ((m.content || "").trim() && !isExcluded(m))
+      runHasContent = true;
+  }
+  flushRun(tailStart - 1);
+  const books = items.sort((a, b) => a.pos - b.pos).map((b) => b.text);
+  const tailText = tailStart < messages.length ? renderTranscript(messages.slice(tailStart), true, tailStart) : "";
+  return { books, tailTranscript: tailText.trim() ? tailText : null };
+}
+async function catchupCodex(chatId, profile, settings, userId, mode) {
+  if (!setBusy(userId, chatId, "codex", `Memoria is catching up the codex (${mode === "ultra" ? "ultra fast" : "fast"})`)) {
+    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController;
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    controller.signal.addEventListener("abort", () => {
+      abortBusy(userId, chatId, "chapter");
+      abortBusy(userId, chatId, "arc");
+    }, { once: true });
+    const shelfPending = await forkShelfPending(chatId, userId).catch(() => false);
+    if (settings && profile.autoCreate && !profile.showMemoryPreviews && !shelfPending) {
+      await drainChapterBacklog(chatId, profile, settings, userId, true);
+      await maybeRunArcCheck(chatId, profile, settings, userId, true);
+    }
+    if (controller.signal.aborted)
+      throw new AbortedSummarizerError;
+    const progress = { chars: 0, thinking: 0 };
+    let runs = 0;
+    if (mode === "fast") {
+      const entries = await listLmbEntries(chatId, userId);
+      const coverage = await buildCoverage(chatId, userId, entries, true);
+      let prevStart = -1;
+      for (let pass = 0;pass < CATCHUP_PASS_CAP; pass++) {
+        if (controller.signal.aborted)
+          throw new AbortedSummarizerError;
+        const plan2 = await planRun(chatId, userId, profile.codexLagUnit, 0);
+        if (plan2.compressible.length === 0)
+          break;
+        if (!plan2.rewound && plan2.startPos <= prevStart) {
+          warn(`codex fast catch-up stalled at message ${plan2.startPos + 1} for ${chatId.slice(0, 8)}, stopping`);
+          break;
+        }
+        prevStart = plan2.startPos;
+        const batch = nextSummaryBatch(plan2, coverage.chapters, profile);
+        if (!batch)
+          break;
+        await runChunk(chatId, userId, profile, plan2, plan2.messages.slice(plan2.startPos, batch.endIdx + 1), false, controller.signal, progress, (bundle, notes, label) => buildCodexSummaryCatchupMessage(bundle, batch.blocks, label, notes));
+        runs++;
+      }
+    }
+    const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
+    if (plan.compressible.length === 0) {
+      if (runs === 0)
+        cb2?.onToast(userId, "info", "The codex is already caught up");
+      return;
+    }
+    if (mode === "ultra") {
+      const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
+      await runChunk(chatId, userId, profile, plan, plan.messages.slice(plan.startPos), false, controller.signal, progress, (bundle, notes, label, lore) => buildCodexUltraMessage(bundle, books, tailTranscript, label, notes, lore), true);
+    } else {
+      await runChunk(chatId, userId, profile, plan, plan.compressible, false, controller.signal, progress);
+    }
+  } finally {
+    clearBusy(userId, chatId, "codex");
   }
 }
 var INJECTION_CACHE_TTL_MS = 60000;
@@ -7010,7 +7840,7 @@ async function buildCodexInjectionText(chatId, userId, profile) {
         bundle[key2] = emptyCodexFile(key2);
       }
     }
-    text = bundleIsEmpty(bundle) ? null : renderCodexForInjection(bundle);
+    text = bundleIsEmpty(bundle) ? null : renderCodexForInjection(bundle) || null;
   }
   if (injectionTextCache.has(chatId))
     injectionTextCache.delete(chatId);
@@ -7056,7 +7886,7 @@ async function publishCodexPool(chatId, userId, profile, changedFiles, reason) {
 async function getCodexPanelState(chatId, userId) {
   const exists = await codexExists(chatId, userId);
   if (!exists)
-    return { fileStates: {}, staleFiles: [] };
+    return { fileStates: {}, staleFiles: [], refreshPending: [] };
   const cursor = await loadCursor(chatId, userId);
   const staleFiles = [];
   for (const [file, st] of Object.entries(cursor.fileStates)) {
@@ -7066,46 +7896,69 @@ async function getCodexPanelState(chatId, userId) {
     if (typeof at === "number" && cursor.runs > at)
       staleFiles.push(file);
   }
-  return { fileStates: cursor.fileStates, staleFiles };
+  return { fileStates: cursor.fileStates, staleFiles, refreshPending: cursor.refreshPending };
 }
-async function setCodexFileState(chatId, userId, file, state) {
+async function setCodexFileState(chatId, userId, file, state, relationsTableFallback) {
   await withCursorLock(chatId, userId, async () => {
     const cursor = await loadCursor(chatId, userId);
+    const prevState = cursor.fileStates[file] ?? "on";
     if (state === "on")
       delete cursor.fileStates[file];
     else
       cursor.fileStates[file] = state;
-    if (state === "frozen")
+    if (state === "frozen") {
       cursor.frozenAtRuns[file] = cursor.runs;
-    else
+      cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
+    } else {
+      const at = cursor.frozenAtRuns[file];
+      if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
+        cursor.refreshPending.push(file);
+      }
       delete cursor.frozenAtRuns[file];
+    }
     await saveCursor(chatId, cursor, userId);
   });
   invalidateCodexInjectionCache(chatId);
-  await syncEntriesGuarded(chatId, userId);
+  await syncEntriesGuarded(chatId, userId, relationsTableFallback);
 }
-async function rebuildCodex(chatId, profile, userId) {
+async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = null) {
   if (!setBusy(userId, chatId, "codex", "Memoria is clearing the codex for a rebuild")) {
     cb2?.onToast(userId, "warn", "Memoria is already working on the codex, abort that first");
     return;
   }
   try {
-    const prev = await loadCursor(chatId, userId).catch(() => emptyCursor());
-    const frozenKeys = CODEX_FILE_KEYS.filter((k) => prev.fileStates[k] === "frozen");
-    const kept = {};
-    if (frozenKeys.length > 0) {
-      const diskMode = prev.relationsTableMode ?? profile.codexRelationsTable;
-      const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-      const broken = new Set(problems.map((p) => p.file));
-      for (const k of frozenKeys) {
-        if (!broken.has(k))
-          kept[k] = bundle[k];
+    let cursorFault = null;
+    let frozenKeys = new Set;
+    await withCursorLock(chatId, userId, async () => {
+      let prev;
+      try {
+        prev = await loadCursor(chatId, userId);
+      } catch (err) {
+        cursorFault = err;
+        return;
       }
+      frozenKeys = new Set(CODEX_FILE_KEYS.filter((k) => prev.fileStates[k] === "frozen"));
+      const fresh = emptyCursor();
+      fresh.fileStates = prev.fileStates;
+      for (const k of frozenKeys)
+        fresh.frozenAtRuns[k] = 0;
+      if (frozenKeys.size > 0)
+        fresh.relationsTableMode = prev.relationsTableMode;
+      await saveCursor(chatId, fresh, userId);
+    });
+    if (cursorFault !== null) {
+      cb2?.onToast(userId, "error", `Memoria couldn't read the codex cursor, rebuild aborted: ${shortErrorText(cursorFault)}`);
+      return;
     }
-    const failed = await deleteCodex(chatId, userId);
+    const failed = [];
+    for (const key2 of CODEX_FILE_KEYS) {
+      if (frozenKeys.has(key2))
+        continue;
+      await saveCodexFile(chatId, key2, emptyCodexFile(key2), userId).catch(() => failed.push(key2));
+    }
     invalidateCodexInjectionCache(chatId);
     if (failed.length > 0) {
-      cb2?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, rebuild aborted`);
+      cb2?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, run Rebuild again`);
       return;
     }
     publishCodexWiped(chatId, userId);
@@ -7113,25 +7966,10 @@ async function rebuildCodex(chatId, profile, userId) {
       warn(`codex rebuild: entry wipe failed: ${describeError(err)}`);
       cb2?.onToast(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
     });
-    const keptKeys = Object.keys(kept);
-    if (Object.keys(prev.fileStates).length > 0 || keptKeys.length > 0) {
-      await withCursorLock(chatId, userId, async () => {
-        const fresh = emptyCursor();
-        fresh.fileStates = prev.fileStates;
-        for (const k of keptKeys)
-          fresh.frozenAtRuns[k] = 0;
-        if (keptKeys.length > 0)
-          fresh.relationsTableMode = prev.relationsTableMode;
-        await saveCursor(chatId, fresh, userId);
-      });
-      for (const k of keptKeys) {
-        await saveCodexFile(chatId, k, kept[k], userId);
-      }
-    }
   } finally {
     clearBusy(userId, chatId, "codex");
   }
-  await runCodexNow(chatId, profile, userId);
+  await runCodexNow(chatId, profile, userId, mode, settings);
 }
 async function runCodexTidy(chatId, profile, userId, only) {
   if (!setBusy(userId, chatId, "codex", "Memoria is tidying the codex")) {
@@ -7167,7 +8005,7 @@ async function runCodexTidy(chatId, profile, userId, only) {
       lore: null,
       storySoFar: null,
       frozenFiles,
-      userTextOverride: buildCodexTidyMessage(bundle, targets),
+      userTextOverride: buildCodexTidyMessage(bundle, targets, profile.codexUseTools),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -7188,7 +8026,80 @@ async function runCodexTidy(chatId, profile, userId, only) {
       return;
     }
     warn(`codex tidy failed: ${describeError(err)}`);
-    cb2?.onToast(userId, "error", `Memoria couldn't tidy the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "tidy", err);
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
+}
+async function refreshCodexFiles(chatId, profile, userId) {
+  if (!setBusy(userId, chatId, "codex", "Memoria is catching up re-enabled records")) {
+    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController;
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const cursor = await loadCursor(chatId, userId);
+    if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
+      cb2?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before catching records up");
+      return;
+    }
+    const frozen = new Set(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const targets = cursor.refreshPending.filter((f) => isCodexFileKey(f) && !frozen.has(f));
+    if (targets.length === 0) {
+      cb2?.onToast(userId, "info", "No re-enabled records are waiting for a catch-up");
+      return;
+    }
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const messages = await spindle.chat.getMessages(chatId);
+    const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
+    const lore = await activatedLoreText(chatId, userId);
+    const notes = {
+      reconcile: false,
+      migrateToTable: false,
+      migrateToInline: false,
+      loadProblems: problems.map((p) => `${p.file}.json`),
+      frozenFiles: [...frozen].map((f) => `${f}.json`)
+    };
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes,
+      lore,
+      storySoFar: null,
+      frozenFiles: frozen,
+      userTextOverride: buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, profile.codexUseTools),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
+    });
+    invalidateCodexInjectionCache(chatId);
+    await withCursorLock(chatId, userId, async () => {
+      const live = await loadCursor(chatId, userId);
+      live.refreshPending = live.refreshPending.filter((f) => !targets.includes(f));
+      await saveCursor(chatId, live, userId);
+    });
+    await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
+    await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+    cb2?.onToast(userId, "success", `Memoria caught up ${targets.length} record${targets.length === 1 ? "" : "s"}`);
+    cb2?.onStateChange(userId, chatId);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb2?.onToast(userId, "info", "Memoria sets the catch-up aside");
+      return;
+    }
+    warn(`codex refresh failed: ${describeError(err)}`);
+    reportCodexFailure(userId, chatId, "refresh", err);
+    if (CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb2?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
+    }
   } finally {
     clearBusy(userId, chatId, "codex");
   }
@@ -7375,10 +8286,12 @@ async function buildState(userId, requestedChatId) {
     availableRoots: allRootCandidates,
     codexExists: false,
     codexBacklog: 0,
+    codexBacklogPasses: 0,
     codexLastRunAt: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
+    codexRefreshPending: [],
     codexFileTokens: {},
     lessons
   };
@@ -7468,9 +8381,9 @@ async function buildState(userId, requestedChatId) {
   }
   const codexStatus = await getCodexStatus(chat.id, userId, codexProfile).catch((err) => {
     warn(`codex status failed: ${describeError(err)}`);
-    return { exists: false, backlog: 0, lastRunAt: null };
+    return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   });
-  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [] }));
+  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const codexFileTokens = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? ["timeline", "threads"].reduce((acc, k) => {
     const st = codexPanel.fileStates[k];
@@ -7504,10 +8417,12 @@ async function buildState(userId, requestedChatId) {
     availableRoots: allRootCandidates.filter((c) => c.chatId !== chat.id),
     codexExists: codexStatus.exists,
     codexBacklog: codexStatus.backlog,
+    codexBacklogPasses: codexStatus.backlogPasses,
     codexLastRunAt: codexStatus.lastRunAt,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
+    codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens
   };
 }
@@ -7623,6 +8538,14 @@ registerCodexCallbacks({
   },
   onStateChange(userId, chatId) {
     pushState(userId, chatId);
+  },
+  onToolsHint(userId, chatId) {
+    (async () => {
+      const settings = await loadSettings(userId).catch(() => null);
+      if (settings?.suppressToolCallingPrompt)
+        return;
+      send({ type: "codex_tools_hint", chatId }, userId);
+    })();
   }
 });
 spindle.registerWorldInfoInterceptor(async (ctx) => {
@@ -8551,7 +9474,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
-        await runCodexNow(msg.chatId, profile, userId);
+        await runCodexNow(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -8670,7 +9593,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Memoria is updating the codex, abort that first");
           break;
         }
-        await rebuildCodex(msg.chatId, profile, userId);
+        await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
         await pushState(userId, msg.chatId);
@@ -8694,14 +9617,33 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await pushState(userId, msg.chatId);
         break;
       }
+      case "codex_refresh": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        await refreshCodexFiles(msg.chatId, profile, userId);
+        const refreshed = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: refreshed }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
       case "codex_set_file_state": {
         if (!isCodexFileKey(msg.file)) {
           send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
           break;
         }
-        await setCodexFileState(msg.chatId, userId, msg.file, msg.state);
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
         if (profile)
           await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
         await pushState(userId, msg.chatId);

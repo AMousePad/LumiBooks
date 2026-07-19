@@ -97,6 +97,9 @@ export interface PendingPreview {
   title: string;
   content: string;
   shortComment: string;
+  /** Retrieval keywords from the model; accepting the preview must not
+   * strip them off the saved entry. */
+  keywords: string[];
   sourceMessageIds: string[];
   /** Ids of the tier below: chapter ids for an arc preview, arc ids for a volume preview. */
   sourceChapterEntryIds?: string[];
@@ -142,6 +145,8 @@ export interface FrontendState {
   availableRoots: RootSourceOption[];
   codexExists: boolean;
   codexBacklog: number;
+  /** Estimated slow-mode passes the backlog would take at the current window. */
+  codexBacklogPasses: number;
   codexLastRunAt: number | null;
   /** Approx tokens of the constant codex entries (timeline + threads); the
    * keyword-retrieved records cost extra only when a scene activates them. */
@@ -150,6 +155,8 @@ export interface FrontendState {
   codexFileStates: Record<string, "on" | "noInject" | "frozen">;
   /** Frozen files that missed at least one codex run since freezing. */
   codexStaleFiles: string[];
+  /** Re-enabled files awaiting the one-pass catch-up refresh. */
+  codexRefreshPending: string[];
   /** Approx prompt tokens per codex file, priced on the rendered injection text. */
   codexFileTokens: Record<string, number>;
   /** Lessons from Memoria progress, account-wide. */
@@ -195,12 +202,13 @@ export type FrontendToBackend =
   | { type: "rebuild_root"; chatId: string; sourceChatId: string }
   | { type: "detach_root"; chatId: string }
   | { type: "set_message_excluded"; chatId: string; messageIds: string[]; excluded: boolean }
-  | { type: "codex_update_now"; chatId: string }
+  | { type: "codex_update_now"; chatId: string; mode?: "slow" | "fast" | "ultra" }
   | { type: "codex_read"; chatId: string }
   | { type: "codex_write_file"; chatId: string; file: string; content: string; seq: number }
   | { type: "codex_reset"; chatId: string }
-  | { type: "codex_rebuild"; chatId: string }
+  | { type: "codex_rebuild"; chatId: string; mode?: "slow" | "fast" | "ultra" }
   | { type: "codex_tidy"; chatId: string; files?: string[] }
+  | { type: "codex_refresh"; chatId: string }
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
@@ -242,4 +250,7 @@ export type BackendToFrontend =
   | { type: "error"; text: string }
   | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
   | { type: "codex_files"; chatId: string; files: Record<string, string>; savedFile?: string; savedSeq?: number }
-  | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean };
+  | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean }
+  /** A codex run died because the model narrated instead of tool-calling:
+   * the frontend offers the JSON fallback once (unless suppressed). */
+  | { type: "codex_tools_hint"; chatId: string };

@@ -3,24 +3,41 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { LMBProfile, LMBSettings } from "../../shared";
 import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars } from "../../shared";
 import type { ChatMessage } from "../coverage";
-import { liveEndPosition, sumApproxTokens } from "../coverage";
+import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../coverage";
 import type { CodexCursor, CodexFileState } from "./store";
-import { codexExists, codexPresence, deleteCodex, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
-import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
-import { runCodexAgent } from "./agent";
-import { buildCodexTidyMessage, renderCodexFileSections, renderCodexForInjection, type CodexRunNotes } from "./prompt";
+import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
+import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
+import { ToolProtocolError, runCodexAgent } from "./agent";
+import {
+  buildCodexRefreshMessage,
+  buildCodexSummaryCatchupMessage,
+  buildCodexTidyMessage,
+  buildCodexUltraMessage,
+  renderCodexFileSections,
+  renderCodexForInjection,
+  type CodexRunNotes,
+} from "./prompt";
 import { syncCodexEntries, wipeCodexEntries } from "./sync";
-import { AbortedSummarizerError } from "../summarizer";
-import { appendStreamText, clearBusy, getBusy, registerAborter, setBusy, shortErrorText, updateProgressNumbers } from "../pipeline";
-import { findBookForChat, listAllEntries, listLmbEntries } from "../world-book";
+import { AbortedSummarizerError, renderTranscript } from "../summarizer";
+import { abortBusy, appendStreamText, clearBusy, drainChapterBacklog, getBusy, maybeRunArcCheck, registerAborter, setBusy, shortErrorText, updateProgressNumbers } from "../pipeline";
+import { findBookForChat, listAllEntries, listLmbEntries, type LMBEntry } from "../world-book";
 import { publishCodexSnapshot, publishCodexUpdated, publishCodexWiped, type CodexChangeReason } from "../hooks";
-import { forkCodexPending } from "../fork";
+import { forkCodexPending, forkShelfPending } from "../fork";
 import { describeError, warn } from "../runtime";
 
 
 export interface CodexCallbacks {
   onToast(userId: string, tone: "success" | "info" | "warn" | "error", text: string, automation?: boolean): void;
   onStateChange(userId: string, chatId: string): void;
+  /** A run died on ToolProtocolError: offer the JSON fallback in the UI. */
+  onToolsHint?(userId: string, chatId: string): void;
+}
+
+/** Shared failure tail for every codex entry point: toast the error, and on
+ * a tool-transport failure also surface the JSON-fallback offer. */
+function reportCodexFailure(userId: string, chatId: string, verb: string, err: unknown): void {
+  cb?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
+  if (err instanceof ToolProtocolError) cb?.onToolsHint?.(userId, chatId);
 }
 
 let cb: CodexCallbacks | null = null;
@@ -318,19 +335,37 @@ export interface CodexStatus {
   exists: boolean;
   backlog: number;
   lastRunAt: number | null;
+  /** Estimated slow-mode passes the current backlog would take. */
+  backlogPasses: number;
 }
 
 export async function getCodexStatus(chatId: string, userId: string, profile: LMBProfile): Promise<CodexStatus> {
   const exists = (await codexPresence(chatId, userId)) === "present";
-  if (!profile.codexEnabled && !exists) return { exists: false, backlog: 0, lastRunAt: null };
+  if (!profile.codexEnabled && !exists) return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   try {
     const plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
-    return { exists, backlog: plan.compressible.length, lastRunAt: plan.cursor.lastRunAt };
+    let backlogPasses = 0;
+    let rest = plan.compressible;
+    while (rest.length > 0 && backlogPasses < 99) {
+      const w = takeWindow(rest, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+      if (w.length === 0) break;
+      rest = rest.slice(w.length);
+      backlogPasses++;
+    }
+    return { exists, backlog: plan.compressible.length, lastRunAt: plan.cursor.lastRunAt, backlogPasses };
   } catch (err) {
     warn(`codex status failed: ${describeError(err)}`);
-    return { exists, backlog: 0, lastRunAt: null };
+    return { exists, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   }
 }
+
+/** Replacement agent user message for catch-up passes. */
+type CatchupTextBuilder = (
+  bundle: CodexBundle,
+  notes: CodexRunNotes,
+  chunkLabel: string,
+  lore: string | null,
+) => string;
 
 async function runChunk(
   chatId: string,
@@ -341,6 +376,8 @@ async function runChunk(
   automation: boolean,
   externalSignal: AbortSignal,
   progress: { chars: number; thinking: number },
+  buildUserText?: CatchupTextBuilder,
+  wantLore = false,
 ): Promise<void> {
   // Files on disk were written under the PREVIOUS run's relations mode. On a
   // toggle, loading with the new mode would reject exactly the files the
@@ -358,13 +395,21 @@ async function runChunk(
     loadProblems: problems.map((p) => `${p.file}.json`),
     frozenFiles: [...frozenFiles].map((f) => `${f}.json`),
   };
+  // A frozen file the migration must rewrite would deadlock the gates below
+  // with a generic error every run; fail actionably instead.
+  if (notes.migrateToTable || notes.migrateToInline) {
+    const blocked = (["characters", "locations", "things", "relations"] as const).filter((k) => frozenFiles.has(k));
+    if (blocked.length) {
+      throw new Error(`The relations format changed - unfreeze ${blocked.map((k) => `${k}.json`).join(", ")} so Memoria can migrate`);
+    }
+  }
 
   const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
   const firstIdx = posById.get(chunk[0]!.id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1]!.id) ?? -1;
   const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
-  const lore = await activatedLoreText(chatId, userId);
-  const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
+  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId) : null;
+  const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
 
   // Queued chunks share one stream buffer for the whole drain: a visible
   // divider keeps their rounds apart in the viewer.
@@ -385,6 +430,7 @@ async function runChunk(
     lore,
     storySoFar,
     frozenFiles,
+    ...(buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {}),
     progressBase: progress,
     externalSignal,
     onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -394,6 +440,16 @@ async function runChunk(
   if (notes.migrateToInline) {
     // The agent cannot write relations.json in inline mode, so the stale
     // table would fail every future load and raise a bogus REPAIR note.
+    const lockedIds = new Set(
+      (["characters", "locations", "things"] as const)
+        .flatMap((k) => bundle[k].entities.filter((e) => e.locked === true).map((e) => e.id)),
+    );
+    const stuck = bundle.relations.relations.filter((r) =>
+      (r.type === "pair" ? [r.a, r.b] : r.members).every((m) => lockedIds.has(m)),
+    ).length;
+    if (stuck > 0) {
+      cb?.onToast(userId, "warn", `${stuck} relation${stuck === 1 ? "" : "s"} between locked entries could not be folded onto their sheets and will be dropped`);
+    }
     await saveCodexFile(chatId, "relations", { relations: [] }, userId).catch((err) =>
       warn(`codex: failed to clear relations.json after inline migration: ${describeError(err)}`),
     );
@@ -453,8 +509,9 @@ async function drain(
   lagValue: number,
   requireWindow: boolean,
   automation: boolean,
-): Promise<number> {
-  if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex")) return 0;
+): Promise<number | null> {
+  // Null means another run holds the busy flag, distinct from "nothing to do".
+  if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex")) return null;
   // One controller for the whole drain: aborting cancels the current chunk
   // and stops the loop, instead of racing a per-chunk controller swap.
   const controller = new AbortController();
@@ -509,12 +566,23 @@ export async function maybeRunCodex(
       return;
     }
     warn(`codex auto run failed: ${describeError(err)}`);
-    cb?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "update", err);
   }
 }
 
+export type CodexUpdateMode = "slow" | "fast" | "ultra";
+
+/** Provider phrasings for a prompt that outgrew the model's context. */
+const CONTEXT_ERROR_RE = /context[ _](?:window|length|size|limit)|maximum context|prompt is too long|too many tokens|max(?:imum)? (?:input )?tokens|token limit|input is too (?:long|large)/i;
+
 /** Manual trigger: consumes everything up to the tail, ignoring lag and window. */
-export async function runCodexNow(chatId: string, profile: LMBProfile, userId: string): Promise<void> {
+export async function runCodexNow(
+  chatId: string,
+  profile: LMBProfile,
+  userId: string,
+  mode: CodexUpdateMode = "slow",
+  settings: LMBSettings | null = null,
+): Promise<void> {
   if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
     cb?.onToast(userId, "warn", "Memoria is already updating the codex");
     return;
@@ -525,9 +593,13 @@ export async function runCodexNow(chatId: string, profile: LMBProfile, userId: s
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
   try {
-    const runs = await drain(chatId, userId, profile, 0, false, false);
-    if (runs === 0) {
-      cb?.onToast(userId, "info", "The codex is already caught up");
+    if (mode === "slow") {
+      const runs = await drain(chatId, userId, profile, 0, false, false);
+      if (runs === 0) {
+        cb?.onToast(userId, "info", "The codex is already caught up");
+      }
+    } else {
+      await catchupCodex(chatId, profile, settings, userId, mode);
     }
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
@@ -535,7 +607,228 @@ export async function runCodexNow(chatId: string, profile: LMBProfile, userId: s
       return;
     }
     warn(`codex manual run failed: ${describeError(err)}`);
-    cb?.onToast(userId, "error", `Memoria couldn't update the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "update", err);
+    if (mode !== "slow" && CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
+    }
+  }
+}
+
+const CATCHUP_PASS_CAP = 200;
+
+/** Live positional span of an entry's covered messages. */
+function liveSpan(e: LMBEntry, posById: Map<string, number>): { start: number; end: number } {
+  let start = Number.MAX_SAFE_INTEGER;
+  let end = -1;
+  for (const id of e.meta.msgIds) {
+    const p = posById.get(id);
+    if (p === undefined) continue;
+    if (p < start) start = p;
+    if (p > end) end = p;
+  }
+  return { start, end };
+}
+
+function entryBlock(e: LMBEntry): string {
+  const head = (e.raw.comment || "").trim();
+  const text = (e.raw.content || "").trim();
+  return head ? `[${head}]\n${text}` : text;
+}
+
+interface SummaryBatch {
+  endIdx: number;
+  blocks: string[];
+}
+
+/** Next fast-mode batch of chapter summaries (raw gaps spliced in), packed
+ * to one pass's token budget; null once no summarized span lies ahead. */
+function nextSummaryBatch(plan: PlannedRun, chapters: LMBEntry[], profile: LMBProfile): SummaryBatch | null {
+  const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
+  const spans = chapters
+    .map((e) => ({ e, ...liveSpan(e, posById) }))
+    .filter((s) => s.end >= plan.startPos && s.start !== Number.MAX_SAFE_INTEGER)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  if (spans.length === 0) return null;
+
+  const budget = Math.max(4000, profile.codexTokenBreakpoint);
+  const blocks: string[] = [];
+  let used = 0;
+  let pos = plan.startPos;
+  let endIdx = -1;
+  for (const s of spans) {
+    if (s.end < pos) continue;
+    if (s.start > pos) {
+      let gapEnd = s.start - 1;
+      // A gap opening the batch splits at the budget instead of shipping unbounded.
+      if (blocks.length === 0) {
+        let acc = 0;
+        for (let i = pos; i < s.start; i++) {
+          acc += approximateTokensFromChars((plan.messages[i]!.content || "").length);
+          if (acc >= budget && i < s.start - 1) {
+            gapEnd = i;
+            break;
+          }
+        }
+      }
+      const gapText = renderTranscript(plan.messages.slice(pos, gapEnd + 1), true, pos);
+      if (gapText.trim()) {
+        const gapTokens = approximateTokensFromChars(gapText.length);
+        if (blocks.length > 0 && used + gapTokens > budget) break;
+        blocks.push(`RAW TURNS (no chapter covers messages ${pos + 1}-${gapEnd + 1} of ${plan.messages.length}):\n${gapText}`);
+        used += gapTokens;
+      }
+      // The gap consumes with this batch, not the final raw pass.
+      pos = gapEnd + 1;
+      endIdx = Math.max(endIdx, gapEnd);
+      if (gapEnd < s.start - 1) break;
+      if (used >= budget) break;
+    }
+    const block = entryBlock(s.e);
+    const tokens = approximateTokensFromChars(block.length);
+    if (blocks.length > 0 && used + tokens > budget) break;
+    blocks.push(block);
+    used += tokens;
+    pos = Math.max(pos, s.end + 1);
+    endIdx = Math.max(endIdx, s.end);
+    if (used >= budget) break;
+  }
+  if (endIdx < plan.startPos || blocks.length === 0) return null;
+  return { endIdx, blocks };
+}
+
+/** The story as its filed summaries (ghosts included, raw gaps spliced in,
+ * oldest first) plus the raw uncovered tail - the ultra input shape. */
+async function activeStoryContext(
+  chatId: string,
+  userId: string,
+  messages: ChatMessage[],
+): Promise<{ books: string[]; tailTranscript: string | null }> {
+  const entries = await listLmbEntries(chatId, userId);
+  const coverage = await buildCoverage(chatId, userId, entries, true);
+  const posById = new Map(messages.map((m, i) => [m.id, i] as const));
+  // Entries with no live span (roots, dead chapters) sort by their stored
+  // index; roots carry negative indexes so pre-history leads.
+  const items = coverage.activeEntries
+    .map((e) => {
+      const s = liveSpan(e, posById);
+      return { pos: s.start !== Number.MAX_SAFE_INTEGER ? s.start : (e.meta.firstMsgIdx ?? 0), text: entryBlock(e) };
+    })
+    .filter((b) => b.text);
+  // Tail starts after the LAST covered message; keying on the first
+  // uncovered one would let one excluded message force a whole-chat raw dump.
+  let lastCovered = -1;
+  for (let i = 0; i < messages.length; i++) {
+    if (coverage.coveredBy.has(messages[i]!.id)) lastCovered = i;
+  }
+  const tailStart = lastCovered + 1;
+  // Uncovered spans behind the tail (deleted or never-filed chapters)
+  // ride along as raw turns; excluded-only runs stay out.
+  let runStart = -1;
+  let runHasContent = false;
+  const flushRun = (endIdx: number): void => {
+    if (runStart !== -1 && runHasContent) {
+      const text = renderTranscript(messages.slice(runStart, endIdx + 1), true, runStart);
+      if (text.trim()) {
+        items.push({ pos: runStart, text: `RAW TURNS (no summary covers messages ${runStart + 1}-${endIdx + 1}):\n${text}` });
+      }
+    }
+    runStart = -1;
+    runHasContent = false;
+  };
+  for (let i = 0; i < tailStart; i++) {
+    const m = messages[i]!;
+    if (coverage.coveredBy.has(m.id)) {
+      flushRun(i - 1);
+      continue;
+    }
+    if (runStart === -1) runStart = i;
+    if ((m.content || "").trim() && !isExcluded(m)) runHasContent = true;
+  }
+  flushRun(tailStart - 1);
+  const books = items.sort((a, b) => a.pos - b.pos).map((b) => b.text);
+  const tailText = tailStart < messages.length
+    ? renderTranscript(messages.slice(tailStart), true, tailStart)
+    : "";
+  return { books, tailTranscript: tailText.trim() ? tailText : null };
+}
+
+/** Fast/ultra catch-up: books first (automation on), then summary replay
+ * batches (fast) or one active-context pass (ultra), raw remainder last. */
+async function catchupCodex(
+  chatId: string,
+  profile: LMBProfile,
+  settings: LMBSettings | null,
+  userId: string,
+  mode: "fast" | "ultra",
+): Promise<void> {
+  if (!setBusy(userId, chatId, "codex", `Memoria is catching up the codex (${mode === "ultra" ? "ultra fast" : "fast"})`)) {
+    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController();
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    // Aborting the codex row also stops the books phase.
+    controller.signal.addEventListener("abort", () => {
+      abortBusy(userId, chatId, "chapter");
+      abortBusy(userId, chatId, "arc");
+    }, { once: true });
+    // Preview-mode profiles skip the books phase (chapters would stall as
+    // pending previews); unsettled fork shelves hold it too.
+    const shelfPending = await forkShelfPending(chatId, userId).catch(() => false);
+    if (settings && profile.autoCreate && !profile.showMemoryPreviews && !shelfPending) {
+      await drainChapterBacklog(chatId, profile, settings, userId, true);
+      await maybeRunArcCheck(chatId, profile, settings, userId, true);
+    }
+    if (controller.signal.aborted) throw new AbortedSummarizerError();
+    const progress = { chars: 0, thinking: 0 };
+    let runs = 0;
+
+    if (mode === "fast") {
+      const entries = await listLmbEntries(chatId, userId);
+      const coverage = await buildCoverage(chatId, userId, entries, true);
+      let prevStart = -1;
+      for (let pass = 0; pass < CATCHUP_PASS_CAP; pass++) {
+        if (controller.signal.aborted) throw new AbortedSummarizerError();
+        const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
+        if (plan.compressible.length === 0) break;
+        if (!plan.rewound && plan.startPos <= prevStart) {
+          warn(`codex fast catch-up stalled at message ${plan.startPos + 1} for ${chatId.slice(0, 8)}, stopping`);
+          break;
+        }
+        prevStart = plan.startPos;
+        const batch = nextSummaryBatch(plan, coverage.chapters, profile);
+        if (!batch) break;
+        await runChunk(
+          chatId, userId, profile, plan,
+          plan.messages.slice(plan.startPos, batch.endIdx + 1),
+          false, controller.signal, progress,
+          (bundle, notes, label) => buildCodexSummaryCatchupMessage(bundle, batch.blocks, label, notes),
+        );
+        runs++;
+      }
+    }
+
+    // The final (or only) pass: everything left in one go.
+    const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
+    if (plan.compressible.length === 0) {
+      if (runs === 0) cb?.onToast(userId, "info", "The codex is already caught up");
+      return;
+    }
+    if (mode === "ultra") {
+      const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
+      await runChunk(
+        chatId, userId, profile, plan,
+        plan.messages.slice(plan.startPos),
+        false, controller.signal, progress,
+        (bundle, notes, label, lore) => buildCodexUltraMessage(bundle, books, tailTranscript, label, notes, lore),
+        true,
+      );
+    } else {
+      await runChunk(chatId, userId, profile, plan, plan.compressible, false, controller.signal, progress);
+    }
+  } finally {
+    clearBusy(userId, chatId, "codex");
   }
 }
 
@@ -620,7 +913,7 @@ export async function buildCodexInjectionText(
         (bundle as Record<CodexFileKey, CodexFileValue>)[key] = emptyCodexFile(key);
       }
     }
-    text = bundleIsEmpty(bundle) ? null : renderCodexForInjection(bundle);
+    text = bundleIsEmpty(bundle) ? null : renderCodexForInjection(bundle) || null;
   }
   if (injectionTextCache.has(chatId)) injectionTextCache.delete(chatId);
   injectionTextCache.set(chatId, { at: Date.now(), text });
@@ -675,13 +968,15 @@ export async function publishCodexPool(
 
 export interface CodexPanelState {
   fileStates: Record<string, CodexFileState>;
-  /** Frozen files that missed at least one run: re-enabling should offer a rebuild. */
+  /** Frozen files that missed at least one run: re-enabling flags a catch-up. */
   staleFiles: string[];
+  /** Re-enabled files awaiting the one-pass refresh. */
+  refreshPending: string[];
 }
 
 export async function getCodexPanelState(chatId: string, userId: string): Promise<CodexPanelState> {
   const exists = await codexExists(chatId, userId);
-  if (!exists) return { fileStates: {}, staleFiles: [] };
+  if (!exists) return { fileStates: {}, staleFiles: [], refreshPending: [] };
   const cursor = await loadCursor(chatId, userId);
   const staleFiles: string[] = [];
   for (const [file, st] of Object.entries(cursor.fileStates)) {
@@ -689,7 +984,7 @@ export async function getCodexPanelState(chatId: string, userId: string): Promis
     const at = cursor.frozenAtRuns[file];
     if (typeof at === "number" && cursor.runs > at) staleFiles.push(file);
   }
-  return { fileStates: cursor.fileStates, staleFiles };
+  return { fileStates: cursor.fileStates, staleFiles, refreshPending: cursor.refreshPending };
 }
 
 export async function setCodexFileState(
@@ -697,46 +992,82 @@ export async function setCodexFileState(
   userId: string,
   file: CodexFileKey,
   state: CodexFileState,
+  relationsTableFallback?: boolean,
 ): Promise<void> {
   await withCursorLock(chatId, userId, async () => {
     const cursor = await loadCursor(chatId, userId);
+    const prevState = cursor.fileStates[file] ?? "on";
     if (state === "on") delete cursor.fileStates[file];
     else cursor.fileStates[file] = state;
-    if (state === "frozen") cursor.frozenAtRuns[file] = cursor.runs;
-    else delete cursor.frozenAtRuns[file];
+    if (state === "frozen") {
+      cursor.frozenAtRuns[file] = cursor.runs;
+      cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
+    } else {
+      // Leaving frozen after missed runs flags the file for a catch-up pass.
+      const at = cursor.frozenAtRuns[file];
+      if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
+        cursor.refreshPending.push(file);
+      }
+      delete cursor.frozenAtRuns[file];
+    }
     await saveCursor(chatId, cursor, userId);
   });
   invalidateCodexInjectionCache(chatId);
   // Mirror the switch onto the synced entries (disabled flag, and relations
   // folding in or out of entity entries).
-  await syncEntriesGuarded(chatId, userId);
+  await syncEntriesGuarded(chatId, userId, relationsTableFallback);
 }
 
 /** Wipe the codex but carry the user's per-file switches into the fresh
  * cursor, then re-read the whole chat from message zero. */
-export async function rebuildCodex(chatId: string, profile: LMBProfile, userId: string): Promise<void> {
+export async function rebuildCodex(
+  chatId: string,
+  profile: LMBProfile,
+  userId: string,
+  mode: CodexUpdateMode = "slow",
+  settings: LMBSettings | null = null,
+): Promise<void> {
   // The wipe holds the busy flag itself, or a racing drain resurrects the old codex.
   if (!setBusy(userId, chatId, "codex", "Memoria is clearing the codex for a rebuild")) {
     cb?.onToast(userId, "warn", "Memoria is already working on the codex, abort that first");
     return;
   }
   try {
-    const prev = await loadCursor(chatId, userId).catch(() => emptyCursor());
-    // Frozen means "no updates", not "erase": their contents survive the wipe.
-    const frozenKeys = CODEX_FILE_KEYS.filter((k) => prev.fileStates[k] === "frozen");
-    const kept: Partial<Record<CodexFileKey, CodexFileValue>> = {};
-    if (frozenKeys.length > 0) {
-      const diskMode = prev.relationsTableMode ?? profile.codexRelationsTable;
-      const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-      const broken = new Set(problems.map((p) => p.file));
-      for (const k of frozenKeys) {
-        if (!broken.has(k)) kept[k] = bundle[k];
+    // Read and reseed under one lock so a file-state flip can't interleave.
+    // An unreadable cursor must abort: falling back to empty would drop the
+    // frozen list and wipe files the user locked.
+    let cursorFault: unknown = null;
+    let frozenKeys = new Set<CodexFileKey>();
+    await withCursorLock(chatId, userId, async () => {
+      let prev: CodexCursor;
+      try {
+        prev = await loadCursor(chatId, userId);
+      } catch (err) {
+        cursorFault = err;
+        return;
       }
+      // Frozen means "no updates", not "erase": their contents survive the wipe.
+      frozenKeys = new Set(CODEX_FILE_KEYS.filter((k) => prev.fileStates[k] === "frozen"));
+      // Overwrite in place instead of delete-then-restore, so frozen content
+      // never leaves disk and no fault window can destroy it.
+      const fresh = emptyCursor();
+      fresh.fileStates = prev.fileStates;
+      for (const k of frozenKeys) fresh.frozenAtRuns[k] = 0;
+      if (frozenKeys.size > 0) fresh.relationsTableMode = prev.relationsTableMode;
+      await saveCursor(chatId, fresh, userId);
+    });
+    if (cursorFault !== null) {
+      cb?.onToast(userId, "error", `Memoria couldn't read the codex cursor, rebuild aborted: ${shortErrorText(cursorFault)}`);
+      return;
     }
-    const failed = await deleteCodex(chatId, userId);
+    const failed: CodexFileKey[] = [];
+    for (const key of CODEX_FILE_KEYS) {
+      if (frozenKeys.has(key)) continue;
+      await saveCodexFile(chatId, key, emptyCodexFile(key), userId).catch(() => failed.push(key));
+    }
     invalidateCodexInjectionCache(chatId);
     if (failed.length > 0) {
-      cb?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, rebuild aborted`);
+      cb?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, run Rebuild again`);
       return;
     }
     publishCodexWiped(chatId, userId);
@@ -744,23 +1075,10 @@ export async function rebuildCodex(chatId: string, profile: LMBProfile, userId: 
       warn(`codex rebuild: entry wipe failed: ${describeError(err)}`);
       cb?.onToast(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
     });
-    const keptKeys = Object.keys(kept) as CodexFileKey[];
-    if (Object.keys(prev.fileStates).length > 0 || keptKeys.length > 0) {
-      await withCursorLock(chatId, userId, async () => {
-        const fresh = emptyCursor();
-        fresh.fileStates = prev.fileStates;
-        for (const k of keptKeys) fresh.frozenAtRuns[k] = 0;
-        if (keptKeys.length > 0) fresh.relationsTableMode = prev.relationsTableMode;
-        await saveCursor(chatId, fresh, userId);
-      });
-      for (const k of keptKeys) {
-        await saveCodexFile(chatId, k, kept[k]!, userId);
-      }
-    }
   } finally {
     clearBusy(userId, chatId, "codex");
   }
-  await runCodexNow(chatId, profile, userId);
+  await runCodexNow(chatId, profile, userId, mode, settings);
 }
 
 /** One LLM pass that compresses the chosen files in place without reading
@@ -809,7 +1127,7 @@ export async function runCodexTidy(
       lore: null,
       storySoFar: null,
       frozenFiles,
-      userTextOverride: buildCodexTidyMessage(bundle, targets),
+      userTextOverride: buildCodexTidyMessage(bundle, targets, profile.codexUseTools),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -830,7 +1148,83 @@ export async function runCodexTidy(
       return;
     }
     warn(`codex tidy failed: ${describeError(err)}`);
-    cb?.onToast(userId, "error", `Memoria couldn't tidy the codex: ${shortErrorText(err)}`);
+    reportCodexFailure(userId, chatId, "tidy", err);
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
+}
+
+/** One ultra-shaped pass that rewrites the refresh-pending files from the
+ * story's active context. The cursor never moves. */
+export async function refreshCodexFiles(chatId: string, profile: LMBProfile, userId: string): Promise<void> {
+  if (!setBusy(userId, chatId, "codex", "Memoria is catching up re-enabled records")) {
+    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController();
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const cursor = await loadCursor(chatId, userId);
+    if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
+      cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before catching records up");
+      return;
+    }
+    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const targets = cursor.refreshPending.filter((f): f is CodexFileKey => isCodexFileKey(f) && !frozen.has(f));
+    if (targets.length === 0) {
+      cb?.onToast(userId, "info", "No re-enabled records are waiting for a catch-up");
+      return;
+    }
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const messages = await spindle.chat.getMessages(chatId);
+    const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
+    const lore = await activatedLoreText(chatId, userId);
+    const notes: CodexRunNotes = {
+      reconcile: false,
+      migrateToTable: false,
+      migrateToInline: false,
+      loadProblems: problems.map((p) => `${p.file}.json`),
+      frozenFiles: [...frozen].map((f) => `${f}.json`),
+    };
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes,
+      lore,
+      storySoFar: null,
+      frozenFiles: frozen,
+      userTextOverride: buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, profile.codexUseTools),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
+    });
+    invalidateCodexInjectionCache(chatId);
+    await withCursorLock(chatId, userId, async () => {
+      const live = await loadCursor(chatId, userId);
+      live.refreshPending = live.refreshPending.filter((f) => !(targets as string[]).includes(f));
+      await saveCursor(chatId, live, userId);
+    });
+    await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
+    await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+    cb?.onToast(userId, "success", `Memoria caught up ${targets.length} record${targets.length === 1 ? "" : "s"}`);
+    cb?.onStateChange(userId, chatId);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb?.onToast(userId, "info", "Memoria sets the catch-up aside");
+      return;
+    }
+    warn(`codex refresh failed: ${describeError(err)}`);
+    reportCodexFailure(userId, chatId, "refresh", err);
+    if (CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
+    }
   } finally {
     clearBusy(userId, chatId, "codex");
   }

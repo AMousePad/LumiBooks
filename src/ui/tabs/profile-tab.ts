@@ -31,6 +31,7 @@ export function renderCodexSettings(
   profile: LMBProfile,
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
+  void state;
   const sec = section("Knowledge Codex");
   const help = document.createElement("div");
   help.className = "lmb-help";
@@ -145,29 +146,44 @@ export function renderCodexSettings(
     onChange: (v) => patch({ codexExtraContext: v }),
   }), "tuning.codex.extra"));
 
+  const modelHint = document.createElement("div");
+  modelHint.className = "lmb-field-hint";
+  modelHint.textContent = "The codex agent's connection and samplers live on the Profile pane, behind the Codex toggle.";
+  fields.appendChild(modelHint);
+
+  host.appendChild(sec.wrap);
+}
+
+/** The codex agent's own connection plus its tool-calling switch. Lives on
+ * the Profile pane behind the Codex toggle, next to the codex samplers. */
+export function renderCodexConnection(
+  host: HTMLElement,
+  state: FrontendState,
+  profile: LMBProfile,
+  patch: (p: Partial<LMBProfile>) => void,
+): void {
+  const sec = section("Codex connection");
   const connOpts = [
-    { value: "", label: "Same as Memoria's connection" },
+    { value: "", label: "Same as Summary Connection" },
     ...state.connections.map((c) => ({
       value: c.id,
       label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`,
     })),
   ];
-  fields.appendChild(
-    lessonMark(labelled("Codex connection", select({
+  sec.body.appendChild(
+    lessonMark(select({
       value: profile.codexConnectionId ?? "",
       options: connOpts,
       onChange: (v) => patch({ codexConnectionId: v || null }),
-    })), "tuning.codex.connection"),
+    }), "tuning.codex.connection"),
   );
-  const connHint = document.createElement("div");
-  connHint.className = "lmb-field-hint";
-  connHint.textContent = "The codex model must support tool calls, the agent writes its files through them.";
-  fields.appendChild(connHint);
 
-  const samplerHint = document.createElement("div");
-  samplerHint.className = "lmb-field-hint";
-  samplerHint.textContent = "The codex agent's samplers live on the Model pane, behind the Codex toggle.";
-  fields.appendChild(samplerHint);
+  sec.body.appendChild(lessonMark(checkbox({
+    checked: profile.codexUseTools,
+    label: "Use tool calls",
+    hint: "Off by default: the agent writes one strict JSON reply, which every provider route can carry. Turn on for structured tool calls if your connection delivers them reliably.",
+    onChange: (v) => patch({ codexUseTools: v }),
+  }), "tuning.codex.usetools"));
 
   host.appendChild(sec.wrap);
 }
@@ -568,7 +584,7 @@ export function renderConnection(
   profile: LMBProfile,
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
-  const sec = section("Connection");
+  const sec = section("Summary Connection");
   lessonMark(sec.wrap, "tuning.model.connection");
   const opts = [
     { value: "", label: state.connections.length ? "Default connection" : "No connections available" },
@@ -665,12 +681,20 @@ export function renderSamplers(
 
 let samplerView: "main" | "codex" = "main";
 
+/** Lesson-stage navigation: pin the Profile pane's sampler toggle before a
+ * demo render, so anchors on one side can't hide behind the other. */
+export function setSamplerView(v: "main" | "codex"): void {
+  samplerView = v;
+}
+
 export function renderSamplersSwitch(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
   send: (msg: FrontendToBackend) => void,
 ): void {
+  const patch = (p: Partial<LMBProfile>): void =>
+    send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   const wrap = document.createElement("div");
   wrap.className = "lmb-pane";
   const switchRow = document.createElement("div");
@@ -685,13 +709,19 @@ export function renderSamplersSwitch(
   const sync = (): void => {
     for (const o of options) o.btn?.classList.toggle("active", samplerView === o.key);
     body.replaceChildren();
-    if (samplerView === "main") renderSamplers(body, state, profile, send);
-    else renderCodexSamplers(body, state, profile, send);
+    if (samplerView === "main") {
+      renderConnection(body, state, profile, patch);
+      renderSamplers(body, state, profile, send);
+    } else {
+      renderCodexConnection(body, state, profile, patch);
+      renderCodexSamplers(body, state, profile, send);
+    }
   };
   for (const o of options) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = o.label;
+    lessonMark(btn, `tuning.samplers.${o.key}`);
     btn.addEventListener("click", () => {
       if (samplerView === o.key) return;
       samplerView = o.key;

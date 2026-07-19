@@ -1,6 +1,8 @@
 import type { LessonCourseDef } from "./lesson-types";
 import { focusShelfEntry, setBooksSubtab } from "../tabs/books-tab";
-import { setTuningSubtab } from "../tabs/tuning-tab";
+import { setSamplerView } from "../tabs/profile-tab";
+import { setPromptsCategory } from "../tabs/prompts-tab";
+import { setSettingsView, setTuningSubtab } from "../tabs/tuning-tab";
 
 /** Course 1: The Librarian's Primer. Home, Books, and the Books side of
  * Tuning. Every pane change is a nav step the user clicks themselves, and
@@ -491,43 +493,79 @@ export const COURSE_BOOKS: LessonCourseDef = {
           tab: "tuning",
           subtab: "profile",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("profile");
+            setSamplerView("main");
+          },
+          anchor: "tuning.model.connection",
+          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course. Regex scripts can rewrite what I read and what I write.",
+        },
+        {
+          kind: "nav",
+          fixture: { variant: "tuning" },
+          prep: () => setSettingsView("books"),
+          path: ["subtab.settings"],
+          arrive: "tuning.window",
+          text: "Next room. Tap Settings.",
+          done: "The press room.",
+        },
+        {
+          kind: "say",
+          tab: "tuning",
+          subtab: "settings",
+          fixture: { variant: "tuning" },
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           text: "Compression targets shape my chapters. The window is how much story goes in, 18 messages by default. The ratio is how much text comes out, either a percent of the input or a fixed token amount.",
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.arc",
           text: "Arcs can build automatically after enough chapters pile up, after enough tokens, or only by hand. The arc lag holds back your newest chapters so recent scenes keep their chapter-level detail.",
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
-          text: "The Automation section is my hands-free mode. The master toggle covers chapters, arcs, and branch adoption. The codex has its own switch on its own pane.",
+          text: "The Automation section is my hands-free mode. The master toggle covers chapters, arcs, and branch adoption. The codex has its own switch on this pane's Codex side.",
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.ctx",
           text: "Context: how many of my previous chapters I re-read for continuity when writing a new one (7 by default), how many times I retry after a failure, and how long I wait for a slow provider before giving up.",
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.behavior.preview",
           text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Below that, Everywhere holds switches for your whole account, like Force constant.",
         },
@@ -536,7 +574,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
           id: "b4",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
@@ -544,7 +582,10 @@ export const COURSE_BOOKS: LessonCourseDef = {
               s.activeProfile.windowValue = 18;
             },
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           chip: "Window · tokens · 18",
           text: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
@@ -561,14 +602,17 @@ export const COURSE_BOOKS: LessonCourseDef = {
           id: "b5",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
               s.activeProfile.lagValue = 10;
             },
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
           chip: "Lag · 10 messages",
           text: "You lower the lag from 65 down to 10. What changes?",
@@ -585,7 +629,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
           id: "b16",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
@@ -593,7 +637,10 @@ export const COURSE_BOOKS: LessonCourseDef = {
               s.activeProfile.chapterTargetPercent = 4;
             },
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           chip: "Window · 40 · Chapter % · 4",
           text: "You set the window to 40 and the chapter ratio to 4% (defaults are 18 and 15%). What do your chapters become?",
@@ -608,23 +655,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
         {
           kind: "nav",
           fixture: { variant: "tuning" },
-          path: ["subtab.model"],
-          arrive: "tuning.model.connection",
-          text: "Two panes to go. Tap Model.",
-          done: "The writing desk.",
-        },
-        {
-          kind: "say",
-          tab: "tuning",
-          subtab: "model",
-          fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("model"),
-          anchor: "tuning.model.connection",
-          text: "The Model pane picks which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. Regex scripts can rewrite what I read and what I write.",
-        },
-        {
-          kind: "nav",
-          fixture: { variant: "tuning" },
+          prep: () => setPromptsCategory("chapter"),
           path: ["subtab.prompts"],
           arrive: "tuning.prompts",
           text: "And the last one. Tap Prompts.",
@@ -635,7 +666,10 @@ export const COURSE_BOOKS: LessonCourseDef = {
           tab: "tuning",
           subtab: "prompts",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("prompts"),
+          prep: () => {
+            setTuningSubtab("prompts");
+            setPromptsCategory("chapter");
+          },
           anchor: "tuning.prompts",
           text: "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token.",
         },
@@ -681,10 +715,13 @@ export const COURSE_BOOKS: LessonCourseDef = {
           kind: "nav",
           real: true,
           onlyFreshInstall: true,
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings"],
           arrive: "tuning.auto",
-          text: "One more walk. My automation switch lives in Tuning. Tap the Tuning tab.",
+          text: "One more walk. My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
           done: "There's the switch.",
         },
         {
@@ -693,8 +730,11 @@ export const COURSE_BOOKS: LessonCourseDef = {
           optional: true,
           onlyFreshInstall: true,
           tab: "tuning",
-          subtab: "profile",
-          prep: () => setTuningSubtab("profile"),
+          subtab: "settings",
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
           expect: "save_profile",
           text: "One last act. Turn Run automation on, and I'll handle the filing myself after every message from now on.",

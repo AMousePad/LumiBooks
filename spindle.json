@@ -1,6 +1,6 @@
 {
   "identifier": "lumi_books",
-  "version": "1.0.0-beta.4",
+  "version": "1.0.0-rc.1",
   "name": "LumiBooks",
   "author": "AMousePad",
   "github": "https://github.com/AMousePad/LumiBooks",
@@ -15,8 +15,8 @@
     "memories",
     "characters",
     "regex_scripts"
-  ],
+  ],  
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",
-  "minimum_lumiverse_version": "1.0.3"
+  "minimum_lumiverse_version": "1.1.0"
 }

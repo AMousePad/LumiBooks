@@ -178,30 +178,30 @@ export function codexFixtureFiles(): Record<string, string> {
       entities: [
         {
           id: "char:elias", name: "Elias", kind: "human", role: "the duke's former valet, fugitive",
-          status: "hiding in the tannery loft", traits: ["careful", "sentimental", "quick over rooftops"],
+          description: "hiding in the tannery loft", traits: ["careful", "sentimental", "quick over rooftops"],
           goals: ["keep the locket", "keep Mara out of it"],
           significance: "killed the duke on day 3",
         },
         {
           id: "char:mara", name: "Mara", kind: "human", role: "seamstress at Ashford Manor",
-          status: "publicly mourning, privately bargaining", traits: ["observant", "steady"],
+          description: "publicly mourning, privately bargaining", traits: ["observant", "steady"],
           goals: ["leverage over Elias", "leave the city"],
         },
         {
           id: "char:captain", name: "The Captain", kind: "human", role: "leads the city watch",
-          status: "publicly backs the bandit theory", goals: ["reopen the staff interviews quietly"],
+          description: "publicly backs the bandit theory", goals: ["reopen the staff interviews quietly"],
         },
       ],
     },
     locations: {
       entities: [
-        { id: "loc:ashford_manor", name: "Ashford Manor", kind: "estate", status: "sealed by the watch", description: "the duke's seat, dark except the study lamp" },
+        { id: "loc:ashford_manor", name: "Ashford Manor", kind: "estate", description: "the duke's seat, sealed by the watch, dark except the study lamp" },
         { id: "loc:the_bridge", name: "The Bridge", kind: "landmark", significance: "where Elias and Mara trade truths" },
       ],
     },
     things: {
       entities: [
-        { id: "thing:silver_locket", name: "The Silver Locket", kind: "heirloom", status: "back in Elias's coat", significance: "ties Elias to the study on day 3" },
+        { id: "thing:silver_locket", name: "The Silver Locket", kind: "heirloom", description: "back in Elias's coat", significance: "ties Elias to the study on day 3" },
       ],
     },
     relations: {
@@ -407,10 +407,12 @@ export function buildFixture(variant: string): FrontendState {
       : [],
     codexExists: !!spec.codex,
     codexBacklog: spec.codex ? 4 : 0,
+    codexBacklogPasses: spec.codex ? 1 : 0,
     codexLastRunAt: spec.codex ? Date.now() - 11 * 60_000 : null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],
+    codexRefreshPending: [],
     codexFileTokens: spec.codex ? { ...CODEX_FILE_TOKENS } : {},
     lessons,
   };

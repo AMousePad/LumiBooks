@@ -294,6 +294,9 @@ export async function reassertChatBinding(chatId: string, userId: string): Promi
   if (!bookId) return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
   if (!chat) return false;
+  await syncManagedBookNames(chatId, chat.name ?? null, bookId, userId).catch((err) =>
+    warn(`book name sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
+  );
   const md = chat.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : {};
   const attached = Array.isArray(md["chat_world_book_ids"])
     ? (md["chat_world_book_ids"] as unknown[]).filter((x): x is string => typeof x === "string")
@@ -303,6 +306,32 @@ export async function reassertChatBinding(chatId: string, userId: string): Promi
     warn(`reassertChatBinding: failed to rebind ${bookId} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
   });
   return true;
+}
+
+const nameSyncAt = new Map<string, number>();
+const NAME_SYNC_TTL_MS = 60_000;
+
+/** Managed book names follow the chat name, so renames (fork-time ones
+ * included) propagate to the shelf and codex books. */
+async function syncManagedBookNames(chatId: string, chatName: string | null, shelfBookId: string, userId: string): Promise<void> {
+  const key = cacheKey(userId, chatId);
+  const last = nameSyncAt.get(key);
+  if (last && Date.now() - last < NAME_SYNC_TTL_MS) return;
+  if (nameSyncAt.size > 500) nameSyncAt.clear();
+  nameSyncAt.set(key, Date.now());
+  const wantedShelf = bookNameFor(chatName, chatId);
+  const shelf = await spindle.world_books.get(shelfBookId, userId).catch(() => null);
+  if (shelf && (shelf.name || "") !== wantedShelf) {
+    await spindle.world_books.update(shelfBookId, { name: wantedShelf }, userId);
+  }
+  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
+  if (codexBookId) {
+    const wantedCodex = codexBookNameFor(chatName, chatId);
+    const codexBook = await spindle.world_books.get(codexBookId, userId).catch(() => null);
+    if (codexBook && (codexBook.name || "") !== wantedCodex) {
+      await spindle.world_books.update(codexBookId, { name: wantedCodex }, userId);
+    }
+  }
 }
 
 /** Short-lived entries cache: the injection interceptor runs on every

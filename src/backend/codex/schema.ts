@@ -51,12 +51,13 @@ export interface CodexEntity {
   traits?: string[];
   goals?: string[];
   significance?: string;
-  status?: string;
   /** Inline relationship notes - only legal when the relations table is disabled. */
   ties?: string[];
   notes?: string;
   /** Retrieval tags for the synced lorebook entry; never rendered into the prompt body. */
   keywords?: string[];
+  /** User-owned: the agent may not modify or drop a locked entity. */
+  locked?: boolean;
   [extra: string]: unknown;
 }
 
@@ -67,6 +68,8 @@ export interface CodexEntityFile {
 export type CodexRelation =
   | {
       type: "pair";
+      /** Stable row key for patch-mode writes; assigned on load when absent. */
+      rid?: string;
       a: string;
       b: string;
       kind: string;
@@ -75,6 +78,7 @@ export type CodexRelation =
     }
   | {
       type: "group";
+      rid?: string;
       kind: string;
       members: string[];
       state: string;
@@ -87,6 +91,7 @@ export interface CodexRelationsFile {
 }
 
 export interface CodexTimelineEvent {
+  rid?: string;
   when: string;
   event: string;
   participants?: string[];
@@ -101,6 +106,7 @@ export interface CodexTimelineFile {
 export type CodexThreadStatus = "open" | "stalled" | "resolved" | "abandoned";
 
 export interface CodexThread {
+  rid?: string;
   name: string;
   status: CodexThreadStatus;
   summary: string;
@@ -115,6 +121,7 @@ export interface CodexThreadsFile {
 }
 
 export interface CodexWorldEntry {
+  rid?: string;
   topic: string;
   facts: string[];
   /** Retrieval tags for the synced lorebook entry; never rendered into the prompt body. */
@@ -136,6 +143,7 @@ export interface CodexFalseBelief {
  * all - those live in world or timeline.
  */
 export interface CodexKnowledgeItem {
+  rid?: string;
   fact: string;
   knownBy?: string[];
   hiddenFrom?: string[];
@@ -313,10 +321,22 @@ function keepExtras(
   }
 }
 
+// "status" and "rid" are listed so keepExtras never keeps them as extras:
+// status is deprecated, and entities key by id so a parroted rid is noise.
 const ENTITY_KNOWN_FIELDS = [
   "id", "name", "aliases", "kind", "role", "appearance", "description",
-  "traits", "goals", "significance", "status", "ties", "notes", "keywords",
+  "traits", "goals", "significance", "status", "ties", "notes", "keywords", "locked", "rid",
 ] as const;
+
+/** Optional stable row key, kept short so it stays cheap in the prompt. */
+function ridOf(ctx: Ctx, v: unknown, path: string): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string" || !v.trim()) {
+    ctx.errors.push(`${path}.rid: expected a short string`);
+    return undefined;
+  }
+  return v.trim().slice(0, 24);
+}
 
 export interface ValidateOptions {
   /** Whether the relations table is enabled for this profile. */
@@ -357,9 +377,13 @@ function validateEntityFile(
     const out: CodexEntity = { id, name };
     const aliases = strArray(ctx, e["aliases"], `${path}.aliases`);
     if (aliases) out.aliases = aliases;
-    for (const f of ["kind", "role", "appearance", "description", "significance", "status", "notes"] as const) {
+    for (const f of ["kind", "role", "appearance", "description", "significance", "notes"] as const) {
       const v = str(ctx, e[f], `${path}.${f}`, false);
       if (v) out[f] = v;
+    }
+    if (e["locked"] === true || e["locked"] === "true") out.locked = true;
+    if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
+      ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }
     for (const f of ["traits", "goals", "keywords"] as const) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
@@ -367,7 +391,9 @@ function validateEntityFile(
     }
     const ties = strArray(ctx, e["ties"], `${path}.ties`);
     if (ties) {
-      if (opts.relationsTable) {
+      // Locked rows keep their ties even in table mode: the agent may not
+      // rewrite them, so rejecting would brick the whole file.
+      if (opts.relationsTable && !out.locked) {
         ctx.errors.push(`${path}.ties: the relations table is enabled, move these into relations.json rows`);
       } else {
         out.ties = ties;
@@ -396,6 +422,7 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
   for (const [i, r] of rows.entries()) {
     const path = `relations[${i}]`;
     const type = r["type"];
+    const rid = ridOf(ctx, r["rid"], path);
     if (type === "pair") {
       const a = str(ctx, r["a"], `${path}.a`, true);
       const b = str(ctx, r["b"], `${path}.b`, true);
@@ -406,7 +433,7 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
       if (!isEntityRef(b)) ctx.errors.push(`${path}.b: "${b}" is not a valid entity ref`);
       if (a === b) ctx.errors.push(`${path}: a and b are the same entity`);
       const history = strArray(ctx, r["history"], `${path}.history`);
-      relations.push({ type: "pair", a, b, kind, state, ...(history ? { history } : {}) });
+      relations.push({ type: "pair", ...(rid ? { rid } : {}), a, b, kind, state, ...(history ? { history } : {}) });
     } else if (type === "group") {
       const kind = str(ctx, r["kind"], `${path}.kind`, true);
       const state = str(ctx, r["state"], `${path}.state`, true);
@@ -432,7 +459,7 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
       }
       const history = strArray(ctx, r["history"], `${path}.history`);
       relations.push({
-        type: "group", kind, members, state,
+        type: "group", ...(rid ? { rid } : {}), kind, members, state,
         ...(roles ? { roles } : {}),
         ...(history ? { history } : {}),
       });
@@ -453,8 +480,9 @@ function validateTimelineFile(raw: unknown): ValidationResult<CodexTimelineFile>
     const path = `events[${i}]`;
     const when = str(ctx, e["when"], `${path}.when`, true);
     const event = str(ctx, e["event"], `${path}.event`, true);
+    const rid = ridOf(ctx, e["rid"], path);
     if (!when || !event) continue;
-    const out: CodexTimelineEvent = { when, event };
+    const out: CodexTimelineEvent = { ...(rid ? { rid } : {}), when, event };
     const participants = strArray(ctx, e["participants"], `${path}.participants`);
     if (participants) out.participants = participants;
     const where = str(ctx, e["where"], `${path}.where`, false);
@@ -477,12 +505,13 @@ function validateThreadsFile(raw: unknown): ValidationResult<CodexThreadsFile> {
     const name = str(ctx, t["name"], `${path}.name`, true);
     const summary = str(ctx, t["summary"], `${path}.summary`, true);
     const status = t["status"];
+    const rid = ridOf(ctx, t["rid"], path);
     if (!name || !summary) continue;
     if (status !== "open" && status !== "stalled" && status !== "resolved" && status !== "abandoned") {
       ctx.errors.push(`${path}.status: expected open | stalled | resolved | abandoned`);
       continue;
     }
-    const out: CodexThread = { name, status, summary };
+    const out: CodexThread = { ...(rid ? { rid } : {}), name, status, summary };
     const latest = str(ctx, t["latest"], `${path}.latest`, false);
     if (latest) out.latest = latest;
     const planted = strArray(ctx, t["planted"], `${path}.planted`);
@@ -503,13 +532,14 @@ function validateWorldFile(raw: unknown): ValidationResult<CodexWorldFile> {
     const path = `entries[${i}]`;
     const topic = str(ctx, e["topic"], `${path}.topic`, true);
     const facts = strArray(ctx, e["facts"], `${path}.facts`) ?? [];
+    const rid = ridOf(ctx, e["rid"], path);
     if (!topic) continue;
     if (facts.length === 0) {
       ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
       continue;
     }
     const keywords = strArray(ctx, e["keywords"], `${path}.keywords`);
-    entries.push({ topic, facts, ...(keywords ? { keywords } : {}) });
+    entries.push({ ...(rid ? { rid } : {}), topic, facts, ...(keywords ? { keywords } : {}) });
   }
   if (ctx.errors.length) return fail(ctx.errors);
   return { ok: true, value: { entries } };
@@ -523,8 +553,9 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
   for (const [i, k] of objArray(ctx, root["items"], "items").entries()) {
     const path = `items[${i}]`;
     const fact = str(ctx, k["fact"], `${path}.fact`, true);
+    const rid = ridOf(ctx, k["rid"], path);
     if (!fact) continue;
-    const out: CodexKnowledgeItem = { fact };
+    const out: CodexKnowledgeItem = { ...(rid ? { rid } : {}), fact };
     const knownBy = strArray(ctx, k["knownBy"], `${path}.knownBy`);
     if (knownBy) out.knownBy = knownBy;
     const hiddenFrom = strArray(ctx, k["hiddenFrom"], `${path}.hiddenFrom`);
@@ -619,7 +650,9 @@ function collectDangling(bundle: CodexBundle): DanglingRef[] {
 }
 
 function formatDangling(d: DanglingRef): string {
-  return `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
+  return d.file === "relations"
+    ? `${d.path}: "${d.ref}" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)`
+    : `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
 }
 
 /**
@@ -659,4 +692,50 @@ export function danglingRefCounts(bundle: CodexBundle): Map<string, number> {
     m.set(key, (m.get(key) ?? 0) + 1);
   }
   return m;
+}
+
+/* --------------------------------------------------------- patch-mode keys */
+
+/** The keyed collection each file's patch ops address. Entity files key by
+ * entity id; every other file keys by the per-row rid. */
+export const FILE_ROW_KEY: Readonly<Record<CodexFileKey, { field: string; key: "id" | "rid" }>> = {
+  characters: { field: "entities", key: "id" },
+  locations: { field: "entities", key: "id" },
+  things: { field: "entities", key: "id" },
+  relations: { field: "relations", key: "rid" },
+  timeline: { field: "events", key: "rid" },
+  threads: { field: "threads", key: "rid" },
+  world: { field: "entries", key: "rid" },
+  knowledge: { field: "items", key: "rid" },
+};
+
+export function fileRows(value: CodexFileValue, key: CodexFileKey): Record<string, unknown>[] {
+  const arr = (value as unknown as Record<string, unknown>)[FILE_ROW_KEY[key].field];
+  return Array.isArray(arr) ? (arr as Record<string, unknown>[]) : [];
+}
+
+/** Assign rids to rows missing one (healing duplicates), numbering past the
+ * highest existing "r<n>". Deterministic per file content, mutates in place. */
+export function assignMissingRids(key: CodexFileKey, value: CodexFileValue): void {
+  if (FILE_ROW_KEY[key].key !== "rid") return;
+  const rows = fileRows(value, key);
+  let max = 0;
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const rid = typeof row["rid"] === "string" ? row["rid"] : "";
+    if (!rid || seen.has(rid)) {
+      delete row["rid"];
+      continue;
+    }
+    seen.add(rid);
+    const m = /^r(\d+)$/.exec(rid);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  for (const row of rows) {
+    if (typeof row["rid"] === "string" && row["rid"]) continue;
+    let next = `r${++max}`;
+    while (seen.has(next)) next = `r${++max}`;
+    row["rid"] = next;
+    seen.add(next);
+  }
 }

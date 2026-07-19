@@ -28,10 +28,10 @@ import {
   textInput,
   textNode,
 } from "../components";
-import { confirmDelete } from "../modals";
+import { confirmDelete, requestCodexRebuild, requestCodexUpdate } from "../modals";
 import { renderCodexTabLock } from "../lessons/seal";
 
-type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore";
+type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore" | "secrets";
 
 const SUBTABS: { key: CodexSubtab; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -40,6 +40,7 @@ const SUBTABS: { key: CodexSubtab; label: string }[] = [
   { key: "timeline", label: "Timeline" },
   { key: "threads", label: "Threads" },
   { key: "lore", label: "Lore" },
+  { key: "secrets", label: "Secrets" },
 ];
 
 /* ------------------------------------------------------- tolerant parsing */
@@ -199,6 +200,7 @@ function spliceOutIfCurrent(
 const local = {
   subtab: "overview" as CodexSubtab,
   query: "",
+  queryRaw: "",
   expandedEntity: null as string | null,
   entityDraft: null as EntityDraft | null,
   recordDraft: null as RecordDraft | null,
@@ -221,10 +223,20 @@ function clearExpansions(): void {
   local.expandedThreads.clear();
 }
 
-/** One save nonce namespace for every editor, so acks can never be
- * attributed to the wrong writer. */
+/** One save nonce per file, so parallel editors can never steal each other's ack. */
 let globalSaveSeq = 0;
-let pendingCodexSave: { file: string; seq: number } | null = null;
+const pendingCodexSaves = new Map<string, number>();
+
+function draftFile(d: RecordDraft): CodexFileKey {
+  switch (d.kind) {
+    case "relation": return "relations";
+    case "event": return "timeline";
+    case "thread":
+    case "seeds": return "threads";
+    case "world": return "world";
+    default: return "knowledge";
+  }
+}
 
 const TIMELINE_RECENT = 12;
 
@@ -237,9 +249,10 @@ export function codexWantsRefresh(chatId: string): boolean {
  * real subtab click so a draft or filter left by free play can't linger. */
 export function setCodexSubtab(key: string): void {
   if (key === "overview" || key === "entities" || key === "relations"
-    || key === "timeline" || key === "threads" || key === "lore") {
+    || key === "timeline" || key === "threads" || key === "lore" || key === "secrets") {
     if (local.subtab !== key) {
       local.query = "";
+      local.queryRaw = "";
       local.recordDraft = null;
       clearExpansions();
     }
@@ -267,6 +280,7 @@ export function resetCodexTabLocal(): void {
   cache.pending = false;
   local.subtab = "overview";
   local.query = "";
+  local.queryRaw = "";
   local.expandedEntity = null;
   local.entityDraft = null;
   local.recordDraft = null;
@@ -275,7 +289,7 @@ export function resetCodexTabLocal(): void {
   clearExpansions();
   local.relationsView = "list";
   local.showFullTimeline = false;
-  pendingCodexSave = null;
+  pendingCodexSaves.clear();
 }
 
 interface RenderArgs {
@@ -308,15 +322,11 @@ export function deliverCodexFiles(
   // Editor ack: the save landed, close whichever form was in flight. An
   // unsolicited refresh (agent run finished) carries no seq and leaves
   // drafts open.
-  if (
-    pendingCodexSave
-    && savedFile === pendingCodexSave.file
-    && savedSeq === pendingCodexSave.seq
-  ) {
-    pendingCodexSave = null;
+  if (savedFile !== undefined && savedSeq !== undefined && pendingCodexSaves.get(savedFile) === savedSeq) {
+    pendingCodexSaves.delete(savedFile);
     if (savedFile === "characters" || savedFile === "locations" || savedFile === "things") {
-      local.entityDraft = null;
-    } else {
+      if (local.entityDraft?.group === savedFile) local.entityDraft = null;
+    } else if (local.recordDraft && draftFile(local.recordDraft) === savedFile) {
       local.recordDraft = null;
     }
   }
@@ -332,7 +342,7 @@ function sendCodexWrite(
   if (!chatId) return;
   globalSaveSeq++;
   const seq = globalSaveSeq;
-  pendingCodexSave = { file, seq };
+  pendingCodexSaves.set(file, seq);
   send({
     type: "codex_write_file",
     chatId,
@@ -343,11 +353,11 @@ function sendCodexWrite(
   // A rejected write is reported as an error toast with no codex_files ack.
   // Unstick the form after a grace period so the user can correct and retry.
   setTimeout(() => {
-    if (pendingCodexSave?.seq !== seq) return;
-    pendingCodexSave = null;
+    if (pendingCodexSaves.get(file) !== seq) return;
+    pendingCodexSaves.delete(file);
     let touched = false;
-    if (local.entityDraft?.saving) { local.entityDraft.saving = false; touched = true; }
-    if (local.recordDraft?.saving) { local.recordDraft.saving = false; touched = true; }
+    if (local.entityDraft?.saving && local.entityDraft.group === file) { local.entityDraft.saving = false; touched = true; }
+    if (local.recordDraft?.saving && draftFile(local.recordDraft) === file) { local.recordDraft.saving = false; touched = true; }
     if (touched) rerender();
   }, 5000);
 }
@@ -380,6 +390,7 @@ export function renderCodexTab(
     cache.parsed = null;
     cache.pending = false;
     local.query = "";
+    local.queryRaw = "";
     local.expandedEntity = null;
     local.entityDraft = null;
     local.recordDraft = null;
@@ -387,7 +398,7 @@ export function renderCodexTab(
     local.addFormName = "";
     clearExpansions();
     local.showFullTimeline = false;
-    pendingCodexSave = null;
+    pendingCodexSaves.clear();
   }
   // A reset wiped the files behind our back: drop the stale view.
   if (!state.codexExists && cache.files) {
@@ -404,6 +415,7 @@ export function renderCodexTab(
     // "Search this section" means this section: a filter silently carrying
     // into the next pane looks like lost data.
     local.query = "";
+    local.queryRaw = "";
     local.recordDraft = null;
     clearExpansions();
     rerender();
@@ -438,9 +450,10 @@ export function renderCodexTab(
   // Search filters the current pane; typing only rebuilds the pane container
   // below so the input keeps focus.
   const search = searchField({
-    value: local.query,
+    value: local.queryRaw,
     placeholder: "Search this section...",
     onChange: (v) => {
+      local.queryRaw = v;
       local.query = v.toLowerCase();
       drawPane();
     },
@@ -459,6 +472,7 @@ export function renderCodexTab(
       case "timeline": renderTimeline(paneHost, parsed, state, ctx, send); break;
       case "threads": renderThreads(paneHost, parsed, state, ctx, send); break;
       case "lore": renderLore(paneHost, parsed, state, ctx, send); break;
+      case "secrets": renderSecrets(paneHost, parsed, state, ctx, send); break;
       default: break;
     }
   };
@@ -480,13 +494,16 @@ function matches(q: string, ...bits: (string | string[] | undefined)[]): boolean
 
 /* ------------------------------------------------------------- overview */
 
+// One tile per file, labelled to match the section tabs above.
 const BIBLE_TILES: { id: string; label: string; files: CodexFileKey[] }[] = [
   { id: "characters", label: "Characters", files: ["characters"] },
-  { id: "places", label: "Places · Things", files: ["locations", "things"] },
+  { id: "locations", label: "Locations", files: ["locations"] },
+  { id: "things", label: "Things", files: ["things"] },
   { id: "relations", label: "Relations", files: ["relations"] },
-  { id: "events", label: "Events", files: ["timeline"] },
+  { id: "timeline", label: "Timeline", files: ["timeline"] },
   { id: "threads", label: "Threads", files: ["threads"] },
-  { id: "lore", label: "Lore", files: ["world", "knowledge"] },
+  { id: "lore", label: "Lore", files: ["world"] },
+  { id: "secrets", label: "Secrets", files: ["knowledge"] },
 ];
 
 type FileState = "on" | "noInject" | "frozen";
@@ -494,11 +511,13 @@ type FileState = "on" | "noInject" | "frozen";
 function tileCount(parsed: ParsedCodex, id: string): number {
   switch (id) {
     case "characters": return parsed.characters.length;
-    case "places": return parsed.locations.length + parsed.things.length;
+    case "locations": return parsed.locations.length;
+    case "things": return parsed.things.length;
     case "relations": return parsed.relations.length;
-    case "events": return parsed.events.length;
+    case "timeline": return parsed.events.length;
     case "threads": return parsed.threads.length;
-    case "lore": return parsed.world.length + parsed.knowledge.length;
+    case "lore": return parsed.world.length;
+    case "secrets": return parsed.knowledge.length;
     default: return 0;
   }
 }
@@ -537,7 +556,7 @@ function renderOverview(
   sec.body.appendChild(lessonMark(textNode(bits.join(" · "), "lmb-help"), "codex.status"));
 
   if (!profile.codexEnabled) {
-    sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Codex.", "lmb-empty"));
+    sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Settings → Codex.", "lmb-empty"));
   }
 
   const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
@@ -561,15 +580,41 @@ function renderOverview(
     tiles.className = "lmb-tiles";
     lessonMark(tiles, "codex.tiles");
     for (const def of BIBLE_TILES) {
-      tiles.appendChild(renderBibleTile(def, parsed, state, ctx, send, busy));
+      tiles.appendChild(renderBibleTile(def, parsed, state, send, busy));
     }
     sec.body.appendChild(tiles);
+    const pending = state.codexRefreshPending ?? [];
+    if (pending.length > 0) {
+      const banner = document.createElement("div");
+      banner.className = "lmb-actions";
+      banner.append(
+        textNode(
+          `${pending.length} record${pending.length === 1 ? "" : "s"} missed updates while frozen.`,
+          "lmb-help",
+        ),
+        makeButton("Catch up (1 pass)", () => send({ type: "codex_refresh", chatId }), {
+          primary: true,
+          small: true,
+          disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+          title: "One pass rebuilds just the re-enabled records from the filed summaries and recent messages",
+        }),
+        makeButton("Rebuild instead", async () => {
+          const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+          if (ok) requestCodexRebuild(state, chatId, send);
+        }, {
+          small: true,
+          disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+          title: "Wipe everything and regenerate from the start of the chat",
+        }),
+      );
+      sec.body.appendChild(banner);
+    }
     sec.body.appendChild(textNode(
       "Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.",
       "lmb-help",
     ));
     sec.body.appendChild(textNode(
-      "Shorter and simpler chats often run better with fewer records. Switching off Relations, Characters, or Places · Things spares the agent upkeep the story may not need yet.",
+      "Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.",
       "lmb-help",
     ));
   }
@@ -578,10 +623,10 @@ function renderOverview(
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
   row.append(
-    lessonMark(makeButton("Update now", () => send({ type: "codex_update_now", chatId }), {
+    lessonMark(makeButton("Update now", () => requestCodexUpdate(state, chatId, send), {
       primary: true,
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-      title: "Consume everything up to the newest message now, ignoring lag and window",
+      title: "Consume everything up to the newest message now, ignoring lag and window. A big backlog offers fast catch-up modes.",
     }), "codex.actions.update"),
     busy
       ? makeButton("Cancel", () => send({ type: "abort_busy", chatId, kind: "codex" }), {
@@ -593,8 +638,8 @@ function renderOverview(
           title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information",
         }),
     makeButton("Rebuild codex", async () => {
-      const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. Costs one full backfill of agent runs.");
-      if (ok) send({ type: "codex_rebuild", chatId });
+      const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+      if (ok) requestCodexRebuild(state, chatId, send);
     }, {
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
       title: "Wipe and regenerate the whole story bible from the start of the chat",
@@ -602,7 +647,7 @@ function renderOverview(
     makeButton("Wipe codex", async () => {
       const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
       if (ok) send({ type: "codex_reset", chatId });
-    }, { danger: true, disabled: busy }),
+    }, { danger: true, disabled: busy || !state.codexExists }),
   );
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
@@ -612,13 +657,13 @@ function renderBibleTile(
   def: { id: string; label: string; files: CodexFileKey[] },
   parsed: ParsedCodex,
   state: FrontendState,
-  ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
   busy: boolean,
 ): HTMLElement {
   const chatId = state.activeChatId!;
   const st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
+  const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
   // Rendered-injection pricing from the backend; raw JSON length (with its
   // syntax overhead) only as a version-skew fallback.
   const tokens = state.codexFileTokens
@@ -626,9 +671,9 @@ function renderBibleTile(
     : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
 
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-bible-tile ${st}${stale ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-bible-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
   lessonMark(tile, `codex.tile.${def.id}`);
-  tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""} - click to cycle`;
+  tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""}${needsCatchup ? " · waiting for the catch-up pass" : ""} - click to cycle`;
 
   const v = document.createElement("div");
   v.className = "lmb-tile-value";
@@ -641,7 +686,7 @@ function renderBibleTile(
   s.textContent = `~${formatTokens(tokens)} tokens`;
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
-  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}`;
+  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
   tile.append(v, l, s, stateLine);
 
   const tools = document.createElement("div");
@@ -659,60 +704,31 @@ function renderBibleTile(
   tile.appendChild(tools);
 
   tile.addEventListener("click", () => {
-    void cycleTileState(def, st, stale, state, ctx, send);
+    cycleTileState(def, st, state, send);
   });
   return tile;
 }
 
-async function cycleTileState(
+/** on -> noInject -> frozen -> on. Re-enabling a stale record is instant;
+ * the backend flags it for the one-pass catch-up and the banner offers it. */
+function cycleTileState(
   def: { files: CodexFileKey[] },
   st: FileState,
-  stale: boolean,
   state: FrontendState,
-  ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
-): Promise<void> {
+): void {
   const chatId = state.activeChatId!;
-  const setAll = (next: FileState): void => {
-    for (const f of def.files) send({ type: "codex_set_file_state", chatId, file: f, state: next });
-  };
-  if (st === "on") {
-    setAll("noInject");
-    return;
-  }
-  if (st === "noInject") {
-    setAll("frozen");
-    return;
-  }
-  // frozen -> on. A frozen record that missed runs is out of date: offer a
-  // rebuild, or just switch it back on as-is.
-  if (stale) {
-    let rebuild = false;
-    try {
-      const r = await ctx.ui.showConfirm({
-        title: "This record is out of date",
-        message: "Memoria kept updating the story while this record was frozen, so it may be missing recent events. Rebuild the codex from the start of the chat, or just re-enable it as-is?",
-        variant: "warning",
-        confirmLabel: "Rebuild",
-        cancelLabel: "Re-enable as-is",
-      });
-      rebuild = !!r.confirmed;
-    } catch {
-      rebuild = window.confirm("This record missed updates while frozen. Rebuild the codex from the start? (Cancel re-enables it as-is)");
-    }
-    setAll("on");
-    if (rebuild) send({ type: "codex_rebuild", chatId });
-    return;
-  }
-  setAll("on");
+  const next: FileState = st === "on" ? "noInject" : st === "noInject" ? "frozen" : "on";
+  for (const f of def.files) send({ type: "codex_set_file_state", chatId, file: f, state: next });
 }
 
 /* ------------------------------------------------------------- entities */
 
-const ENTITY_TEXT_FIELDS = ["kind", "role", "status", "significance"] as const;
+const ENTITY_TEXT_FIELDS = ["kind", "role", "significance"] as const;
 const ENTITY_LONG_FIELDS = ["appearance", "description", "notes"] as const;
 const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"] as const;
-const ENTITY_KNOWN = new Set<string>(["id", "name", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+// "status" is deprecated, "locked" user-owned, "rid" plumbing: never shown as extras.
+const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 
 function entitySearchText(e: Record<string, unknown>): string[] {
   const bits: string[] = [];
@@ -864,6 +880,7 @@ function renderEntityCard(
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "lmb-entity-card";
+  const locked = e["locked"] === true;
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
   name.textContent = str(e["name"]) || "?";
@@ -874,6 +891,7 @@ function renderEntityCard(
     idEl.textContent = id;
     name.appendChild(idEl);
   }
+  if (locked) name.appendChild(pill("locked", "warn"));
   card.appendChild(name);
 
   const kv = document.createElement("div");
@@ -908,6 +926,22 @@ function renderEntityCard(
       local.entityDraft = makeDraft(group, e);
       rerender();
     }, { primary: true, small: true }),
+    makeButton(locked ? "Unlock" : "Lock", () => {
+      const list = (cache.parsed ?? parsed)[group];
+      const next = list.map((x) => {
+        if (str(x["id"]) !== id) return x;
+        const row = { ...x };
+        if (locked) delete row["locked"];
+        else row["locked"] = true;
+        return row;
+      });
+      sendCodexWrite(group, { entities: next }, state, send);
+    }, {
+      small: true,
+      title: locked
+        ? "Let Memoria update this entry again"
+        : "Memoria will never touch a locked entry. Trim it first if the character card already covers it, then lock it to keep it lean.",
+    }),
     makeButton("Delete", async () => {
       const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
       if (!ok) return;
@@ -987,7 +1021,10 @@ function renderEntityForm(
     const parsed = cache.parsed;
     if (!parsed) return;
     const entity = buildEntityFromDraft(draft, parsed);
-    if (!entity) return;
+    if (!entity) {
+      showToast("warn", "The entity needs a name");
+      return;
+    }
     const list = parsed[draft.group];
     const idx = list.findIndex((x) => str(x["id"]) === draft.id);
     const next = idx >= 0 ? [...list.slice(0, idx), entity, ...list.slice(idx + 1)] : [...list, entity];
@@ -1026,6 +1063,7 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
     for (const [k, v] of Object.entries(orig)) {
       if (!ENTITY_KNOWN.has(k)) out[k] = v;
     }
+    if (orig["locked"] === true) out["locked"] = true;
   }
   out["id"] = draft.id;
   out["name"] = name;
@@ -1200,11 +1238,25 @@ function saveRelationDraft(d: RecordDraft, state: FrontendState, send: (m: Front
   const parsed = cache.parsed;
   if (!parsed) return;
   const rel = buildRelationFromDraft(d);
-  if (!rel) return;
+  if (!rel) {
+    showToast("warn", d.fields["type"] === "group"
+      ? "The group needs at least two members, a kind, and a state"
+      : "The relation needs From, To, a kind, and a state");
+    return;
+  }
   const idx = resolveDraftIndex(parsed.relations, d);
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  // The row key survives a hand edit so agent patch ops keep addressing it.
+  if (idx >= 0) {
+    const rid = str(parsed.relations[idx]!["rid"]);
+    if (rid) rel["rid"] = rid;
+    const roles = parsed.relations[idx]!["roles"];
+    if (rel["type"] === "group" && roles && typeof roles === "object" && !Array.isArray(roles)) {
+      rel["roles"] = roles;
+    }
   }
   const next = idx >= 0
     ? [...parsed.relations.slice(0, idx), rel, ...parsed.relations.slice(idx + 1)]
@@ -1373,6 +1425,12 @@ function renderRelations(
           ul.appendChild(li);
         }
         row.appendChild(ul);
+      }
+      const roles = r["roles"];
+      if (roles && typeof roles === "object" && !Array.isArray(roles)) {
+        for (const [ref, role] of Object.entries(roles as Record<string, unknown>)) {
+          if (typeof role === "string") row.appendChild(textNode(`${role}: ${nameOf(ref)}`, "lmb-thread-detail"));
+        }
       }
       row.appendChild(recordItemActions(
         () => { local.recordDraft = relationDraftFrom(r, i); rerender(); },
@@ -1891,7 +1949,10 @@ function saveEventDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   if (!parsed) return;
   const when = (d.fields["when"] ?? "").trim();
   const eventText = (d.fields["event"] ?? "").trim();
-  if (!when || !eventText) return;
+  if (!when || !eventText) {
+    showToast("warn", "The event needs a when and what happened");
+    return;
+  }
   const participants = splitComma(d.fields["participants"] ?? "");
   const where = (d.fields["where"] ?? "").trim();
   const causes = (d.fields["causes"] ?? "").trim();
@@ -1903,6 +1964,10 @@ function saveEventDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.events[idx]!["rid"]);
+    if (rid) ev["rid"] = rid;
   }
   const next = idx >= 0
     ? [...parsed.events.slice(0, idx), ev, ...parsed.events.slice(idx + 1)]
@@ -2091,7 +2156,10 @@ function saveThreadDraft(d: RecordDraft, state: FrontendState, send: (m: Fronten
   if (!parsed) return;
   const name = (d.fields["name"] ?? "").trim();
   const summary = (d.fields["summary"] ?? "").trim();
-  if (!name || !summary) return;
+  if (!name || !summary) {
+    showToast("warn", "The thread needs a name and a summary");
+    return;
+  }
   const t: Record<string, unknown> = { name, status: d.fields["status"] || "open", summary };
   const latest = (d.fields["latest"] ?? "").trim();
   if (latest) t["latest"] = latest;
@@ -2101,6 +2169,10 @@ function saveThreadDraft(d: RecordDraft, state: FrontendState, send: (m: Fronten
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.threads[idx]!["rid"]);
+    if (rid) t["rid"] = rid;
   }
   const next = idx >= 0
     ? [...parsed.threads.slice(0, idx), t, ...parsed.threads.slice(idx + 1)]
@@ -2161,6 +2233,12 @@ function renderThreads(
     sec.body.appendChild(textNode("No open storylines tracked yet", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
+  }
+  if (parsed.threads.some((t) => str(t["status"]) === "resolved")) {
+    sec.body.appendChild(textNode(
+      "Resolved threads stay here as your archive. They no longer inject into the prompt or reach the agent.",
+      "lmb-help",
+    ));
   }
   const list = document.createElement("div");
   list.className = "lmb-thread-list";
@@ -2278,7 +2356,10 @@ function saveWorldDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   if (!parsed) return;
   const topic = (d.fields["topic"] ?? "").trim();
   const facts = splitLines(d.fields["facts"] ?? "");
-  if (!topic || facts.length === 0) return;
+  if (!topic || facts.length === 0) {
+    showToast("warn", "The topic needs a name and at least one fact");
+    return;
+  }
   const entry: Record<string, unknown> = { topic, facts };
   const keywords = splitComma(d.fields["keywords"] ?? "");
   if (keywords.length) entry["keywords"] = keywords;
@@ -2286,6 +2367,10 @@ function saveWorldDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.world[idx]!["rid"]);
+    if (rid) entry["rid"] = rid;
   }
   const next = idx >= 0
     ? [...parsed.world.slice(0, idx), entry, ...parsed.world.slice(idx + 1)]
@@ -2299,7 +2384,10 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
   const parsed = cache.parsed;
   if (!parsed) return;
   const fact = (d.fields["fact"] ?? "").trim();
-  if (!fact) return;
+  if (!fact) {
+    showToast("warn", "The secret needs its fact");
+    return;
+  }
   const item: Record<string, unknown> = { fact };
   const knownBy = splitComma(d.fields["knownBy"] ?? "");
   if (knownBy.length) item["knownBy"] = knownBy;
@@ -2323,6 +2411,10 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.knowledge[idx]!["rid"]);
+    if (rid) item["rid"] = rid;
   }
   const next = idx >= 0
     ? [...parsed.knowledge.slice(0, idx), item, ...parsed.knowledge.slice(idx + 1)]
@@ -2354,8 +2446,6 @@ function renderLore(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const nameOf = makeNameResolver(parsed);
-  const refListId = ensureRefDatalist(parsed);
   const draft = local.recordDraft;
 
   const world = section("World rules");
@@ -2436,8 +2526,21 @@ function renderLore(
     world.body.appendChild(block);
   }
   host.appendChild(world.wrap);
+}
+
+function renderSecrets(
+  host: HTMLElement,
+  parsed: ParsedCodex,
+  state: FrontendState,
+  ctx: SpindleFrontendContext,
+  send: (msg: FrontendToBackend) => void,
+): void {
+  const nameOf = makeNameResolver(parsed);
+  const refListId = ensureRefDatalist(parsed);
+  const draft = local.recordDraft;
 
   const secrets = section("Who knows what");
+  lessonMark(secrets.wrap, "codex.secrets");
   const secretBar = document.createElement("div");
   secretBar.className = "lmb-actions";
   secretBar.appendChild(makeButton("+ Secret", () => {
@@ -2462,6 +2565,8 @@ function renderLore(
       str(k["note"]),
       strArray(k["knownBy"]).map(nameOf),
       strArray(k["hiddenFrom"]).map(nameOf),
+      objArray(k["falseBeliefs"]).map((b) => str(b["believes"])),
+      objArray(k["falseBeliefs"]).map((b) => nameOf(str(b["who"]))),
       strArray(k["keywords"]),
     ));
   if (parsed.knowledge.length === 0) {

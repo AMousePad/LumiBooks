@@ -48,12 +48,15 @@ export async function ensureForkAdoption(chatId: string, userId: string): Promis
       // Only a fully settled adoption stops the retries.
       const settled = await doForkAdoption(chatId, userId);
       if (settled) {
+        if (checked.size > 5000) checked.clear();
         checked.add(k);
         retryAt.delete(k);
       } else {
+        if (retryAt.size > 1000) retryAt.clear();
         retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
       }
     } catch (err) {
+      if (retryAt.size > 1000) retryAt.clear();
       retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
       warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
     } finally {
@@ -64,6 +67,24 @@ export async function ensureForkAdoption(chatId: string, userId: string): Promis
   return p;
 }
 
+/** Chapter creation holds off while a fork's shelf adoption is unsettled:
+ * a self-made book would satisfy the owned check and shadow the inheritance
+ * forever. */
+export async function forkShelfPending(chatId: string, userId: string): Promise<boolean> {
+  if (checked.has(key(userId, chatId))) return false;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat && chat.metadata && typeof chat.metadata === "object"
+    ? (chat.metadata as Record<string, unknown>)
+    : null;
+  if (!md || typeof md["branched_from"] !== "string") return false;
+  const flag = md[FORK_ADOPTED_FLAG];
+  if (flag === chatId) return false;
+  if (flag === true) {
+    return (await findBookForChat(chatId, userId).catch(() => null)) === null;
+  }
+  return true;
+}
+
 export async function forkCodexPending(chatId: string, userId: string): Promise<boolean> {
   if (checked.has(key(userId, chatId))) return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
@@ -71,7 +92,14 @@ export async function forkCodexPending(chatId: string, userId: string): Promise<
     ? (chat.metadata as Record<string, unknown>)
     : null;
   if (!md || typeof md["branched_from"] !== "string") return false;
-  return md[CODEX_ADOPTED_FLAG] !== true;
+  const flag = md[CODEX_ADOPTED_FLAG];
+  if (flag === chatId) return false;
+  // Legacy boolean flags predate id-stamping; only this chat's own codex
+  // corroborates one, since the host fork copies the parent's flags.
+  if (flag === true) {
+    return (await codexPresence(chatId, userId).catch(() => "absent" as const)) !== "present";
+  }
+  return true;
 }
 
 async function doForkAdoption(forkChatId: string, userId: string): Promise<boolean> {
@@ -82,11 +110,17 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
   if (!branchedFrom) return true;
 
   let shelfSettled = true;
-  if (meta?.[FORK_ADOPTED_FLAG] !== true) {
+  // The host fork copies the parent's metadata wholesale, adoption flags
+  // included, so only this chat's own id proves the shelf was adopted HERE.
+  // Anything else (legacy true, parent's id) falls through to the owned check.
+  if (meta?.[FORK_ADOPTED_FLAG] !== forkChatId) {
     const owned = await findBookForChat(forkChatId, userId).catch(() => null);
     if (!owned) {
       const ancestor = await findAncestorBook(branchedFrom, userId);
-      if (ancestor) {
+      if (ancestor === "fault") {
+        // A transient fault must not stamp "no ancestor" permanently.
+        shelfSettled = false;
+      } else if (ancestor) {
         try {
           await cloneShelfForFork(forkChatId, chat.name ?? null, ancestor.chatId, userId);
         } catch (err) {
@@ -94,7 +128,11 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
           warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
           forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
         }
+      } else {
+        await markShelfAdopted(forkChatId, userId).catch(() => {});
       }
+    } else {
+      await markShelfAdopted(forkChatId, userId).catch(() => {});
     }
   }
 
@@ -110,7 +148,14 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
     const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
     if (!chat) return false;
     const md = chat.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : null;
-    if (md?.[CODEX_ADOPTED_FLAG] === true) return true;
+    const flag = md?.[CODEX_ADOPTED_FLAG];
+    if (flag === forkChatId) return true;
+    if (flag === true && (await codexPresence(forkChatId, userId)) === "present") {
+      // Legacy boolean corroborated by this chat's own codex: stamp it so
+      // the ambiguity never re-checks.
+      await markCodexAdopted(forkChatId, userId);
+      return true;
+    }
 
     // The branch copied the parent's book attachments.
     const attached = Array.isArray(md?.["chat_world_book_ids"])
@@ -196,6 +241,19 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
   }
 }
 
+async function markShelfAdopted(forkChatId: string, userId: string): Promise<void> {
+  await withChatMetaLock(userId, forkChatId, async () => {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat) return;
+    const md = chat.metadata && typeof chat.metadata === "object"
+      ? { ...(chat.metadata as Record<string, unknown>) }
+      : {};
+    if (md[FORK_ADOPTED_FLAG] === forkChatId) return;
+    md[FORK_ADOPTED_FLAG] = forkChatId;
+    await spindle.chats.update(forkChatId, { metadata: md }, userId);
+  });
+}
+
 async function markCodexAdopted(forkChatId: string, userId: string): Promise<void> {
   await withChatMetaLock(userId, forkChatId, async () => {
     const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
@@ -203,16 +261,18 @@ async function markCodexAdopted(forkChatId: string, userId: string): Promise<voi
     const md = chat.metadata && typeof chat.metadata === "object"
       ? { ...(chat.metadata as Record<string, unknown>) }
       : {};
-    if (md[CODEX_ADOPTED_FLAG] === true) return;
-    md[CODEX_ADOPTED_FLAG] = true;
+    if (md[CODEX_ADOPTED_FLAG] === forkChatId) return;
+    md[CODEX_ADOPTED_FLAG] = forkChatId;
     await spindle.chats.update(forkChatId, { metadata: md }, userId);
   });
 }
 
+/** "fault" means a hop failed and the answer is unknowable right now; the
+ * caller must retry rather than record "no ancestor". */
 async function findAncestorBook(
   startChatId: string,
   userId: string,
-): Promise<{ chatId: string; bookId: string } | null> {
+): Promise<{ chatId: string; bookId: string } | "fault" | null> {
   const seen = new Set<string>();
   let cur: string | null = startChatId;
   let hops = 0;
@@ -221,9 +281,19 @@ async function findAncestorBook(
     if (seen.has(chatId)) break;
     seen.add(chatId);
     hops++;
-    const bookId = await findBookForChat(chatId, userId).catch(() => null);
+    let bookId: string | null;
+    try {
+      bookId = await findBookForChat(chatId, userId);
+    } catch {
+      return "fault";
+    }
     if (bookId) return { chatId, bookId };
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    let chat: Awaited<ReturnType<typeof spindle.chats.get>>;
+    try {
+      chat = await spindle.chats.get(chatId, userId);
+    } catch {
+      return "fault";
+    }
     const meta = chat && chat.metadata && typeof chat.metadata === "object"
       ? (chat.metadata as Record<string, unknown>)
       : null;
@@ -365,7 +435,7 @@ async function rebindForkShelf(forkChatId: string, newBookId: string, userId: st
     nextBookIds.push(newBookId);
     metadata["chat_world_book_ids"] = nextBookIds;
     metadata["lumibooks_book_id"] = newBookId;
-    metadata[FORK_ADOPTED_FLAG] = true;
+    metadata[FORK_ADOPTED_FLAG] = forkChatId;
     await spindle.chats.update(forkChatId, { metadata }, userId);
   });
 }

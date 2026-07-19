@@ -1,4 +1,4 @@
-﻿import type { SpindleFrontendContext } from "lumiverse-spindle-types";
+import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LessonAnswer, LessonCourseKey, LessonCourseState, LessonGrade } from "../../shared";
 import { lessonGradeForWrong } from "../../shared";
@@ -12,7 +12,9 @@ import { APP_TABS, type AppTabKey } from "../tab-meta";
 import { renderHomeTab, resetHomeTabLocal } from "../tabs/home-tab";
 import { renderBooksTab, resetBooksTabLocal } from "../tabs/books-tab";
 import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal } from "../tabs/codex-tab";
-import { renderTuningTab } from "../tabs/tuning-tab";
+import { renderTuningTab, resetTuningTabLocal } from "../tabs/tuning-tab";
+import { setSamplerView } from "../tabs/profile-tab";
+import { setPromptsCategory } from "../tabs/prompts-tab";
 import { renderAboutTab } from "../tabs/about-tab";
 import { memoriaSprite } from "./seal";
 import { renderDiploma, renderRegister } from "./diploma";
@@ -66,6 +68,9 @@ interface ActiveLesson {
   /** Do/nav step lifecycle. Scripts fire from idle only, so repeated clicks
    * during the animation cannot double-run them. */
   doPhase: "idle" | "running" | "done";
+  /** Step whose prep already ran; re-renders of the same step skip it so
+   * busy-tick pushes cannot yank navigation the user is mid-way through. */
+  prepFor: LessonStep | null;
   /** Tab the demo pane last rendered, so tab-less steps keep it. */
   demoTab: DemoTab | null;
   /** Mid-step tab override from the demo strip, cleared on every new step. */
@@ -241,6 +246,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       fixtureStep: null,
       codexFiles: codexFixtureFiles(),
       doPhase: "idle",
+      prepFor: null,
       demoTab: null,
       navTab: null,
       examSet: [],
@@ -312,6 +318,9 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     resetHomeTabLocal();
     resetBooksTabLocal();
     resetCodexTabLocal();
+    resetTuningTabLocal();
+    setSamplerView("main");
+    setPromptsCategory("chapter");
     deps.onModeChange();
   }
 
@@ -349,13 +358,13 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     head.className = "lmb-lesson-head";
     const title = document.createElement("span");
     title.className = "lmb-lesson-title";
-    title.textContent = active.mode === "exam" ? `${active.course.title} Â· Exam` : active.course.title;
+    title.textContent = active.mode === "exam" ? `${active.course.title} \u00B7 Exam` : active.course.title;
     headLabel = document.createElement("span");
     headLabel.className = "lmb-lesson-headlabel";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "lmb-lesson-close";
-    close.textContent = "âœ•";
+    close.textContent = "\u2715";
     close.title = active.mode === "exam"
       ? "Leave the exam, an unfinished exam is not saved"
       : deps.getState()?.lessons?.[active.key]?.status === "done"
@@ -451,7 +460,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     if (headLabel) {
       if (active.phase === "steps") {
         const sec = active.main[active.sIdx];
-        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} Â· ${sec.title}` : "";
+        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} \u00B7 ${sec.title}` : "";
       } else if (active.phase === "finale") {
         headLabel.textContent = active.finale?.title ?? "";
       } else {
@@ -666,7 +675,10 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       demoInner.appendChild(empty);
       return;
     }
-    step.prep?.();
+    if (active.prepFor !== step) {
+      step.prep?.();
+      active.prepFor = step;
+    }
     const send = real
       ? (m: FrontendToBackend) => {
           deps.send(m);
@@ -733,7 +745,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     title.textContent = active.course.title;
     const orn = document.createElement("div");
     orn.className = "lmb-lesson-cover-orn";
-    orn.textContent = "â—† â—‡ â—†";
+    orn.textContent = "\u25C6 \u25C7 \u25C6";
     cover.append(title, orn);
     const secTitle = subtitle
       ?? (active.mode === "lesson" && active.phase === "steps" ? active.main[active.sIdx]?.title : undefined);
@@ -818,7 +830,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           ? "tap"
           : undefined;
       if (chip) {
-        spotTag.textContent = `â—† ${chip}`;
+        spotTag.textContent = `\u25C6 ${chip}`;
         spotTag.style.display = "";
         const tagTop = top - 27;
         spotTag.style.top = tagTop < 4 ? `${bottom + 7}px` : `${tagTop}px`;
@@ -928,7 +940,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       }
       const hint = document.createElement("span");
       hint.className = "lmb-lesson-waiting";
-      hint.textContent = active.doPhase === "running" ? "workingâ€¦" : "your moveâ€¦";
+      hint.textContent = active.doPhase === "running" ? "working\u2026" : "your move\u2026";
       nav.appendChild(hint);
     } else {
       nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
@@ -999,7 +1011,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           if (wasCorrect) b.classList.add("correct");
         }
         if (!o.correct) btn.classList.add("wrong");
-        verdict.textContent = o.correct ? "Filed! â—†" : "Not quite.";
+        verdict.textContent = o.correct ? "Filed! \u25C6" : "Not quite.";
         verdict.classList.add(o.correct ? "ok" : "miss");
         const why = document.createElement("div");
         why.className = "lmb-lesson-why";

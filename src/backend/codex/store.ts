@@ -1,7 +1,7 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { CodexBundle, CodexFileKey, CodexFileValue, ValidateOptions } from "./schema";
-import { CODEX_FILE_KEYS, emptyBundle, emptyCodexFile, validateCodexFile } from "./schema";
+import { CODEX_FILE_KEYS, assignMissingRids, emptyBundle, emptyCodexFile, validateCodexFile } from "./schema";
 import { describeError, warn } from "../runtime";
 
 const CODEX_DIR = "codex" as const;
@@ -36,8 +36,10 @@ export interface CodexCursor {
   /** Per-file inject/update switches; absent key = "on". */
   fileStates: Record<string, CodexFileState>;
   /** cursor.runs at the moment a file was frozen: any run after that makes
-   * the frozen file stale, which prompts a rebuild offer on re-enable. */
+   * the frozen file stale, which flags it for a catch-up on re-enable. */
   frozenAtRuns: Record<string, number>;
+  /** Files re-enabled after missing runs, awaiting a one-pass refresh. */
+  refreshPending: string[];
   /** Id of the last consumed message that has aged out of the consumedSigs
    * window (SIG_CAP), or null before any trimming. Floors a rewind so a
    * divergence at the window's oldest tracked sig can't reset consumption to
@@ -65,6 +67,7 @@ export function emptyCursor(): CodexCursor {
     consumedSigs: [],
     fileStates: {},
     frozenAtRuns: {},
+    refreshPending: [],
     prefixMsgId: null,
     pendingReconcile: false,
     reconcileUntilMsgId: null,
@@ -149,6 +152,9 @@ export async function loadCursor(chatId: string, userId: string): Promise<CodexC
       : base.consumedSigs,
     fileStates,
     frozenAtRuns,
+    refreshPending: Array.isArray(raw.refreshPending)
+      ? [...new Set(raw.refreshPending.filter((x): x is string => typeof x === "string" && (CODEX_FILE_KEYS as readonly string[]).includes(x)))]
+      : [],
     prefixMsgId: typeof raw.prefixMsgId === "string" && raw.prefixMsgId ? raw.prefixMsgId : null,
     pendingReconcile: raw.pendingReconcile === true,
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
@@ -230,6 +236,8 @@ export async function loadCodex(chatId: string, userId: string, opts: ValidateOp
       }
       const result = validateCodexFile(key, read.value, opts);
       if (result.ok) {
+        // Keyless rows get deterministic rids so patch ops can address them.
+        assignMissingRids(key, result.value);
         (bundle as Record<CodexFileKey, CodexFileValue>)[key] = result.value;
       } else {
         problems.push({ file: key, errors: result.errors });

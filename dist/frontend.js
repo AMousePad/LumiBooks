@@ -2848,6 +2848,192 @@ function showToast(tone, text) {
 }
 
 // src/ui/modals.ts
+function codexCatchupWarnings(state) {
+  const hasBooks = state.chapters.some((c) => !c.isRoot) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot);
+  const autoBooks = state.activeProfile.autoCreate && !state.activeProfile.showMemoryPreviews;
+  const bigTailNoAuto = state.coverage.approxUncoveredTokens > 150000 && !autoBooks;
+  const booksWarning = !hasBooks ? "This chat has no filed chapters yet, so fast and ultra fast would read the raw story anyway. File chapters first (Home, File all) to get the real speedup." : bigTailNoAuto ? "The unfiled tail of this chat is very large and will not be filed first, so the final raw pass stays huge. File chapters first (Home, File all) for the full speedup." : null;
+  return { booksWarning, autoBooks };
+}
+function requestCodexUpdate(state, chatId, send) {
+  if ((state.codexBacklogPasses ?? 0) <= 1) {
+    send({ type: "codex_update_now", chatId });
+    return;
+  }
+  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
+  showCodexCatchupModal({
+    lead: `${state.codexBacklog ?? 0} message${(state.codexBacklog ?? 0) === 1 ? "" : "s"} are waiting, about ${state.codexBacklogPasses} passes at the current window. Pick how Memoria catches up.`,
+    booksWarning,
+    autoBooks,
+    onPick: (mode) => send({ type: "codex_update_now", chatId, mode })
+  });
+}
+function requestCodexRebuild(state, chatId, send) {
+  const prof = state.activeProfile;
+  const total = state.messages.length;
+  const passes = prof.codexWindowUnit === "messages" ? Math.max(1, Math.ceil(total / Math.max(1, prof.codexWindowValue))) : Math.max(1, Math.ceil(state.messages.reduce((a, m) => a + m.approxTokens, 0) / Math.max(1000, prof.codexWindowValue)));
+  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
+  showCodexCatchupModal({
+    title: "Rebuild the codex",
+    lead: `Memoria will erase the story bible and re-read all ${total} messages, about ${passes} slow passes. Pick how she rebuilds.`,
+    booksWarning,
+    autoBooks,
+    onPick: (mode) => send({ type: "codex_rebuild", chatId, mode })
+  });
+}
+var catchupClose = null;
+function closeCodexCatchupModal() {
+  catchupClose?.();
+}
+function showCodexCatchupModal(opts) {
+  if (document.querySelector(".lmb-catchup"))
+    return;
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-catchup";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(600px, 100%)";
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    if (catchupClose === close)
+      catchupClose = null;
+    overlay.remove();
+  };
+  catchupClose = close;
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = opts.title ?? "The codex is far behind";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "lmb-preview-modal__close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.addEventListener("click", close);
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const paragraphs = [
+    opts.lead,
+    "Ultra fast reads the story's current context in one single pass: every filed summary plus the raw newest messages. The fastest, with the least detail.",
+    "Fast replays your filed chapter summaries pass by pass and reads raw messages only for the final stretch. Around 15x faster than slow while keeping most of the detail.",
+    "Slow replays every raw message window by window. The most thorough, and on a long chat it can take hours."
+  ];
+  if (opts.autoBooks) {
+    paragraphs.push("Automation is on, so fast and ultra fast first bring this chat's chapters and arcs fully up to date.");
+  }
+  paragraphs.push("Fast and ultra fast need the codex connection's context window to be at least as large as your story model's.");
+  for (const text of paragraphs) {
+    const p = document.createElement("div");
+    p.className = "lmb-help";
+    p.style.fontSize = "14px";
+    p.textContent = text;
+    body.appendChild(p);
+  }
+  if (opts.booksWarning) {
+    const w = document.createElement("div");
+    w.className = "lmb-help";
+    w.style.fontSize = "14px";
+    w.style.fontWeight = "600";
+    w.textContent = `⚠ ${opts.booksWarning}`;
+    body.appendChild(w);
+  }
+  modal.appendChild(body);
+  const pick = (mode) => () => {
+    close();
+    opts.onPick(mode);
+  };
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Slow", pick("slow"), { danger: true, title: "Not recommended. Replays every raw message window by window and can take hours." }), makeButton("Fast", pick("fast"), { title: "Replay the filed summaries, then one raw pass for the tail" }), makeButton("Ultra fast", pick("ultra"), { primary: true, title: "One single pass over the filed summaries plus the raw tail" }));
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.appendChild(overlay);
+}
+function showCodexToolsHintModal(profileId, send) {
+  if (document.querySelector(".lmb-tools-hint"))
+    return;
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-tools-hint";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(500px, 100%)";
+  let dontShowAgain = false;
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    if (dontShowAgain) {
+      send({ type: "save_settings", patch: { suppressToolCallingPrompt: true } });
+    }
+    overlay.remove();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = "Tool calls aren't getting through";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "lmb-preview-modal__close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.addEventListener("click", close);
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const paragraphs = [
+    "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
+    "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
+    "You can change this anytime under Tuning → Profile → Codex → Use tool calls, or pick a tool-capable model under Codex connection."
+  ];
+  for (const text of paragraphs) {
+    const p = document.createElement("div");
+    p.className = "lmb-help";
+    p.style.fontSize = "12px";
+    p.textContent = text;
+    body.appendChild(p);
+  }
+  const dontShow = document.createElement("label");
+  dontShow.className = "lmb-check";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.addEventListener("change", () => {
+    dontShowAgain = cb.checked;
+  });
+  const cbLabel = document.createElement("span");
+  cbLabel.className = "lmb-check-hint";
+  cbLabel.textContent = "Don't show this again";
+  dontShow.append(cb, cbLabel);
+  body.appendChild(dontShow);
+  modal.appendChild(body);
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Keep tool calls", close, { small: true }), makeButton("Switch to JSON mode", () => {
+    send({ type: "save_profile", profile: { id: profileId, codexUseTools: false } });
+    close();
+  }, { small: true, primary: true }));
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.appendChild(overlay);
+}
 function openEditModal(ctx, title, fields, onSave) {
   const handle = ctx.ui.showModal({ title, width: 640, maxHeight: 720 });
   const form = document.createElement("div");
@@ -3007,7 +3193,7 @@ function promptForString(ctx, title, initial) {
 }
 
 // src/shared.ts
-var STORAGE_VERSION = 4;
+var STORAGE_VERSION = 6;
 var DEFAULT_SAMPLERS = {
   temperature: null,
   top_p: null,
@@ -3078,13 +3264,15 @@ function makeDefaultProfile(id, name) {
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
-    codexWindowValue: 30,
+    codexWindowValue: 20,
     codexTokenBreakpoint: 1e5,
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
-    codexSamplers: { ...DEFAULT_SAMPLERS }
+    codexSamplers: { ...DEFAULT_SAMPLERS },
+    codexUseTools: false,
+    codexDirectivesOverride: null
   };
 }
 var DEFAULT_SETTINGS = {
@@ -3095,8 +3283,28 @@ var DEFAULT_SETTINGS = {
   customPresets: [],
   debugLog: false,
   forceConstantEntries: true,
-  showAutomationToasts: true
+  showAutomationToasts: true,
+  suppressToolCallingPrompt: false
 };
+var DEFAULT_CODEX_DIRECTIVES = [
+  "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
+  "",
+  "Your three directives, in order:",
+  "1. UPDATE - patch every record the new turns have outdated, and add what is new and durable.",
+  "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it.",
+  "3. COMPRESS - keep every record lean. Terse phrases beat sentences, no filler words.",
+  "",
+  "Snapshot rules (absolute):",
+  "- The codex describes the present. When something changes, REPLACE the old text entirely.",
+  '- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.',
+  `- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.`,
+  "- Record only what is durable. Sheets and records hold stable, medium-to-long-lived facts. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.",
+  "- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.",
+  "- Omit empty optional fields entirely.",
+  "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
+  "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add."
+].join(`
+`);
 var LESSON_CHAT_PREFIX = "lesson:";
 function emptyLessonCourse() {
   return {
@@ -3269,11 +3477,13 @@ function clearSealBusy() {
 }
 var PREVIEW_TILES = [
   { value: "3", label: "Characters", sub: "~240 tokens" },
-  { value: "3", label: "Places · Things", sub: "~140 tokens" },
+  { value: "2", label: "Locations", sub: "~90 tokens" },
+  { value: "1", label: "Things", sub: "~50 tokens" },
   { value: "4", label: "Relations", sub: "~170 tokens" },
-  { value: "5", label: "Events", sub: "~160 tokens" },
+  { value: "5", label: "Timeline", sub: "~160 tokens" },
   { value: "2", label: "Threads", sub: "~120 tokens" },
-  { value: "4", label: "Lore", sub: "~180 tokens" }
+  { value: "2", label: "Lore", sub: "~110 tokens" },
+  { value: "2", label: "Secrets", sub: "~90 tokens" }
 ];
 function renderCodexTabLock(host, send) {
   const wrap = document.createElement("div");
@@ -4213,9 +4423,9 @@ function renderActions(host, state, send) {
     lockedBtn.classList.add("lmb-locked-btn");
     row.append(lessonMark(lockedBtn, "home.actions.updatecodex"));
   } else if (state.activeProfile.codexEnabled) {
-    row.append(lessonMark(makeButton("Update codex", () => send({ type: "codex_update_now", chatId }), {
+    row.append(lessonMark(makeButton("Update codex", () => requestCodexUpdate(state, chatId, send), {
       disabled: disabled || state.busy.some((b) => b.kind === "codex" && b.chatId === chatId),
-      title: "Consume everything up to the newest message now, ignoring lag and window"
+      title: "Consume everything up to the newest message now, ignoring lag and window. A big backlog offers fast catch-up modes."
     }), "home.actions.updatecodex"));
   }
   sec.body.appendChild(row);
@@ -6090,7 +6300,8 @@ var SUBTABS2 = [
   { key: "relations", label: "Relations" },
   { key: "timeline", label: "Timeline" },
   { key: "threads", label: "Threads" },
-  { key: "lore", label: "Lore" }
+  { key: "lore", label: "Lore" },
+  { key: "secrets", label: "Secrets" }
 ];
 var ENTITY_GROUPS = [
   { key: "characters", title: "Characters", singular: "character", ns: "char" },
@@ -6206,6 +6417,7 @@ function spliceOutIfCurrent(list, index2, expected) {
 var local = {
   subtab: "overview",
   query: "",
+  queryRaw: "",
   expandedEntity: null,
   entityDraft: null,
   recordDraft: null,
@@ -6227,15 +6439,31 @@ function clearExpansions() {
   local.expandedThreads.clear();
 }
 var globalSaveSeq = 0;
-var pendingCodexSave = null;
+var pendingCodexSaves = new Map;
+function draftFile(d) {
+  switch (d.kind) {
+    case "relation":
+      return "relations";
+    case "event":
+      return "timeline";
+    case "thread":
+    case "seeds":
+      return "threads";
+    case "world":
+      return "world";
+    default:
+      return "knowledge";
+  }
+}
 var TIMELINE_RECENT = 12;
 function codexWantsRefresh(chatId) {
   return cache.chatId === chatId;
 }
 function setCodexSubtab(key) {
-  if (key === "overview" || key === "entities" || key === "relations" || key === "timeline" || key === "threads" || key === "lore") {
+  if (key === "overview" || key === "entities" || key === "relations" || key === "timeline" || key === "threads" || key === "lore" || key === "secrets") {
     if (local.subtab !== key) {
       local.query = "";
+      local.queryRaw = "";
       local.recordDraft = null;
       clearExpansions();
     }
@@ -6256,6 +6484,7 @@ function resetCodexTabLocal() {
   cache.pending = false;
   local.subtab = "overview";
   local.query = "";
+  local.queryRaw = "";
   local.expandedEntity = null;
   local.entityDraft = null;
   local.recordDraft = null;
@@ -6264,7 +6493,7 @@ function resetCodexTabLocal() {
   clearExpansions();
   local.relationsView = "list";
   local.showFullTimeline = false;
-  pendingCodexSave = null;
+  pendingCodexSaves.clear();
 }
 var lastArgs = null;
 function rerender() {
@@ -6279,11 +6508,12 @@ function deliverCodexFiles(chatId, files, savedFile, savedSeq) {
     cache.parsed = parseCodexFiles(files);
     cache.pending = false;
   }
-  if (pendingCodexSave && savedFile === pendingCodexSave.file && savedSeq === pendingCodexSave.seq) {
-    pendingCodexSave = null;
+  if (savedFile !== undefined && savedSeq !== undefined && pendingCodexSaves.get(savedFile) === savedSeq) {
+    pendingCodexSaves.delete(savedFile);
     if (savedFile === "characters" || savedFile === "locations" || savedFile === "things") {
-      local.entityDraft = null;
-    } else {
+      if (local.entityDraft?.group === savedFile)
+        local.entityDraft = null;
+    } else if (local.recordDraft && draftFile(local.recordDraft) === savedFile) {
       local.recordDraft = null;
     }
   }
@@ -6294,7 +6524,7 @@ function sendCodexWrite(file, value, state, send) {
     return;
   globalSaveSeq++;
   const seq = globalSaveSeq;
-  pendingCodexSave = { file, seq };
+  pendingCodexSaves.set(file, seq);
   send({
     type: "codex_write_file",
     chatId,
@@ -6303,15 +6533,15 @@ function sendCodexWrite(file, value, state, send) {
     seq
   });
   setTimeout(() => {
-    if (pendingCodexSave?.seq !== seq)
+    if (pendingCodexSaves.get(file) !== seq)
       return;
-    pendingCodexSave = null;
+    pendingCodexSaves.delete(file);
     let touched = false;
-    if (local.entityDraft?.saving) {
+    if (local.entityDraft?.saving && local.entityDraft.group === file) {
       local.entityDraft.saving = false;
       touched = true;
     }
-    if (local.recordDraft?.saving) {
+    if (local.recordDraft?.saving && draftFile(local.recordDraft) === file) {
       local.recordDraft.saving = false;
       touched = true;
     }
@@ -6339,6 +6569,7 @@ function renderCodexTab(host, state, ctx, send) {
     cache.parsed = null;
     cache.pending = false;
     local.query = "";
+    local.queryRaw = "";
     local.expandedEntity = null;
     local.entityDraft = null;
     local.recordDraft = null;
@@ -6346,7 +6577,7 @@ function renderCodexTab(host, state, ctx, send) {
     local.addFormName = "";
     clearExpansions();
     local.showFullTimeline = false;
-    pendingCodexSave = null;
+    pendingCodexSaves.clear();
   }
   if (!state.codexExists && cache.files) {
     cache.files = null;
@@ -6359,6 +6590,7 @@ function renderCodexTab(host, state, ctx, send) {
   host.appendChild(makeSubtabs(SUBTABS2, local.subtab, (key) => {
     local.subtab = key;
     local.query = "";
+    local.queryRaw = "";
     local.recordDraft = null;
     clearExpansions();
     rerender();
@@ -6382,9 +6614,10 @@ function renderCodexTab(host, state, ctx, send) {
     return;
   }
   const search = searchField({
-    value: local.query,
+    value: local.queryRaw,
     placeholder: "Search this section...",
     onChange: (v) => {
+      local.queryRaw = v;
       local.query = v.toLowerCase();
       drawPane();
     }
@@ -6411,6 +6644,9 @@ function renderCodexTab(host, state, ctx, send) {
       case "lore":
         renderLore(paneHost, parsed, state, ctx, send);
         break;
+      case "secrets":
+        renderSecrets(paneHost, parsed, state, ctx, send);
+        break;
       default:
         break;
     }
@@ -6434,26 +6670,32 @@ function matches(q, ...bits) {
 }
 var BIBLE_TILES = [
   { id: "characters", label: "Characters", files: ["characters"] },
-  { id: "places", label: "Places · Things", files: ["locations", "things"] },
+  { id: "locations", label: "Locations", files: ["locations"] },
+  { id: "things", label: "Things", files: ["things"] },
   { id: "relations", label: "Relations", files: ["relations"] },
-  { id: "events", label: "Events", files: ["timeline"] },
+  { id: "timeline", label: "Timeline", files: ["timeline"] },
   { id: "threads", label: "Threads", files: ["threads"] },
-  { id: "lore", label: "Lore", files: ["world", "knowledge"] }
+  { id: "lore", label: "Lore", files: ["world"] },
+  { id: "secrets", label: "Secrets", files: ["knowledge"] }
 ];
 function tileCount(parsed, id) {
   switch (id) {
     case "characters":
       return parsed.characters.length;
-    case "places":
-      return parsed.locations.length + parsed.things.length;
+    case "locations":
+      return parsed.locations.length;
+    case "things":
+      return parsed.things.length;
     case "relations":
       return parsed.relations.length;
-    case "events":
+    case "timeline":
       return parsed.events.length;
     case "threads":
       return parsed.threads.length;
     case "lore":
-      return parsed.world.length + parsed.knowledge.length;
+      return parsed.world.length;
+    case "secrets":
+      return parsed.knowledge.length;
     default:
       return 0;
   }
@@ -6485,7 +6727,7 @@ function renderOverview2(host, state, ctx, send, parsed) {
     bits.push(`updated ${relativeTime(state.codexLastRunAt)}`);
   sec.body.appendChild(lessonMark(textNode(bits.join(" · "), "lmb-help"), "codex.status"));
   if (!profile.codexEnabled) {
-    sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Codex.", "lmb-empty"));
+    sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Settings → Codex.", "lmb-empty"));
   }
   const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
   if (busy) {
@@ -6504,19 +6746,39 @@ function renderOverview2(host, state, ctx, send, parsed) {
     tiles.className = "lmb-tiles";
     lessonMark(tiles, "codex.tiles");
     for (const def of BIBLE_TILES) {
-      tiles.appendChild(renderBibleTile(def, parsed, state, ctx, send, busy));
+      tiles.appendChild(renderBibleTile(def, parsed, state, send, busy));
     }
     sec.body.appendChild(tiles);
+    const pending = state.codexRefreshPending ?? [];
+    if (pending.length > 0) {
+      const banner = document.createElement("div");
+      banner.className = "lmb-actions";
+      banner.append(textNode(`${pending.length} record${pending.length === 1 ? "" : "s"} missed updates while frozen.`, "lmb-help"), makeButton("Catch up (1 pass)", () => send({ type: "codex_refresh", chatId }), {
+        primary: true,
+        small: true,
+        disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+        title: "One pass rebuilds just the re-enabled records from the filed summaries and recent messages"
+      }), makeButton("Rebuild instead", async () => {
+        const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+        if (ok)
+          requestCodexRebuild(state, chatId, send);
+      }, {
+        small: true,
+        disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+        title: "Wipe everything and regenerate from the start of the chat"
+      }));
+      sec.body.appendChild(banner);
+    }
     sec.body.appendChild(textNode("Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.", "lmb-help"));
-    sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records. Switching off Relations, Characters, or Places · Things spares the agent upkeep the story may not need yet.", "lmb-help"));
+    sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.", "lmb-help"));
   }
   const row = document.createElement("div");
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
-  row.append(lessonMark(makeButton("Update now", () => send({ type: "codex_update_now", chatId }), {
+  row.append(lessonMark(makeButton("Update now", () => requestCodexUpdate(state, chatId, send), {
     primary: true,
     disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-    title: "Consume everything up to the newest message now, ignoring lag and window"
+    title: "Consume everything up to the newest message now, ignoring lag and window. A big backlog offers fast catch-up modes."
   }), "codex.actions.update"), busy ? makeButton("Cancel", () => send({ type: "abort_busy", chatId, kind: "codex" }), {
     danger: true,
     title: "Abort the codex task in flight"
@@ -6524,9 +6786,9 @@ function renderOverview2(host, state, ctx, send, parsed) {
     disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
     title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information"
   }), makeButton("Rebuild codex", async () => {
-    const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. Costs one full backfill of agent runs.");
+    const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
     if (ok)
-      send({ type: "codex_rebuild", chatId });
+      requestCodexRebuild(state, chatId, send);
   }, {
     disabled: busy || !state.settings.enabled || !profile.codexEnabled,
     title: "Wipe and regenerate the whole story bible from the start of the chat"
@@ -6534,19 +6796,20 @@ function renderOverview2(host, state, ctx, send, parsed) {
     const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
     if (ok)
       send({ type: "codex_reset", chatId });
-  }, { danger: true, disabled: busy }));
+  }, { danger: true, disabled: busy || !state.codexExists }));
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
 }
-function renderBibleTile(def, parsed, state, ctx, send, busy) {
+function renderBibleTile(def, parsed, state, send, busy) {
   const chatId = state.activeChatId;
   const st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
+  const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
   const tokens = state.codexFileTokens ? def.files.reduce((acc, f) => acc + (state.codexFileTokens[f] ?? 0), 0) : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-bible-tile ${st}${stale ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-bible-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
   lessonMark(tile, `codex.tile.${def.id}`);
-  tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""} - click to cycle`;
+  tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""}${needsCatchup ? " · waiting for the catch-up pass" : ""} - click to cycle`;
   const v = document.createElement("div");
   v.className = "lmb-tile-value";
   v.textContent = String(tileCount(parsed, def.id));
@@ -6558,7 +6821,7 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   s.textContent = `~${formatTokens(tokens)} tokens`;
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
-  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}`;
+  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
   tile.append(v, l, s, stateLine);
   const tools = document.createElement("div");
   tools.className = "lmb-tile-tools";
@@ -6576,49 +6839,20 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   tools.appendChild(tidyBtn);
   tile.appendChild(tools);
   tile.addEventListener("click", () => {
-    cycleTileState(def, st, stale, state, ctx, send);
+    cycleTileState(def, st, state, send);
   });
   return tile;
 }
-async function cycleTileState(def, st, stale, state, ctx, send) {
+function cycleTileState(def, st, state, send) {
   const chatId = state.activeChatId;
-  const setAll = (next) => {
-    for (const f of def.files)
-      send({ type: "codex_set_file_state", chatId, file: f, state: next });
-  };
-  if (st === "on") {
-    setAll("noInject");
-    return;
-  }
-  if (st === "noInject") {
-    setAll("frozen");
-    return;
-  }
-  if (stale) {
-    let rebuild = false;
-    try {
-      const r = await ctx.ui.showConfirm({
-        title: "This record is out of date",
-        message: "Memoria kept updating the story while this record was frozen, so it may be missing recent events. Rebuild the codex from the start of the chat, or just re-enable it as-is?",
-        variant: "warning",
-        confirmLabel: "Rebuild",
-        cancelLabel: "Re-enable as-is"
-      });
-      rebuild = !!r.confirmed;
-    } catch {
-      rebuild = window.confirm("This record missed updates while frozen. Rebuild the codex from the start? (Cancel re-enables it as-is)");
-    }
-    setAll("on");
-    if (rebuild)
-      send({ type: "codex_rebuild", chatId });
-    return;
-  }
-  setAll("on");
+  const next = st === "on" ? "noInject" : st === "noInject" ? "frozen" : "on";
+  for (const f of def.files)
+    send({ type: "codex_set_file_state", chatId, file: f, state: next });
 }
-var ENTITY_TEXT_FIELDS = ["kind", "role", "status", "significance"];
+var ENTITY_TEXT_FIELDS = ["kind", "role", "significance"];
 var ENTITY_LONG_FIELDS = ["appearance", "description", "notes"];
 var ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"];
-var ENTITY_KNOWN = new Set(["id", "name", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+var ENTITY_KNOWN = new Set(["id", "name", "status", "locked", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 function entitySearchText(e) {
   const bits = [];
   for (const v of Object.values(e)) {
@@ -6746,6 +6980,7 @@ function makeDraft(group, e) {
 function renderEntityCard(group, e, parsed, state, ctx, send) {
   const card = document.createElement("div");
   card.className = "lmb-entity-card";
+  const locked = e["locked"] === true;
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
   name.textContent = str(e["name"]) || "?";
@@ -6756,6 +6991,8 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
     idEl.textContent = id;
     name.appendChild(idEl);
   }
+  if (locked)
+    name.appendChild(pill("locked", "warn"));
   card.appendChild(name);
   const kv = document.createElement("div");
   kv.className = "lmb-kv";
@@ -6793,7 +7030,23 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
   actions.append(makeButton("Edit sheet", () => {
     local.entityDraft = makeDraft(group, e);
     rerender();
-  }, { primary: true, small: true }), makeButton("Delete", async () => {
+  }, { primary: true, small: true }), makeButton(locked ? "Unlock" : "Lock", () => {
+    const list = (cache.parsed ?? parsed)[group];
+    const next = list.map((x3) => {
+      if (str(x3["id"]) !== id)
+        return x3;
+      const row = { ...x3 };
+      if (locked)
+        delete row["locked"];
+      else
+        row["locked"] = true;
+      return row;
+    });
+    sendCodexWrite(group, { entities: next }, state, send);
+  }, {
+    small: true,
+    title: locked ? "Let Memoria update this entry again" : "Memoria will never touch a locked entry. Trim it first if the character card already covers it, then lock it to keep it lean."
+  }), makeButton("Delete", async () => {
     const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
     if (!ok)
       return;
@@ -6864,8 +7117,10 @@ function renderEntityForm(draft, state, send) {
     if (!parsed)
       return;
     const entity = buildEntityFromDraft(draft, parsed);
-    if (!entity)
+    if (!entity) {
+      showToast("warn", "The entity needs a name");
       return;
+    }
     const list = parsed[draft.group];
     const idx = list.findIndex((x3) => str(x3["id"]) === draft.id);
     const next = idx >= 0 ? [...list.slice(0, idx), entity, ...list.slice(idx + 1)] : [...list, entity];
@@ -6900,6 +7155,8 @@ function buildEntityFromDraft(draft, parsed) {
       if (!ENTITY_KNOWN.has(k))
         out[k] = v;
     }
+    if (orig["locked"] === true)
+      out["locked"] = true;
   }
   out["id"] = draft.id;
   out["name"] = name;
@@ -7048,12 +7305,23 @@ function saveRelationDraft(d, state, send) {
   if (!parsed)
     return;
   const rel = buildRelationFromDraft(d);
-  if (!rel)
+  if (!rel) {
+    showToast("warn", d.fields["type"] === "group" ? "The group needs at least two members, a kind, and a state" : "The relation needs From, To, a kind, and a state");
     return;
+  }
   const idx = resolveDraftIndex(parsed.relations, d);
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.relations[idx]["rid"]);
+    if (rid)
+      rel["rid"] = rid;
+    const roles = parsed.relations[idx]["roles"];
+    if (rel["type"] === "group" && roles && typeof roles === "object" && !Array.isArray(roles)) {
+      rel["roles"] = roles;
+    }
   }
   const next = idx >= 0 ? [...parsed.relations.slice(0, idx), rel, ...parsed.relations.slice(idx + 1)] : [...parsed.relations, rel];
   d.saving = true;
@@ -7179,6 +7447,13 @@ function renderRelations(host, parsed, state, ctx, send) {
           ul.appendChild(li);
         }
         row.appendChild(ul);
+      }
+      const roles = r["roles"];
+      if (roles && typeof roles === "object" && !Array.isArray(roles)) {
+        for (const [ref, role] of Object.entries(roles)) {
+          if (typeof role === "string")
+            row.appendChild(textNode(`${role}: ${nameOf(ref)}`, "lmb-thread-detail"));
+        }
       }
       row.appendChild(recordItemActions(() => {
         local.recordDraft = relationDraftFrom(r, i);
@@ -7608,8 +7883,10 @@ function saveEventDraft(d, state, send) {
     return;
   const when = (d.fields["when"] ?? "").trim();
   const eventText = (d.fields["event"] ?? "").trim();
-  if (!when || !eventText)
+  if (!when || !eventText) {
+    showToast("warn", "The event needs a when and what happened");
     return;
+  }
   const participants = splitComma(d.fields["participants"] ?? "");
   const where = (d.fields["where"] ?? "").trim();
   const causes = (d.fields["causes"] ?? "").trim();
@@ -7624,6 +7901,11 @@ function saveEventDraft(d, state, send) {
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.events[idx]["rid"]);
+    if (rid)
+      ev["rid"] = rid;
   }
   const next = idx >= 0 ? [...parsed.events.slice(0, idx), ev, ...parsed.events.slice(idx + 1)] : [...parsed.events, ev];
   d.saving = true;
@@ -7778,8 +8060,10 @@ function saveThreadDraft(d, state, send) {
     return;
   const name = (d.fields["name"] ?? "").trim();
   const summary = (d.fields["summary"] ?? "").trim();
-  if (!name || !summary)
+  if (!name || !summary) {
+    showToast("warn", "The thread needs a name and a summary");
     return;
+  }
   const t = { name, status: d.fields["status"] || "open", summary };
   const latest = (d.fields["latest"] ?? "").trim();
   if (latest)
@@ -7791,6 +8075,11 @@ function saveThreadDraft(d, state, send) {
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.threads[idx]["rid"]);
+    if (rid)
+      t["rid"] = rid;
   }
   const next = idx >= 0 ? [...parsed.threads.slice(0, idx), t, ...parsed.threads.slice(idx + 1)] : [...parsed.threads, t];
   d.saving = true;
@@ -7825,6 +8114,9 @@ function renderThreads(host, parsed, state, ctx, send) {
     sec.body.appendChild(textNode("No open storylines tracked yet", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
+  }
+  if (parsed.threads.some((t) => str(t["status"]) === "resolved")) {
+    sec.body.appendChild(textNode("Resolved threads stay here as your archive. They no longer inject into the prompt or reach the agent.", "lmb-help"));
   }
   const list = document.createElement("div");
   list.className = "lmb-thread-list";
@@ -7937,8 +8229,10 @@ function saveWorldDraft(d, state, send) {
     return;
   const topic = (d.fields["topic"] ?? "").trim();
   const facts = splitLines(d.fields["facts"] ?? "");
-  if (!topic || facts.length === 0)
+  if (!topic || facts.length === 0) {
+    showToast("warn", "The topic needs a name and at least one fact");
     return;
+  }
   const entry = { topic, facts };
   const keywords = splitComma(d.fields["keywords"] ?? "");
   if (keywords.length)
@@ -7947,6 +8241,11 @@ function saveWorldDraft(d, state, send) {
   if (d.index >= 0 && idx === -1) {
     staleDraftAbort();
     return;
+  }
+  if (idx >= 0) {
+    const rid = str(parsed.world[idx]["rid"]);
+    if (rid)
+      entry["rid"] = rid;
   }
   const next = idx >= 0 ? [...parsed.world.slice(0, idx), entry, ...parsed.world.slice(idx + 1)] : [...parsed.world, entry];
   d.saving = true;
@@ -7958,8 +8257,10 @@ function saveKnowledgeDraft(d, state, send) {
   if (!parsed)
     return;
   const fact = (d.fields["fact"] ?? "").trim();
-  if (!fact)
+  if (!fact) {
+    showToast("warn", "The secret needs its fact");
     return;
+  }
   const item = { fact };
   const knownBy = splitComma(d.fields["knownBy"] ?? "");
   if (knownBy.length)
@@ -7988,6 +8289,11 @@ function saveKnowledgeDraft(d, state, send) {
     staleDraftAbort();
     return;
   }
+  if (idx >= 0) {
+    const rid = str(parsed.knowledge[idx]["rid"]);
+    if (rid)
+      item["rid"] = rid;
+  }
   const next = idx >= 0 ? [...parsed.knowledge.slice(0, idx), item, ...parsed.knowledge.slice(idx + 1)] : [...parsed.knowledge, item];
   d.saving = true;
   sendCodexWrite("knowledge", { items: next }, state, send);
@@ -8007,8 +8313,6 @@ var KNOWLEDGE_SPECS = [
   { key: "keywords", label: "Keywords (comma separated, retrieval tags)", widget: "input", placeholder: "murder, dagger, duke" }
 ];
 function renderLore(host, parsed, state, ctx, send) {
-  const nameOf = makeNameResolver(parsed);
-  const refListId = ensureRefDatalist(parsed);
   const draft = local.recordDraft;
   const world = section("World rules");
   lessonMark(world.wrap, "codex.lore");
@@ -8077,7 +8381,13 @@ function renderLore(host, parsed, state, ctx, send) {
     world.body.appendChild(block);
   }
   host.appendChild(world.wrap);
+}
+function renderSecrets(host, parsed, state, ctx, send) {
+  const nameOf = makeNameResolver(parsed);
+  const refListId = ensureRefDatalist(parsed);
+  const draft = local.recordDraft;
   const secrets = section("Who knows what");
+  lessonMark(secrets.wrap, "codex.secrets");
   const secretBar = document.createElement("div");
   secretBar.className = "lmb-actions";
   secretBar.appendChild(makeButton("+ Secret", () => {
@@ -8088,7 +8398,7 @@ function renderLore(host, parsed, state, ctx, send) {
   if (draft?.kind === "knowledge" && draft.index === -1) {
     secrets.body.appendChild(renderRecordForm("New secret", KNOWLEDGE_SPECS, draft, refListId, () => saveKnowledgeDraft(draft, state, send)));
   }
-  const knowledgeShown = parsed.knowledge.map((k, i) => ({ k, i })).filter(({ k }) => matches(local.query, str(k["fact"]), str(k["note"]), strArray(k["knownBy"]).map(nameOf), strArray(k["hiddenFrom"]).map(nameOf), strArray(k["keywords"])));
+  const knowledgeShown = parsed.knowledge.map((k, i) => ({ k, i })).filter(({ k }) => matches(local.query, str(k["fact"]), str(k["note"]), strArray(k["knownBy"]).map(nameOf), strArray(k["hiddenFrom"]).map(nameOf), objArray(k["falseBeliefs"]).map((b) => str(b["believes"])), objArray(k["falseBeliefs"]).map((b) => nameOf(str(b["who"]))), strArray(k["keywords"])));
   if (parsed.knowledge.length === 0) {
     secrets.body.appendChild(textNode("No secrets or asymmetric knowledge tracked yet", "lmb-empty"));
   } else if (knowledgeShown.length === 0) {
@@ -8241,26 +8551,32 @@ function renderCodexSettings(host, state, profile, patch) {
     hint: "Summarizes chapters early at the codex lag as ghost chapters. Ghosts feed the agent story-so-far context and are promoted into real chapters once the chapter lag arrives, with no second summarization.",
     onChange: (v) => patch({ codexExtraContext: v })
   }), "tuning.codex.extra"));
+  const modelHint = document.createElement("div");
+  modelHint.className = "lmb-field-hint";
+  modelHint.textContent = "The codex agent's connection and samplers live on the Profile pane, behind the Codex toggle.";
+  fields.appendChild(modelHint);
+  host.appendChild(sec.wrap);
+}
+function renderCodexConnection(host, state, profile, patch) {
+  const sec = section("Codex connection");
   const connOpts = [
-    { value: "", label: "Same as Memoria's connection" },
+    { value: "", label: "Same as Summary Connection" },
     ...state.connections.map((c2) => ({
       value: c2.id,
       label: `${c2.name} - ${c2.provider}${c2.model ? "/" + c2.model : ""}${c2.isDefault ? " (default)" : ""}`
     }))
   ];
-  fields.appendChild(lessonMark(labelled("Codex connection", select({
+  sec.body.appendChild(lessonMark(select({
     value: profile.codexConnectionId ?? "",
     options: connOpts,
     onChange: (v) => patch({ codexConnectionId: v || null })
-  })), "tuning.codex.connection"));
-  const connHint = document.createElement("div");
-  connHint.className = "lmb-field-hint";
-  connHint.textContent = "The codex model must support tool calls, the agent writes its files through them.";
-  fields.appendChild(connHint);
-  const samplerHint = document.createElement("div");
-  samplerHint.className = "lmb-field-hint";
-  samplerHint.textContent = "The codex agent's samplers live on the Model pane, behind the Codex toggle.";
-  fields.appendChild(samplerHint);
+  }), "tuning.codex.connection"));
+  sec.body.appendChild(lessonMark(checkbox({
+    checked: profile.codexUseTools,
+    label: "Use tool calls",
+    hint: "Off by default: the agent writes one strict JSON reply, which every provider route can carry. Turn on for structured tool calls if your connection delivers them reliably.",
+    onChange: (v) => patch({ codexUseTools: v })
+  }), "tuning.codex.usetools"));
   host.appendChild(sec.wrap);
 }
 function renderResetSettings(host, state, send) {
@@ -8579,7 +8895,7 @@ function renderCompressionTargets(host, profile, patch) {
   host.appendChild(sec.wrap);
 }
 function renderConnection(host, state, profile, patch) {
-  const sec = section("Connection");
+  const sec = section("Summary Connection");
   lessonMark(sec.wrap, "tuning.model.connection");
   const opts = [
     { value: "", label: state.connections.length ? "Default connection" : "No connections available" },
@@ -8674,7 +8990,11 @@ function renderSamplers(host, state, profile, send) {
   host.appendChild(sec.wrap);
 }
 var samplerView = "main";
+function setSamplerView(v) {
+  samplerView = v;
+}
 function renderSamplersSwitch(host, state, profile, send) {
+  const patch = (p) => send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   const wrap = document.createElement("div");
   wrap.className = "lmb-pane";
   const switchRow = document.createElement("div");
@@ -8689,15 +9009,19 @@ function renderSamplersSwitch(host, state, profile, send) {
     for (const o of options)
       o.btn?.classList.toggle("active", samplerView === o.key);
     body.replaceChildren();
-    if (samplerView === "main")
+    if (samplerView === "main") {
+      renderConnection(body, state, profile, patch);
       renderSamplers(body, state, profile, send);
-    else
+    } else {
+      renderCodexConnection(body, state, profile, patch);
       renderCodexSamplers(body, state, profile, send);
+    }
   };
   for (const o of options) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = o.label;
+    lessonMark(btn, `tuning.samplers.${o.key}`);
     btn.addEventListener("click", () => {
       if (samplerView === o.key)
         return;
@@ -8873,9 +9197,13 @@ function renderBehavior(host, profile, patch) {
 var CATEGORY_SUBTABS = [
   { key: "chapter", label: "Chapter" },
   { key: "arc", label: "Arc" },
-  { key: "volume", label: "Volume" }
+  { key: "volume", label: "Volume" },
+  { key: "codex", label: "Codex" }
 ];
 var local2 = { category: "chapter" };
+function setPromptsCategory(cat) {
+  local2.category = cat;
+}
 function renderPromptsPane(host, state, ctx, send) {
   const profile = state.activeProfile;
   const setKey = (category, key) => {
@@ -8892,12 +9220,38 @@ function renderPromptsPane(host, state, ctx, send) {
       local2.category = key;
       draw();
     }));
-    renderCategory(pane, state, ctx, send, local2.category, selectedKeyFor(local2.category), setKey);
+    const cat = local2.category;
+    if (cat === "codex") {
+      renderCodexPrompts(pane, state, send);
+      return;
+    }
+    renderCategory(pane, state, ctx, send, cat, selectedKeyFor(cat), setKey);
     renderMemoriaOverrides(pane, state, send);
     renderImport(pane, state, ctx, send);
     renderHelp(pane);
   };
   draw();
+}
+function renderCodexPrompts(host, state, send) {
+  const sec = section("Codex directives");
+  lessonMark(sec.wrap, "tuning.prompts.codex");
+  const help = document.createElement("div");
+  help.className = "lmb-help";
+  help.textContent = "The mission block at the top of the codex agent's system prompt. The file schemas and the write protocol that follow it stay fixed, they encode the validation the agent's writes must pass.";
+  sec.body.appendChild(help);
+  const profile = state.activeProfile;
+  sec.body.appendChild(buildOverrideBlock({
+    label: "Directives",
+    value: profile.codexDirectivesOverride ?? DEFAULT_CODEX_DIRECTIVES,
+    defaultText: DEFAULT_CODEX_DIRECTIVES,
+    rows: 16,
+    onSave: (next) => send({
+      type: "save_profile",
+      profile: { id: profile.id, codexDirectivesOverride: next },
+      chatId: state.activeChatId
+    })
+  }));
+  host.appendChild(sec.wrap);
 }
 var ALPHABET_PICK = "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}";
 var DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = [
@@ -9224,14 +9578,23 @@ function renderHelp(host) {
 // src/ui/tabs/tuning-tab.ts
 var SUBTABS3 = [
   { key: "profile", label: "Profile" },
-  { key: "codex", label: "Codex" },
-  { key: "model", label: "Model" },
+  { key: "settings", label: "Settings" },
   { key: "prompts", label: "Prompts" }
 ];
-var local3 = { subtab: "profile" };
+var local3 = { subtab: "profile", settingsView: "books" };
 function setTuningSubtab(key) {
-  if (key === "profile" || key === "codex" || key === "model" || key === "prompts")
-    local3.subtab = key;
+  const mapped = key === "model" ? "profile" : key === "codex" ? "settings" : key;
+  if (mapped === "profile" || mapped === "settings" || mapped === "prompts")
+    local3.subtab = mapped;
+  if (key === "codex")
+    local3.settingsView = "codex";
+}
+function setSettingsView(v) {
+  local3.settingsView = v;
+}
+function resetTuningTabLocal() {
+  local3.subtab = "profile";
+  local3.settingsView = "books";
 }
 function renderTuningTab(host, state, ctx, send) {
   host.replaceChildren();
@@ -9272,25 +9635,54 @@ function renderTuningTab(host, state, ctx, send) {
         rest.setAttribute("inert", "");
       }
       pane.appendChild(rest);
-      renderCompressionTargets(rest, profile, patch);
-      renderAutomation(rest, profile, patch);
-      renderContext(rest, profile, patch);
-      renderBehavior(rest, profile, patch);
-      renderGlobalSettings(rest, state, send);
-      renderResetSettings(rest, state, send);
+      renderSamplersSwitch(rest, state, profile, send);
+      renderRegex(rest, state, profile, patch);
       break;
     }
-    case "codex":
-      if (codexLessonGated(state.lessons))
-        renderCodexPaneLock(pane);
-      else
-        renderCodexSettings(pane, state, profile, patch);
+    case "settings": {
+      const switchRow = document.createElement("div");
+      switchRow.className = "lmb-sampler-switch";
+      const body = document.createElement("div");
+      body.className = "lmb-pane";
+      const options = [
+        { key: "books", label: "Books" },
+        { key: "codex", label: "Codex" }
+      ];
+      const sync = () => {
+        for (const o of options)
+          o.btn?.classList.toggle("active", local3.settingsView === o.key);
+        body.replaceChildren();
+        if (local3.settingsView === "books") {
+          renderCompressionTargets(body, profile, patch);
+          renderAutomation(body, profile, patch);
+          renderContext(body, profile, patch);
+          renderBehavior(body, profile, patch);
+          renderGlobalSettings(body, state, send);
+          renderResetSettings(body, state, send);
+        } else if (codexLessonGated(state.lessons)) {
+          renderCodexPaneLock(body);
+        } else {
+          renderCodexSettings(body, state, profile, patch);
+        }
+      };
+      for (const o of options) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = o.label;
+        lessonMark(btn, `tuning.settings.${o.key}`);
+        btn.addEventListener("click", () => {
+          if (local3.settingsView === o.key)
+            return;
+          local3.settingsView = o.key;
+          sync();
+        });
+        o.btn = btn;
+        switchRow.appendChild(btn);
+      }
+      pane.append(switchRow, body);
+      sync();
       break;
-    case "model":
-      renderConnection(pane, state, profile, patch);
-      renderSamplersSwitch(pane, state, profile, send);
-      renderRegex(pane, state, profile, patch);
-      break;
+    }
     case "prompts":
       renderPromptsPane(pane, state, ctx, send);
       break;
@@ -9804,43 +10196,79 @@ var COURSE_BOOKS = {
           tab: "tuning",
           subtab: "profile",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("profile");
+            setSamplerView("main");
+          },
+          anchor: "tuning.model.connection",
+          text: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex's own connection and samplers, that's my second course. Regex scripts can rewrite what I read and what I write."
+        },
+        {
+          kind: "nav",
+          fixture: { variant: "tuning" },
+          prep: () => setSettingsView("books"),
+          path: ["subtab.settings"],
+          arrive: "tuning.window",
+          text: "Next room. Tap Settings.",
+          done: "The press room."
+        },
+        {
+          kind: "say",
+          tab: "tuning",
+          subtab: "settings",
+          fixture: { variant: "tuning" },
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           text: "Compression targets shape my chapters. The window is how much story goes in, 18 messages by default. The ratio is how much text comes out, either a percent of the input or a fixed token amount."
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.arc",
           text: "Arcs can build automatically after enough chapters pile up, after enough tokens, or only by hand. The arc lag holds back your newest chapters so recent scenes keep their chapter-level detail."
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
-          text: "The Automation section is my hands-free mode. The master toggle covers chapters, arcs, and branch adoption. The codex has its own switch on its own pane."
+          text: "The Automation section is my hands-free mode. The master toggle covers chapters, arcs, and branch adoption. The codex has its own switch on this pane's Codex side."
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.ctx",
           text: "Context: how many of my previous chapters I re-read for continuity when writing a new one (7 by default), how many times I retry after a failure, and how long I wait for a slow provider before giving up."
         },
         {
           kind: "say",
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.behavior.preview",
           text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Below that, Everywhere holds switches for your whole account, like Force constant."
         },
@@ -9849,7 +10277,7 @@ var COURSE_BOOKS = {
           id: "b4",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
@@ -9857,7 +10285,10 @@ var COURSE_BOOKS = {
               s.activeProfile.windowValue = 18;
             }
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           chip: "Window · tokens · 18",
           text: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
@@ -9874,14 +10305,17 @@ var COURSE_BOOKS = {
           id: "b5",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
               s.activeProfile.lagValue = 10;
             }
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
           chip: "Lag · 10 messages",
           text: "You lower the lag from 65 down to 10. What changes?",
@@ -9898,7 +10332,7 @@ var COURSE_BOOKS = {
           id: "b16",
           scored: true,
           tab: "tuning",
-          subtab: "profile",
+          subtab: "settings",
           fixture: {
             variant: "tuning",
             patch: (s) => {
@@ -9906,7 +10340,10 @@ var COURSE_BOOKS = {
               s.activeProfile.chapterTargetPercent = 4;
             }
           },
-          prep: () => setTuningSubtab("profile"),
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.window",
           chip: "Window · 40 · Chapter % · 4",
           text: "You set the window to 40 and the chapter ratio to 4% (defaults are 18 and 15%). What do your chapters become?",
@@ -9921,23 +10358,7 @@ var COURSE_BOOKS = {
         {
           kind: "nav",
           fixture: { variant: "tuning" },
-          path: ["subtab.model"],
-          arrive: "tuning.model.connection",
-          text: "Two panes to go. Tap Model.",
-          done: "The writing desk."
-        },
-        {
-          kind: "say",
-          tab: "tuning",
-          subtab: "model",
-          fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("model"),
-          anchor: "tuning.model.connection",
-          text: "The Model pane picks which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. Regex scripts can rewrite what I read and what I write."
-        },
-        {
-          kind: "nav",
-          fixture: { variant: "tuning" },
+          prep: () => setPromptsCategory("chapter"),
           path: ["subtab.prompts"],
           arrive: "tuning.prompts",
           text: "And the last one. Tap Prompts.",
@@ -9948,7 +10369,10 @@ var COURSE_BOOKS = {
           tab: "tuning",
           subtab: "prompts",
           fixture: { variant: "tuning" },
-          prep: () => setTuningSubtab("prompts"),
+          prep: () => {
+            setTuningSubtab("prompts");
+            setPromptsCategory("chapter");
+          },
           anchor: "tuning.prompts",
           text: "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token."
         },
@@ -9994,10 +10418,13 @@ var COURSE_BOOKS = {
           kind: "nav",
           real: true,
           onlyFreshInstall: true,
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings"],
           arrive: "tuning.auto",
-          text: "One more walk. My automation switch lives in Tuning. Tap the Tuning tab.",
+          text: "One more walk. My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
           done: "There's the switch."
         },
         {
@@ -10006,8 +10433,11 @@ var COURSE_BOOKS = {
           optional: true,
           onlyFreshInstall: true,
           tab: "tuning",
-          subtab: "profile",
-          prep: () => setTuningSubtab("profile"),
+          subtab: "settings",
+          prep: () => {
+            setTuningSubtab("settings");
+            setSettingsView("books");
+          },
           anchor: "tuning.auto",
           expect: "save_profile",
           text: "One last act. Turn Run automation on, and I'll handle the filing myself after every message from now on.",
@@ -10117,14 +10547,14 @@ var COURSE_CODEX = {
           fixture: { variant: "codex-stale" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
-          text: "You froze Relations 40 messages ago and it now says stale. You re-enable it. What are your two choices?",
+          text: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
           options: [
-            { text: "Rebuild the codex to recover the missed events, or accept that the frozen gap is just missing", correct: true },
-            { text: "Re-enable it and the gap fills in automatically" },
-            { text: "Only a wipe can unfreeze it" },
+            { text: "It's marked as needing a catch-up, and one refresh pass rebuilds just that record from the summaries and recent messages", correct: true },
+            { text: "The gap fills in automatically on the next normal update" },
+            { text: "Nothing can recover the missed events except a full rebuild" },
             { text: "Tidy it, tidying re-reads the missed messages" }
           ],
-          why: "My reading position is already past those messages. Nothing short of a rebuild goes back for them."
+          why: "My reading position is already past those messages, so normal updates never go back. The Overview offers a one-pass catch-up for every re-enabled record at once, and Rebuild stays the from-scratch option."
         },
         {
           kind: "quiz",
@@ -10224,7 +10654,7 @@ var COURSE_CODEX = {
           anchor: "codex.rel.add",
           path: ["codex.rel.add", "codex.rel.form"],
           expect: "codex_write_file",
-          text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. I filled in the boxes in advance this time. Give it a kind, like owes, and a short state, then Save.",
+          text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
           done: "Recorded. Let's see it drawn."
         },
         {
@@ -10271,7 +10701,7 @@ var COURSE_CODEX = {
             setCodexRelationsView("graph");
           },
           anchor: "codex.rel.graph",
-          text: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity's sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, and Lore holds world rules plus the who-knows-what secrets. Browse them any time."
+          text: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity's sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time."
         }
       ]
     },
@@ -10282,10 +10712,13 @@ var COURSE_CODEX = {
         {
           kind: "nav",
           fixture: { variant: "codex" },
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning", "subtab.codex"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Last stop, my dials. Open the Tuning tab, then its Codex pane.",
+          text: "Last stop, my dials. Open the Tuning tab, its Settings pane, then the Codex side.",
           done: "My dials."
         },
         {
@@ -10295,7 +10728,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 30 per pass. If a chat falls far behind, Update catches me up in increments."
+          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 20 per pass. If a chat falls far behind, Update catches me up in increments."
         },
         {
           kind: "quiz",
@@ -10328,7 +10761,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Three switches worth knowing. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Codex connection gives this work its own model, which must support tool calls. Extra context mode has me write chapters early as ghosts, so I always know the story so far."
+          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Profile pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them."
         },
         {
           kind: "say",
@@ -10351,7 +10784,7 @@ var COURSE_CODEX = {
             { text: "A codex file is corrupted" },
             { text: "The Relations table is off" }
           ],
-          why: "The agent writes its records through tool calls. A model that can only write prose cannot keep the codex."
+          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Profile pane, Codex toggle) returns me to JSON mode, which works on every connection."
         },
         {
           kind: "quiz",
@@ -10375,11 +10808,15 @@ var COURSE_CODEX = {
         {
           kind: "nav",
           real: true,
+          optional: true,
           tab: "home",
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning", "subtab.codex"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Codex.",
+          text: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Settings, then its Codex side.",
           done: "Already there. Good."
         },
         {
@@ -11120,7 +11557,7 @@ function codexFixtureFiles() {
           name: "Elias",
           kind: "human",
           role: "the duke's former valet, fugitive",
-          status: "hiding in the tannery loft",
+          description: "hiding in the tannery loft",
           traits: ["careful", "sentimental", "quick over rooftops"],
           goals: ["keep the locket", "keep Mara out of it"],
           significance: "killed the duke on day 3"
@@ -11130,7 +11567,7 @@ function codexFixtureFiles() {
           name: "Mara",
           kind: "human",
           role: "seamstress at Ashford Manor",
-          status: "publicly mourning, privately bargaining",
+          description: "publicly mourning, privately bargaining",
           traits: ["observant", "steady"],
           goals: ["leverage over Elias", "leave the city"]
         },
@@ -11139,20 +11576,20 @@ function codexFixtureFiles() {
           name: "The Captain",
           kind: "human",
           role: "leads the city watch",
-          status: "publicly backs the bandit theory",
+          description: "publicly backs the bandit theory",
           goals: ["reopen the staff interviews quietly"]
         }
       ]
     },
     locations: {
       entities: [
-        { id: "loc:ashford_manor", name: "Ashford Manor", kind: "estate", status: "sealed by the watch", description: "the duke's seat, dark except the study lamp" },
+        { id: "loc:ashford_manor", name: "Ashford Manor", kind: "estate", description: "the duke's seat, sealed by the watch, dark except the study lamp" },
         { id: "loc:the_bridge", name: "The Bridge", kind: "landmark", significance: "where Elias and Mara trade truths" }
       ]
     },
     things: {
       entities: [
-        { id: "thing:silver_locket", name: "The Silver Locket", kind: "heirloom", status: "back in Elias's coat", significance: "ties Elias to the study on day 3" }
+        { id: "thing:silver_locket", name: "The Silver Locket", kind: "heirloom", description: "back in Elias's coat", significance: "ties Elias to the study on day 3" }
       ]
     },
     relations: {
@@ -11343,10 +11780,12 @@ function buildFixture(variant) {
     availableRoots: spec.roots ? [{ chatId: `${LESSON_CHAT_PREFIX}vol1`, chatName: "The Ashford Case, Vol. 1", entryCount: 5 }] : [],
     codexExists: !!spec.codex,
     codexBacklog: spec.codex ? 4 : 0,
+    codexBacklogPasses: spec.codex ? 1 : 0,
     codexLastRunAt: spec.codex ? Date.now() - 11 * 60000 : null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],
+    codexRefreshPending: [],
     codexFileTokens: spec.codex ? { ...CODEX_FILE_TOKENS } : {},
     lessons
   };
@@ -11930,6 +12369,7 @@ function createLessonEngine(deps) {
       fixtureStep: null,
       codexFiles: codexFixtureFiles(),
       doPhase: "idle",
+      prepFor: null,
       demoTab: null,
       navTab: null,
       examSet: [],
@@ -11998,6 +12438,9 @@ function createLessonEngine(deps) {
     resetHomeTabLocal();
     resetBooksTabLocal();
     resetCodexTabLocal();
+    resetTuningTabLocal();
+    setSamplerView("main");
+    setPromptsCategory("chapter");
     deps.onModeChange();
   }
   function mount(target) {
@@ -12032,13 +12475,13 @@ function createLessonEngine(deps) {
     head.className = "lmb-lesson-head";
     const title = document.createElement("span");
     title.className = "lmb-lesson-title";
-    title.textContent = active.mode === "exam" ? `${active.course.title} Â· Exam` : active.course.title;
+    title.textContent = active.mode === "exam" ? `${active.course.title} · Exam` : active.course.title;
     headLabel = document.createElement("span");
     headLabel.className = "lmb-lesson-headlabel";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "lmb-lesson-close";
-    close.textContent = "âœ•";
+    close.textContent = "✕";
     close.title = active.mode === "exam" ? "Leave the exam, an unfinished exam is not saved" : deps.getState()?.lessons?.[active.key]?.status === "done" ? "Leave anytime, your diploma and previous grade stand" : "Leave the lesson, progress is saved";
     close.setAttribute("aria-label", "Leave the lesson");
     close.addEventListener("click", exit);
@@ -12124,7 +12567,7 @@ function createLessonEngine(deps) {
     if (headLabel) {
       if (active.phase === "steps") {
         const sec = active.main[active.sIdx];
-        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} Â· ${sec.title}` : "";
+        headLabel.textContent = sec ? `${roman(active.sIdx + 1)} · ${sec.title}` : "";
       } else if (active.phase === "finale") {
         headLabel.textContent = active.finale?.title ?? "";
       } else {
@@ -12340,7 +12783,10 @@ function createLessonEngine(deps) {
       demoInner.appendChild(empty);
       return;
     }
-    step.prep?.();
+    if (active.prepFor !== step) {
+      step.prep?.();
+      active.prepFor = step;
+    }
     const send = real ? (m2) => {
       deps.send(m2);
       if (step.kind === "do" && m2.type === step.expect && active.doPhase !== "done")
@@ -12400,7 +12846,7 @@ function createLessonEngine(deps) {
     title.textContent = active.course.title;
     const orn = document.createElement("div");
     orn.className = "lmb-lesson-cover-orn";
-    orn.textContent = "â—† â—‡ â—†";
+    orn.textContent = "◆ ◇ ◆";
     cover.append(title, orn);
     const secTitle = subtitle ?? (active.mode === "lesson" && active.phase === "steps" ? active.main[active.sIdx]?.title : undefined);
     if (secTitle) {
@@ -12474,7 +12920,7 @@ function createLessonEngine(deps) {
       const step = currentStep();
       const chip = step?.kind === "quiz" ? step.chip : step?.kind === "nav" && active?.doPhase === "idle" ? "tap" : undefined;
       if (chip) {
-        spotTag.textContent = `â—† ${chip}`;
+        spotTag.textContent = `◆ ${chip}`;
         spotTag.style.display = "";
         const tagTop = top - 27;
         spotTag.style.top = tagTop < 4 ? `${bottom + 7}px` : `${tagTop}px`;
@@ -12574,7 +13020,7 @@ function createLessonEngine(deps) {
       }
       const hint = document.createElement("span");
       hint.className = "lmb-lesson-waiting";
-      hint.textContent = active.doPhase === "running" ? "workingâ€¦" : "your moveâ€¦";
+      hint.textContent = active.doPhase === "running" ? "working…" : "your move…";
       nav.appendChild(hint);
     } else {
       nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
@@ -12641,7 +13087,7 @@ function createLessonEngine(deps) {
         }
         if (!o.correct)
           btn.classList.add("wrong");
-        verdict.textContent = o.correct ? "Filed! â—†" : "Not quite.";
+        verdict.textContent = o.correct ? "Filed! ◆" : "Not quite.";
         verdict.classList.add(o.correct ? "ok" : "miss");
         const why = document.createElement("div");
         why.className = "lmb-lesson-why";
@@ -13127,6 +13573,8 @@ function setup(ctx) {
     const msg = raw;
     switch (msg.type) {
       case "state":
+        if (lastState && lastState.activeChatId !== msg.state.activeChatId)
+          closeCodexCatchupModal();
         lastState = msg.state;
         renderActive();
         break;
@@ -13196,6 +13644,11 @@ function setup(ctx) {
         break;
       case "stream_text":
         deliverStreamText(msg);
+        break;
+      case "codex_tools_hint":
+        if (lastState && !lastState.settings.suppressToolCallingPrompt) {
+          showCodexToolsHintModal(lastState.activeProfile.id, send);
+        }
         break;
     }
   });

@@ -78,6 +78,7 @@ import {
   maybeRunCodex,
   publishCodexPool,
   rebuildCodex,
+  refreshCodexFiles,
   registerCodexCallbacks,
   runCodexNow,
   runCodexTidy,
@@ -185,6 +186,13 @@ registerCodexCallbacks({
   },
   onStateChange(userId, chatId) {
     void pushState(userId, chatId);
+  },
+  onToolsHint(userId, chatId) {
+    void (async () => {
+      const settings = await loadSettings(userId).catch(() => null);
+      if (settings?.suppressToolCallingPrompt) return;
+      send({ type: "codex_tools_hint", chatId }, userId);
+    })();
   },
 });
 
@@ -1187,7 +1195,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
-        await runCodexNow(msg.chatId, profile, userId);
+        await runCodexNow(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1318,7 +1326,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Memoria is updating the codex, abort that first");
           break;
         }
-        await rebuildCodex(msg.chatId, profile, userId);
+        await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
         await pushState(userId, msg.chatId);
@@ -1343,14 +1351,33 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
+      case "codex_refresh": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        await refreshCodexFiles(msg.chatId, profile, userId);
+        const refreshed = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: refreshed }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
       case "codex_set_file_state": {
         if (!isCodexFileKey(msg.file)) {
           send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
           break;
         }
-        await setCodexFileState(msg.chatId, userId, msg.file, msg.state);
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
         if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
         await pushState(userId, msg.chatId);
         break;

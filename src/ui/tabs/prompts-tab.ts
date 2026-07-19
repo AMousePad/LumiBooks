@@ -1,6 +1,7 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { CustomPreset, LMBProfile } from "../../shared";
+import { DEFAULT_CODEX_DIRECTIVES } from "../../shared";
 import {
   field,
   lessonMark,
@@ -15,14 +16,21 @@ import {
 import { confirmDelete, promptForString } from "../modals";
 
 type PresetCategory = "chapter" | "arc" | "volume";
+type PromptsCategory = PresetCategory | "codex";
 
-const CATEGORY_SUBTABS: { key: PresetCategory; label: string }[] = [
+const CATEGORY_SUBTABS: { key: PromptsCategory; label: string }[] = [
   { key: "chapter", label: "Chapter" },
   { key: "arc", label: "Arc" },
   { key: "volume", label: "Volume" },
+  { key: "codex", label: "Codex" },
 ];
 
-const local = { category: "chapter" as PresetCategory };
+const local = { category: "chapter" as PromptsCategory };
+
+/** Lesson-stage navigation: pin the category before a demo render. */
+export function setPromptsCategory(cat: PromptsCategory): void {
+  local.category = cat;
+}
 
 /** Prompts pane, composed into Tuning. Appends into host (no replaceChildren). */
 export function renderPromptsPane(
@@ -53,12 +61,46 @@ export function renderPromptsPane(
       local.category = key;
       draw();
     }));
-    renderCategory(pane, state, ctx, send, local.category, selectedKeyFor(local.category), setKey);
+    const cat = local.category;
+    if (cat === "codex") {
+      renderCodexPrompts(pane, state, send);
+      return;
+    }
+    renderCategory(pane, state, ctx, send, cat, selectedKeyFor(cat), setKey);
     renderMemoriaOverrides(pane, state, send);
     renderImport(pane, state, ctx, send);
     renderHelp(pane);
   };
   draw();
+}
+
+function renderCodexPrompts(
+  host: HTMLElement,
+  state: FrontendState,
+  send: (msg: FrontendToBackend) => void,
+): void {
+  const sec = section("Codex directives");
+  lessonMark(sec.wrap, "tuning.prompts.codex");
+  const help = document.createElement("div");
+  help.className = "lmb-help";
+  help.textContent =
+    "The mission block at the top of the codex agent's system prompt. The file schemas and the write protocol that follow it stay fixed, they encode the validation the agent's writes must pass.";
+  sec.body.appendChild(help);
+
+  const profile = state.activeProfile;
+  sec.body.appendChild(buildOverrideBlock({
+    label: "Directives",
+    value: profile.codexDirectivesOverride ?? DEFAULT_CODEX_DIRECTIVES,
+    defaultText: DEFAULT_CODEX_DIRECTIVES,
+    rows: 16,
+    onSave: (next) => send({
+      type: "save_profile",
+      profile: { id: profile.id, codexDirectivesOverride: next },
+      chatId: state.activeChatId,
+    }),
+  }));
+
+  host.appendChild(sec.wrap);
 }
 
 const ALPHABET_PICK =

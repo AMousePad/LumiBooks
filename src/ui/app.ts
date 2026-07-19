@@ -2,7 +2,7 @@ import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
 import { preserveScroll, scrollPaneTop, showToast } from "./components";
-import { showDryRunModal } from "./modals";
+import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
 import { codexWantsRefresh, deliverCodexFiles, renderCodexTab } from "./tabs/codex-tab";
@@ -226,6 +226,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     const msg = raw as BackendToFrontend;
     switch (msg.type) {
       case "state":
+        if (lastState && lastState.activeChatId !== msg.state.activeChatId) closeCodexCatchupModal();
         lastState = msg.state;
         renderActive();
         break;
@@ -291,6 +292,13 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         break;
       case "stream_text":
         deliverStreamText(msg);
+        break;
+      case "codex_tools_hint":
+        // The backend already checks the suppress flag; re-check the local
+        // copy so a just-ticked "don't show again" wins races.
+        if (lastState && !lastState.settings.suppressToolCallingPrompt) {
+          showCodexToolsHintModal(lastState.activeProfile.id, send);
+        }
         break;
     }
   });

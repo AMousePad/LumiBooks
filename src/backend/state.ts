@@ -94,10 +94,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
     availableRoots: allRootCandidates,
     codexExists: false,
     codexBacklog: 0,
+    codexBacklogPasses: 0,
     codexLastRunAt: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
+    codexRefreshPending: [],
     codexFileTokens: {},
     lessons,
   };
@@ -201,9 +203,9 @@ export async function buildState(userId: string, requestedChatId?: string | null
 
   const codexStatus = await getCodexStatus(chat.id, userId, codexProfile).catch((err) => {
     warn(`codex status failed: ${describeError(err)}`);
-    return { exists: false, backlog: 0, lastRunAt: null };
+    return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   });
-  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [] }));
+  const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   // Constant entries only (timeline + threads), keyworded records cost per scene.
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
@@ -243,10 +245,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
     availableRoots: allRootCandidates.filter((c) => c.chatId !== chat.id),
     codexExists: codexStatus.exists,
     codexBacklog: codexStatus.backlog,
+    codexBacklogPasses: codexStatus.backlogPasses,
     codexLastRunAt: codexStatus.lastRunAt,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
+    codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens,
   };
 }

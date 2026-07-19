@@ -172,11 +172,13 @@ export function clearSealBusy(): void {
 
 const PREVIEW_TILES: { value: string; label: string; sub: string }[] = [
   { value: "3", label: "Characters", sub: "~240 tokens" },
-  { value: "3", label: "Places · Things", sub: "~140 tokens" },
+  { value: "2", label: "Locations", sub: "~90 tokens" },
+  { value: "1", label: "Things", sub: "~50 tokens" },
   { value: "4", label: "Relations", sub: "~170 tokens" },
-  { value: "5", label: "Events", sub: "~160 tokens" },
+  { value: "5", label: "Timeline", sub: "~160 tokens" },
   { value: "2", label: "Threads", sub: "~120 tokens" },
-  { value: "4", label: "Lore", sub: "~180 tokens" },
+  { value: "2", label: "Lore", sub: "~110 tokens" },
+  { value: "2", label: "Secrets", sub: "~90 tokens" },
 ];
 
 /** Full Codex tab lock: hatched fixture preview plus the seal. Nobody has a

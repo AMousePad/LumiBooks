@@ -16,6 +16,7 @@ import {
   textNode,
 } from "../components";
 import { memoriaSprite, requestLesson } from "../lessons/seal";
+import { requestCodexUpdate } from "../modals";
 
 const inflightBusyLabels = new Map<string, HTMLSpanElement>();
 
@@ -1041,9 +1042,9 @@ function renderActions(host: HTMLElement, state: FrontendState, send: (m: Fronte
     row.append(lessonMark(lockedBtn, "home.actions.updatecodex"));
   } else if (state.activeProfile.codexEnabled) {
     row.append(
-      lessonMark(makeButton("Update codex", () => send({ type: "codex_update_now", chatId }), {
+      lessonMark(makeButton("Update codex", () => requestCodexUpdate(state, chatId, send), {
         disabled: disabled || state.busy.some((b) => b.kind === "codex" && b.chatId === chatId),
-        title: "Consume everything up to the newest message now, ignoring lag and window",
+        title: "Consume everything up to the newest message now, ignoring lag and window. A big backlog offers fast catch-up modes.",
       }), "home.actions.updatecodex"),
     );
   }

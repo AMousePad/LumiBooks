@@ -5,9 +5,18 @@ import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO, ToolSchemaDTO } 
 type LlmMessagePartDTO = Exclude<LlmMessageDTO["content"], string>[number];
 import type { LMBProfile } from "../../shared";
 import type { ChatMessage } from "../coverage";
-import type { CodexBundle, CodexFileKey, CodexFileValue } from "./schema";
-import { CODEX_FILE_KEYS, danglingRefCounts, isCodexFileKey, newDanglingErrors, validateCodexFile } from "./schema";
-import { buildCodexSystemPrompt, buildCodexUserMessage, VERIFY_NUDGE, type CodexRunNotes } from "./prompt";
+import type { CodexBundle, CodexFileKey, CodexFileValue, CodexThread, ValidateOptions } from "./schema";
+import {
+  CODEX_FILE_KEYS,
+  FILE_ROW_KEY,
+  assignMissingRids,
+  danglingRefCounts,
+  fileRows,
+  isCodexFileKey,
+  newDanglingErrors,
+  validateCodexFile,
+} from "./schema";
+import { buildCodexSystemPrompt, buildCodexUserMessage, verifyNudge, type CodexRunNotes } from "./prompt";
 import { saveCodexFile } from "./store";
 import {
   AbortedSummarizerError,
@@ -15,9 +24,19 @@ import {
   buildCodexSamplerParameters,
   consumeGenerationStream,
   listConnections,
+  parseLooseJsonObject,
   resolveConnection,
 } from "../summarizer";
 import { describeError, warn } from "../runtime";
+
+/** Tool-call transport failure: the model replied in prose with zero
+ * structured calls. Callers surface the JSON-fallback hint on this one. */
+export class ToolProtocolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolProtocolError";
+  }
+}
 
 const CACHE_EPHEMERAL = { type: "ephemeral" } as const;
 
@@ -25,14 +44,32 @@ const TOOLS: ToolSchemaDTO[] = [
   {
     name: "codex_write",
     description:
-      "Replace one codex file with its complete new content. Call once per changed file, and put every call for this update in a single response.",
+      "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
     parameters: {
       type: "object",
       properties: {
         file: { type: "string", enum: [...CODEX_FILE_KEYS] },
-        content: { type: "object", description: "The complete file content matching that file's schema." },
+        set: {
+          type: "array",
+          items: { type: "object" },
+          description: "Rows to add or replace, each complete on its own, keyed by entity id or rid. Only rows that actually changed.",
+        },
+        drop: {
+          type: "array",
+          items: { type: "string" },
+          description: "Entity ids or rids of rows to delete.",
+        },
+        seeds: {
+          type: "array",
+          items: { type: "string" },
+          description: "threads.json only: the complete replacement seeds list.",
+        },
+        content: {
+          type: "object",
+          description: "The complete new file content, replacing everything. Only for a ground-up rewrite; never combined with set or drop.",
+        },
       },
-      required: ["file", "content"],
+      required: ["file"],
     },
   },
   {
@@ -119,6 +156,7 @@ async function runQuietRound(
   messages: LlmMessageDTO[],
   profile: LMBProfile,
   userId: string,
+  useTools: boolean,
   externalSignal: AbortSignal,
   onProgress: ((chars: number, thinkingChars: number) => void) | undefined,
   onDelta: ((kind: "text" | "thinking", delta: string) => void) | undefined,
@@ -135,7 +173,9 @@ async function runQuietRound(
         messages,
         connection_id: conn.id,
         parameters,
-        tools: TOOLS,
+        // JSON mode sends no tool schemas at all: the whole point is a
+        // route that can't carry them.
+        ...(useTools ? { tools: TOOLS } : {}),
         userId,
         signal,
       }),
@@ -171,12 +211,251 @@ function assistantTurn(content: string, toolCalls: ToolCallDTO[]): LlmMessageDTO
   return { role: "assistant", content: parts };
 }
 
+/**
+ * JSON mode: lift the reply's single object into synthetic tool calls so the
+ * staging loop stays transport-blind. Malformed writes become calls with bad
+ * args on purpose: validation rejects them, which blocks "done" and forces a
+ * correction round instead of silently dropping content.
+ */
+function parseJsonModeCalls(raw: string): ToolCallDTO[] {
+  const obj = parseLooseJsonObject(raw);
+  if (!obj) return [];
+  const calls: ToolCallDTO[] = [];
+  const writes = Array.isArray(obj["writes"]) ? obj["writes"] : [];
+  writes.forEach((w, i) => {
+    const args = w && typeof w === "object" && !Array.isArray(w) ? (w as Record<string, unknown>) : {};
+    calls.push({ call_id: `json_w${i}`, name: "codex_write", args } as ToolCallDTO);
+  });
+  if (obj["done"] === true) {
+    const args = typeof obj["note"] === "string" ? { note: obj["note"] } : {};
+    calls.push({ call_id: "json_done", name: "codex_done", args } as ToolCallDTO);
+  }
+  return calls;
+}
+
 interface WriteOutcome {
   callId: string;
   file: CodexFileKey | null;
   errors: string[];
   /** Dropped without staging (frozen file), the ack must say so. */
   skipped?: boolean;
+  /** Locked entities the write tried to touch; kept as-is, the ack says so. */
+  lockedKept?: string[];
+  /** Drop keys that matched nothing (already deleted); acked as a no-op. */
+  dropMisses?: string[];
+  /** Archived resolved threads the write tried to touch; left alone, acked. */
+  archivedKept?: string[];
+}
+
+interface StagedWrite {
+  /** The validated new file value; absent when the write was rejected. */
+  value?: CodexFileValue;
+  errors: string[];
+  lockedKept: string[];
+  /** Drop keys that matched nothing; already-deleted rows are a no-op, not an error. */
+  dropMisses: string[];
+  /** Archived resolved threads the write tried to touch; left alone, acked. */
+  archivedKept: string[];
+}
+
+function clone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+/** Merge one codex_write (patch or full content) into a complete validated
+ * file value, preserving locked entities and hidden resolved threads. */
+function stageWrite(
+  file: CodexFileKey,
+  args: Record<string, unknown>,
+  current: CodexFileValue,
+  validateOpts: ValidateOptions,
+): StagedWrite {
+  const errors: string[] = [];
+  const lockedKept: string[] = [];
+  const dropMisses: string[] = [];
+  const archivedKept: string[] = [];
+  const keyField = FILE_ROW_KEY[file].key;
+  // Models regularly emit explicit nulls for omitted params; treat them as absent.
+  const arg = (k: string): unknown => {
+    const v = args[k];
+    return v === null ? undefined : v;
+  };
+  const rawContent = arg("content");
+  const rawSet = arg("set");
+  const rawDrop = arg("drop");
+  const rawSeeds = arg("seeds");
+  const hasPatch = rawSet !== undefined || rawDrop !== undefined || rawSeeds !== undefined;
+
+  const lockedRows = new Map<string, Record<string, unknown>>();
+  if (keyField === "id") {
+    for (const row of fileRows(current, file)) {
+      if (row["locked"] === true && typeof row["id"] === "string") lockedRows.set(row["id"], row);
+    }
+  }
+  const hiddenResolved: CodexThread[] =
+    file === "threads" ? (current as { threads: CodexThread[] }).threads.filter((t) => t.status === "resolved") : [];
+
+  if (rawContent !== undefined) {
+    if (hasPatch) {
+      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, dropMisses, archivedKept };
+    }
+    let content: unknown = rawContent;
+    if (typeof content === "string") {
+      try {
+        content = JSON.parse(content) as unknown;
+      } catch {
+        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, dropMisses, archivedKept };
+      }
+    }
+    const result = validateCodexFile(file, content, validateOpts);
+    if (!result.ok) return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+    const value = result.value;
+    // Locked rows are user-owned: revert edits, re-add omissions.
+    if (lockedRows.size > 0) {
+      const rows = fileRows(value, file);
+      for (const [id, orig] of lockedRows) {
+        const idx = rows.findIndex((r) => r["id"] === id);
+        if (idx >= 0) {
+          if (JSON.stringify(rows[idx]) !== JSON.stringify(orig)) lockedKept.push(id);
+          rows[idx] = clone(orig);
+        } else {
+          lockedKept.push(id);
+          rows.push(clone(orig));
+        }
+      }
+    }
+    if (keyField === "id") {
+      for (const row of fileRows(value, file)) {
+        if (row["locked"] === true && !lockedRows.has(String(row["id"] ?? ""))) delete row["locked"];
+      }
+    }
+    if (file === "threads" && hiddenResolved.length > 0) {
+      const t = value as { threads: CodexThread[] };
+      // The archive copy is canonical: a rewrite row echoing an archived rid
+      // is dropped, so a renumbering tidy can neither shadow-delete nor
+      // duplicate the archive.
+      const hiddenRids = new Set(hiddenResolved.map((h) => h.rid).filter(Boolean));
+      for (const row of t.threads) {
+        if (row.rid && hiddenRids.has(row.rid)) archivedKept.push(row.rid);
+      }
+      t.threads = t.threads.filter((row) => !(row.rid && hiddenRids.has(row.rid)));
+      t.threads.push(...hiddenResolved.map((h) => clone(h)));
+    }
+    assignMissingRids(file, value);
+    return { value, errors, lockedKept, dropMisses, archivedKept };
+  }
+
+  if (!hasPatch) {
+    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, dropMisses, archivedKept };
+  }
+  if (rawSeeds !== undefined && file !== "threads") {
+    errors.push("seeds: only threads.json has a seeds list");
+  }
+  const setRows: Record<string, unknown>[] = [];
+  if (rawSet !== undefined) {
+    if (!Array.isArray(rawSet)) errors.push("set: expected an array of rows");
+    else rawSet.forEach((r, i) => {
+      let row: unknown = r;
+      if (typeof row === "string") {
+        try { row = JSON.parse(row); } catch { /* handled below */ }
+      }
+      if (!row || typeof row !== "object" || Array.isArray(row)) errors.push(`set[${i}]: expected a row object`);
+      else setRows.push(row as Record<string, unknown>);
+    });
+  }
+  const dropKeys: string[] = [];
+  if (rawDrop !== undefined) {
+    if (!Array.isArray(rawDrop)) errors.push("drop: expected an array of keys");
+    else rawDrop.forEach((k, i) => {
+      if (typeof k !== "string" || !k.trim()) errors.push(`drop[${i}]: expected a key string`);
+      else dropKeys.push(k.trim());
+    });
+  }
+  let seeds: string[] | null = null;
+  if (rawSeeds !== undefined && file === "threads") {
+    if (!Array.isArray(rawSeeds) || rawSeeds.some((s) => typeof s !== "string")) {
+      errors.push("seeds: expected an array of strings");
+    } else {
+      seeds = (rawSeeds as string[]).map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (setRows.length === 0 && dropKeys.length === 0 && seeds === null && errors.length === 0) {
+    errors.push("empty write: set and drop held nothing - provide rows, keys, seeds, or content");
+  }
+  if (errors.length) return { errors, lockedKept, dropMisses, archivedKept };
+
+  // Merge against the rows the agent can see; resolved threads stay hidden.
+  let rows = fileRows(current, file).map((r) => clone(r));
+  if (file === "threads") rows = rows.filter((r) => r["status"] !== "resolved");
+  const isArchivedRid = (key: string): boolean =>
+    file === "threads" && hiddenResolved.some((h) => h.rid === key);
+
+  for (const key of dropKeys) {
+    if (lockedRows.has(key)) {
+      lockedKept.push(key);
+      continue;
+    }
+    if (isArchivedRid(key)) {
+      archivedKept.push(key);
+      continue;
+    }
+    const idx = rows.findIndex((r) => r[keyField] === key);
+    if (idx === -1) {
+      // Deletion is idempotent: a replayed correction round must not fail
+      // on rows already gone.
+      dropMisses.push(key);
+      continue;
+    }
+    rows.splice(idx, 1);
+  }
+  setRows.forEach((row, i) => {
+    const key = row[keyField];
+    if (typeof key === "string" && key) {
+      if (lockedRows.has(key)) {
+        lockedKept.push(key);
+        return;
+      }
+      const idx = rows.findIndex((r) => r[keyField] === key);
+      if (idx >= 0) {
+        rows[idx] = row;
+        return;
+      }
+      if (keyField === "rid") {
+        if (isArchivedRid(key)) {
+          archivedKept.push(key);
+          return;
+        }
+        errors.push(`set[${i}]: rid "${key}" does not exist in ${file}.json - omit rid to add a new row`);
+        return;
+      }
+      rows.push(row);
+      return;
+    }
+    if (keyField === "id") {
+      errors.push(`set[${i}]: missing "id"`);
+      return;
+    }
+    rows.push(row);
+  });
+  if (errors.length) return { errors, lockedKept, dropMisses, archivedKept };
+
+  const candidate: Record<string, unknown> = { [FILE_ROW_KEY[file].field]: rows };
+  if (file === "threads") {
+    candidate["seeds"] = seeds ?? (current as { seeds: string[] }).seeds;
+  }
+  const result = validateCodexFile(file, candidate, validateOpts);
+  if (!result.ok) return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+  const value = result.value;
+  if (keyField === "id") {
+    for (const row of fileRows(value, file)) {
+      if (row["locked"] === true && !lockedRows.has(String(row["id"] ?? ""))) delete row["locked"];
+    }
+  }
+  if (file === "threads" && hiddenResolved.length > 0) {
+    (value as { threads: CodexThread[] }).threads.push(...hiddenResolved.map((h) => clone(h)));
+  }
+  assignMissingRids(file, value);
+  return { value, errors, lockedKept, dropMisses, archivedKept };
 }
 
 /**
@@ -189,8 +468,9 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   const { profile, userId, chatId } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const maxRounds = profile.codexThorough ? 4 : 3;
+  const useTools = profile.codexUseTools;
 
-  const system = buildCodexSystemPrompt(profile.codexRelationsTable);
+  const system = buildCodexSystemPrompt(profile.codexRelationsTable, useTools, profile.codexDirectivesOverride);
   const userText = opts.userTextOverride ?? buildCodexUserMessage(
     opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar,
   );
@@ -223,16 +503,31 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     if (opts.externalSignal.aborted) throw new AbortedSummarizerError();
     rounds++;
     if (rounds > 1) opts.onDelta?.("text", `\n\n═══ round ${rounds} ═══\n`);
-    const round = await runQuietRound(conn, conv, profile, userId, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
+    const round = await runQuietRound(conn, conv, profile, userId, useTools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
     usageCompletion += round.usageCompletion;
+    // JSON mode has no structured calls: synthesize them from the reply so
+    // everything below stays transport-blind.
+    const calls = useTools ? round.toolCalls : parseJsonModeCalls(round.content);
     // Tool payloads never stream; narrate them so the live viewer shows the work.
-    for (const call of round.toolCalls) {
+    for (const call of calls) {
       if (call.name === "codex_write") {
         const f = typeof call.args["file"] === "string" ? call.args["file"] : "?";
-        let size = 0;
-        try { size = JSON.stringify(call.args["content"] ?? "").length; } catch { /* unserializable */ }
-        opts.onDelta?.("text", `\n➤ codex_write ${f}.json (${(size / 1000).toFixed(1)}k chars)`);
+        let label: string;
+        if (call.args["content"] !== undefined) {
+          let size = 0;
+          try { size = JSON.stringify(call.args["content"] ?? "").length; } catch { /* unserializable */ }
+          label = `full rewrite, ${(size / 1000).toFixed(1)}k chars`;
+        } else {
+          const bits: string[] = [];
+          const setN = Array.isArray(call.args["set"]) ? (call.args["set"] as unknown[]).length : 0;
+          const dropN = Array.isArray(call.args["drop"]) ? (call.args["drop"] as unknown[]).length : 0;
+          if (setN) bits.push(`${setN} set`);
+          if (dropN) bits.push(`${dropN} drop`);
+          if (call.args["seeds"] !== undefined) bits.push("seeds");
+          label = bits.join(", ") || "empty";
+        }
+        opts.onDelta?.("text", `\n➤ codex_write ${f}.json (${label})`);
       } else if (call.name === "codex_done") {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` — ${call.args["note"].trim()}` : "";
         opts.onDelta?.("text", `\n✦ codex_done${note}`);
@@ -241,7 +536,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       }
     }
 
-    if (round.toolCalls.length === 0) {
+    if (calls.length === 0) {
       if (rounds === 1 && !round.content.trim()) {
         throw new Error("The codex agent returned an empty response");
       }
@@ -255,40 +550,41 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
             : "The codex agent left an unresolved integrity error instead of correcting it",
         );
       }
-      // Nothing staged and no codex_done: prose instead of tool calls is a
-      // protocol failure (likely a connection without tool support), and
-      // treating it as a clean no-op would silently consume the chunk.
+      // Nothing staged and no done signal: treating this as a clean no-op
+      // would silently consume the chunk.
       if (changed.size === 0) {
-        throw new Error("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+        if (useTools) {
+          // Prose instead of tool calls is a transport failure (a route that
+          // can't carry tool calls): the callers offer the JSON fallback.
+          throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+        }
+        throw new Error("The codex agent replied without a parsable JSON update");
       }
       break;
     }
 
-    conv.push(assistantTurn(round.content, round.toolCalls));
+    conv.push(useTools
+      ? assistantTurn(round.content, calls)
+      : { role: "assistant", content: round.content });
 
     // Writes first, codex_done after: a correction and the done may share a
     // round, and done must see the round's staging results.
     const outcomes: WriteOutcome[] = [];
     const doneCalls: ToolCallDTO[] = [];
-    for (const call of round.toolCalls) {
+    for (const call of calls) {
       if (call.name === "codex_done") {
         doneCalls.push(call);
         continue;
       }
       if (call.name !== "codex_write") {
-        // Same rationale as the invalid-file-key case: whatever payload this
-        // carried has no valid destination, so done stays blocked and the
-        // chunk retries rather than silently dropping content.
-        rejectedFiles.add(`(unknown tool ${call.name})`);
-        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist`] });
+        // hadErrors blocks done THIS round; a corrected next round recovers,
+        // unlike a permanent rejectedFiles sentinel which nothing could clear.
+        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist - resend the payload through codex_write`] });
         continue;
       }
       const fileRaw = call.args["file"];
       if (!isCodexFileKey(fileRaw)) {
-        // The content had no valid destination, so it can't be cleared by a
-        // later stage; blocking done until maxRounds forces a chunk retry.
-        rejectedFiles.add("(invalid file key)");
-        outcomes.push({ callId: call.call_id, file: null, errors: [`file: expected one of ${CODEX_FILE_KEYS.join(", ")}`] });
+        outcomes.push({ callId: call.call_id, file: null, errors: [`file: expected one of ${CODEX_FILE_KEYS.join(", ")} - resend this write under the right file`] });
         continue;
       }
       if (frozen.has(fileRaw)) {
@@ -297,26 +593,23 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
-      let content = call.args["content"];
-      if (typeof content === "string") {
-        try {
-          content = JSON.parse(content) as unknown;
-        } catch {
-          rejectedFiles.add(fileRaw);
-          outcomes.push({ callId: call.call_id, file: fileRaw, errors: ["content: string was not valid JSON, pass the object directly"] });
-          continue;
-        }
-      }
-      const result = validateCodexFile(fileRaw, content, validateOpts);
-      if (!result.ok) {
+      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts);
+      if (!staged.value) {
         rejectedFiles.add(fileRaw);
-        outcomes.push({ callId: call.call_id, file: fileRaw, errors: result.errors });
+        outcomes.push({ callId: call.call_id, file: fileRaw, errors: staged.errors });
         continue;
       }
-      (working as Record<CodexFileKey, CodexFileValue>)[fileRaw] = result.value;
+      (working as Record<CodexFileKey, CodexFileValue>)[fileRaw] = staged.value;
       changed.add(fileRaw);
       rejectedFiles.delete(fileRaw);
-      outcomes.push({ callId: call.call_id, file: fileRaw, errors: [] });
+      outcomes.push({
+        callId: call.call_id,
+        file: fileRaw,
+        errors: [],
+        ...(staged.lockedKept.length ? { lockedKept: staged.lockedKept } : {}),
+        ...(staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {}),
+        ...(staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}),
+      });
     }
 
     let sawDone = false;
@@ -345,34 +638,66 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     const hadErrors = outcomes.some((o) => o.errors.length > 0) || integrityErrors.length > 0;
     unresolvedErrors = hadErrors || rejectedFiles.size > 0;
 
+    // Two feedback channels for the same outcomes: tool_result parts when the
+    // transport has tools, one plain-text user message when it doesn't (a
+    // no-tools route would choke on tool_result parts).
+    const lockedNote = (o: WriteOutcome): string => {
+      const bits: string[] = [];
+      if (o.lockedKept?.length) bits.push(`locked, left untouched: ${o.lockedKept.join(", ")} - do not resend them`);
+      if (o.dropMisses?.length) bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
+      if (o.archivedKept?.length) bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
+      return bits.length ? ` (${bits.join("; ")})` : "";
+    };
     const resultParts: LlmMessagePartDTO[] = outcomes.map((o) => ({
       type: "tool_result",
       tool_use_id: o.callId,
       content: o.errors.length
-        ? `REJECTED:\n${o.errors.join("\n")}`
+        ? `REJECTED, nothing from this write was staged - resend it corrected in full:\n${o.errors.join("\n")}`
         : o.skipped
           ? `skipped, ${o.file}.json is frozen by the user - do not resend it`
           : o.file
-            ? "ok, staged"
+            ? `ok, staged${lockedNote(o)}`
             : "ok",
       ...(o.errors.length ? { is_error: true } : {}),
     }));
+    const feedbackLines: string[] = outcomes.map((o) =>
+      o.errors.length
+        ? `REJECTED ${o.file ? `${o.file}.json` : "write"}, nothing from it was staged - resend it corrected in full:\n${o.errors.join("\n")}`
+        : o.skipped
+          ? `${o.file}.json skipped, it is frozen by the user - do not resend it`
+          : o.file
+            ? `${o.file}.json staged.${lockedNote(o)}`
+            : "done acknowledged.",
+    );
+    const pushFeedback = (extra: string): void => {
+      if (useTools) {
+        if (extra) resultParts.push({ type: "text", text: extra });
+        conv.push({ role: "user", content: resultParts });
+      } else {
+        conv.push({ role: "user", content: [...feedbackLines, extra].filter(Boolean).join("\n\n") });
+      }
+    };
 
     if (!hadErrors) {
       const wantVerify = profile.codexThorough && changed.size > 0 && !verifyRequested && !opts.skipVerify;
       if (sawDone && !wantVerify) {
-        conv.push({ role: "user", content: resultParts });
+        if (useTools) conv.push({ role: "user", content: resultParts });
         break;
       }
       if (wantVerify) {
         verifyRequested = true;
-        resultParts.push({ type: "text", text: VERIFY_NUDGE });
-        conv.push({ role: "user", content: resultParts });
+        pushFeedback(verifyNudge(useTools));
         continue;
       }
-      // Writes landed but no codex_done: give it one round to finish or add more.
-      resultParts.push({ type: "text", text: "Writes staged. Call codex_done, or send corrected files if anything is left." });
-      conv.push({ role: "user", content: resultParts });
+      // Writes landed (or were skipped) with no done signal: one round to finish.
+      const roundStaged = outcomes.some((o) => o.file !== null && !o.skipped && o.errors.length === 0);
+      pushFeedback(roundStaged
+        ? (useTools
+          ? "Writes staged. Call codex_done, or send corrected files if anything is left."
+          : 'Writes staged. Respond with a JSON object: any corrected files in "writes", and "done": true to finish.')
+        : (useTools
+          ? "Nothing was staged this round. Call codex_done, or send writes for unfrozen files."
+          : 'Nothing was staged this round. Respond with a JSON object: writes for unfrozen files if needed, and "done": true.'));
       continue;
     }
 
@@ -380,9 +705,10 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     if (integrityErrors.length) {
       fixup.push(`Cross-file integrity errors:\n${integrityErrors.join("\n")}`);
     }
-    fixup.push("Resend ONLY the rejected or offending files, corrected. Then call codex_done.");
-    resultParts.push({ type: "text", text: fixup.join("\n\n") });
-    conv.push({ role: "user", content: resultParts });
+    fixup.push(useTools
+      ? "Resend ONLY the rejected or offending files, corrected. Then call codex_done."
+      : 'Respond with a JSON object containing ONLY the rejected or offending files, corrected, in "writes". Set "done": true once everything is fixed.');
+    pushFeedback(fixup.join("\n\n"));
 
     if (rounds >= maxRounds) {
       const remaining = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
@@ -407,9 +733,11 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   if (finalIntegrity.length) {
     throw new Error(`Codex left dangling references: ${finalIntegrity.slice(0, 3).join("; ")}`);
   }
+  // Locked entities are exempt from both migration gates: the agent may not
+  // touch them, so their ties can neither be lifted nor receive folds.
   if (opts.notes.migrateToTable) {
     const leftover = (["characters", "locations", "things"] as const).filter((k) =>
-      working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0),
+      working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0),
     );
     if (leftover.length) {
       throw new Error(`Table migration left ties on ${leftover.map((k) => `${k}.json`).join(", ")}, the run will retry`);
@@ -420,9 +748,16 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   // than let populated rows be destroyed unfolded.
   if (opts.notes.migrateToInline && opts.bundle.relations.relations.length > 0) {
     const foldedTies = (["characters", "locations", "things"] as const).some((k) =>
-      working[k].entities.some((e) => Array.isArray(e.ties) && e.ties.length > 0),
+      working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0),
     );
-    if (!foldedTies) {
+    const lockedIds = new Set(
+      (["characters", "locations", "things"] as const)
+        .flatMap((k) => working[k].entities.filter((e) => e.locked === true).map((e) => e.id)),
+    );
+    const foldable = opts.bundle.relations.relations.some((r) =>
+      (r.type === "pair" ? [r.a, r.b] : r.members).some((m) => !lockedIds.has(m)),
+    );
+    if (!foldedTies && foldable) {
       throw new Error("Inline migration produced no ties from the relations table, the run will retry");
     }
   }

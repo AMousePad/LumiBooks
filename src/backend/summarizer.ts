@@ -871,6 +871,18 @@ function parseSummaryJson(raw: string): ParsedSummary {
   throw new Error("The model didn't return valid JSON");
 }
 
+/** First parsable JSON object in a model reply, tolerant of think blocks,
+ * code fences, and prose around it. The codex agent's JSON mode rides the
+ * same extraction the summary parser has always used. */
+export function parseLooseJsonObject(raw: string): Record<string, unknown> | null {
+  const normalized = normalizeText(stripThinkBlocks(raw));
+  for (const cand of collectJsonCandidates(normalized)) {
+    const obj = tryParseJsonObject(cand);
+    if (obj) return obj;
+  }
+  return null;
+}
+
 function stripThinkBlocks(raw: string): string {
   return raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
 }

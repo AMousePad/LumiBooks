@@ -26,10 +26,10 @@ export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
  * EXTENSION_KEY on purpose: summary entries are host-disabled and re-injected
  * by our interceptor, codex entries ride the host's own keyword activation. */
 export const CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex" as const;
-/** v4: codexThorough and codexExtraContext flipped on once for settings
- * written by older builds (their off state was the old default, never a
- * choice new installs can make anymore). */
-export const STORAGE_VERSION = 4 as const;
+/** v4: codexThorough + codexExtraContext flipped on once; v5: codexWindowValue
+ * 30 -> 20 for message windows still on the old default; v6: codexUseTools
+ * flipped off once (strict JSON is the default, tool calls are opt-in). */
+export const STORAGE_VERSION = 6 as const;
 export const SETTINGS_PATH = "settings.json" as const;
 export const CHAT_STATE_DIR = "chats" as const;
 
@@ -99,6 +99,12 @@ export interface LMBProfile {
   /** Sampler overrides for codex agent calls; null fields fall back to
    * CODEX_SAMPLER_DEFAULTS on the wire, mirroring `samplers`. */
   codexSamplers: SamplerSet;
+  /** Structured tool calls for the codex agent, opt-in. Off (the default)
+   * uses strict JSON output, which every provider route can carry. */
+  codexUseTools: boolean;
+  /** Replaces the codex system prompt's directive block (null = built-in).
+   * Schema and write-protocol blocks stay fixed, they encode validation. */
+  codexDirectivesOverride: string | null;
 }
 
 export interface CustomPreset {
@@ -118,6 +124,8 @@ export interface LMBSettings {
   debugLog: boolean;
   forceConstantEntries: boolean;
   showAutomationToasts: boolean;
+  /** "Don't show again" for the tool-calling fallback modal. */
+  suppressToolCallingPrompt: boolean;
 }
 
 export interface LMBEntryMeta {
@@ -225,13 +233,15 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
-    codexWindowValue: 30,
+    codexWindowValue: 20,
     codexTokenBreakpoint: 100000,
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
+    codexUseTools: false,
+    codexDirectivesOverride: null,
   };
 }
 
@@ -244,7 +254,29 @@ export const DEFAULT_SETTINGS: LMBSettings = {
   debugLog: false,
   forceConstantEntries: true,
   showAutomationToasts: true,
+  suppressToolCallingPrompt: false,
 };
+
+/** The codex system prompt's directive block, per-profile overridable; the
+ * schema and protocol blocks after it stay fixed. */
+export const DEFAULT_CODEX_DIRECTIVES = [
+  "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
+  "",
+  "Your three directives, in order:",
+  "1. UPDATE - patch every record the new turns have outdated, and add what is new and durable.",
+  "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it.",
+  "3. COMPRESS - keep every record lean. Terse phrases beat sentences, no filler words.",
+  "",
+  "Snapshot rules (absolute):",
+  "- The codex describes the present. When something changes, REPLACE the old text entirely.",
+  "- Never leave edit residue: no \"was X, now Y\", no \"formerly\", no \"updated:\", no strikethrough hints, no references to previous versions of the codex.",
+  "- Story history is not residue. Key past events belong in timeline.json, and a relation's \"history\" list may hold pivotal shifts as story facts. Everywhere else: present tense only.",
+  "- Record only what is durable. Sheets and records hold stable, medium-to-long-lived facts. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.",
+  "- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.",
+  "- Omit empty optional fields entirely.",
+  "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
+  "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add.",
+].join("\n");
 
 export function diskVersionFor(raw: Partial<LMBSettings> | null | undefined): number {
   const v = raw && typeof raw === "object" ? raw : {};
@@ -275,6 +307,7 @@ export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined):
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
+    suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt,
   };
 }
 
@@ -342,6 +375,11 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
     codexSamplers: normalizeSamplers(v.codexSamplers),
+    codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
+    codexDirectivesOverride:
+      typeof v.codexDirectivesOverride === "string" && v.codexDirectivesOverride.trim() !== ""
+        ? v.codexDirectivesOverride
+        : null,
   };
 }
 

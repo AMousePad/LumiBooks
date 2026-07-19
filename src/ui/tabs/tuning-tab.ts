@@ -9,7 +9,6 @@ import {
   renderBehavior,
   renderCodexSettings,
   renderCompressionTargets,
-  renderConnection,
   renderContext,
   renderProfilePicker,
   renderRegex,
@@ -18,20 +17,32 @@ import {
 } from "./profile-tab";
 import { renderPromptsPane } from "./prompts-tab";
 
-type TuningSubtab = "profile" | "codex" | "model" | "prompts";
+type TuningSubtab = "profile" | "settings" | "prompts";
 
 const SUBTABS: { key: TuningSubtab; label: string }[] = [
   { key: "profile", label: "Profile" },
-  { key: "codex", label: "Codex" },
-  { key: "model", label: "Model" },
+  { key: "settings", label: "Settings" },
   { key: "prompts", label: "Prompts" },
 ];
 
-const local = { subtab: "profile" as TuningSubtab };
+const local = { subtab: "profile" as TuningSubtab, settingsView: "books" as "books" | "codex" };
 
-/** Lesson-stage navigation: pick the subtab before a demo render. */
+/** Lesson-stage navigation; legacy keys map onto the merged layout. */
 export function setTuningSubtab(key: string): void {
-  if (key === "profile" || key === "codex" || key === "model" || key === "prompts") local.subtab = key;
+  const mapped = key === "model" ? "profile" : key === "codex" ? "settings" : key;
+  if (mapped === "profile" || mapped === "settings" || mapped === "prompts") local.subtab = mapped;
+  if (key === "codex") local.settingsView = "codex";
+}
+
+/** Lesson-stage navigation: pin the Settings pane's Books/Codex side. */
+export function setSettingsView(v: "books" | "codex"): void {
+  local.settingsView = v;
+}
+
+/** Lesson exit: the demo pinned these, put the real tab back at its default. */
+export function resetTuningTabLocal(): void {
+  local.subtab = "profile";
+  local.settingsView = "books";
 }
 
 export function renderTuningTab(
@@ -86,23 +97,54 @@ export function renderTuningTab(
         rest.setAttribute("inert", "");
       }
       pane.appendChild(rest);
-      renderCompressionTargets(rest, profile, patch);
-      renderAutomation(rest, profile, patch);
-      renderContext(rest, profile, patch);
-      renderBehavior(rest, profile, patch);
-      renderGlobalSettings(rest, state, send);
-      renderResetSettings(rest, state, send);
+      // The model contents live under the Profile box: connections sit
+      // inside the switch, Summaries and Codex each above their samplers.
+      renderSamplersSwitch(rest, state, profile, send);
+      renderRegex(rest, state, profile, patch);
       break;
     }
-    case "codex":
-      if (codexLessonGated(state.lessons)) renderCodexPaneLock(pane);
-      else renderCodexSettings(pane, state, profile, patch);
+    case "settings": {
+      const switchRow = document.createElement("div");
+      switchRow.className = "lmb-sampler-switch";
+      const body = document.createElement("div");
+      body.className = "lmb-pane";
+      const options: { key: "books" | "codex"; label: string; btn?: HTMLButtonElement }[] = [
+        { key: "books", label: "Books" },
+        { key: "codex", label: "Codex" },
+      ];
+      const sync = (): void => {
+        for (const o of options) o.btn?.classList.toggle("active", local.settingsView === o.key);
+        body.replaceChildren();
+        if (local.settingsView === "books") {
+          renderCompressionTargets(body, profile, patch);
+          renderAutomation(body, profile, patch);
+          renderContext(body, profile, patch);
+          renderBehavior(body, profile, patch);
+          renderGlobalSettings(body, state, send);
+          renderResetSettings(body, state, send);
+        } else if (codexLessonGated(state.lessons)) {
+          renderCodexPaneLock(body);
+        } else {
+          renderCodexSettings(body, state, profile, patch);
+        }
+      };
+      for (const o of options) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = o.label;
+        lessonMark(btn, `tuning.settings.${o.key}`);
+        btn.addEventListener("click", () => {
+          if (local.settingsView === o.key) return;
+          local.settingsView = o.key;
+          sync();
+        });
+        o.btn = btn;
+        switchRow.appendChild(btn);
+      }
+      pane.append(switchRow, body);
+      sync();
       break;
-    case "model":
-      renderConnection(pane, state, profile, patch);
-      renderSamplersSwitch(pane, state, profile, send);
-      renderRegex(pane, state, profile, patch);
-      break;
+    }
     case "prompts":
       renderPromptsPane(pane, state, ctx, send);
       break;

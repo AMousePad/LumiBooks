@@ -1,6 +1,6 @@
 import type { LessonCourseDef } from "./lesson-types";
 import { setCodexExpandedEntity, setCodexRelationsView, setCodexSubtab } from "../tabs/codex-tab";
-import { setTuningSubtab } from "../tabs/tuning-tab";
+import { setSettingsView, setTuningSubtab } from "../tabs/tuning-tab";
 
 /** Course 2: The Archivist's Codex. A quick guided walkthrough: the user
  * navigates every pane themselves, tries the unique interactions, and only
@@ -99,14 +99,14 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex-stale" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
-          text: "You froze Relations 40 messages ago and it now says stale. You re-enable it. What are your two choices?",
+          text: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
           options: [
-            { text: "Rebuild the codex to recover the missed events, or accept that the frozen gap is just missing", correct: true },
-            { text: "Re-enable it and the gap fills in automatically" },
-            { text: "Only a wipe can unfreeze it" },
+            { text: "It's marked as needing a catch-up, and one refresh pass rebuilds just that record from the summaries and recent messages", correct: true },
+            { text: "The gap fills in automatically on the next normal update" },
+            { text: "Nothing can recover the missed events except a full rebuild" },
             { text: "Tidy it, tidying re-reads the missed messages" },
           ],
-          why: "My reading position is already past those messages. Nothing short of a rebuild goes back for them.",
+          why: "My reading position is already past those messages, so normal updates never go back. The Overview offers a one-pass catch-up for every re-enabled record at once, and Rebuild stays the from-scratch option.",
         },
         {
           kind: "quiz",
@@ -206,7 +206,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.rel.add",
           path: ["codex.rel.add", "codex.rel.form"],
           expect: "codex_write_file",
-          text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. I filled in the boxes in advance this time. Give it a kind, like owes, and a short state, then Save.",
+          text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
           done: "Recorded. Let's see it drawn.",
         },
         {
@@ -253,7 +253,7 @@ export const COURSE_CODEX: LessonCourseDef = {
             setCodexRelationsView("graph");
           },
           anchor: "codex.rel.graph",
-          text: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity's sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, and Lore holds world rules plus the who-knows-what secrets. Browse them any time.",
+          text: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity's sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
         },
       ],
     },
@@ -264,10 +264,13 @@ export const COURSE_CODEX: LessonCourseDef = {
         {
           kind: "nav",
           fixture: { variant: "codex" },
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning", "subtab.codex"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Last stop, my dials. Open the Tuning tab, then its Codex pane.",
+          text: "Last stop, my dials. Open the Tuning tab, its Settings pane, then the Codex side.",
           done: "My dials.",
         },
         {
@@ -277,7 +280,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 30 per pass. If a chat falls far behind, Update catches me up in increments.",
+          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 20 per pass. If a chat falls far behind, Update catches me up in increments.",
         },
         {
           kind: "quiz",
@@ -310,7 +313,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Three switches worth knowing. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Codex connection gives this work its own model, which must support tool calls. Extra context mode has me write chapters early as ghosts, so I always know the story so far.",
+          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Profile pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them.",
         },
         {
           kind: "say",
@@ -333,7 +336,7 @@ export const COURSE_CODEX: LessonCourseDef = {
             { text: "A codex file is corrupted" },
             { text: "The Relations table is off" },
           ],
-          why: "The agent writes its records through tool calls. A model that can only write prose cannot keep the codex.",
+          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Profile pane, Codex toggle) returns me to JSON mode, which works on every connection.",
         },
         {
           kind: "quiz",
@@ -357,11 +360,15 @@ export const COURSE_CODEX: LessonCourseDef = {
         {
           kind: "nav",
           real: true,
+          optional: true,
           tab: "home",
-          prep: () => setTuningSubtab("profile"),
-          path: ["tab.tuning", "subtab.codex"],
+          prep: () => {
+            setTuningSubtab("profile");
+            setSettingsView("books");
+          },
+          path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Codex.",
+          text: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Settings, then its Codex side.",
           done: "Already there. Good.",
         },
         {

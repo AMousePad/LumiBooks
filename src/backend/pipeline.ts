@@ -34,7 +34,7 @@ import {
 import { describeError, warn } from "./runtime";
 import { publishChapterCreated, publishArcCreated, publishVolumeCreated } from "./hooks";
 import { pickPhrase, type PhraseKind } from "./memoria";
-import { ensureForkAdoption } from "./fork";
+import { ensureForkAdoption, forkShelfPending } from "./fork";
 
 type ChatMessageDTO = ChatMessage;
 
@@ -1269,7 +1269,7 @@ export async function acceptPreview(
         title: preview.title,
         opener: "",
         content: preview.content,
-        keywords: [],
+        keywords: preview.keywords ?? [],
         shortComment: preview.shortComment,
         usagePromptTokens: preview.tokenCountInput,
         usageCompletionTokens: preview.tokenCountOutput,
@@ -1315,7 +1315,7 @@ export async function acceptPreview(
       title: preview.title,
       opener: "",
       content: preview.content,
-      keywords: [],
+      keywords: preview.keywords ?? [],
       shortComment: preview.shortComment,
       usagePromptTokens: preview.tokenCountInput,
       usageCompletionTokens: preview.tokenCountOutput,
@@ -1668,6 +1668,8 @@ export async function maybeRunPipeline(
   }
   if (!profile.autoCreate) return;
   await ensureForkAdoption(chatId, userId).catch(() => {});
+  // A self-filed chapter mid-backoff would shadow the shelf inheritance.
+  if (await forkShelfPending(chatId, userId).catch(() => false)) return;
   if (profile.autoCreateChapter) {
     if (extraContextActive(profile)) {
       // Generation runs at the codex lag (ghosts), injection at the chapter lag
@@ -1730,6 +1732,7 @@ function makePreview(
     title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
     content: result.content,
     shortComment: result.shortComment,
+    keywords: result.keywords ?? [],
     sourceMessageIds: window.map((m) => m.id),
     model: result.model,
     connectionId: result.connectionId,
@@ -1756,6 +1759,7 @@ function makeGroupPreview(
     title: result.title || `${kind === "volume" ? "Volume" : "Arc"} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
     content: result.content,
     shortComment: result.shortComment,
+    keywords: result.keywords ?? [],
     sourceMessageIds: selected.flatMap((c) => c.meta.msgIds),
     sourceChapterEntryIds: selected.map((c) => c.raw.id),
     model: result.model,

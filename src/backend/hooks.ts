@@ -38,7 +38,7 @@ export interface VolumeCreatedEvent {
   createdAt: number;
 }
 
-export type CodexChangeReason = "run" | "tidy" | "edit" | "states" | "wipe";
+export type CodexChangeReason = "run" | "tidy" | "refresh" | "edit" | "states" | "wipe";
 
 /** Snapshot published at `lumi_books.codex.<chatId>` for other extensions. */
 export interface CodexSnapshotPayload {

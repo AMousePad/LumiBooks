@@ -5,6 +5,7 @@
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { SAMPLER_DEFAULTS, makeDefaultProfile } from "../src/shared";
 import { COURSE_BOOKS } from "../src/ui/lessons/content-books";
 import { COURSE_CODEX } from "../src/ui/lessons/content-codex";
 import { FIXTURE_VARIANTS, buildFixture } from "../src/ui/lessons/fixture";
@@ -216,6 +217,25 @@ if (stale.codexFileStates["relations"] === "frozen" && stale.codexStaleFiles.inc
 const noinject = buildFixture("codex-noinject");
 if (noinject.codexFileStates["relations"] === "noInject") ok("codex-noinject: relations noInject");
 else fail("codex-noinject: premise broken");
+
+/* ------------------------------------------------------------- defaults */
+
+/** Numbers the lesson texts state as facts; a default change must trip here. */
+console.log("defaults taught by lessons:");
+const prof = makeDefaultProfile("check", "check");
+const taught: [string, number, number][] = [
+  ["chapter lag 65", prof.lagValue, 65],
+  ["chapter window 18", prof.windowValue, 18],
+  ["chapter ratio 15%", prof.chapterTargetPercent, 15],
+  ["codex lag 6", prof.codexLagValue, 6],
+  ["codex window 20", prof.codexWindowValue, 20],
+  ["chapter context 7", prof.previousMemoriesCount, 7],
+  ["summary temperature 0.4", SAMPLER_DEFAULTS.temperature, 0.4],
+];
+for (const [label, actual, expected] of taught) {
+  if (actual === expected) ok(label);
+  else fail(`${label}: default is now ${actual}, update the lesson texts and this table`);
+}
 
 /* --------------------------------------------------------------- result */
 
