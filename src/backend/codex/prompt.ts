@@ -334,6 +334,46 @@ export function buildCodexUltraMessage(
   return parts.join("\n\n");
 }
 
+/** Reconcile sweep: the story shrank behind the codex with nothing new to read. */
+export function buildCodexReconcileMessage(
+  bundle: CodexBundle,
+  books: string[],
+  tailTranscript: string | null,
+  notes: CodexRunNotes,
+  lore: string | null,
+  useTools: boolean,
+): string {
+  const parts: string[] = [];
+  const special = specialNotes(bundle, notes);
+  if (special) parts.push(special);
+  const shape = books.length && tailTranscript
+    ? "as its filed summaries, oldest first, followed by the raw newest turns"
+    : books.length
+      ? "as its filed summaries, oldest first"
+      : "as raw turns";
+  parts.push(
+    `RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives ${shape}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.`,
+  );
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>\n${lore}`);
+  }
+  parts.push("<<CURRENT CODEX>>");
+  for (const key of CODEX_FILE_KEYS) {
+    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
+  }
+  if (books.length) {
+    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+  }
+  if (tailTranscript) {
+    parts.push("<<NEWEST STORY TURNS (raw)>>");
+    parts.push(tailTranscript);
+  }
+  parts.push(useTools
+    ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds."
+    : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
+  return parts.join("\n\n");
+}
+
 /** Refresh pass: rewrite re-enabled files from the story's active context. */
 export function buildCodexRefreshMessage(
   bundle: CodexBundle,

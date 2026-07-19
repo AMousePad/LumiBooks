@@ -9,6 +9,7 @@ import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig,
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
 import { ToolProtocolError, runCodexAgent } from "./agent";
 import {
+  buildCodexReconcileMessage,
   buildCodexRefreshMessage,
   buildCodexSummaryCatchupMessage,
   buildCodexTidyMessage,
@@ -594,13 +595,14 @@ export async function runCodexNow(
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
   try {
-    if (mode === "slow") {
-      const runs = await drain(chatId, userId, profile, 0, false, false);
-      if (runs === 0) {
-        cb?.onToast(userId, "info", "The codex is already caught up");
-      }
-    } else {
-      await catchupCodex(chatId, profile, settings, userId, mode);
+    const runs = mode === "slow"
+      ? await drain(chatId, userId, profile, 0, false, false)
+      : await catchupCodex(chatId, profile, settings, userId, mode);
+    if (runs === 0) {
+      // Nothing consumable can still hide a pending reconcile: the deleted
+      // tail left no unread turns, so sweep the codex against the story now.
+      const swept = await maybeReconcileSweep(chatId, profile, userId);
+      if (!swept) cb?.onToast(userId, "info", "The codex is already caught up");
     }
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
@@ -761,10 +763,10 @@ async function catchupCodex(
   settings: LMBSettings | null,
   userId: string,
   mode: "fast" | "ultra",
-): Promise<void> {
+): Promise<number | null> {
   if (!setBusy(userId, chatId, "codex", `Memoria is catching up the codex (${mode === "ultra" ? "ultra fast" : "fast"})`)) {
     cb?.onToast(userId, "warn", "Memoria is already working on the codex");
-    return;
+    return null;
   }
   const controller = new AbortController();
   registerAborter(userId, chatId, "codex", controller);
@@ -812,10 +814,7 @@ async function catchupCodex(
 
     // The final (or only) pass: everything left in one go.
     const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
-    if (plan.compressible.length === 0) {
-      if (runs === 0) cb?.onToast(userId, "info", "The codex is already caught up");
-      return;
-    }
+    if (plan.compressible.length === 0) return runs;
     if (mode === "ultra") {
       const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
       await runChunk(
@@ -828,6 +827,86 @@ async function catchupCodex(
     } else {
       await runChunk(chatId, userId, profile, plan, plan.compressible, false, controller.signal, progress);
     }
+    return runs + 1;
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
+}
+
+/** Deleted-tail cleanup: a pending reconcile with nothing consumable gets an
+ * ultra-shaped sweep that corrects the codex against the surviving story.
+ * The rewound cursor persists and the reconcile flag clears on success. */
+async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: string): Promise<boolean> {
+  const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
+  if (plan.compressible.length > 0 || !plan.reconcile) return false;
+  if ((await codexPresence(chatId, userId)) !== "present") return false;
+  // A pending relations-format migration belongs to a real chunk run.
+  if (plan.cursor.relationsTableMode !== null && plan.cursor.relationsTableMode !== profile.codexRelationsTable) return false;
+  if (!setBusy(userId, chatId, "codex", "Memoria is reconciling the codex with the edited story")) return false;
+  const controller = new AbortController();
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const diskMode = plan.cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
+    const lore = await activatedLoreText(chatId, userId);
+    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
+    const notes: CodexRunNotes = {
+      reconcile: true,
+      migrateToTable: false,
+      migrateToInline: false,
+      loadProblems: problems.map((p) => `${p.file}.json`),
+      frozenFiles: [...frozen].map((f) => `${f}.json`),
+    };
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes,
+      lore,
+      storySoFar: null,
+      frozenFiles: frozen,
+      userTextOverride: buildCodexReconcileMessage(bundle, books, tailTranscript, notes, lore, profile.codexUseTools),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
+    });
+    invalidateCodexInjectionCache(chatId);
+    await withCursorLock(chatId, userId, async () => {
+      const liveCursor = await loadCursor(chatId, userId).catch((err) => {
+        warn(`codex: live cursor re-read failed before sweep save: ${describeError(err)}`);
+        return null;
+      });
+      if (liveCursor) {
+        plan.cursor.fileStates = liveCursor.fileStates;
+        plan.cursor.frozenAtRuns = liveCursor.frozenAtRuns;
+        plan.cursor.refreshPending = liveCursor.refreshPending;
+      }
+      plan.cursor.pendingReconcile = false;
+      plan.cursor.reconcileUntilMsgId = null;
+      plan.cursor.lastRunAt = Date.now();
+      plan.cursor.lastRunStats = {
+        rounds: result.rounds,
+        promptTokens: result.usagePromptTokens,
+        completionTokens: result.usageCompletionTokens,
+        model: result.model,
+        ...(result.doneNote ? { note: result.doneNote } : {}),
+      };
+      plan.cursor.runs += 1;
+      await saveCursor(chatId, plan.cursor, userId);
+    });
+    await publishCodexPool(chatId, userId, profile, result.changedFiles, "run");
+    await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+    cb?.onToast(userId, "success", result.changedFiles.length > 0
+      ? `Memoria reconciled the codex with the edited story (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})`
+      : "Memoria checked the codex against the edited story and everything still holds");
+    cb?.onStateChange(userId, chatId);
+    return true;
   } finally {
     clearBusy(userId, chatId, "codex");
   }
