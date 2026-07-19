@@ -430,6 +430,7 @@ async function runChunk(
     lore,
     storySoFar,
     frozenFiles,
+    timelineAppendOnly: !notes.reconcile,
     ...(buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {}),
     progressBase: progress,
     externalSignal,

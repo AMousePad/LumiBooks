@@ -105,6 +105,8 @@ export interface CodexAgentOptions {
   userTextOverride?: string;
   /** Suppress the thorough-mode verification round (tidy passes). */
   skipVerify?: boolean;
+  /** Reject timeline drops: history only shrinks in reconcile/tidy/refresh. */
+  timelineAppendOnly?: boolean;
   /** Cumulative progress counters owned by the caller. A drain passes one
    * object across all its queued chunks so the busy label keeps counting up
    * in step with the stream viewer instead of resetting (and appearing
@@ -269,6 +271,7 @@ function stageWrite(
   args: Record<string, unknown>,
   current: CodexFileValue,
   validateOpts: ValidateOptions,
+  timelineAppendOnly: boolean,
 ): StagedWrite {
   const errors: string[] = [];
   const lockedKept: string[] = [];
@@ -397,6 +400,10 @@ function stageWrite(
     }
     if (isArchivedRid(key)) {
       archivedKept.push(key);
+      continue;
+    }
+    if (file === "timeline" && timelineAppendOnly) {
+      errors.push(`drop "${key}": the timeline is append-only - events are only removed in reconcile or tidy passes`);
       continue;
     }
     const idx = rows.findIndex((r) => r[keyField] === key);
@@ -593,7 +600,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
-      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts);
+      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts, opts.timelineAppendOnly === true);
       if (!staged.value) {
         rejectedFiles.add(fileRaw);
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: staged.errors });

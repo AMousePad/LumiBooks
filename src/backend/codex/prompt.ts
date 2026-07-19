@@ -80,8 +80,11 @@ const SCHEMA_REST = `timeline.json
   "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
   "causes"?: "she flees the city" } ] }
 Major events only, oldest first. "when" uses the story's own reckoning. The
-timeline is append-only in practice: add new events, and touch an existing row
-only to correct an outright error.
+timeline is APPEND-ONLY: record new events as set rows without a rid, and
+never rewrite or drop existing events - history does not change behind the
+story. Editing an existing row is reserved for an outright factual error or
+a reference the validator flags; removals happen only in reconcile or tidy
+passes.
 
 threads.json
 { "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",

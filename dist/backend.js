@@ -4140,8 +4140,11 @@ var SCHEMA_REST = `timeline.json
   "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
   "causes"?: "she flees the city" } ] }
 Major events only, oldest first. "when" uses the story's own reckoning. The
-timeline is append-only in practice: add new events, and touch an existing row
-only to correct an outright error.
+timeline is APPEND-ONLY: record new events as set rows without a rid, and
+never rewrite or drop existing events - history does not change behind the
+story. Editing an existing row is reserved for an outright factual error or
+a reference the validator flags; removals happen only in reconcile or tidy
+passes.
 
 threads.json
 { "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
@@ -6743,7 +6746,7 @@ function parseJsonModeCalls(raw) {
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
-function stageWrite(file, args, current, validateOpts) {
+function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   const errors = [];
   const lockedKept = [];
   const dropMisses = [];
@@ -6875,6 +6878,10 @@ function stageWrite(file, args, current, validateOpts) {
     }
     if (isArchivedRid(key2)) {
       archivedKept.push(key2);
+      continue;
+    }
+    if (file === "timeline" && timelineAppendOnly) {
+      errors.push(`drop "${key2}": the timeline is append-only - events are only removed in reconcile or tidy passes`);
       continue;
     }
     const idx = rows.findIndex((r) => r[keyField] === key2);
@@ -7041,7 +7048,7 @@ async function runCodexAgent(opts) {
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
-      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts);
+      const staged = stageWrite(fileRaw, call.args, working[fileRaw], validateOpts, opts.timelineAppendOnly === true);
       if (!staged.value) {
         rejectedFiles.add(fileRaw);
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: staged.errors });
@@ -7458,6 +7465,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     lore,
     storySoFar,
     frozenFiles,
+    timelineAppendOnly: !notes.reconcile,
     ...buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {},
     progressBase: progress,
     externalSignal,
