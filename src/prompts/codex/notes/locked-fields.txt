@@ -1,0 +1,1 @@
+LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). Never write those fields. When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.

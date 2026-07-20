@@ -153,6 +153,8 @@ interface EntityDraft {
   /** Entity id being edited; also used for entities not yet acked. */
   id: string;
   fields: Record<string, string>;
+  /** Per-field locks: the agent sees "Locked, do not edit" for these. */
+  lockedFields: Set<string>;
   saving: boolean;
 }
 
@@ -508,6 +510,37 @@ const BIBLE_TILES: { id: string; label: string; files: CodexFileKey[] }[] = [
 
 type FileState = "on" | "noInject" | "frozen";
 
+/** Zeroed stand-in so the overview renders its tiles before the first run:
+ * the switches already persist, so records can be frozen ahead of time. */
+function emptyParsedCodex(): ParsedCodex {
+  return {
+    characters: [], locations: [], things: [], relations: [],
+    events: [], threads: [], seeds: [], world: [], knowledge: [], broken: [],
+  };
+}
+
+/** Empty scaffold written by the per-category Purge button. */
+const PURGE_SCAFFOLD: Record<CodexFileKey, unknown> = {
+  characters: { entities: [] },
+  locations: { entities: [] },
+  things: { entities: [] },
+  relations: { relations: [] },
+  timeline: { events: [] },
+  threads: { threads: [], seeds: [] },
+  world: { entries: [] },
+  knowledge: { items: [] },
+};
+
+function purgeMessage(def: { id: string; label: string }): string {
+  const bits = [`Memoria will delete every record in ${def.label} for this chat.`];
+  if (def.id === "characters" || def.id === "locations" || def.id === "things") {
+    bits.push("References to them in other records become plain text.");
+  }
+  if (def.id === "threads") bits.push("The resolved thread archive clears too.");
+  bits.push("This cannot be undone.");
+  return bits.join(" ");
+}
+
 function tileCount(parsed: ParsedCodex, id: string): number {
   switch (id) {
     case "characters": return parsed.characters.length;
@@ -569,10 +602,14 @@ function renderOverview(
     sec.body.appendChild(row);
   }
 
-  if (parsed) {
-    if (parsed.broken.length > 0) {
+  // Before the first run the tiles render zeroed instead of vanishing: the
+  // per-file switches persist in the cursor, so a record can be frozen ahead
+  // of time and never costs a single pass.
+  const shownParsed = parsed ?? (!state.codexExists ? emptyParsedCodex() : null);
+  if (shownParsed) {
+    if (shownParsed.broken.length > 0) {
       sec.body.appendChild(textNode(
-        `Unreadable on disk: ${parsed.broken.join(", ")} - Rebuild codex regenerates them from the story`,
+        `Unreadable on disk: ${shownParsed.broken.join(", ")} - Rebuild codex regenerates them from the story`,
         "lmb-help",
       ));
     }
@@ -580,9 +617,15 @@ function renderOverview(
     tiles.className = "lmb-tiles";
     lessonMark(tiles, "codex.tiles");
     for (const def of BIBLE_TILES) {
-      tiles.appendChild(renderBibleTile(def, parsed, state, send, busy));
+      tiles.appendChild(renderBibleTile(def, shownParsed, state, ctx, send, busy));
     }
     sec.body.appendChild(tiles);
+    if (!state.codexExists) {
+      sec.body.appendChild(textNode(
+        "No codex yet, so every record sits at zero. The switches already work. Freeze a record now and Memoria skips it from the very first pass.",
+        "lmb-help",
+      ));
+    }
     const pending = state.codexRefreshPending ?? [];
     if (pending.length > 0) {
       const banner = document.createElement("div");
@@ -657,6 +700,7 @@ function renderBibleTile(
   def: { id: string; label: string; files: CodexFileKey[] },
   parsed: ParsedCodex,
   state: FrontendState,
+  ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
   busy: boolean,
 ): HTMLElement {
@@ -696,11 +740,41 @@ function renderBibleTile(
     else send({ type: "codex_tidy", chatId, files: def.files });
   }, {
     small: true,
-    disabled: !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled),
+    disabled: !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists),
     title: busy ? "Abort the codex task in flight" : "Compress just this record with one LLM pass",
   });
   tidyBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(tidyBtn);
+  const rebuildBtn = makeButton("Rebuild", () => {
+    void (async () => {
+      const ok = await confirmDelete(
+        ctx,
+        "Rebuild this record?",
+        `Memoria will regenerate every record in ${def.label} from the whole story in one pass. The current contents are replaced when the pass succeeds. Locked entries survive untouched.`,
+      );
+      if (ok) send({ type: "codex_rebuild_files", chatId, files: def.files });
+    })();
+  }, {
+    small: true,
+    disabled: busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled,
+    title: "Regenerate just this category from the whole story in one pass",
+  });
+  rebuildBtn.addEventListener("click", (e) => e.stopPropagation());
+  tools.appendChild(rebuildBtn);
+  const purgeBtn = makeButton("Purge", () => {
+    void (async () => {
+      const ok = await confirmDelete(ctx, "Purge this record?", purgeMessage(def));
+      if (!ok) return;
+      sendCodexWrite(def.files[0]!, PURGE_SCAFFOLD[def.files[0]!], state, send);
+    })();
+  }, {
+    small: true,
+    danger: true,
+    disabled: busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0,
+    title: "Delete every record in this category at once",
+  });
+  purgeBtn.addEventListener("click", (e) => e.stopPropagation());
+  tools.appendChild(purgeBtn);
   tile.appendChild(tools);
 
   tile.addEventListener("click", () => {
@@ -727,8 +801,13 @@ function cycleTileState(
 const ENTITY_TEXT_FIELDS = ["kind", "role", "significance"] as const;
 const ENTITY_LONG_FIELDS = ["appearance", "description", "notes"] as const;
 const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"] as const;
-// "status" is deprecated, "locked" user-owned, "rid" plumbing: never shown as extras.
-const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+// "status" is deprecated, "locked"/"lockedFields" user-owned, "rid" plumbing:
+// never shown as extras.
+const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "lockedFields", "lockedfields", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+
+/** Fields a per-field lock can hold. Name stays writable, it identifies the
+ * sheet to the agent. */
+const LOCKABLE_FIELDS = new Set<string>([...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 
 function entitySearchText(e: Record<string, unknown>): string[] {
   const bits: string[] = [];
@@ -862,12 +941,16 @@ function renderAddForm(
   return row;
 }
 
+function entityLockedFields(e: Record<string, unknown>): string[] {
+  return strArray(e["lockedFields"] ?? e["lockedfields"]);
+}
+
 function makeDraft(group: EntityGroup, e: Record<string, unknown>): EntityDraft {
   const fields: Record<string, string> = { name: str(e["name"]) };
   for (const f of ENTITY_TEXT_FIELDS) fields[f] = str(e[f]);
   for (const f of ENTITY_LONG_FIELDS) fields[f] = str(e[f]);
   for (const f of ENTITY_LIST_FIELDS) fields[f] = strArray(e[f]).join(", ");
-  return { group, id: str(e["id"]), fields, saving: false };
+  return { group, id: str(e["id"]), fields, lockedFields: new Set(entityLockedFields(e)), saving: false };
 }
 
 function renderEntityCard(
@@ -896,11 +979,13 @@ function renderEntityCard(
 
   const kv = document.createElement("div");
   kv.className = "lmb-kv";
+  const fieldLocks = new Set(entityLockedFields(e));
   const addKv = (label: string, value: string): void => {
     if (!value) return;
     const k = document.createElement("div");
     k.className = "lmb-kv-key";
-    k.textContent = label;
+    k.textContent = fieldLocks.has(label) ? `${label} 🔒` : label;
+    if (fieldLocks.has(label)) k.title = "Locked field, Memoria can never change it";
     const v = document.createElement("div");
     v.className = "lmb-kv-value";
     v.textContent = value;
@@ -975,6 +1060,34 @@ function renderEntityForm(
     el.addEventListener("input", () => { draft.fields[key] = el.value; });
   };
 
+  // Per-field lock toggle in the label row: a locked field is user-owned, the
+  // agent reads "Locked, do not edit" in its place and its writes revert.
+  const lockableWrap = (key: string, label: string): HTMLElement => {
+    const w = fieldWrap(label);
+    if (!LOCKABLE_FIELDS.has(key)) return w;
+    const lbl = w.firstElementChild as HTMLElement;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "lmb-field-lock";
+    const sync = (): void => {
+      const on = draft.lockedFields.has(key);
+      btn.textContent = on ? "🔒 locked" : "🔓";
+      btn.title = on
+        ? "Locked. Memoria reads a lock marker instead of this value and can never change it. Click to unlock."
+        : "Lock this field so only you can change it";
+      btn.classList.toggle("active", on);
+    };
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      if (draft.lockedFields.has(key)) draft.lockedFields.delete(key);
+      else draft.lockedFields.add(key);
+      sync();
+    });
+    sync();
+    lbl.appendChild(btn);
+    return w;
+  };
+
   const form = document.createElement("div");
   form.className = "lmb-entity-form";
 
@@ -987,7 +1100,7 @@ function renderEntityForm(
   const grid = document.createElement("div");
   grid.className = "lmb-grid-2";
   for (const f of ENTITY_TEXT_FIELDS) {
-    const w = fieldWrap(f);
+    const w = lockableWrap(f, f);
     const input = textInput({ value: draft.fields[f] ?? "" });
     bind(f, input);
     w.appendChild(input);
@@ -996,7 +1109,7 @@ function renderEntityForm(
   form.appendChild(grid);
 
   for (const f of ENTITY_LONG_FIELDS) {
-    const w = fieldWrap(f);
+    const w = lockableWrap(f, f);
     const ta = textArea({ value: draft.fields[f] ?? "", rows: 2 });
     bind(f, ta);
     w.appendChild(ta);
@@ -1006,7 +1119,7 @@ function renderEntityForm(
   const relationsOn = state.activeProfile.codexRelationsTable;
   for (const f of ENTITY_LIST_FIELDS) {
     if (f === "ties" && relationsOn) continue;
-    const w = fieldWrap(`${f} (comma separated)`);
+    const w = lockableWrap(f, `${f} (comma separated)`);
     const input = textInput({ value: draft.fields[f] ?? "" });
     bind(f, input);
     w.appendChild(input);
@@ -1078,6 +1191,8 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
       .filter(Boolean);
     if (items.length) out[f] = items;
   }
+  const locks = [...draft.lockedFields].filter((f) => LOCKABLE_FIELDS.has(f));
+  if (locks.length) out["lockedFields"] = locks;
   return out;
 }
 

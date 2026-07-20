@@ -1,5 +1,6 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
+import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
 import type { LMBProfile, LMBSettings } from "../../shared";
 import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars } from "../../shared";
 import type { ChatMessage } from "../coverage";
@@ -7,19 +8,31 @@ import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../
 import type { CodexCursor, CodexFileState } from "./store";
 import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
-import { ToolProtocolError, runCodexAgent } from "./agent";
+import { CodexContextError, ToolProtocolError, codexMaxInputTokens, resolveCodexConnection, runCodexAgent } from "./agent";
 import {
+  buildCodexRebuildMessage,
   buildCodexReconcileMessage,
   buildCodexRefreshMessage,
   buildCodexSummaryCatchupMessage,
+  buildCodexSystemPrompt,
   buildCodexTidyMessage,
   buildCodexUltraMessage,
+  buildCodexUserMessage,
+  makeCodexPromptCtx,
   renderCodexFileSections,
   renderCodexForInjection,
+  type CodexPromptCtx,
   type CodexRunNotes,
 } from "./prompt";
+import { loadSettings } from "../storage";
 import { syncCodexEntries, wipeCodexEntries } from "./sync";
-import { AbortedSummarizerError, renderTranscript } from "../summarizer";
+import {
+  AbortedSummarizerError,
+  buildCodexSamplerParameters,
+  renderTranscript,
+  resolveMacrosWithDiagnostics,
+  type DryRunAssembly,
+} from "../summarizer";
 import { abortBusy, appendStreamText, clearBusy, drainChapterBacklog, getBusy, maybeRunArcCheck, registerAborter, setBusy, shortErrorText, updateProgressNumbers } from "../pipeline";
 import { findBookForChat, listAllEntries, listLmbEntries, type LMBEntry } from "../world-book";
 import { publishCodexSnapshot, publishCodexUpdated, publishCodexWiped, type CodexChangeReason } from "../hooks";
@@ -37,8 +50,21 @@ export interface CodexCallbacks {
 /** Shared failure tail for every codex entry point: toast the error, and on
  * a tool-transport failure also surface the JSON-fallback offer. */
 function reportCodexFailure(userId: string, chatId: string, verb: string, err: unknown): void {
+  // The context preflight's remedy list is the whole point of the error:
+  // shortErrorText would trim it to the first sentence.
+  if (err instanceof CodexContextError) {
+    cb?.onToast(userId, "error", err.message);
+    return;
+  }
   cb?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
   if (err instanceof ToolProtocolError) cb?.onToolsHint?.(userId, chatId);
+}
+
+/** The lore reference budget in tokens: a share of the codex max input, or
+ * the profile's flat cap (0 = no limit). */
+function effectiveLoreLimitTokens(profile: LMBProfile): number {
+  if (profile.codexLoreLimitUnit === "tokens") return profile.codexLoreLimitTokens;
+  return Math.max(1, Math.floor((codexMaxInputTokens(profile) * profile.codexLoreLimitPercent) / 100));
 }
 
 let cb: CodexCallbacks | null = null;
@@ -243,62 +269,67 @@ async function planRun(chatId: string, userId: string, lagUnit: "messages" | "to
   return { messages, cursor, startPos, compressible, reconcile, rewound: divergedAt >= 0 };
 }
 
-/** Cap on the activated-lore reference block fed to the agent (~4k tokens). */
-const LORE_CAP_CHARS = 16000;
-
 /**
  * Non-LumiBooks activated lore for the agent's canon reference: character
  * books, world info, persona books - everything the host activated except
  * our own summary entries. getActivated returns metadata only, so contents
- * are resolved through each foreign book's entry list.
+ * are resolved through each foreign book's entry list, then packed in the
+ * host's own activation order. The default sends everything the host
+ * activated (it already curated the set by relevance); a profile limit
+ * (limitTokens > 0) skips whole entries past the budget, dropping the
+ * activation-order tail rather than cutting an entry mid-fact.
  */
-async function activatedLoreText(chatId: string, userId: string): Promise<string | null> {
+async function activatedLoreText(chatId: string, userId: string, limitTokens: number): Promise<string | null> {
   const activated = await spindle.world_books.getActivated(chatId, userId).catch(() => null);
   if (!activated || activated.length === 0) return null;
   const ourBookId = await findBookForChat(chatId, userId).catch(() => null);
 
-  const byBook = new Map<string, string[]>();
+  const bookIds = new Set<string>();
   for (const a of activated) {
-    if (!a.bookId || a.bookId === ourBookId) continue;
-    const list = byBook.get(a.bookId) ?? [];
-    list.push(a.id);
-    byBook.set(a.bookId, list);
+    if (a.bookId && a.bookId !== ourBookId) bookIds.add(a.bookId);
   }
-  if (byBook.size === 0) return null;
+  if (bookIds.size === 0) return null;
+  const entryById = new Map<string, WorldBookEntryDTO>();
+  for (const bookId of bookIds) {
+    for (const entry of await listAllEntries(bookId, userId).catch(() => [])) {
+      entryById.set(entry.id, entry);
+    }
+  }
 
+  const capChars = limitTokens > 0 ? limitTokens * 4 : Number.POSITIVE_INFINITY;
   const parts: string[] = [];
   let used = 0;
   let skipped = false;
-  for (const [bookId, entryIds] of byBook) {
-    const entries = await listAllEntries(bookId, userId).catch(() => []);
-    const wanted = new Set(entryIds);
-    for (const entry of entries) {
-      if (!wanted.has(entry.id)) continue;
-      const ext = (entry.extensions || {}) as Record<string, unknown>;
-      if (ext[EXTENSION_KEY]) continue;
-      // Our own codex mirror activating back into the agent's canon reference
-      // would be a feedback loop, not lore.
-      if (ext[CODEX_ENTRY_EXTENSION_KEY]) continue;
-      const content = (entry.content || "").trim();
-      if (!content) continue;
-      const label = (entry.comment || "").trim();
-      const block = label ? `[${label}]\n${content}` : content;
-      // Skip over-budget blocks instead of stopping: one oversized entry must
-      // not shadow every smaller entry behind it.
-      if (used + block.length > LORE_CAP_CHARS) {
-        skipped = true;
-        continue;
-      }
-      parts.push(block);
-      used += block.length;
+  for (const a of activated) {
+    if (!a.bookId || a.bookId === ourBookId) continue;
+    const entry = entryById.get(a.id);
+    if (!entry) continue;
+    const ext = (entry.extensions || {}) as Record<string, unknown>;
+    if (ext[EXTENSION_KEY]) continue;
+    // Our own codex mirror activating back into the agent's canon reference
+    // would be a feedback loop, not lore.
+    if (ext[CODEX_ENTRY_EXTENSION_KEY]) continue;
+    const content = (entry.content || "").trim();
+    if (!content) continue;
+    const label = (entry.comment || "").trim();
+    const block = label ? `[${label}]\n${content}` : content;
+    // Skip over-budget blocks instead of stopping: one oversized entry must
+    // not shadow every smaller entry behind it.
+    if (used + block.length > capChars) {
+      skipped = true;
+      continue;
     }
+    parts.push(block);
+    used += block.length;
   }
-  if (skipped) parts.push("[...more lore omitted for size...]");
+  if (skipped) parts.push(LORE_OMITTED_MARKER);
   // The marker is pushed before the empty check so an all-oversized set still
   // signals that canon existed rather than vanishing silently.
   if (parts.length === 0) return null;
   return parts.join("\n\n");
 }
+
+const LORE_OMITTED_MARKER = "[...more lore omitted for size...]";
 
 /**
  * Extra-context mode: recent chapter summaries (ghost or promoted) covering
@@ -314,7 +345,7 @@ async function storySoFarText(
   chunkFirstIdx: number,
   posById: Map<string, number>,
 ): Promise<string | null> {
-  if (!profile.codexExtraContext || profile.previousMemoriesCount <= 0) return null;
+  if (!profile.codexExtraContext || profile.codexStorySoFarCount <= 0) return null;
   const entries = await listLmbEntries(chatId, userId).catch(() => []);
   // chunkFirstIdx is a live position, so compare each chapter's LIVE end, not
   // its stored meta index which goes stale after deletions - otherwise a
@@ -327,7 +358,7 @@ async function storySoFarText(
         && liveEndPosition(e.meta.msgIds, e.meta.lastMsgIdx, posById) < chunkFirstIdx,
     )
     .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0))
-    .slice(-profile.previousMemoriesCount);
+    .slice(-profile.codexStorySoFarCount);
   if (prior.length === 0) return null;
   return prior.map((c) => c.raw.content || "").filter(Boolean).join("\n\n");
 }
@@ -360,8 +391,140 @@ export async function getCodexStatus(chatId: string, userId: string, profile: LM
   }
 }
 
+/** Newest window-sized tail, for a dry run on a fully consumed chat. */
+function previewTail(messages: ChatMessage[], profile: LMBProfile): ChatMessage[] {
+  if (profile.codexWindowUnit === "messages") return messages.slice(-Math.max(1, profile.codexWindowValue));
+  const out: ChatMessage[] = [];
+  let acc = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    out.unshift(messages[i]!);
+    acc += approximateTokensFromChars((messages[i]!.content || "").length);
+    if (acc >= profile.codexWindowValue) break;
+  }
+  return out;
+}
+
+/**
+ * Assemble exactly what the next codex run would send (system and user
+ * message, host macros resolved, frozen files omitted) without calling the
+ * model. Mirrors runChunk's assembly step for step.
+ */
+export async function dryRunCodex(
+  chatId: string,
+  profile: LMBProfile,
+  settings: LMBSettings,
+  userId: string,
+): Promise<DryRunAssembly> {
+  const conn = await resolveCodexConnection(profile, userId);
+  const diagnostics: Array<{ message: string }> = [];
+  let plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
+  let chunk: ChatMessage[];
+  if (plan.compressible.length > 0) {
+    chunk = takeWindow(plan.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+    if (!windowReached(plan.compressible, profile)) {
+      diagnostics.push({ message: "The window has not filled yet, automation would wait. Update now would consume this chunk." });
+    }
+  } else {
+    const eager = await planRun(chatId, userId, profile.codexLagUnit, 0);
+    if (eager.compressible.length > 0) {
+      plan = eager;
+      chunk = takeWindow(eager.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+      diagnostics.push({ message: "The lag reserve still holds these turns, automation would wait. Update now would consume them." });
+    } else {
+      const eligible = plan.messages.filter(nonEmpty);
+      if (eligible.length === 0) throw new Error("Chat has no messages");
+      chunk = previewTail(eligible, profile);
+      diagnostics.push({ message: "The codex has read everything, so this preview reuses the newest turns. A real run would wait for new messages." });
+    }
+  }
+  if (chunk.length === 0) throw new Error("No consumable window, send a message and try again");
+
+  const prevMode = plan.cursor.relationsTableMode;
+  const diskMode = prevMode ?? profile.codexRelationsTable;
+  const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+  const frozenFiles = new Set<CodexFileKey>(
+    CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"),
+  );
+  if (frozenFiles.size === CODEX_FILE_KEYS.length) {
+    throw new Error("Every codex record is frozen, unfreeze one to preview a run");
+  }
+  const notes: CodexRunNotes = {
+    reconcile: plan.reconcile,
+    migrateToTable: prevMode === false && profile.codexRelationsTable,
+    migrateToInline: prevMode === true && !profile.codexRelationsTable,
+    loadProblems: problems.map((p) => `${p.file}.json`),
+  };
+  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+
+  const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
+  const firstIdx = posById.get(chunk[0]!.id) ?? 0;
+  const lastIdx = posById.get(chunk[chunk.length - 1]!.id) ?? firstIdx;
+  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
+  const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
+
+  const system = await resolveMacrosWithDiagnostics(buildCodexSystemPrompt(promptCtx), chatId, userId, diagnostics);
+  const user = buildCodexUserMessage(
+    promptCtx, bundle, plan.messages.slice(firstIdx, lastIdx + 1), chunkLabel, firstIdx, notes, lore, storySoFar,
+  );
+
+  const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
+  const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
+  diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
+  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls (codex_write / codex_done)" : "strict JSON"}` });
+  diagnostics.push({
+    message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`,
+  });
+  diagnostics.push({
+    message: `Relations mode: ${profile.codexRelationsTable ? "table" : "inline ties"}${notes.migrateToTable || notes.migrateToInline ? " (format changed, this run would migrate)" : ""}`,
+  });
+  diagnostics.push({ message: `Active files: ${[...promptCtx.activeFiles].join(", ")}` });
+  if (frozenFiles.size) diagnostics.push({ message: `Frozen, omitted from the prompt entirely: ${[...frozenFiles].join(", ")}` });
+  diagnostics.push({ message: `Chunk: ${chunkLabel} (${chunk.length} message${chunk.length === 1 ? "" : "s"})` });
+  if (plan.reconcile) diagnostics.push({ message: "Reconcile pending: the story was edited behind the codex, the reconcile note is included" });
+  if (notes.loadProblems.length) diagnostics.push({ message: `Unreadable files shown empty: ${notes.loadProblems.join(", ")}` });
+  const lockedEntities: string[] = [];
+  const fieldLocked: string[] = [];
+  for (const key of ["characters", "locations", "things"] as const) {
+    for (const e of bundle[key].entities) {
+      if (e.locked === true) lockedEntities.push(e.id);
+      if (Array.isArray(e.lockedFields) && e.lockedFields.length) fieldLocked.push(e.id);
+    }
+  }
+  if (lockedEntities.length || fieldLocked.length) {
+    diagnostics.push({
+      message: `Locks: ${lockedEntities.length} locked entit${lockedEntities.length === 1 ? "y" : "ies"}, ${fieldLocked.length} with locked fields (masked in the prompt)`,
+    });
+  }
+  if (storySoFar) diagnostics.push({ message: `Story-so-far context: ~${approximateTokensFromChars(storySoFar.length)} tokens` });
+  if (lore) diagnostics.push({ message: `Activated lore reference: ~${approximateTokensFromChars(lore.length)} tokens` });
+  if (lore?.includes(LORE_OMITTED_MARKER)) {
+    diagnostics.push({
+      message: `Activated lore exceeded the lore limit (${effectiveLoreLimitTokens(profile)} tokens): entries past the budget were skipped whole and the omission marker tells the agent more canon exists`,
+    });
+  }
+  diagnostics.push({ message: `Thorough mode: ${profile.codexThorough ? "on, one verification round follows a clean update" : "off"}` });
+  diagnostics.push({
+    message: `Prompt size: ~${approximateTokensFromChars(system.length)} tokens system + ~${approximateTokensFromChars(user.length)} tokens user (codex max input ${codexMaxInputTokens(profile)})`,
+  });
+  const promptTokens = approximateTokensFromChars(system.length + user.length);
+  if (promptTokens > codexMaxInputTokens(profile)) {
+    diagnostics.push({ message: `WOULD FAIL: ${new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message}` });
+  }
+  diagnostics.push({ message: `Sampler parameters being sent on the wire: ${JSON.stringify(buildCodexSamplerParameters(profile))}` });
+
+  return {
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    diagnostics,
+  };
+}
+
 /** Replacement agent user message for catch-up passes. */
 type CatchupTextBuilder = (
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   notes: CodexRunNotes,
   chunkLabel: string,
@@ -394,8 +557,9 @@ async function runChunk(
     migrateToTable: prevMode === false && profile.codexRelationsTable,
     migrateToInline: prevMode === true && !profile.codexRelationsTable,
     loadProblems: problems.map((p) => `${p.file}.json`),
-    frozenFiles: [...frozenFiles].map((f) => `${f}.json`),
   };
+  const settings = await loadSettings(userId);
+  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
   // A frozen file the migration must rewrite would deadlock the gates below
   // with a generic error every run; fail actionably instead.
   if (notes.migrateToTable || notes.migrateToInline) {
@@ -409,7 +573,7 @@ async function runChunk(
   const firstIdx = posById.get(chunk[0]!.id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1]!.id) ?? -1;
   const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
-  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId) : null;
+  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile)) : null;
   const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
 
   // Queued chunks share one stream buffer for the whole drain: a visible
@@ -420,6 +584,7 @@ async function runChunk(
     chatId,
     userId,
     profile,
+    promptCtx,
     bundle,
     // The unfiltered positional slice keeps transcript header numbers aligned
     // with the label even when empty messages sit inside the range (the
@@ -430,9 +595,8 @@ async function runChunk(
     notes,
     lore,
     storySoFar,
-    frozenFiles,
     timelineAppendOnly: !notes.reconcile,
-    ...(buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {}),
+    ...(buildUserText ? { userTextOverride: buildUserText(promptCtx, bundle, notes, chunkLabel, lore) } : {}),
     progressBase: progress,
     externalSignal,
     onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -531,6 +695,9 @@ async function drain(
       if (controller.signal.aborted) throw new AbortedSummarizerError();
       const plan = await planRun(chatId, userId, profile.codexLagUnit, lagValue);
       if (plan.compressible.length === 0) break;
+      // Every file frozen means there is nothing the agent could write: a
+      // pass would burn a full-context call on a guaranteed no-op.
+      if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen")) break;
       if (requireWindow && !windowReached(plan.compressible, profile)) break;
       if (plan.rewound) {
         prevStartPos = plan.startPos - 1;
@@ -599,6 +766,11 @@ export async function runCodexNow(
       ? await drain(chatId, userId, profile, 0, false, false)
       : await catchupCodex(chatId, profile, settings, userId, mode);
     if (runs === 0) {
+      const cursor = await loadCursor(chatId, userId).catch(() => null);
+      if (cursor && CODEX_FILE_KEYS.every((k) => cursor.fileStates[k] === "frozen")) {
+        cb?.onToast(userId, "info", "Every codex record is frozen, unfreeze one so Memoria can update it");
+        return;
+      }
       // Nothing consumable can still hide a pending reconcile: the deleted
       // tail left no unread turns, so sweep the codex against the story now.
       const swept = await maybeReconcileSweep(chatId, profile, userId);
@@ -611,7 +783,7 @@ export async function runCodexNow(
     }
     warn(`codex manual run failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "update", err);
-    if (mode !== "slow" && CONTEXT_ERROR_RE.test(describeError(err))) {
+    if (mode !== "slow" && !(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
       cb?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
     }
   }
@@ -795,6 +967,7 @@ async function catchupCodex(
         if (controller.signal.aborted) throw new AbortedSummarizerError();
         const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
         if (plan.compressible.length === 0) break;
+        if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen")) break;
         if (!plan.rewound && plan.startPos <= prevStart) {
           warn(`codex fast catch-up stalled at message ${plan.startPos + 1} for ${chatId.slice(0, 8)}, stopping`);
           break;
@@ -806,7 +979,7 @@ async function catchupCodex(
           chatId, userId, profile, plan,
           plan.messages.slice(plan.startPos, batch.endIdx + 1),
           false, controller.signal, progress,
-          (bundle, notes, label) => buildCodexSummaryCatchupMessage(bundle, batch.blocks, label, notes),
+          (ctx, bundle, notes, label) => buildCodexSummaryCatchupMessage(ctx, bundle, batch.blocks, label, notes),
         );
         runs++;
       }
@@ -815,13 +988,14 @@ async function catchupCodex(
     // The final (or only) pass: everything left in one go.
     const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
     if (plan.compressible.length === 0) return runs;
+    if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen")) return runs;
     if (mode === "ultra") {
       const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
       await runChunk(
         chatId, userId, profile, plan,
         plan.messages.slice(plan.startPos),
         false, controller.signal, progress,
-        (bundle, notes, label, lore) => buildCodexUltraMessage(bundle, books, tailTranscript, label, notes, lore),
+        (ctx, bundle, notes, label, lore) => buildCodexUltraMessage(ctx, bundle, books, tailTranscript, label, notes, lore),
         true,
       );
     } else {
@@ -842,6 +1016,8 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
   if ((await codexPresence(chatId, userId)) !== "present") return false;
   // A pending relations-format migration belongs to a real chunk run.
   if (plan.cursor.relationsTableMode !== null && plan.cursor.relationsTableMode !== profile.codexRelationsTable) return false;
+  // Every file frozen: the sweep could not write a single correction.
+  if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen")) return false;
   if (!setBusy(userId, chatId, "codex", "Memoria is reconciling the codex with the edited story")) return false;
   const controller = new AbortController();
   registerAborter(userId, chatId, "codex", controller);
@@ -849,19 +1025,21 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
     const diskMode = plan.cursor.relationsTableMode ?? profile.codexRelationsTable;
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
-    const lore = await activatedLoreText(chatId, userId);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
     const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
     const notes: CodexRunNotes = {
       reconcile: true,
       migrateToTable: false,
       migrateToInline: false,
       loadProblems: problems.map((p) => `${p.file}.json`),
-      frozenFiles: [...frozen].map((f) => `${f}.json`),
     };
+    const sweepSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, sweepSettings.customPresets, frozen);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -869,8 +1047,7 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
       notes,
       lore,
       storySoFar: null,
-      frozenFiles: frozen,
-      userTextOverride: buildCodexReconcileMessage(bundle, books, tailTranscript, notes, lore, profile.codexUseTools),
+      userTextOverride: buildCodexReconcileMessage(promptCtx, bundle, books, tailTranscript, notes, lore),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -1195,10 +1372,13 @@ export async function runCodexTidy(
       cb?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
       return;
     }
+    const tidySettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, tidySettings.customPresets, frozenFiles);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -1206,8 +1386,7 @@ export async function runCodexTidy(
       notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
       lore: null,
       storySoFar: null,
-      frozenFiles,
-      userTextOverride: buildCodexTidyMessage(bundle, targets, profile.codexUseTools),
+      userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -1259,18 +1438,20 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const messages = await spindle.chat.getMessages(chatId);
     const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
-    const lore = await activatedLoreText(chatId, userId);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
     const notes: CodexRunNotes = {
       reconcile: false,
       migrateToTable: false,
       migrateToInline: false,
       loadProblems: problems.map((p) => `${p.file}.json`),
-      frozenFiles: [...frozen].map((f) => `${f}.json`),
     };
+    const refreshSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, refreshSettings.customPresets, frozen);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -1278,8 +1459,7 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
       notes,
       lore,
       storySoFar: null,
-      frozenFiles: frozen,
-      userTextOverride: buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, profile.codexUseTools),
+      userTextOverride: buildCodexRefreshMessage(promptCtx, bundle, targets, books, tailTranscript, notes, lore),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -1302,7 +1482,7 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
     }
     warn(`codex refresh failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "refresh", err);
-    if (CONTEXT_ERROR_RE.test(describeError(err))) {
+    if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
       cb?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
     }
   } finally {
@@ -1313,4 +1493,105 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
 function fileIsEmpty(bundle: CodexBundle, key: CodexFileKey): boolean {
   const v = bundle[key] as unknown as Record<string, unknown[]>;
   return Object.values(v).every((arr) => !Array.isArray(arr) || arr.length === 0);
+}
+
+/** The rebuild pass's prompt view: targets blanked so stale contents cannot
+ * anchor the rewrite. User-locked entities (whole-row or field locks) stay
+ * visible, the agent must keep building around them. */
+function blankTargets(bundle: CodexBundle, targets: readonly CodexFileKey[]): CodexBundle {
+  const out: CodexBundle = { ...bundle };
+  for (const t of targets) {
+    if (t === "characters" || t === "locations" || t === "things") {
+      out[t] = {
+        entities: bundle[t].entities.filter(
+          (e) => e.locked === true || (Array.isArray(e.lockedFields) && e.lockedFields.length > 0),
+        ),
+      };
+    } else {
+      (out as Record<CodexFileKey, CodexFileValue>)[t] = emptyCodexFile(t);
+    }
+  }
+  return out;
+}
+
+/** One ultra-shaped pass that regenerates the chosen files from the story's
+ * active context. Non-destructive: the disk files are only replaced when the
+ * run finishes clean, and the cursor never moves. */
+export async function rebuildCodexFiles(
+  chatId: string,
+  profile: LMBProfile,
+  userId: string,
+  only: CodexFileKey[],
+): Promise<void> {
+  if (!setBusy(userId, chatId, "codex", "Memoria is rebuilding codex records")) {
+    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController();
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const cursor = await loadCursor(chatId, userId);
+    if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
+      cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before rebuilding records");
+      return;
+    }
+    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const targets = only.filter((k) => !frozen.has(k));
+    if (targets.length === 0) {
+      cb?.onToast(userId, "info", "Those records are frozen, unfreeze them first");
+      return;
+    }
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const messages = await spindle.chat.getMessages(chatId);
+    const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
+    const notes: CodexRunNotes = {
+      reconcile: false,
+      migrateToTable: false,
+      migrateToInline: false,
+      loadProblems: problems.map((p) => `${p.file}.json`),
+    };
+    const rebuildSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, rebuildSettings.customPresets, frozen);
+    // The prompt shows the targets wiped while staging runs against the real
+    // files, so locked rows, locked fields, and the resolved-thread archive
+    // all survive through the agent's rewrite.
+    const promptBundle = blankTargets(bundle, targets);
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      promptCtx,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes,
+      lore,
+      storySoFar: null,
+      userTextOverride: buildCodexRebuildMessage(promptCtx, promptBundle, targets, books, tailTranscript, notes, lore),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
+    });
+    invalidateCodexInjectionCache(chatId);
+    await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
+    await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+    cb?.onToast(userId, "success", `Memoria rebuilt ${targets.length} record${targets.length === 1 ? "" : "s"} from the story`);
+    cb?.onStateChange(userId, chatId);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb?.onToast(userId, "info", "Memoria sets the rebuild aside");
+      return;
+    }
+    warn(`codex record rebuild failed: ${describeError(err)}`);
+    reportCodexFailure(userId, chatId, "rebuild", err);
+    if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb?.onToast(userId, "warn", "The rebuild pass needs the codex model's context to be at least the story model's, pick a larger context codex connection");
+    }
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
 }

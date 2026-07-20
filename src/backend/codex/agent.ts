@@ -4,11 +4,13 @@ import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO, ToolSchemaDTO } 
 
 type LlmMessagePartDTO = Exclude<LlmMessageDTO["content"], string>[number];
 import type { LMBProfile } from "../../shared";
+import { CODEX_SAMPLER_DEFAULTS, approximateTokensFromChars } from "../../shared";
 import type { ChatMessage } from "../coverage";
 import type { CodexBundle, CodexFileKey, CodexFileValue, CodexThread, ValidateOptions } from "./schema";
 import {
   CODEX_FILE_KEYS,
   FILE_ROW_KEY,
+  LOCKED_FIELD_MASK,
   assignMissingRids,
   danglingRefCounts,
   fileRows,
@@ -16,7 +18,7 @@ import {
   newDanglingErrors,
   validateCodexFile,
 } from "./schema";
-import { buildCodexSystemPrompt, buildCodexUserMessage, verifyNudge, type CodexRunNotes } from "./prompt";
+import { buildCodexSystemPrompt, buildCodexUserMessage, verifyNudge, type CodexPromptCtx, type CodexRunNotes } from "./prompt";
 import { saveCodexFile } from "./store";
 import {
   AbortedSummarizerError,
@@ -24,8 +26,9 @@ import {
   buildCodexSamplerParameters,
   consumeGenerationStream,
   listConnections,
-  parseLooseJsonObject,
+  parseLooseJsonObjects,
   resolveConnection,
+  resolveSystemMacros,
 } from "../summarizer";
 import { describeError, warn } from "../runtime";
 
@@ -38,9 +41,33 @@ export class ToolProtocolError extends Error {
   }
 }
 
+/**
+ * Preflight failure: the assembled prompt cannot fit the codex max input.
+ * Failing loudly beats sending a request a provider may silently truncate
+ * into a corrupted update. Carries the full remedy list, so the toast path
+ * must show it whole instead of trimming to the first sentence.
+ */
+export class CodexContextError extends Error {
+  constructor(promptTokens: number, maxInputTokens: number) {
+    super(
+      `The assembled codex prompt is ~${Math.round(promptTokens / 1000)}k tokens but the codex max input is ${Math.round(maxInputTokens / 1000)}k, so Memoria stopped instead of sending a request that would fail or be silently cut. `
+      + "Raise Max input tokens under Tuning > Connection > Codex, or in Tuning > Settings > Codex lower the window, Chapters provided, or the lore limit, or freeze records in Codex > Overview.",
+    );
+    this.name = "CodexContextError";
+  }
+}
+
+/** The codex context budget: the profile's max input, or the codex default. */
+export function codexMaxInputTokens(profile: LMBProfile): number {
+  return profile.codexSamplers.max_input_tokens ?? CODEX_SAMPLER_DEFAULTS.max_input_tokens;
+}
+
 const CACHE_EPHEMERAL = { type: "ephemeral" } as const;
 
-const TOOLS: ToolSchemaDTO[] = [
+/** Tool schemas for one run. The file enum carries only the active files, so
+ * a frozen file cannot even be addressed by a tool call. */
+function codexTools(activeFiles: readonly CodexFileKey[]): ToolSchemaDTO[] {
+  return [
   {
     name: "codex_write",
     description:
@@ -48,7 +75,7 @@ const TOOLS: ToolSchemaDTO[] = [
     parameters: {
       type: "object",
       properties: {
-        file: { type: "string", enum: [...CODEX_FILE_KEYS] },
+        file: { type: "string", enum: [...activeFiles] },
         set: {
           type: "array",
           items: { type: "object" },
@@ -83,12 +110,15 @@ const TOOLS: ToolSchemaDTO[] = [
       required: [],
     },
   },
-];
+  ];
+}
 
 export interface CodexAgentOptions {
   chatId: string;
   userId: string;
   profile: LMBProfile;
+  /** Resolved prompt texts and the active (non-frozen) file set for this run. */
+  promptCtx: CodexPromptCtx;
   bundle: CodexBundle;
   chunk: ChatMessage[];
   chunkLabel: string;
@@ -99,8 +129,6 @@ export interface CodexAgentOptions {
   lore: string | null;
   /** Recent chapter summaries behind the chunk (extra-context mode). */
   storySoFar: string | null;
-  /** Files the user froze: writes to them are rejected. */
-  frozenFiles?: Set<CodexFileKey>;
   /** Replaces the standard chunk-driven user message (tidy passes). */
   userTextOverride?: string;
   /** Suppress the thorough-mode verification round (tidy passes). */
@@ -126,7 +154,7 @@ export interface CodexRunResult {
   doneNote: string | null;
 }
 
-async function resolveCodexConnection(profile: LMBProfile, userId: string): Promise<ConnectionProfileDTO> {
+export async function resolveCodexConnection(profile: LMBProfile, userId: string): Promise<ConnectionProfileDTO> {
   if (profile.codexConnectionId) {
     const list = await listConnections(userId);
     const picked = list.find((c) => c.id === profile.codexConnectionId) ?? null;
@@ -158,7 +186,7 @@ async function runQuietRound(
   messages: LlmMessageDTO[],
   profile: LMBProfile,
   userId: string,
-  useTools: boolean,
+  tools: ToolSchemaDTO[] | null,
   externalSignal: AbortSignal,
   onProgress: ((chars: number, thinkingChars: number) => void) | undefined,
   onDelta: ((kind: "text" | "thinking", delta: string) => void) | undefined,
@@ -177,7 +205,7 @@ async function runQuietRound(
         parameters,
         // JSON mode sends no tool schemas at all: the whole point is a
         // route that can't carry them.
-        ...(useTools ? { tools: TOOLS } : {}),
+        ...(tools ? { tools } : {}),
         userId,
         signal,
       }),
@@ -218,9 +246,15 @@ function assistantTurn(content: string, toolCalls: ToolCallDTO[]): LlmMessageDTO
  * staging loop stays transport-blind. Malformed writes become calls with bad
  * args on purpose: validation rejects them, which blocks "done" and forces a
  * correction round instead of silently dropping content.
+ *
+ * Broken think tags can leak planning prose and decoy JSON fragments into the
+ * parsed text, so among every parsable object the LAST writes/done-shaped one
+ * wins: the answer follows the scratchpad, never the other way around.
  */
 function parseJsonModeCalls(raw: string): ToolCallDTO[] {
-  const obj = parseLooseJsonObject(raw);
+  const objs = parseLooseJsonObjects(raw);
+  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || o["done"] === true);
+  const obj = envelopes.length ? envelopes[envelopes.length - 1]! : objs[0] ?? null;
   if (!obj) return [];
   const calls: ToolCallDTO[] = [];
   const writes = Array.isArray(obj["writes"]) ? obj["writes"] : [];
@@ -243,6 +277,8 @@ interface WriteOutcome {
   skipped?: boolean;
   /** Locked entities the write tried to touch; kept as-is, the ack says so. */
   lockedKept?: string[];
+  /** Entities whose locked fields the write tried to change; values restored. */
+  lockedFieldsKept?: string[];
   /** Drop keys that matched nothing (already deleted); acked as a no-op. */
   dropMisses?: string[];
   /** Archived resolved threads the write tried to touch; left alone, acked. */
@@ -254,6 +290,8 @@ interface StagedWrite {
   value?: CodexFileValue;
   errors: string[];
   lockedKept: string[];
+  /** Entities whose locked fields the write tried to change; values restored. */
+  lockedFieldsKept: string[];
   /** Drop keys that matched nothing; already-deleted rows are a no-op, not an error. */
   dropMisses: string[];
   /** Archived resolved threads the write tried to touch; left alone, acked. */
@@ -262,6 +300,49 @@ interface StagedWrite {
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
+}
+
+function isMaskEcho(v: unknown): boolean {
+  return v === LOCKED_FIELD_MASK || (Array.isArray(v) && v.length === 1 && v[0] === LOCKED_FIELD_MASK);
+}
+
+/**
+ * Field-level locks: the agent saw LOCKED_FIELD_MASK instead of the values,
+ * so every staged entity row gets its locked fields restored from disk and
+ * keeps its lockedFields list. Rows the user never field-locked get any
+ * agent-invented lockedFields stripped, mirroring the "locked" flag rule.
+ * Returns the ids whose locked fields the agent actually tried to change
+ * (a mask echo or an omission is compliant and stays silent).
+ */
+function restoreLockedFields(file: CodexFileKey, value: CodexFileValue, current: CodexFileValue): string[] {
+  if (file !== "characters" && file !== "locations" && file !== "things") return [];
+  const curById = new Map<string, Record<string, unknown>>();
+  for (const row of fileRows(current, file)) {
+    if (typeof row["id"] === "string") curById.set(row["id"], row);
+  }
+  const touched: string[] = [];
+  for (const row of fileRows(value, file)) {
+    const id = typeof row["id"] === "string" ? row["id"] : "";
+    const orig = curById.get(id);
+    const lf = orig && Array.isArray(orig["lockedFields"])
+      ? (orig["lockedFields"] as unknown[]).filter((f): f is string => typeof f === "string" && f !== "id" && f !== "name")
+      : [];
+    if (lf.length === 0) {
+      delete row["lockedFields"];
+      continue;
+    }
+    let changed = false;
+    for (const f of lf) {
+      const wrote = row[f];
+      const want = orig![f];
+      if (wrote !== undefined && !isMaskEcho(wrote) && JSON.stringify(wrote) !== JSON.stringify(want)) changed = true;
+      if (want === undefined) delete row[f];
+      else row[f] = clone(want);
+    }
+    row["lockedFields"] = [...lf];
+    if (changed) touched.push(id);
+  }
+  return touched;
 }
 
 /** Merge one codex_write (patch or full content) into a complete validated
@@ -275,6 +356,7 @@ function stageWrite(
 ): StagedWrite {
   const errors: string[] = [];
   const lockedKept: string[] = [];
+  const lockedFieldsKept: string[] = [];
   const dropMisses: string[] = [];
   const archivedKept: string[] = [];
   const keyField = FILE_ROW_KEY[file].key;
@@ -300,18 +382,18 @@ function stageWrite(
 
   if (rawContent !== undefined) {
     if (hasPatch) {
-      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, dropMisses, archivedKept };
+      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
     }
     let content: unknown = rawContent;
     if (typeof content === "string") {
       try {
         content = JSON.parse(content) as unknown;
       } catch {
-        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, dropMisses, archivedKept };
+        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
       }
     }
     const result = validateCodexFile(file, content, validateOpts);
-    if (!result.ok) return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+    if (!result.ok) return { errors: result.errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
     const value = result.value;
     // Locked rows are user-owned: revert edits, re-add omissions.
     if (lockedRows.size > 0) {
@@ -344,12 +426,13 @@ function stageWrite(
       t.threads = t.threads.filter((row) => !(row.rid && hiddenRids.has(row.rid)));
       t.threads.push(...hiddenResolved.map((h) => clone(h)));
     }
+    lockedFieldsKept.push(...restoreLockedFields(file, value, current));
     assignMissingRids(file, value);
-    return { value, errors, lockedKept, dropMisses, archivedKept };
+    return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   }
 
   if (!hasPatch) {
-    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, dropMisses, archivedKept };
+    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   }
   if (rawSeeds !== undefined && file !== "threads") {
     errors.push("seeds: only threads.json has a seeds list");
@@ -385,7 +468,7 @@ function stageWrite(
   if (setRows.length === 0 && dropKeys.length === 0 && seeds === null && errors.length === 0) {
     errors.push("empty write: set and drop held nothing - provide rows, keys, seeds, or content");
   }
-  if (errors.length) return { errors, lockedKept, dropMisses, archivedKept };
+  if (errors.length) return { errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
 
   // Merge against the rows the agent can see; resolved threads stay hidden.
   let rows = fileRows(current, file).map((r) => clone(r));
@@ -444,14 +527,14 @@ function stageWrite(
     }
     rows.push(row);
   });
-  if (errors.length) return { errors, lockedKept, dropMisses, archivedKept };
+  if (errors.length) return { errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
 
   const candidate: Record<string, unknown> = { [FILE_ROW_KEY[file].field]: rows };
   if (file === "threads") {
     candidate["seeds"] = seeds ?? (current as { seeds: string[] }).seeds;
   }
   const result = validateCodexFile(file, candidate, validateOpts);
-  if (!result.ok) return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+  if (!result.ok) return { errors: result.errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   const value = result.value;
   if (keyField === "id") {
     for (const row of fileRows(value, file)) {
@@ -461,8 +544,9 @@ function stageWrite(
   if (file === "threads" && hiddenResolved.length > 0) {
     (value as { threads: CodexThread[] }).threads.push(...hiddenResolved.map((h) => clone(h)));
   }
+  lockedFieldsKept.push(...restoreLockedFields(file, value, current));
   assignMissingRids(file, value);
-  return { value, errors, lockedKept, dropMisses, archivedKept };
+  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
 }
 
 /**
@@ -472,16 +556,23 @@ function stageWrite(
  * failed run leaves the codex and cursor untouched for the next attempt.
  */
 export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunResult> {
-  const { profile, userId, chatId } = opts;
+  const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const maxRounds = profile.codexThorough ? 4 : 3;
-  const useTools = profile.codexUseTools;
+  const useTools = promptCtx.useTools;
+  const tools = useTools ? codexTools([...promptCtx.activeFiles]) : null;
 
-  const system = buildCodexSystemPrompt(profile.codexRelationsTable, useTools, profile.codexDirectivesOverride);
+  // Host macros resolve on the system prompt only, mirroring the summarizer:
+  // the user message carries codex JSON and raw story text that must never be
+  // macro-expanded.
+  const system = await resolveSystemMacros(buildCodexSystemPrompt(promptCtx), chatId, userId);
   const userText = opts.userTextOverride ?? buildCodexUserMessage(
-    opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar,
+    promptCtx, opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar,
   );
-  const frozen = opts.frozenFiles ?? new Set<CodexFileKey>();
+  const maxInput = codexMaxInputTokens(profile);
+  const promptTokens = approximateTokensFromChars(system.length + userText.length);
+  if (promptTokens > maxInput) throw new CodexContextError(promptTokens, maxInput);
+  const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k)));
   const conv: LlmMessageDTO[] = [
     { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] },
@@ -510,7 +601,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     if (opts.externalSignal.aborted) throw new AbortedSummarizerError();
     rounds++;
     if (rounds > 1) opts.onDelta?.("text", `\n\n═══ round ${rounds} ═══\n`);
-    const round = await runQuietRound(conn, conv, profile, userId, useTools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
+    const round = await runQuietRound(conn, conv, profile, userId, tools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
     usageCompletion += round.usageCompletion;
     // JSON mode has no structured calls: synthesize them from the reply so
@@ -614,6 +705,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         file: fileRaw,
         errors: [],
         ...(staged.lockedKept.length ? { lockedKept: staged.lockedKept } : {}),
+        ...(staged.lockedFieldsKept.length ? { lockedFieldsKept: staged.lockedFieldsKept } : {}),
         ...(staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {}),
         ...(staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}),
       });
@@ -651,6 +743,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     const lockedNote = (o: WriteOutcome): string => {
       const bits: string[] = [];
       if (o.lockedKept?.length) bits.push(`locked, left untouched: ${o.lockedKept.join(", ")} - do not resend them`);
+      if (o.lockedFieldsKept?.length) bits.push(`locked fields restored to the user's values on: ${o.lockedFieldsKept.join(", ")} - never write those fields`);
       if (o.dropMisses?.length) bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
       if (o.archivedKept?.length) bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
       return bits.length ? ` (${bits.join("; ")})` : "";
@@ -693,7 +786,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       }
       if (wantVerify) {
         verifyRequested = true;
-        pushFeedback(verifyNudge(useTools));
+        pushFeedback(verifyNudge(promptCtx));
         continue;
       }
       // Writes landed (or were skipped) with no done signal: one round to finish.

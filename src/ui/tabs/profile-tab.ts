@@ -125,6 +125,40 @@ export function renderCodexSettings(
     "Lag is the recent tail the codex leaves alone until it settles. Once a window's worth of older messages piles up behind it, the agent consumes them in one pass. Keep the lag smaller than the chapter lag if you want the codex fresher than the summaries.";
   fields.appendChild(cadenceHint);
 
+  const loreGrid = document.createElement("div");
+  loreGrid.className = "lmb-grid-2";
+  loreGrid.append(
+    labelled("Lore limit", select({
+      value: profile.codexLoreLimitUnit,
+      options: [
+        { value: "percent", label: "% of max context" },
+        { value: "tokens", label: "token cap" },
+      ],
+      onChange: (v) => patch({ codexLoreLimitUnit: v === "tokens" ? "tokens" : "percent" }),
+    })),
+    labelled(
+      profile.codexLoreLimitUnit === "tokens" ? "Lore tokens (0 = no limit)" : "Lore % of max context",
+      numberInput({
+        value: profile.codexLoreLimitUnit === "tokens" ? profile.codexLoreLimitTokens : profile.codexLoreLimitPercent,
+        min: profile.codexLoreLimitUnit === "tokens" ? 0 : 1,
+        max: profile.codexLoreLimitUnit === "tokens" ? 1000000 : 100,
+        step: profile.codexLoreLimitUnit === "tokens" ? 500 : 1,
+        defaultValue: profile.codexLoreLimitUnit === "tokens" ? PROFILE_DEFAULTS.codexLoreLimitTokens : PROFILE_DEFAULTS.codexLoreLimitPercent,
+        onBlur: (v) => {
+          if (v === null) return;
+          if (profile.codexLoreLimitUnit === "tokens") patch({ codexLoreLimitTokens: v });
+          else patch({ codexLoreLimitPercent: v });
+        },
+      }),
+    ),
+  );
+  fields.appendChild(loreGrid);
+  const loreHint = document.createElement("div");
+  loreHint.className = "lmb-field-hint";
+  loreHint.textContent =
+    "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
+  fields.appendChild(loreHint);
+
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: "Relations table",
@@ -145,6 +179,23 @@ export function renderCodexSettings(
     hint: "Summarizes chapters early at the codex lag as ghost chapters. Ghosts feed the agent story-so-far context and are promoted into real chapters once the chapter lag arrives, with no second summarization.",
     onChange: (v) => patch({ codexExtraContext: v }),
   }), "tuning.codex.extra"));
+
+  const soFarFields = document.createElement("div");
+  soFarFields.className = profile.codexExtraContext ? "" : "lmb-greyed";
+  soFarFields.appendChild(
+    labelled("Chapters provided", numberInput({
+      value: profile.codexStorySoFarCount,
+      min: 0,
+      max: 50,
+      defaultValue: PROFILE_DEFAULTS.codexStorySoFarCount,
+      onBlur: (v) => patch({ codexStorySoFarCount: v ?? PROFILE_DEFAULTS.codexStorySoFarCount }),
+    })),
+  );
+  const soFarHint = document.createElement("div");
+  soFarHint.className = "lmb-field-hint";
+  soFarHint.textContent = "How many recent chapter summaries extra context mode hands the agent as story-so-far grounding.";
+  soFarFields.appendChild(soFarHint);
+  fields.appendChild(soFarFields);
 
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";

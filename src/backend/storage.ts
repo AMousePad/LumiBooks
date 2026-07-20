@@ -26,7 +26,8 @@ function withSettingsLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
 const migrationInflight = new Map<string, Promise<LMBSettings>>();
 
 /** One-time default flips for older settings files (v4: thorough + extra
- * context on; v5: codex window 30 -> 20; v6: codex tool calls off). Lock-free:
+ * context on; v5: codex window 30 -> 20; v6: codex tool calls off; v7: the
+ * legacy codexDirectivesOverride becomes a custom "codex" preset). Lock-free:
  * mutateSettings calls loadSettings while holding the settings lock, taking
  * it here would deadlock. */
 function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion: number): Promise<LMBSettings> {
@@ -34,6 +35,7 @@ function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion:
   if (running) return running;
   const p = (async () => {
     const started = Date.now();
+    const migratedPresets: LMBSettings["customPresets"] = [];
     const flipped: Partial<LMBSettings> = {
       ...raw,
       profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => {
@@ -50,8 +52,24 @@ function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion:
         if (fromVersion < 6) {
           next.codexUseTools = false;
         }
+        if (fromVersion < 7) {
+          const legacy = (next as Record<string, unknown>)["codexDirectivesOverride"];
+          if (typeof legacy === "string" && legacy.trim()) {
+            const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
+            migratedPresets.push({
+              key,
+              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
+              prompt: legacy,
+              category: "codex",
+              createdAt: Date.now(),
+            });
+            next.codexPresetKey = key;
+          }
+          delete (next as Record<string, unknown>)["codexDirectivesOverride"];
+        }
         return next;
       }),
+      customPresets: [...(Array.isArray(raw.customPresets) ? raw.customPresets : []), ...migratedPresets],
     };
     const normalized = normalizeSettings(flipped);
     try {

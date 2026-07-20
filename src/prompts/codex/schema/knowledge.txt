@@ -1,0 +1,9 @@
+knowledge.json
+{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
+  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
+  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
+  "note"?: "",
+  "keywords": ["murder", "dagger", "duke"] } ] }
+ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
+item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
+belong in world or timeline, never here.

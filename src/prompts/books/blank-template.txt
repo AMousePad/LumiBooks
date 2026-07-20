@@ -1,0 +1,11 @@
+Summarize the following {{NOUN}} into a JSON memory.
+
+Return ONLY valid JSON in this exact shape:
+{
+  "title": "Short title",
+  "content": "Memoria's compressed text. Aim for ~{{target_tokens}} tokens.",
+  "keywords": ["keyword1", "keyword2"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+No commentary outside the JSON.

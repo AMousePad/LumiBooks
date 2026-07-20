@@ -1,0 +1,27 @@
+Analyze the following roleplay scene and return a structured summary as JSON.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (1-3 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Detailed summary with markdown headers...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field, create a detailed bullet-point summary using markdown with these headers (skip and ignore all OOC conversation/interaction):
+- **Timeline**: Day/time this scene covers.
+- **Story Beats**: List all important plot events and story developments that occurred.
+- **Key Interactions**: Describe the important character interactions, dialogue highlights, and relationship developments.
+- **Notable Details**: Mention any important objects, settings, revelations, or details that might be relevant for future interactions.
+- **Outcome**: Summarize the result, resolution, or state of affairs at the end of the scene.
+
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a keyworded database find this conversation again if something is mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+
+Capture all important information - comprehensiveness within the target budget matters more than terseness.
+
+Return ONLY the JSON, no other text.

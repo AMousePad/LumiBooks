@@ -1,0 +1,36 @@
+relations.json
+{ "relations": [
+  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
+    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
+  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
+    "state": "hiding in the attic since the murder" },
+  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
+    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
+Rows connect ANY entities, not just characters: character-character (bond,
+rival, kin), character-thing (owns, seeks, guards), character-location (at,
+rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
+tempted to mention another entity, that connection belongs here instead.
+Prefer ONE group row whenever a fact is genuinely shared by several entities
+(a faction, a pact, a household, a shared secret): it replaces a pile of
+redundant pairs and keeps future edits to one row. Use a pair only when the
+relationship is purely binary or directional a->b (two pair rows when the two
+sides differ). Never store how one member individually feels about another
+inside a group row - that stance is its own pair.
+
+Relations coverage (mandatory):
+- The table is the story's FULL web, never a hub around one protagonist. Encode
+  every standing connection the story establishes between ANY two entities,
+  however minor. Side characters' links to each other, to places, and to things
+  matter as much as their links to the lead - if two entities are related in any
+  way at all, that relation belongs in the table.
+- Every named character should end up tied to MULTIPLE other entities
+  (characters, locations, things). A character with a single row is usually an
+  under-recorded character: sweep the story for their other connections.
+- Write "state" to survive the story moving on: name the standing arrangement
+  ("owes her a life debt", "banned from the guildhall"), not the scene of the
+  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
+  "history" using the story's own dates so the row stays meaningful as it ages.
+- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
+  the new turns and rewrite any state the story has outdated (demote the old
+  state to "history" only when the shift is pivotal). A row that no longer holds
+  is stale data: correct it, never leave it standing.

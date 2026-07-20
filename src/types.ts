@@ -134,6 +134,7 @@ export interface FrontendState {
   chapterPresets: BuiltInPreset[];
   arcPresets: BuiltInPreset[];
   volumePresets: BuiltInPreset[];
+  codexPresets: BuiltInPreset[];
   customPresets: CustomPreset[];
   regexScripts: RegexScriptOption[];
   pendingPreviews: PendingPreview[];
@@ -191,10 +192,11 @@ export type FrontendToBackend =
   | { type: "dry_run_chapter"; chatId: string }
   | { type: "dry_run_arc"; chatId: string }
   | { type: "dry_run_volume"; chatId: string }
+  | { type: "dry_run_codex"; chatId: string }
   | { type: "ensure_book"; chatId: string }
   | { type: "import_preset"; raw: unknown; category: "chapter" | "arc"; chatId?: string | null }
   | { type: "save_custom_preset"; preset: CustomPreset; chatId?: string | null }
-  | { type: "delete_custom_preset"; key: string; category: "chapter" | "arc" | "volume"; chatId?: string | null }
+  | { type: "delete_custom_preset"; key: string; category: "chapter" | "arc" | "volume" | "codex"; chatId?: string | null }
   | { type: "accept_preview"; draftId: string; chatId: string }
   | { type: "discard_preview"; draftId: string; chatId: string }
   | { type: "edit_preview"; draftId: string; chatId: string; patch: { title?: string; content?: string } }
@@ -208,6 +210,7 @@ export type FrontendToBackend =
   | { type: "codex_reset"; chatId: string }
   | { type: "codex_rebuild"; chatId: string; mode?: "slow" | "fast" | "ultra" }
   | { type: "codex_tidy"; chatId: string; files?: string[] }
+  | { type: "codex_rebuild_files"; chatId: string; files: string[] }
   | { type: "codex_refresh"; chatId: string }
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
   | { type: "wipe_books"; chatId: string }
@@ -248,7 +251,7 @@ export type BackendToFrontend =
   | { type: "toast"; tone: "success" | "info" | "warn" | "error"; text: string }
   | { type: "busy"; entries: BusyEntry[] }
   | { type: "error"; text: string }
-  | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
+  | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume" | "codex"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
   | { type: "codex_files"; chatId: string; files: Record<string, string>; savedFile?: string; savedSeq?: number }
   | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean }
   /** A codex run died because the model narrated instead of tool-calling:

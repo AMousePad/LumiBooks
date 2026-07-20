@@ -267,6 +267,13 @@ export async function codexPresence(chatId: string, userId: string): Promise<"pr
   return exists ? "present" : "absent";
 }
 
+async function codexHasAnyDataFile(chatId: string, userId: string): Promise<boolean> {
+  for (const key of CODEX_FILE_KEYS) {
+    if (await spindle.userStorage.exists(filePath(chatId, key), userId)) return true;
+  }
+  return false;
+}
+
 const cursorChain = new Map<string, Promise<unknown>>();
 export function withCursorLock<T>(chatId: string, userId: string, fn: () => Promise<T>): Promise<T> {
   const key = `${userId}::${chatId}`;
@@ -331,7 +338,16 @@ export async function inheritCodex(
 ): Promise<boolean> {
   if ((await codexPresence(fromChatId, userId)) !== "present") return false;
   return withCursorLock(toChatId, userId, async () => {
-    if ((await codexPresence(toChatId, userId)) === "present") return false;
+    // A cursor holding only pre-run file switches (the user froze categories
+    // before the first pass) is not a codex: inheriting must still happen,
+    // with the user's switches kept on top of the inherited cursor.
+    let preFreeze: CodexCursor | null = null;
+    if ((await codexPresence(toChatId, userId)) === "present") {
+      const target = await loadCursor(toChatId, userId);
+      const untouched = target.runs === 0 && target.consumedSigs.length === 0 && target.lastMsgId === null;
+      if (!untouched || (await codexHasAnyDataFile(toChatId, userId))) return false;
+      preFreeze = target;
+    }
     const cursor = await loadCursor(fromChatId, userId);
     for (const key of CODEX_FILE_KEYS) {
       const read = await readCodexFileRaw(fromChatId, key, userId);
@@ -358,6 +374,12 @@ export async function inheritCodex(
       prefixMsgId: mappedPrefix,
       pendingReconcile: true,
       reconcileUntilMsgId: reconcileUntilId,
+      ...(preFreeze
+        ? {
+            fileStates: { ...cursor.fileStates, ...preFreeze.fileStates },
+            frozenAtRuns: { ...cursor.frozenAtRuns, ...preFreeze.frozenAtRuns },
+          }
+        : {}),
     };
     await saveCursor(toChatId, next, userId);
     return true;

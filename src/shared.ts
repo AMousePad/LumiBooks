@@ -1,3 +1,5 @@
+import { isCodexTemplateKey, type CodexTemplateKey } from "./prompts/codex/registry";
+
 export const EXTENSION_ID = "lumi_books" as const;
 export const EXTENSION_KEY = "lumibooks" as const;
 
@@ -28,8 +30,9 @@ export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
 export const CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex" as const;
 /** v4: codexThorough + codexExtraContext flipped on once; v5: codexWindowValue
  * 30 -> 20 for message windows still on the old default; v6: codexUseTools
- * flipped off once (strict JSON is the default, tool calls are opt-in). */
-export const STORAGE_VERSION = 6 as const;
+ * flipped off once (strict JSON is the default, tool calls are opt-in);
+ * v7: codexDirectivesOverride became a custom "codex" preset + codexPresetKey. */
+export const STORAGE_VERSION = 7 as const;
 export const SETTINGS_PATH = "settings.json" as const;
 export const CHAT_STATE_DIR = "chats" as const;
 
@@ -92,6 +95,15 @@ export interface LMBProfile {
   codexWindowValue: number;
   /** Message-unit windows also fire at this many tokens, whichever first. */
   codexTokenBreakpoint: number;
+  /** How the activated-lore canon reference is budgeted: a share of the codex
+   * max input, or a flat token cap. */
+  codexLoreLimitUnit: CompressionTargetUnit;
+  /** Percent of the codex max input the lore reference may use. */
+  codexLoreLimitPercent: number;
+  /** Flat token cap for the lore reference; 0 = no limit. */
+  codexLoreLimitTokens: number;
+  /** Chapter summaries extra-context mode hands the agent as story-so-far. */
+  codexStorySoFarCount: number;
   codexRelationsTable: boolean;
   codexThorough: boolean;
   codexConnectionId: string | null;
@@ -102,17 +114,23 @@ export interface LMBProfile {
   /** Structured tool calls for the codex agent, opt-in. Off (the default)
    * uses strict JSON output, which every provider route can carry. */
   codexUseTools: boolean;
-  /** Replaces the codex system prompt's directive block (null = built-in).
-   * Schema and write-protocol blocks stay fixed, they encode validation. */
-  codexDirectivesOverride: string | null;
+  /** The codex prompt preset, mirroring chapterPresetKey: built-in or custom
+   * "codex" category preset. The preset carries the directives text plus any
+   * per-template overrides, so switching it swaps the whole prompt set. */
+  codexPresetKey: string;
 }
+
+export type PresetCategory = "chapter" | "arc" | "volume" | "codex";
 
 export interface CustomPreset {
   key: string;
   displayName: string;
   prompt: string;
-  category: "chapter" | "arc" | "volume";
+  category: PresetCategory;
   createdAt: number;
+  /** Codex presets only: per-template overrides riding with the directives,
+   * so one preset is the complete codex prompt set. Absent key = built-in. */
+  templates?: Partial<Record<CodexTemplateKey, string>>;
 }
 
 export interface LMBSettings {
@@ -235,13 +253,17 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexWindowUnit: "messages",
     codexWindowValue: 20,
     codexTokenBreakpoint: 100000,
+    codexLoreLimitUnit: "percent",
+    codexLoreLimitPercent: 25,
+    codexLoreLimitTokens: 25000,
+    codexStorySoFarCount: 5,
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
-    codexDirectivesOverride: null,
+    codexPresetKey: "codex_default",
   };
 }
 
@@ -256,27 +278,6 @@ export const DEFAULT_SETTINGS: LMBSettings = {
   showAutomationToasts: true,
   suppressToolCallingPrompt: false,
 };
-
-/** The codex system prompt's directive block, per-profile overridable; the
- * schema and protocol blocks after it stay fixed. */
-export const DEFAULT_CODEX_DIRECTIVES = [
-  "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
-  "",
-  "Your three directives, in order:",
-  "1. UPDATE - patch every record the new turns have outdated, and add what is new and durable.",
-  "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it.",
-  "3. COMPRESS - keep every record lean. Terse phrases beat sentences, no filler words.",
-  "",
-  "Snapshot rules (absolute):",
-  "- The codex describes the present. When something changes, REPLACE the old text entirely.",
-  "- Never leave edit residue: no \"was X, now Y\", no \"formerly\", no \"updated:\", no strikethrough hints, no references to previous versions of the codex.",
-  "- Story history is not residue. Key past events belong in timeline.json, and a relation's \"history\" list may hold pivotal shifts as story facts. Everywhere else: present tense only.",
-  "- Record only what is durable. Sheets and records hold stable, medium-to-long-lived facts. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.",
-  "- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.",
-  "- Omit empty optional fields entirely.",
-  "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
-  "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add.",
-].join("\n");
 
 export function diskVersionFor(raw: Partial<LMBSettings> | null | undefined): number {
   const v = raw && typeof raw === "object" ? raw : {};
@@ -370,17 +371,27 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",
     codexWindowValue: clampInt(v.codexWindowValue, 1, v.codexWindowUnit === "tokens" ? 1000000 : 100000, base.codexWindowValue),
     codexTokenBreakpoint: clampInt(v.codexTokenBreakpoint, 1000, 1000000, base.codexTokenBreakpoint),
+    codexLoreLimitUnit: v.codexLoreLimitUnit === "tokens" ? "tokens" : "percent",
+    codexLoreLimitPercent: clampInt(v.codexLoreLimitPercent, 1, 100, base.codexLoreLimitPercent),
+    codexLoreLimitTokens: clampInt(v.codexLoreLimitTokens, 0, 1000000, base.codexLoreLimitTokens),
+    codexStorySoFarCount: clampInt(v.codexStorySoFarCount, 0, 50, base.codexStorySoFarCount),
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
     codexSamplers: normalizeSamplers(v.codexSamplers),
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
-    codexDirectivesOverride:
-      typeof v.codexDirectivesOverride === "string" && v.codexDirectivesOverride.trim() !== ""
-        ? v.codexDirectivesOverride
-        : null,
+    codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
   };
+}
+
+function normalizeCodexTemplates(raw: unknown): Partial<Record<CodexTemplateKey, string>> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Partial<Record<CodexTemplateKey, string>> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (isCodexTemplateKey(k) && typeof v === "string" && v.trim()) out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 export function normalizeSamplers(raw: unknown): SamplerSet {
@@ -401,13 +412,16 @@ export function normalizeCustomPreset(raw: unknown): CustomPreset | null {
   const v = raw as Partial<CustomPreset>;
   if (typeof v.key !== "string" || !v.key.trim()) return null;
   if (typeof v.prompt !== "string" || !v.prompt.trim()) return null;
-  const category = v.category === "arc" ? "arc" : v.category === "volume" ? "volume" : "chapter";
+  const category: PresetCategory =
+    v.category === "arc" || v.category === "volume" || v.category === "codex" ? v.category : "chapter";
+  const templates = category === "codex" ? normalizeCodexTemplates(v.templates) : undefined;
   return {
     key: v.key,
     displayName: typeof v.displayName === "string" && v.displayName.trim() ? v.displayName : v.key,
     prompt: v.prompt,
     category,
     createdAt: typeof v.createdAt === "number" ? v.createdAt : Date.now(),
+    ...(templates ? { templates } : {}),
   };
 }
 

@@ -26,7 +26,10 @@ export function applyTemplateForTest(template: string, vars: Record<string, stri
 }
 
 function stripThinkBlocks(raw: string): string {
-  return raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  let out = raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  out = out.replace(/^[\s\S]*<\/(?:think(?:ing)?|reasoning)>/i, "");
+  out = out.replace(/<(?:think(?:ing)?|reasoning)>/gi, "");
+  return out;
 }
 
 function normalizeText(s: string): string {
@@ -47,38 +50,56 @@ function extractFencedBlocks(s: string): string[] {
   return out;
 }
 
-function extractBalancedJson(s: string): string | null {
-  const startIdx = s.search(/[{[]/);
-  if (startIdx === -1) return null;
-  const open = s[startIdx];
-  const close = open === "{" ? "}" : "]";
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  for (let i = startIdx; i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) {
-      if (esc) { esc = false; }
-      else if (ch === "\\") { esc = true; }
-      else if (ch === "\"") { inStr = false; }
+const MAX_JSON_SCAN_STARTS = 24;
+
+function extractBalancedJsonSpans(s: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  let starts = 0;
+  while (pos < s.length && starts < MAX_JSON_SCAN_STARTS) {
+    const rel = s.slice(pos).search(/[{[]/);
+    if (rel === -1) break;
+    const startIdx = pos + rel;
+    starts++;
+    const open = s[startIdx];
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let end = -1;
+    for (let i = startIdx; i < s.length; i++) {
+      const ch = s[i];
+      if (inStr) {
+        if (esc) { esc = false; }
+        else if (ch === "\\") { esc = true; }
+        else if (ch === "\"") { inStr = false; }
+        continue;
+      }
+      if (ch === "\"") { inStr = true; continue; }
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) {
+      pos = startIdx + 1;
       continue;
     }
-    if (ch === "\"") { inStr = true; continue; }
-    if (ch === open) depth++;
-    else if (ch === close) {
-      depth--;
-      if (depth === 0) return s.slice(startIdx, i + 1).trim();
-    }
+    out.push(s.slice(startIdx, end + 1).trim());
+    pos = end + 1;
   }
-  return null;
+  return out;
 }
 
 function collectJsonCandidates(s: string): string[] {
   const out: string[] = [];
   for (const block of extractFencedBlocks(s)) out.push(block);
   out.push(s);
-  const balanced = extractBalancedJson(s);
-  if (balanced) out.push(balanced);
+  out.push(...extractBalancedJsonSpans(s));
   const seen = new Set<string>();
   const uniq: string[] = [];
   for (const c of out) {

@@ -1,0 +1,1 @@
+Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated.

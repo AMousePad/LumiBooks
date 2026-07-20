@@ -1,0 +1,7 @@
+threads.json
+{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
+  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
+  "seeds": ["unexplained scar on the ferryman's hand"] }
+Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
+thread you mark resolved leaves your view from the next pass on - the app
+archives it for the user - so never re-add a storyline you already resolved.

@@ -58,8 +58,14 @@ export interface CodexEntity {
   keywords?: string[];
   /** User-owned: the agent may not modify or drop a locked entity. */
   locked?: boolean;
+  /** User-owned fields on an otherwise agent-managed sheet: the agent sees
+   * LOCKED_FIELD_MASK instead of their values and its writes to them revert. */
+  lockedFields?: string[];
   [extra: string]: unknown;
 }
+
+/** What the agent reads in place of a locked field's value. */
+export const LOCKED_FIELD_MASK = "Locked, do not edit" as const;
 
 export interface CodexEntityFile {
   entities: CodexEntity[];
@@ -284,6 +290,10 @@ function asRecord(ctx: Ctx, raw: unknown, path: string): Record<string, unknown>
   return raw as Record<string, unknown>;
 }
 
+/** Known fields whose canonical spelling is not all-lowercase, exempt from
+ * the strict-mode lowercase complaint below. */
+const CANONICAL_MIXED_CASE = new Set(["lockedFields"]);
+
 /** Keep primitive extra fields; strict mode rejects the rest instead of dropping them. */
 function keepExtras(
   ctx: Ctx,
@@ -296,7 +306,7 @@ function keepExtras(
   for (const [k, v] of Object.entries(source)) {
     const lower = k.toLowerCase();
     if (known.some((f) => f === lower)) {
-      if (k !== lower && strict) ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
+      if (k !== lower && strict && !CANONICAL_MIXED_CASE.has(k)) ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
       continue;
     }
     // JSON.parse can produce an own "__proto__" key; assigning it would hit
@@ -325,7 +335,7 @@ function keepExtras(
 // status is deprecated, and entities key by id so a parroted rid is noise.
 const ENTITY_KNOWN_FIELDS = [
   "id", "name", "aliases", "kind", "role", "appearance", "description",
-  "traits", "goals", "significance", "status", "ties", "notes", "keywords", "locked", "rid",
+  "traits", "goals", "significance", "status", "ties", "notes", "keywords", "locked", "lockedfields", "rid",
 ] as const;
 
 /** Optional stable row key, kept short so it stays cheap in the prompt. */
@@ -382,6 +392,12 @@ function validateEntityFile(
       if (v) out[f] = v;
     }
     if (e["locked"] === true || e["locked"] === "true") out.locked = true;
+    // Accept either spelling on read; canonical is lockedFields.
+    const lockedFields = strArray(ctx, e["lockedFields"] ?? e["lockedfields"], `${path}.lockedFields`);
+    if (lockedFields) {
+      const cleaned = [...new Set(lockedFields.filter((f) => f !== "id" && f !== "name"))];
+      if (cleaned.length) out.lockedFields = cleaned;
+    }
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
       ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }

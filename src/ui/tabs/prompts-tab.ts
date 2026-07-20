@@ -1,12 +1,23 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
-import type { CustomPreset, LMBProfile } from "../../shared";
-import { DEFAULT_CODEX_DIRECTIVES } from "../../shared";
+import type { CustomPreset, LMBProfile, PresetCategory } from "../../shared";
+import { fillPrompt } from "../../prompts/fill";
+import blankTemplateTxt from "../../prompts/books/blank-template.txt";
+import personaTxt from "../../prompts/memoria/persona.txt";
+import shortCommentRulesTxt from "../../prompts/memoria/short-comment-rules.txt";
+import {
+  CODEX_DIRECTIVES_DEFAULT,
+  CODEX_TEMPLATES,
+  type CodexTemplateDef,
+  type CodexTemplateGroup,
+  type CodexTemplateKey,
+} from "../../prompts/codex/registry";
 import {
   field,
   lessonMark,
   makeButton,
   makeSubtabs,
+  pill,
   section,
   select,
   textArea,
@@ -15,8 +26,7 @@ import {
 } from "../components";
 import { confirmDelete, promptForString } from "../modals";
 
-type PresetCategory = "chapter" | "arc" | "volume";
-type PromptsCategory = PresetCategory | "codex";
+type PromptsCategory = PresetCategory;
 
 const CATEGORY_SUBTABS: { key: PromptsCategory; label: string }[] = [
   { key: "chapter", label: "Chapter" },
@@ -25,7 +35,13 @@ const CATEGORY_SUBTABS: { key: PromptsCategory; label: string }[] = [
   { key: "codex", label: "Codex" },
 ];
 
-const local = { category: "chapter" as PromptsCategory };
+const local = {
+  category: "chapter" as PromptsCategory,
+  /** Codex template rows the user opened, by template key. */
+  codexExpanded: new Set<string>(),
+  /** How To panels open inside expanded rows. */
+  codexHowTo: new Set<string>(),
+};
 
 /** Lesson-stage navigation: pin the category before a demo render. */
 export function setPromptsCategory(cat: PromptsCategory): void {
@@ -45,11 +61,19 @@ export function renderPromptsPane(
       ? { arcPresetKey: key }
       : category === "volume"
         ? { volumePresetKey: key }
-        : { chapterPresetKey: key };
+        : category === "codex"
+          ? { codexPresetKey: key }
+          : { chapterPresetKey: key };
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   };
   const selectedKeyFor = (c: PresetCategory): string =>
-    c === "arc" ? profile.arcPresetKey : c === "volume" ? profile.volumePresetKey : profile.chapterPresetKey;
+    c === "arc"
+      ? profile.arcPresetKey
+      : c === "volume"
+        ? profile.volumePresetKey
+        : c === "codex"
+          ? profile.codexPresetKey
+          : profile.chapterPresetKey;
 
   const pane = document.createElement("div");
   pane.className = "lmb-pane";
@@ -63,7 +87,8 @@ export function renderPromptsPane(
     }));
     const cat = local.category;
     if (cat === "codex") {
-      renderCodexPrompts(pane, state, send);
+      renderCategory(pane, state, ctx, send, "codex", selectedKeyFor("codex"), setKey);
+      renderCodexTemplates(pane, state, send);
       return;
     }
     renderCategory(pane, state, ctx, send, cat, selectedKeyFor(cat), setKey);
@@ -74,51 +99,170 @@ export function renderPromptsPane(
   draw();
 }
 
-function renderCodexPrompts(
+/* --------------------------------------------------- codex template list */
+
+const TEMPLATE_GROUPS: CodexTemplateGroup[] = ["File schemas", "Write protocol", "Pass instructions", "Run notes"];
+
+const GROUP_HELP: Record<CodexTemplateGroup, string> = {
+  "File schemas": "One block per codex file.",
+  "Write protocol": "How the agent is told to deliver its edits. Which one is sent follows the Use tool calls switch.",
+  "Pass instructions": "The task text for each kind of codex run.",
+  "Run notes": "Warnings prepended only when their situation applies.",
+};
+
+function renderCodexTemplates(
   host: HTMLElement,
   state: FrontendState,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Codex directives");
-  lessonMark(sec.wrap, "tuning.prompts.codex");
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent =
-    "The mission block at the top of the codex agent's system prompt. The file schemas and the write protocol that follow it stay fixed, they encode the validation the agent's writes must pass.";
-  sec.body.appendChild(help);
-
   const profile = state.activeProfile;
-  sec.body.appendChild(buildOverrideBlock({
-    label: "Directives",
-    value: profile.codexDirectivesOverride ?? DEFAULT_CODEX_DIRECTIVES,
-    defaultText: DEFAULT_CODEX_DIRECTIVES,
-    rows: 16,
-    onSave: (next) => send({
-      type: "save_profile",
-      profile: { id: profile.id, codexDirectivesOverride: next },
-      chatId: state.activeChatId,
-    }),
-  }));
+  const preset = state.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey) ?? null;
+  const sec = section("Codex prompt templates");
+  const draw = (): void => {
+    sec.body.replaceChildren();
+    const help = document.createElement("div");
+    help.className = "lmb-help";
+    help.textContent = preset
+      ? `Every other block of the codex agent's prompts. Edits save into the "${preset.displayName}" preset, so switching presets swaps the whole prompt set. Open a template's How To before changing it.`
+      : "Other blocks of the codex agent's prompts. These belong to the selected preset.";
+    sec.body.appendChild(help);
 
+    const overridden = preset?.templates ? Object.keys(preset.templates).length : 0;
+    if (overridden > 0) {
+      sec.body.appendChild(textNode(
+        `${overridden} template${overridden === 1 ? "" : "s"} customized in this preset.`,
+        "lmb-help",
+      ));
+    }
+
+    for (const group of TEMPLATE_GROUPS) {
+      const defs = CODEX_TEMPLATES.filter((t) => t.group === group);
+      if (defs.length === 0) continue;
+      const sub = document.createElement("div");
+      sub.className = "lmb-section-title";
+      sub.textContent = group;
+      sec.body.appendChild(sub);
+      sec.body.appendChild(textNode(GROUP_HELP[group], "lmb-help"));
+      const list = document.createElement("ul");
+      list.className = "lmb-entry-list";
+      for (const def of defs) {
+        list.appendChild(renderTemplateRow(def, preset, state, send, draw));
+      }
+      sec.body.appendChild(list);
+    }
+  };
+  draw();
   host.appendChild(sec.wrap);
 }
 
-const ALPHABET_PICK =
-  "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}";
+function renderTemplateRow(
+  def: CodexTemplateDef,
+  preset: CustomPreset | null,
+  state: FrontendState,
+  send: (msg: FrontendToBackend) => void,
+  redraw: () => void,
+): HTMLElement {
+  const override = preset?.templates?.[def.key];
+  const expanded = local.codexExpanded.has(def.key);
 
-const DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = [
-  "A single playful nyandere remark in Memoria voice about the scene you just summarized.",
-  `It must start with a word beginning with the letter "${ALPHABET_PICK}".`,
-  `It must also include another word that starts with the letter "${ALPHABET_PICK}".`,
-  "One sentence only. No emoji. Stay in catgirl-librarian register, slightly possessive, slightly proud.",
-].join(" ");
+  const row = document.createElement("li");
+  row.className = `lmb-entry compact${expanded ? " expanded" : ""}`;
 
-const DEFAULT_MEMORIA_PERSONA = [
-  "You are Memoria, a young nyandere catgirl librarian with black hair and blue eyes, wearing a maid uniform.",
-  "You quietly keep this user's story shelved and organized.",
-  "When you write a JSON memory, you obey the schema strictly and never break it,",
-  "but the short_comment field is your one allowed indulgence: one nyandere remark about the scene you just filed.",
-].join(" ");
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "lmb-entry-row";
+  const title = document.createElement("span");
+  title.className = "lmb-entry-title";
+  title.textContent = def.label;
+  head.appendChild(title);
+  if (override !== undefined) head.appendChild(pill("customized", "warn"));
+  const chevron = document.createElement("span");
+  chevron.className = `lmb-chevron${expanded ? " open" : ""}`;
+  head.appendChild(chevron);
+  head.addEventListener("click", () => {
+    if (expanded) local.codexExpanded.delete(def.key);
+    else local.codexExpanded.add(def.key);
+    redraw();
+  });
+  row.appendChild(head);
+  if (!expanded) return row;
+
+  const detail = document.createElement("div");
+  detail.className = "lmb-entry-detail";
+
+  // Compact How To expander: closed by default so the list stays scannable.
+  const howToOpen = local.codexHowTo.has(def.key);
+  const howBtn = makeButton(howToOpen ? "Hide How To" : "How To", () => {
+    if (howToOpen) local.codexHowTo.delete(def.key);
+    else local.codexHowTo.add(def.key);
+    redraw();
+  }, { small: true });
+  detail.appendChild(howBtn);
+  if (howToOpen) {
+    const how = document.createElement("div");
+    how.className = "lmb-help";
+    how.textContent = def.howTo;
+    detail.appendChild(how);
+    for (const v of def.vars) {
+      detail.appendChild(textNode(`${v.token} - ${v.meaning}`, "lmb-field-hint"));
+    }
+    detail.appendChild(textNode(
+      "Host macros like {{user}} also work, they resolve when the prompt is sent.",
+      "lmb-field-hint",
+    ));
+  }
+
+  if (!preset) {
+    const view = document.createElement("div");
+    view.className = "lmb-preset-text";
+    view.textContent = def.defaultText;
+    detail.appendChild(view);
+    detail.appendChild(textNode("Built-in preset, duplicate it above to edit this template.", "lmb-field-hint"));
+    row.appendChild(detail);
+    return row;
+  }
+
+  const area = textArea({
+    value: override ?? def.defaultText,
+    rows: Math.min(16, Math.max(4, def.defaultText.split("\n").length + 1)),
+  });
+  const save = (): void => {
+    const templates: Partial<Record<CodexTemplateKey, string>> = { ...(preset.templates ?? {}) };
+    if (!area.value.trim() || area.value === def.defaultText) delete templates[def.key];
+    else templates[def.key] = area.value;
+    send({
+      type: "save_custom_preset",
+      preset: { ...preset, templates },
+      chatId: state.activeChatId,
+    });
+  };
+  area.addEventListener("input", save);
+  detail.appendChild(area);
+
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  const resetBtn = makeButton("Reset to default", () => {
+    if (resetBtn.textContent === "Reset to default") {
+      resetBtn.textContent = "Click again to confirm";
+      resetBtn.classList.add("danger");
+      setTimeout(() => {
+        resetBtn.textContent = "Reset to default";
+        resetBtn.classList.remove("danger");
+      }, 3000);
+      return;
+    }
+    area.value = def.defaultText;
+    save();
+    redraw();
+  }, { small: true, disabled: override === undefined });
+  actions.appendChild(resetBtn);
+  detail.appendChild(actions);
+
+  row.appendChild(detail);
+  return row;
+}
+
+/* -------------------------------------------------------- memoria blocks */
 
 function renderMemoriaOverrides(
   host: HTMLElement,
@@ -137,8 +281,8 @@ function renderMemoriaOverrides(
 
   sec.body.appendChild(buildOverrideBlock({
     label: "Memoria persona",
-    value: profile.memoriaPersonaOverride ?? DEFAULT_MEMORIA_PERSONA,
-    defaultText: DEFAULT_MEMORIA_PERSONA,
+    value: profile.memoriaPersonaOverride ?? personaTxt,
+    defaultText: personaTxt,
     rows: 4,
     onSave: (next) => send({
       type: "save_profile",
@@ -149,8 +293,8 @@ function renderMemoriaOverrides(
 
   sec.body.appendChild(buildOverrideBlock({
     label: "Memoria short-comment rules",
-    value: profile.shortCommentRulesOverride ?? DEFAULT_SHORT_COMMENT_RULES_TEMPLATE,
-    defaultText: DEFAULT_SHORT_COMMENT_RULES_TEMPLATE,
+    value: profile.shortCommentRulesOverride ?? shortCommentRulesTxt,
+    defaultText: shortCommentRulesTxt,
     rows: 4,
     onSave: (next) => send({
       type: "save_profile",
@@ -215,6 +359,8 @@ function buildOverrideBlock(opts: {
   return wrap;
 }
 
+/* ---------------------------------------------------------- preset picker */
+
 function renderCategory(
   host: HTMLElement,
   state: FrontendState,
@@ -224,10 +370,26 @@ function renderCategory(
   selectedKey: string,
   setKey: (cat: PresetCategory, key: string) => void,
 ): void {
-  const sec = section(category === "arc" ? "Arc prompt" : category === "volume" ? "Volume prompt" : "Chapter prompt");
-  lessonMark(sec.wrap, "tuning.prompts");
+  const isCodex = category === "codex";
+  const sec = section(
+    category === "arc" ? "Arc prompt" : category === "volume" ? "Volume prompt" : isCodex ? "Codex directives" : "Chapter prompt",
+  );
+  lessonMark(sec.wrap, isCodex ? "tuning.prompts.codex" : "tuning.prompts");
+  if (isCodex) {
+    const help = document.createElement("div");
+    help.className = "lmb-help";
+    help.textContent =
+      "The mission block at the top of the codex agent's system prompt. A codex preset carries this text plus every template below, so switching presets swaps the complete prompt set. Dry run shows the exact assembled prompts.";
+    sec.body.appendChild(help);
+  }
 
-  const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : state.chapterPresets;
+  const builtIns = category === "arc"
+    ? state.arcPresets
+    : category === "volume"
+      ? state.volumePresets
+      : isCodex
+        ? state.codexPresets
+        : state.chapterPresets;
   const customs = state.customPresets.filter((p) => p.category === category);
   const opts = [
     ...builtIns.map((b) => ({ value: b.key, label: `Built-in: ${b.displayName}` })),
@@ -291,18 +453,26 @@ function renderCategory(
       });
       setKey(category, key);
     }, { small: true }),
+  );
+  buttonsRow.append(
     makeButton("Dry run", () => {
       if (!state.activeChatId) return;
       send(category === "arc"
         ? { type: "dry_run_arc", chatId: state.activeChatId }
         : category === "volume"
           ? { type: "dry_run_volume", chatId: state.activeChatId }
-          : { type: "dry_run_chapter", chatId: state.activeChatId });
+          : category === "codex"
+            ? { type: "dry_run_codex", chatId: state.activeChatId }
+            : { type: "dry_run_chapter", chatId: state.activeChatId });
     }, {
       small: true,
       disabled: !state.activeChatId || !state.settings.enabled,
-      title: "Assemble this preset's prompt with all macros resolved and show what would be sent. Does not call the model.",
+      title: isCodex
+        ? "Assemble the next codex run's complete system and user prompts with macros resolved and show what would be sent. Does not call the model."
+        : "Assemble this preset's prompt with all macros resolved and show what would be sent. Does not call the model.",
     }),
+  );
+  buttonsRow.append(
     makeButton("Delete", async () => {
       if (!isUserPreset) return;
       const ok = await confirmDelete(ctx, "Delete prompt?", "This removes the custom prompt and falls back to the built-in default.");
@@ -353,26 +523,21 @@ function renderCategory(
 }
 
 function blankPromptTemplate(category: PresetCategory): string {
+  if (category === "codex") return CODEX_DIRECTIVES_DEFAULT;
   const noun = category === "arc" ? "arc" : category === "volume" ? "volume" : "chapter";
-  return [
-    `Summarize the following ${noun} into a JSON memory.`,
-    "",
-    "Return ONLY valid JSON in this exact shape:",
-    "{",
-    "  \"title\": \"Short title\",",
-    "  \"content\": \"Memoria's compressed text. Aim for ~{{target_tokens}} tokens.\",",
-    "  \"keywords\": [\"keyword1\", \"keyword2\"],",
-    "  \"short_comment\": \"{{memoria_short_comment_rules}}\"",
-    "}",
-    "",
-    "No commentary outside the JSON.",
-  ].join("\n");
+  return fillPrompt(blankTemplateTxt, { NOUN: noun });
 }
 
 function findPresetText(state: FrontendState, category: PresetCategory, key: string): string {
   const c = state.customPresets.find((p) => p.key === key && p.category === category);
   if (c) return c.prompt;
-  const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : state.chapterPresets;
+  const builtIns = category === "arc"
+    ? state.arcPresets
+    : category === "volume"
+      ? state.volumePresets
+      : category === "codex"
+        ? state.codexPresets
+        : state.chapterPresets;
   const b = builtIns.find((p) => p.key === key);
   return b?.prompt ?? "";
 }

@@ -7,7 +7,7 @@ import {
   makeDefaultProfile,
   unlockedLessons,
 } from "../../shared";
-import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_VOLUME_PRESETS } from "../../backend/presets";
+import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BUILTIN_VOLUME_PRESETS } from "../../backend/presets";
 
 export const FIXTURE_CHAT_ID = `${LESSON_CHAT_PREFIX}ashford` as const;
 const FIXTURE_MODEL = "example/tutor-model";
@@ -394,6 +394,7 @@ export function buildFixture(variant: string): FrontendState {
     chapterPresets: BUILTIN_CHAPTER_PRESETS,
     arcPresets: BUILTIN_ARC_PRESETS,
     volumePresets: BUILTIN_VOLUME_PRESETS,
+    codexPresets: BUILTIN_CODEX_PRESETS,
     customPresets: [],
     regexScripts: [],
     pendingPreviews: [],

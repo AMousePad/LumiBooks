@@ -1,0 +1,18 @@
+{{ENTITY_FILES}}
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "",
+  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
+facts, never the state of the current scene. An entity carrying "locked": true
+is user-owned: never set or drop it. Relationships live in each entity's "ties"
+list as short present-tense notes - to other characters, to things, and to
+places alike. Do NOT write relations.json, it is disabled.
+Ties coverage (mandatory): record the story's FULL web, never a hub around one
+protagonist - every standing connection an entity has, to side characters,
+places, and things alike, so each named character carries several ties. Phrase
+ties as standing arrangements that survive scene changes ("owes her a life
+debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
+outdated: a stale tie is an error, never leave one standing.

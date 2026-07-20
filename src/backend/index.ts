@@ -74,10 +74,12 @@ import {
 import { clearBusy } from "./pipeline";
 import { buildCoverage, computeCoverageStats, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
 import {
+  dryRunCodex,
   invalidateCodexInjectionCache,
   maybeRunCodex,
   publishCodexPool,
   rebuildCodex,
+  rebuildCodexFiles,
   refreshCodexFiles,
   registerCodexCallbacks,
   runCodexNow,
@@ -958,6 +960,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
+      case "dry_run_codex": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        try {
+          const result = await dryRunCodex(msg.chatId, profile, cur, userId);
+          send({ type: "dry_run_result", kind: "codex", messages: result.messages, diagnostics: result.diagnostics }, userId);
+        } catch (err) {
+          const text = describeError(err);
+          warn(`dry_run_codex failed: ${text}`);
+          await notify(userId, "error", `Dry run failed: ${text}`);
+        }
+        break;
+      }
+
       case "abort_busy": {
         const aborted = abortBusy(userId, msg.chatId, msg.kind);
         if (!aborted) {
@@ -1046,6 +1063,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const fallbackChapter = "summary";
         const fallbackArc = "arc_default";
         const fallbackVolume = "volume_default";
+        const fallbackCodex = "codex_default";
         await mutateSettings(userId, (cur) => {
           const list = cur.customPresets.filter((p) => !(p.key === msg.key && p.category === msg.category));
           const profiles = cur.profiles.map((p) => {
@@ -1057,6 +1075,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
             if (msg.category === "volume" && p.volumePresetKey === msg.key) {
               return { ...p, volumePresetKey: fallbackVolume };
+            }
+            if (msg.category === "codex" && p.codexPresetKey === msg.key) {
+              return { ...p, codexPresetKey: fallbackCodex };
             }
             return p;
           });
@@ -1347,6 +1368,27 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
         await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_rebuild_files": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
+        if (files.length === 0) break;
+        await rebuildCodexFiles(msg.chatId, profile, userId, files);
+        const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles }, userId);
         await pushState(userId, msg.chatId);
         break;
       }

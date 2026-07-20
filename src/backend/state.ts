@@ -14,7 +14,7 @@ import { getCodexFileTokens, getCodexPanelState, getCodexStatus } from "./codex/
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
-import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
+import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
 
 type ChatMessageDTO = ChatMessage;
 
@@ -83,6 +83,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     chapterPresets: BUILTIN_CHAPTER_PRESETS,
     arcPresets: BUILTIN_ARC_PRESETS,
     volumePresets: BUILTIN_VOLUME_PRESETS,
+    codexPresets: BUILTIN_CODEX_PRESETS,
     customPresets: settings.customPresets,
     regexScripts,
     pendingPreviews: [],

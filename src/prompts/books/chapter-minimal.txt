@@ -1,0 +1,20 @@
+Analyze the following roleplay scene and return an ultra-concise memory as JSON. Prioritize compression over coverage. Capture only load-bearing plot moves and the single most important consequence; omit anything inferable from context.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (1-3 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Ultra-concise prose summary, prioritizing compression over coverage...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field: prose only, past tense, third person. Skip all [OOC]/meta. Skip flavor and atmosphere. Keep only events that change state, decisions that bind future scenes, or revelations the characters cannot un-know.
+
+For the keywords field, generate 15-30 specific, descriptive, highly relevant keywords for database retrieval - focus on the most important terms that would help find this scene later. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+
+Return ONLY the JSON, no other text.

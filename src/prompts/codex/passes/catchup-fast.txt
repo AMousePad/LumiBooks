@@ -1,0 +1,1 @@
+CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering {{CHUNK_LABEL}}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.

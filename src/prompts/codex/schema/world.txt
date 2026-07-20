@@ -1,0 +1,5 @@
+world.json
+{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
+  "keywords": ["ritual", "memories", "blood magic"] } ] }
+Rules and lore true of the WORLD itself, not any single entity's state. A topic
+needs at least one fact - drop the topic when its last fact goes.

@@ -7,7 +7,7 @@ import type { ChatMessage } from "./coverage";
 import type { LMBEntry } from "./world-book";
 import { applySelectedRegex } from "./regex";
 import { describeError, warn } from "./runtime";
-import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
+import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
 import { DEFAULT_SHORT_COMMENT_RULES_TEMPLATE, MEMORIA_PERSONA_LINE } from "./memoria";
 
 type ChatMessageDTO = ChatMessage;
@@ -59,9 +59,21 @@ export class FatalSummarizerError extends Error {
   }
 }
 
-export function findPresetText(profile: LMBProfile, customPresets: CustomPreset[], category: "chapter" | "arc" | "volume"): string {
-  const key = category === "arc" ? profile.arcPresetKey : category === "volume" ? profile.volumePresetKey : profile.chapterPresetKey;
-  const builtIns = category === "arc" ? BUILTIN_ARC_PRESETS : category === "volume" ? BUILTIN_VOLUME_PRESETS : BUILTIN_CHAPTER_PRESETS;
+export function findPresetText(profile: LMBProfile, customPresets: CustomPreset[], category: "chapter" | "arc" | "volume" | "codex"): string {
+  const key = category === "arc"
+    ? profile.arcPresetKey
+    : category === "volume"
+      ? profile.volumePresetKey
+      : category === "codex"
+        ? profile.codexPresetKey
+        : profile.chapterPresetKey;
+  const builtIns = category === "arc"
+    ? BUILTIN_ARC_PRESETS
+    : category === "volume"
+      ? BUILTIN_VOLUME_PRESETS
+      : category === "codex"
+        ? BUILTIN_CODEX_PRESETS
+        : BUILTIN_CHAPTER_PRESETS;
   const custom = customPresets.find((p) => p.key === key && p.category === category);
   if (custom) return custom.prompt;
   const builtIn = builtIns.find((p) => p.key === key);
@@ -393,7 +405,7 @@ function buildPreviousMemoriesBlock(previous: LMBEntry[]): string {
   return lines.join("\n\n");
 }
 
-async function resolveSystemMacros(text: string, chatId: string, userId: string): Promise<string> {
+export async function resolveSystemMacros(text: string, chatId: string, userId: string): Promise<string> {
   if (!text.includes("{{")) return text;
   try {
     const result = await spindle.macros.resolve(text, { chatId, userId, commit: false });
@@ -409,7 +421,7 @@ export interface DryRunAssembly {
   diagnostics: Array<{ message: string }>;
 }
 
-async function resolveMacrosWithDiagnostics(
+export async function resolveMacrosWithDiagnostics(
   text: string,
   chatId: string,
   userId: string,
@@ -871,20 +883,32 @@ function parseSummaryJson(raw: string): ParsedSummary {
   throw new Error("The model didn't return valid JSON");
 }
 
-/** First parsable JSON object in a model reply, tolerant of think blocks,
- * code fences, and prose around it. The codex agent's JSON mode rides the
- * same extraction the summary parser has always used. */
-export function parseLooseJsonObject(raw: string): Record<string, unknown> | null {
+/** Every parsable JSON object in a model reply, in reading order (fenced
+ * blocks first, then whole text, then balanced spans). Tolerant of broken
+ * think tags, surrounding prose, and decoy fragments: a valid object is
+ * found no matter what else the reply carries. */
+export function parseLooseJsonObjects(raw: string): Record<string, unknown>[] {
   const normalized = normalizeText(stripThinkBlocks(raw));
+  const out: Record<string, unknown>[] = [];
   for (const cand of collectJsonCandidates(normalized)) {
     const obj = tryParseJsonObject(cand);
-    if (obj) return obj;
+    if (obj) out.push(obj);
   }
-  return null;
+  return out;
 }
 
 function stripThinkBlocks(raw: string): string {
-  return raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  // Well-formed blocks first.
+  let out = raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  // Orphan closing tag (the opener was eaten by the provider's template, a
+  // common reasoning-model shape): everything before the last closer is
+  // thinking, drop it.
+  out = out.replace(/^[\s\S]*<\/(?:think(?:ing)?|reasoning)>/i, "");
+  // Orphan opening tag (the block was never closed): where thinking ends is
+  // unknowable, so drop only the tag and let the candidate scan below skim
+  // valid JSON out of the leftover prose.
+  out = out.replace(/<(?:think(?:ing)?|reasoning)>/gi, "");
+  return out;
 }
 
 function normalizeText(s: string): string {
@@ -899,8 +923,7 @@ function collectJsonCandidates(s: string): string[] {
   const out: string[] = [];
   for (const block of extractFencedBlocks(s)) out.push(block);
   out.push(s);
-  const balanced = extractBalancedJson(s);
-  if (balanced) out.push(balanced);
+  out.push(...extractBalancedJsonSpans(s));
   const seen = new Set<string>();
   const uniq: string[] = [];
   for (const c of out) {
@@ -922,30 +945,55 @@ function extractFencedBlocks(s: string): string[] {
   return out;
 }
 
-function extractBalancedJson(s: string): string | null {
-  const startIdx = s.search(/[{[]/);
-  if (startIdx === -1) return null;
-  const open = s[startIdx];
-  const close = open === "{" ? "}" : "]";
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  for (let i = startIdx; i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) {
-      if (esc) { esc = false; }
-      else if (ch === "\\") { esc = true; }
-      else if (ch === "\"") { inStr = false; }
+/** Bound on how many opener positions the span scan will try: model replies
+ * are finite, and a reply needing more than this is noise anyway. */
+const MAX_JSON_SCAN_STARTS = 24;
+
+/** Every balanced {...} / [...] span in reading order, not just the first: a
+ * stray brace in leaked scratchpad prose (broken think tags) must not shadow
+ * a valid JSON object that follows it. */
+function extractBalancedJsonSpans(s: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  let starts = 0;
+  while (pos < s.length && starts < MAX_JSON_SCAN_STARTS) {
+    const rel = s.slice(pos).search(/[{[]/);
+    if (rel === -1) break;
+    const startIdx = pos + rel;
+    starts++;
+    const open = s[startIdx];
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let end = -1;
+    for (let i = startIdx; i < s.length; i++) {
+      const ch = s[i];
+      if (inStr) {
+        if (esc) { esc = false; }
+        else if (ch === "\\") { esc = true; }
+        else if (ch === "\"") { inStr = false; }
+        continue;
+      }
+      if (ch === "\"") { inStr = true; continue; }
+      if (ch === open) depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) {
+      // Never balanced from this opener, try the next one.
+      pos = startIdx + 1;
       continue;
     }
-    if (ch === "\"") { inStr = true; continue; }
-    if (ch === open) depth++;
-    else if (ch === close) {
-      depth--;
-      if (depth === 0) return s.slice(startIdx, i + 1).trim();
-    }
+    out.push(s.slice(startIdx, end + 1).trim());
+    pos = end + 1;
   }
-  return null;
+  return out;
 }
 
 function tryParseJsonObject(cand: string): Record<string, unknown> | null {

@@ -1,0 +1,1 @@
+RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives {{STORY_SHAPE}}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.

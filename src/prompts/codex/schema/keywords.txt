@@ -1,0 +1,16 @@
+Retrieval keywords (mandatory):
+Every entity sheet, world entry, and knowledge item carries a "keywords" list of
+4-10 tags. Each record is stored as a separate lorebook entry and only enters the
+prompt when the recent story mentions one of its keywords, so a record with weak
+keywords effectively disappears. Rules:
+- Mix generality with specificity: most keywords are SINGLE words the story will
+  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
+  when the single word would be too ambiguous to pin this record ("north tower"
+  when several towers exist). Never longer than 2 words.
+- Concrete nouns tied to THIS record: places, objects, epithets, events.
+- One concept per keyword, retrievable when mentioned alone.
+- The record's own name, aliases, and topic (and a knowledge item's participants)
+  match automatically - never repeat them as keywords.
+- No abstract themes (love, betrayal, tension), no filler verbs.
+- Keep keywords current: when a record's contents change, re-check its keywords.
+timeline.json and threads.json need no keywords, they are always in the prompt.

@@ -1,183 +1,102 @@
-import type { CodexBundle, CodexEntity, CodexFileKey, CodexRelation } from "./schema";
-import { CODEX_FILE_KEYS } from "./schema";
-import { DEFAULT_CODEX_DIRECTIVES } from "../../shared";
+import type { CodexBundle, CodexEntity, CodexEntityFile, CodexFileKey, CodexRelation } from "./schema";
+import { CODEX_FILE_KEYS, LOCKED_FIELD_MASK } from "./schema";
+import type { CustomPreset, LMBProfile } from "../../shared";
+import { fillPrompt } from "../../prompts/fill";
+import { codexTemplateText, type CodexTemplateKey } from "../../prompts/codex/registry";
 import type { ChatMessage } from "../coverage";
-import { renderTranscript } from "../summarizer";
+import { findPresetText, renderTranscript } from "../summarizer";
 
-const SCHEMA_TABLE_MODE = `File schemas (JSON):
+/**
+ * Everything a prompt builder needs to know about this run: which files the
+ * agent may see and write (frozen files are omitted wholesale, never
+ * mentioned), the relations mode, the transport, and the resolved prompt
+ * texts (directives preset + per-template overrides).
+ */
+export interface CodexPromptCtx {
+  activeFiles: ReadonlySet<CodexFileKey>;
+  relationsTable: boolean;
+  useTools: boolean;
+  directives: string;
+  overrides: Partial<Record<CodexTemplateKey, string>>;
+}
 
-characters.json / locations.json / things.json
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
-and only its stable, medium-to-long-lived facts - never the state of the current
-scene. Never put relationship info on a sheet, that lives in relations.json. An
-entity carrying "locked": true is user-owned: never set or drop it.
+function tpl(ctx: CodexPromptCtx, key: CodexTemplateKey): string {
+  return codexTemplateText(key, ctx.overrides as Record<string, string>);
+}
 
-relations.json
-{ "relations": [
-  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
-    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
-  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
-    "state": "hiding in the attic since the murder" },
-  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
-    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
-Rows connect ANY entities, not just characters: character-character (bond,
-rival, kin), character-thing (owns, seeks, guards), character-location (at,
-rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
-tempted to mention another entity, that connection belongs here instead.
-Prefer ONE group row whenever a fact is genuinely shared by several entities
-(a faction, a pact, a household, a shared secret): it replaces a pile of
-redundant pairs and keeps future edits to one row. Use a pair only when the
-relationship is purely binary or directional a->b (two pair rows when the two
-sides differ). Never store how one member individually feels about another
-inside a group row - that stance is its own pair.
+/** The one place a run's prompt context is assembled: the selected codex
+ * preset supplies the directives AND the per-template overrides (one preset
+ * is the complete prompt set), frozen files are subtracted up front. */
+export function makeCodexPromptCtx(
+  profile: LMBProfile,
+  customPresets: CustomPreset[],
+  frozenFiles: ReadonlySet<CodexFileKey>,
+): CodexPromptCtx {
+  const preset = customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey) ?? null;
+  return {
+    activeFiles: new Set(CODEX_FILE_KEYS.filter((k) => !frozenFiles.has(k))),
+    relationsTable: profile.codexRelationsTable,
+    useTools: profile.codexUseTools,
+    directives: findPresetText(profile, customPresets, "codex"),
+    overrides: preset?.templates ?? {},
+  };
+}
 
-Relations coverage (mandatory):
-- The table is the story's FULL web, never a hub around one protagonist. Encode
-  every standing connection the story establishes between ANY two entities,
-  however minor. Side characters' links to each other, to places, and to things
-  matter as much as their links to the lead - if two entities are related in any
-  way at all, that relation belongs in the table.
-- Every named character should end up tied to MULTIPLE other entities
-  (characters, locations, things). A character with a single row is usually an
-  under-recorded character: sweep the story for their other connections.
-- Write "state" to survive the story moving on: name the standing arrangement
-  ("owes her a life debt", "banned from the guildhall"), not the scene of the
-  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
-  "history" using the story's own dates so the row stays meaningful as it ages.
-- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
-  the new turns and rewrite any state the story has outdated (demote the old
-  state to "history" only when the shift is pivotal). A row that no longer holds
-  is stale data: correct it, never leave it standing.`;
+const ENTITY_FILE_KEYS = ["characters", "locations", "things"] as const;
 
-const SCHEMA_INLINE_MODE = `File schemas (JSON):
+function activeEntityFiles(ctx: CodexPromptCtx): CodexFileKey[] {
+  return ENTITY_FILE_KEYS.filter((k) => ctx.activeFiles.has(k));
+}
 
-characters.json / locations.json / things.json
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "",
-  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
-facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it. Relationships live in each entity's "ties"
-list as short present-tense notes - to other characters, to things, and to
-places alike. Do NOT write relations.json, it is disabled.
-Ties coverage (mandatory): record the story's FULL web, never a hub around one
-protagonist - every standing connection an entity has, to side characters,
-places, and things alike, so each named character carries several ties. Phrase
-ties as standing arrangements that survive scene changes ("owes her a life
-debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
-outdated: a stale tie is an error, never leave one standing.`;
-
-const SCHEMA_REST = `timeline.json
-{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
-  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
-  "causes"?: "she flees the city" } ] }
-Major events only, oldest first. "when" uses the story's own reckoning. The
-timeline is APPEND-ONLY: record new events as set rows without a rid, and
-never rewrite or drop existing events - history does not change behind the
-story. Editing an existing row is reserved for an outright factual error or
-a reference the validator flags; removals happen only in reconcile or tidy
-passes.
-
-threads.json
-{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
-  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
-  "seeds": ["unexplained scar on the ferryman's hand"] }
-Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
-thread you mark resolved leaves your view from the next pass on - the app
-archives it for the user - so never re-add a storyline you already resolved.
-
-world.json
-{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
-  "keywords": ["ritual", "memories", "blood magic"] } ] }
-Rules and lore true of the WORLD itself, not any single entity's state. A topic
-needs at least one fact - drop the topic when its last fact goes.
-
-knowledge.json
-{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
-  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
-  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
-  "note"?: "",
-  "keywords": ["murder", "dagger", "duke"] } ] }
-ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
-item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
-belong in world or timeline, never here.
-
-Retrieval keywords (mandatory):
-Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-10 tags. Each record is stored as a separate lorebook entry and only enters the
-prompt when the recent story mentions one of its keywords, so a record with weak
-keywords effectively disappears. Rules:
-- Mix generality with specificity: most keywords are SINGLE words the story will
-  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
-  when the single word would be too ambiguous to pin this record ("north tower"
-  when several towers exist). Never longer than 2 words.
-- Concrete nouns tied to THIS record: places, objects, epithets, events.
-- One concept per keyword, retrievable when mentioned alone.
-- The record's own name, aliases, and topic (and a knowledge item's participants)
-  match automatically - never repeat them as keywords.
-- No abstract themes (love, betrayal, tension), no filler verbs.
-- Keep keywords current: when a record's contents change, re-check its keywords.
-timeline.json and threads.json need no keywords, they are always in the prompt.`;
+/** The schema section, assembled from per-file fragments so a frozen file's
+ * schema never reaches the model at all. */
+function schemaBlock(ctx: CodexPromptCtx): string {
+  const parts: string[] = ["File schemas (JSON):"];
+  const entityFiles = activeEntityFiles(ctx);
+  if (entityFiles.length > 0) {
+    // The entity template follows the profile's relations MODE, not the frozen
+    // state: with the table on but frozen, inline guidance would have the
+    // agent write ties the table-mode validator rejects.
+    const entityTpl = ctx.relationsTable ? tpl(ctx, "schema_entities_table") : tpl(ctx, "schema_entities_inline");
+    parts.push(fillPrompt(entityTpl, { ENTITY_FILES: entityFiles.map((k) => `${k}.json`).join(" / ") }));
+  }
+  if (ctx.relationsTable && ctx.activeFiles.has("relations")) parts.push(tpl(ctx, "schema_relations"));
+  if (ctx.activeFiles.has("timeline")) parts.push(tpl(ctx, "schema_timeline"));
+  if (ctx.activeFiles.has("threads")) parts.push(tpl(ctx, "schema_threads"));
+  if (ctx.activeFiles.has("world")) parts.push(tpl(ctx, "schema_world"));
+  if (ctx.activeFiles.has("knowledge")) parts.push(tpl(ctx, "schema_knowledge"));
+  const keyworded = entityFiles.length > 0 || ctx.activeFiles.has("world") || ctx.activeFiles.has("knowledge");
+  if (keyworded) parts.push(tpl(ctx, "schema_keywords"));
+  return parts.join("\n\n");
+}
 
 /** Tool protocol block, or its strict-JSON twin for connections whose routes
  * can't carry structured tool calls (codexUseTools off). */
-function protocolBlock(useTools: boolean): string[] {
-  const patchRules = [
-    '- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.',
-    '- "drop": keys (ids or rids) of rows to delete.',
-    '- "seeds": threads.json only, replaces the whole seeds list when provided.',
-    '- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.',
-  ];
-  if (useTools) {
-    return [
-      "Tools:",
-      "- codex_write(file, set?, drop?, seeds?, content?): edit one file.",
-      ...patchRules,
-      "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
-      "",
-      "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
-      "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
-      "A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.",
-    ];
+function protocolBlock(ctx: CodexPromptCtx): string {
+  const patchRules = tpl(ctx, "protocol_patch_rules");
+  return fillPrompt(tpl(ctx, ctx.useTools ? "protocol_tools" : "protocol_json"), { PATCH_RULES: patchRules });
+}
+
+export function buildCodexSystemPrompt(ctx: CodexPromptCtx): string {
+  return [ctx.directives, "", schemaBlock(ctx), "", protocolBlock(ctx)].join("\n");
+}
+
+/** An entity as the agent sees it: locked fields carry the mask instead of
+ * their values, and the lockedFields list itself stays app plumbing. */
+function maskLockedFields(e: CodexEntity): CodexEntity {
+  const lf = e.lockedFields;
+  if (!lf || lf.length === 0) return e;
+  const out: CodexEntity = { ...e };
+  delete out.lockedFields;
+  for (const f of lf) {
+    if (f === "id" || f === "name") continue;
+    out[f] = Array.isArray(out[f]) ? [LOCKED_FIELD_MASK] : LOCKED_FIELD_MASK;
   }
-  return [
-    "Output protocol (JSON only, no tools):",
-    'Respond with exactly ONE JSON object and nothing else, in this shape:',
-    '{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }',
-    '"writes" holds one item per file you change. Each item may carry:',
-    ...patchRules,
-    '- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.',
-    "Do not narrate, do not explain your edits, do not wrap the object in prose.",
-    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the object - re-checking a bulletproof plan again is pure waste.",
-    "A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.",
-  ];
+  return out;
 }
 
-export function buildCodexSystemPrompt(
-  relationsTable: boolean,
-  useTools: boolean,
-  directivesOverride?: string | null,
-): string {
-  return [
-    directivesOverride?.trim() ? directivesOverride : DEFAULT_CODEX_DIRECTIVES,
-    "",
-    relationsTable ? SCHEMA_TABLE_MODE : SCHEMA_INLINE_MODE,
-    "",
-    SCHEMA_REST,
-    "",
-    ...protocolBlock(useTools),
-  ].join("\n");
-}
-
-/** File JSON as the agent sees it: resolved threads stay hidden. */
+/** File JSON as the agent sees it: resolved threads stay hidden, locked
+ * fields are masked. */
 export function agentFileJson(bundle: CodexBundle, key: CodexFileKey): string {
   if (key === "threads") {
     return JSON.stringify({
@@ -185,13 +104,29 @@ export function agentFileJson(bundle: CodexBundle, key: CodexFileKey): string {
       seeds: bundle.threads.seeds,
     });
   }
+  if (key === "characters" || key === "locations" || key === "things") {
+    const file = bundle[key] as CodexEntityFile;
+    return JSON.stringify({ entities: file.entities.map(maskLockedFields) });
+  }
   return JSON.stringify(bundle[key]);
 }
 
-function lockedEntityIds(bundle: CodexBundle): string[] {
+function lockedEntityIds(bundle: CodexBundle, ctx: CodexPromptCtx): string[] {
   const out: string[] = [];
-  for (const f of [bundle.characters, bundle.locations, bundle.things]) {
-    for (const e of f.entities) if (e.locked === true) out.push(e.id);
+  for (const key of activeEntityFiles(ctx)) {
+    for (const e of (bundle[key] as CodexEntityFile).entities) {
+      if (e.locked === true) out.push(e.id);
+    }
+  }
+  return out;
+}
+
+function lockedFieldEntityIds(bundle: CodexBundle, ctx: CodexPromptCtx): string[] {
+  const out: string[] = [];
+  for (const key of activeEntityFiles(ctx)) {
+    for (const e of (bundle[key] as CodexEntityFile).entities) {
+      if (Array.isArray(e.lockedFields) && e.lockedFields.length > 0) out.push(e.id);
+    }
   }
   return out;
 }
@@ -201,48 +136,43 @@ export interface CodexRunNotes {
   migrateToTable: boolean;
   migrateToInline: boolean;
   loadProblems: string[];
-  /** Files the user froze: shown to the agent so it doesn't try to write them. */
-  frozenFiles?: string[];
 }
 
-/** Run-specific caveat block shared by every user-message builder. */
-function specialNotes(bundle: CodexBundle, notes: CodexRunNotes): string | null {
+/** Run-specific caveat block shared by every user-message builder. Frozen
+ * files are deliberately never mentioned: they are absent from the schema and
+ * the codex dump, and naming them would only invite the model to reason about
+ * files it cannot touch. */
+function specialNotes(bundle: CodexBundle, notes: CodexRunNotes, ctx: CodexPromptCtx): string | null {
   const special: string[] = [];
-  if (notes.reconcile) {
-    special.push(
-      "RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.",
-    );
-  }
-  if (notes.migrateToTable) {
-    special.push(
-      "MIGRATE: the relations table was just enabled. Lift every \"ties\" note off the entity sheets into relations.json rows, then remove all \"ties\" fields.",
-    );
-  }
-  if (notes.migrateToInline) {
-    special.push(
-      "MIGRATE: the relations table was just disabled. Fold relations.json into short \"ties\" notes on the involved entity sheets. Do not write relations.json.",
-    );
-  }
+  if (notes.reconcile) special.push(tpl(ctx, "note_reconcile"));
+  if (notes.migrateToTable) special.push(tpl(ctx, "note_migrate_table"));
+  if (notes.migrateToInline) special.push(tpl(ctx, "note_migrate_inline"));
   if (notes.loadProblems.length) {
-    special.push(
-      `REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: ${notes.loadProblems.join(", ")}.`,
-    );
+    special.push(fillPrompt(tpl(ctx, "note_repair"), { FILES: notes.loadProblems.join(", ") }));
   }
-  if (notes.frozenFiles?.length) {
-    special.push(
-      `FROZEN: the user locked these files, do NOT write them: ${notes.frozenFiles.join(", ")}.`,
-    );
-  }
-  const locked = lockedEntityIds(bundle);
+  const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
-    special.push(
-      `LOCKED: the user owns these entities, do NOT set or drop them: ${locked.join(", ")}.`,
-    );
+    special.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
+  }
+  const lockedFields = lockedFieldEntityIds(bundle, ctx);
+  if (lockedFields.length) {
+    special.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   return special.length ? special.join("\n\n") : null;
 }
 
+/** The <<CURRENT CODEX>> dump, active files only. */
+function currentCodexParts(bundle: CodexBundle, ctx: CodexPromptCtx): string[] {
+  const parts: string[] = ["<<CURRENT CODEX>>"];
+  for (const key of CODEX_FILE_KEYS) {
+    if (!ctx.activeFiles.has(key)) continue;
+    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
+  }
+  return parts;
+}
+
 export function buildCodexUserMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   chunk: ChatMessage[],
   chunkLabel: string,
@@ -252,7 +182,10 @@ export function buildCodexUserMessage(
   storySoFar: string | null,
 ): string {
   const parts: string[] = [];
-  const special = specialNotes(bundle, notes);
+  // The window warning leads every normal update: the sweep directive must
+  // never read "not mentioned in this chunk" as "stale".
+  parts.push(tpl(ctx, "note_partial_story"));
+  const special = specialNotes(bundle, notes, ctx);
   if (special) parts.push(special);
 
   if (lore) {
@@ -262,42 +195,36 @@ export function buildCodexUserMessage(
     parts.push(`<<STORY SO FAR (chapter summaries, context only - this span is already recorded in the codex)>>\n${storySoFar}`);
   }
 
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
-  parts.push(`<<NEW STORY TURNS (${chunkLabel})>>`);
+  parts.push(...currentCodexParts(bundle, ctx));
+  parts.push(`<<NEW STORY TURNS (${chunkLabel}) - the new material to encode>>`);
   // Header numbers carry the chunk's global offset so they agree with the label.
   parts.push(renderTranscript(chunk, true, chunkFirstIndex));
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join("\n\n");
 }
 
 /** Fast catch-up: a batch of chapter summaries replayed as story input. */
 export function buildCodexSummaryCatchupMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   blocks: string[],
   chunkLabel: string,
   notes: CodexRunNotes,
 ): string {
   const parts: string[] = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special) parts.push(special);
-  parts.push(
-    `CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering ${chunkLabel}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.`,
-  );
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
+  parts.push(fillPrompt(tpl(ctx, "pass_catchup_fast"), { CHUNK_LABEL: chunkLabel }));
+  parts.push(...currentCodexParts(bundle, ctx));
   parts.push(`<<STORY (${chunkLabel}, compressed)>>`);
   parts.push(blocks.join("\n\n"));
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join("\n\n");
 }
 
 /** Ultra catch-up: one pass over filed summaries plus the raw tail. */
 export function buildCodexUltraMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   books: string[],
   tailTranscript: string | null,
@@ -306,23 +233,18 @@ export function buildCodexUltraMessage(
   lore: string | null,
 ): string {
   const parts: string[] = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special) parts.push(special);
   const shape = books.length && tailTranscript
     ? "The story arrives as its filed summaries, oldest first, followed by the raw newest turns."
     : books.length
       ? "The story arrives as its filed summaries, oldest first."
       : "The story arrives as raw turns.";
-  parts.push(
-    `CATCH-UP: this single pass covers ${chunkLabel}. ${shape} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.`,
-  );
+  parts.push(fillPrompt(tpl(ctx, "pass_catchup_ultra"), { CHUNK_LABEL: chunkLabel, STORY_SHAPE: shape }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>\n${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
@@ -330,37 +252,32 @@ export function buildCodexUltraMessage(
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join("\n\n");
 }
 
 /** Reconcile sweep: the story shrank behind the codex with nothing new to read. */
 export function buildCodexReconcileMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   books: string[],
   tailTranscript: string | null,
   notes: CodexRunNotes,
   lore: string | null,
-  useTools: boolean,
 ): string {
   const parts: string[] = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special) parts.push(special);
   const shape = books.length && tailTranscript
     ? "as its filed summaries, oldest first, followed by the raw newest turns"
     : books.length
       ? "as its filed summaries, oldest first"
       : "as raw turns";
-  parts.push(
-    `RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives ${shape}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.`,
-  );
+  parts.push(fillPrompt(tpl(ctx, "pass_reconcile"), { STORY_SHAPE: shape }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>\n${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
@@ -368,7 +285,7 @@ export function buildCodexReconcileMessage(
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push(useTools
+  parts.push(ctx.useTools
     ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds."
     : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
   return parts.join("\n\n");
@@ -376,16 +293,16 @@ export function buildCodexReconcileMessage(
 
 /** Refresh pass: rewrite re-enabled files from the story's active context. */
 export function buildCodexRefreshMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   targets: readonly CodexFileKey[],
   books: string[],
   tailTranscript: string | null,
   notes: CodexRunNotes,
   lore: string | null,
-  useTools: boolean,
 ): string {
   const parts: string[] = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special) parts.push(special);
   const list = targets.map((t) => `${t}.json`).join(", ");
   const shape = books.length && tailTranscript
@@ -393,16 +310,16 @@ export function buildCodexRefreshMessage(
     : books.length
       ? "its filed summaries, oldest first"
       : "raw turns";
-  parts.push(
-    `REFRESH PASS: the user re-enabled ${list} after ${targets.length === 1 ? "it" : "they"} missed updates, so ${targets.length === 1 ? "it lags" : "they lag"} the story. The story arrives as ${shape}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.`,
-  );
+  parts.push(fillPrompt(tpl(ctx, "pass_refresh"), {
+    TARGET_FILES: list,
+    IT_THEY: targets.length === 1 ? "it" : "they",
+    LAG_PHRASE: targets.length === 1 ? "it lags" : "they lag",
+    STORY_SHAPE: shape,
+  }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>\n${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
@@ -411,7 +328,47 @@ export function buildCodexRefreshMessage(
     parts.push(tailTranscript);
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
-  parts.push(useTools
+  parts.push(ctx.useTools
+    ? "Rewrite the target files now, then call codex_done."
+    : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  return parts.join("\n\n");
+}
+
+/** Rebuild pass: regenerate the target files from the whole story. The caller
+ * passes a bundle whose targets are already blanked (locked rows excepted) so
+ * the stale contents cannot anchor the rewrite. */
+export function buildCodexRebuildMessage(
+  ctx: CodexPromptCtx,
+  bundle: CodexBundle,
+  targets: readonly CodexFileKey[],
+  books: string[],
+  tailTranscript: string | null,
+  notes: CodexRunNotes,
+  lore: string | null,
+): string {
+  const parts: string[] = [];
+  const special = specialNotes(bundle, notes, ctx);
+  if (special) parts.push(special);
+  const list = targets.map((t) => `${t}.json`).join(", ");
+  const shape = books.length && tailTranscript
+    ? "its filed summaries, oldest first, followed by the raw newest turns"
+    : books.length
+      ? "its filed summaries, oldest first"
+      : "raw turns";
+  parts.push(fillPrompt(tpl(ctx, "pass_rebuild"), { TARGET_FILES: list, STORY_SHAPE: shape }));
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>\n${lore}`);
+  }
+  parts.push(...currentCodexParts(bundle, ctx));
+  if (books.length) {
+    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+  }
+  if (tailTranscript) {
+    parts.push("<<NEWEST STORY TURNS (raw)>>");
+    parts.push(tailTranscript);
+  }
+  parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
+  parts.push(ctx.useTools
     ? "Rewrite the target files now, then call codex_done."
     : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
   return parts.join("\n\n");
@@ -419,39 +376,33 @@ export function buildCodexRefreshMessage(
 
 /** User message for a tidy pass: compress in place, no new story material. */
 export function buildCodexTidyMessage(
+  ctx: CodexPromptCtx,
   bundle: CodexBundle,
   targets: readonly CodexFileKey[],
-  useTools: boolean,
 ): string {
   const parts: string[] = [];
-  parts.push(
-    "TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.",
-  );
-  parts.push(
-    "A tidy is a ground-up rewrite: send each improved file as complete new \"content\" (not set/drop patches).",
-  );
-  parts.push(
-    "While you are in there: any target entity sheet, world entry, or knowledge item missing its \"keywords\" list gets one, following the retrieval keyword rules.",
-  );
-  const locked = lockedEntityIds(bundle);
+  parts.push(tpl(ctx, "pass_tidy"));
+  const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
-    parts.push(`LOCKED: the user owns these entities, reproduce them untouched: ${locked.join(", ")}.`);
+    parts.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
+  }
+  const lockedFields = lockedFieldEntityIds(bundle, ctx);
+  if (lockedFields.length) {
+    parts.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---\n${agentFileJson(bundle, key)}`);
-  }
-  parts.push(useTools
+  parts.push(...currentCodexParts(bundle, ctx));
+  parts.push(ctx.useTools
     ? "Rewrite the target files now. Write only files you actually improved, then call codex_done."
     : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
   return parts.join("\n\n");
 }
 
-export function verifyNudge(useTools: boolean): string {
+export function verifyNudge(ctx: CodexPromptCtx): string {
   return (
-    "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated. "
-    + (useTools
+    tpl(ctx, "pass_verify")
+    + " "
+    + (ctx.useTools
       ? "Resend corrections if you find anything, otherwise call codex_done."
       : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.')
   );
@@ -459,7 +410,7 @@ export function verifyNudge(useTools: boolean): string {
 
 function entityLine(e: CodexEntity): string {
   const bits: string[] = [];
-  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords", "locked"]);
+  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords", "locked", "lockedfields"]);
   if (e.aliases?.length) bits.push(`aka ${e.aliases.join(", ")}`);
   for (const [k, v] of Object.entries(e)) {
     if (skip.has(k.toLowerCase()) || v === undefined) continue;

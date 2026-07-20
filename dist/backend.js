@@ -1,4 +1,494 @@
 // @bun
+// src/prompts/codex/directives.txt
+var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story bible of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
+
+You see a WINDOW, not the whole story:
+- The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
+- Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
+- Only correct a record the visible material actually contradicts.
+- A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
+- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
+
+Work through three passes in your scratchpad (see the output protocol) or in your head before writing anything:
+1. UPDATE - walk the sections one by one (characters, locations, things, relations, timeline, threads, world, knowledge) and ask of each: what do the new turns add or change here? Patch every record they outdate and add everything new and durable. Be exhaustive. A concept the story established that never lands in the codex is a permanent loss.
+2. SWEEP - re-read every record the new turns touch on and verify nothing stale survived. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it. Absence from the visible turns is NOT staleness.
+3. COMPRESS - tighten the wording of everything you are about to write. Terse phrases beat sentences, no filler words. Compression trims wording, never content: dropping a durable fact to save tokens is failure, and so is padding a record with prose.
+
+Then emit ALL of your edits as ONE batch of writes. The three passes shape what you write, they are not three separate replies.
+
+Completeness bar (the ledger standard):
+- Every named or plot-relevant character, location, and thing has a sheet, and each sheet carries ALL of its durable facts in detail, not a summary line.
+- Every standing connection the story establishes is encoded, however minor.
+- Every major event lands on the timeline under the story's own dating.
+- Every unresolved storyline and every planted detail is tracked in threads.
+- Every rule of the world and every who-knows-what gap is recorded.
+- When in doubt whether something is durable enough to record: record it.
+
+Snapshot rules (absolute):
+- The codex describes the present. When something previously defined is seen to change in the given snippet, REPLACE the old text entirely. Be aware that there may be information in the codex describing facts that are not seen or talked about in the given snippet. You may leave those intact as they are likely a past event that did not change.
+- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.
+- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.
+- Record only what is durable. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.
+- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.
+- Omit empty optional fields entirely if you are not adding to them.`;
+
+// src/prompts/codex/schema/entities-table.txt
+var entities_table_default = `{{ENTITY_FILES}}
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
+and only its stable, medium-to-long-lived facts - never the state of the current
+scene. Never put relationship info on a sheet, that lives in relations.json. An
+entity carrying "locked": true is user-owned: never set or drop it.`;
+
+// src/prompts/codex/schema/entities-inline.txt
+var entities_inline_default = `{{ENTITY_FILES}}
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "",
+  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
+facts, never the state of the current scene. An entity carrying "locked": true
+is user-owned: never set or drop it. Relationships live in each entity's "ties"
+list as short present-tense notes - to other characters, to things, and to
+places alike. Do NOT write relations.json, it is disabled.
+Ties coverage (mandatory): record the story's FULL web, never a hub around one
+protagonist - every standing connection an entity has, to side characters,
+places, and things alike, so each named character carries several ties. Phrase
+ties as standing arrangements that survive scene changes ("owes her a life
+debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
+outdated: a stale tie is an error, never leave one standing.`;
+
+// src/prompts/codex/schema/relations.txt
+var relations_default = `relations.json
+{ "relations": [
+  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
+    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
+  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
+    "state": "hiding in the attic since the murder" },
+  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
+    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
+Rows connect ANY entities, not just characters: character-character (bond,
+rival, kin), character-thing (owns, seeks, guards), character-location (at,
+rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
+tempted to mention another entity, that connection belongs here instead.
+Prefer ONE group row whenever a fact is genuinely shared by several entities
+(a faction, a pact, a household, a shared secret): it replaces a pile of
+redundant pairs and keeps future edits to one row. Use a pair only when the
+relationship is purely binary or directional a->b (two pair rows when the two
+sides differ). Never store how one member individually feels about another
+inside a group row - that stance is its own pair.
+
+Relations coverage (mandatory):
+- The table is the story's FULL web, never a hub around one protagonist. Encode
+  every standing connection the story establishes between ANY two entities,
+  however minor. Side characters' links to each other, to places, and to things
+  matter as much as their links to the lead - if two entities are related in any
+  way at all, that relation belongs in the table.
+- Every named character should end up tied to MULTIPLE other entities
+  (characters, locations, things). A character with a single row is usually an
+  under-recorded character: sweep the story for their other connections.
+- Write "state" to survive the story moving on: name the standing arrangement
+  ("owes her a life debt", "banned from the guildhall"), not the scene of the
+  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
+  "history" using the story's own dates so the row stays meaningful as it ages.
+- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
+  the new turns and rewrite any state the story has outdated (demote the old
+  state to "history" only when the shift is pivotal). A row that no longer holds
+  is stale data: correct it, never leave it standing.`;
+
+// src/prompts/codex/schema/timeline.txt
+var timeline_default = `timeline.json
+{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
+  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
+  "causes"?: "she flees the city" } ] }
+Major events only, oldest first. "when" uses the story's own reckoning. The
+timeline is APPEND-ONLY: record new events as set rows without a rid, and
+never rewrite or drop existing events - history does not change behind the
+story. Editing an existing row is reserved for an outright factual error or
+a reference the validator flags; removals happen only in reconcile or tidy
+passes.`;
+
+// src/prompts/codex/schema/threads.txt
+var threads_default = `threads.json
+{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
+  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
+  "seeds": ["unexplained scar on the ferryman's hand"] }
+Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
+thread you mark resolved leaves your view from the next pass on - the app
+archives it for the user - so never re-add a storyline you already resolved.`;
+
+// src/prompts/codex/schema/world.txt
+var world_default = `world.json
+{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
+  "keywords": ["ritual", "memories", "blood magic"] } ] }
+Rules and lore true of the WORLD itself, not any single entity's state. A topic
+needs at least one fact - drop the topic when its last fact goes.`;
+
+// src/prompts/codex/schema/knowledge.txt
+var knowledge_default = `knowledge.json
+{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
+  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
+  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
+  "note"?: "",
+  "keywords": ["murder", "dagger", "duke"] } ] }
+ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
+item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
+belong in world or timeline, never here.`;
+
+// src/prompts/codex/schema/keywords.txt
+var keywords_default = `Retrieval keywords (mandatory):
+Every entity sheet, world entry, and knowledge item carries a "keywords" list of
+4-10 tags. Each record is stored as a separate lorebook entry and only enters the
+prompt when the recent story mentions one of its keywords, so a record with weak
+keywords effectively disappears. Rules:
+- Mix generality with specificity: most keywords are SINGLE words the story will
+  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
+  when the single word would be too ambiguous to pin this record ("north tower"
+  when several towers exist). Never longer than 2 words.
+- Concrete nouns tied to THIS record: places, objects, epithets, events.
+- One concept per keyword, retrievable when mentioned alone.
+- The record's own name, aliases, and topic (and a knowledge item's participants)
+  match automatically - never repeat them as keywords.
+- No abstract themes (love, betrayal, tension), no filler verbs.
+- Keep keywords current: when a record's contents change, re-check its keywords.
+timeline.json and threads.json need no keywords, they are always in the prompt.`;
+
+// src/prompts/codex/protocol/patch-rules.txt
+var patch_rules_default = `- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.
+- "drop": keys (ids or rids) of rows to delete.
+- "seeds": threads.json only, replaces the whole seeds list when provided.
+- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.`;
+
+// src/prompts/codex/protocol/tools.txt
+var tools_default = `Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit one file.
+{{PATCH_RULES}}
+- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Once your plan covers every section, stop planning and emit the calls.
+
+Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+  codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
+  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+  codex_done(note: "recorded Mara's flight and the locket's origin")
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.`;
+
+// src/prompts/codex/protocol/json.txt
+var json_default = `Output protocol (JSON only, no tools):
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }
+"writes" holds one item per file you change. Each item may carry:
+{{PATCH_RULES}}
+- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.
+
+Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+<think>UPDATE - characters: none changed. relations: Mara moved to the docks, r2 outdated. timeline: her flight is a major event. knowledge: the locket's origin was revealed. SWEEP - r2 still claims the attic, rewrite it. COMPRESS - fold the two hideout phrases into one.</think>
+{ "writes": [
+  { "file": "relations", "set": [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ] },
+  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] },
+  { "file": "knowledge", "set": [ { "fact": "The silver locket was stolen from the duke's vault", "knownBy": ["char:elias"], "keywords": ["locket", "vault", "theft"] } ] }
+], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.`;
+
+// src/prompts/codex/passes/update.txt
+var update_default = `<<TASK>>
+The story material ends above. Update the codex now: walk the three passes in your scratchpad or head (UPDATE every outdated or missing record section by section, SWEEP what the new turns contradict, COMPRESS your wording), then emit the complete batch of writes. Be comprehensive. This ledger is the story's only durable memory, and anything you leave unrecorded is lost.`;
+
+// src/prompts/codex/passes/verify.txt
+var verify_default = "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated.";
+
+// src/prompts/codex/passes/tidy.txt
+var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.
+
+A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).
+
+While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.`;
+
+// src/prompts/codex/passes/refresh.txt
+var refresh_default = 'REFRESH PASS: the user re-enabled {{TARGET_FILES}} after {{IT_THEY}} missed updates, so {{LAG_PHRASE}} the story. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
+
+// src/prompts/codex/passes/rebuild.txt
+var rebuild_default = 'REBUILD PASS: the user asked to rebuild {{TARGET_FILES}} from scratch. The target files appear empty below, and anything still shown in them is user-locked: reproduce it untouched. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the whole story, keeping every schema exactly as specified. Keep entity ids stable, other files may reference them. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
+
+// src/prompts/codex/passes/reconcile.txt
+var reconcile_default = "RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives {{STORY_SHAPE}}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.";
+
+// src/prompts/codex/passes/catchup-fast.txt
+var catchup_fast_default = "CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering {{CHUNK_LABEL}}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
+
+// src/prompts/codex/passes/catchup-ultra.txt
+var catchup_ultra_default = "CATCH-UP: this single pass covers {{CHUNK_LABEL}}. {{STORY_SHAPE}} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
+
+// src/prompts/codex/notes/partial-story.txt
+var partial_story_default = "PARTIAL VIEW: the story turns below are only the newest slice of a longer story. Everything earlier was already encoded by previous passes, so records you do not recognize come from that unseen past and are not wrong. Correct only what these turns actually contradict, never what they simply do not mention.";
+
+// src/prompts/codex/notes/reconcile.txt
+var reconcile_default2 = "RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.";
+
+// src/prompts/codex/notes/migrate-table.txt
+var migrate_table_default = 'MIGRATE: the relations table was just enabled. Lift every "ties" note off the entity sheets into relations.json rows, then remove all "ties" fields.';
+
+// src/prompts/codex/notes/migrate-inline.txt
+var migrate_inline_default = 'MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.';
+
+// src/prompts/codex/notes/repair.txt
+var repair_default = "REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: {{FILES}}.";
+
+// src/prompts/codex/notes/locked.txt
+var locked_default = "LOCKED: the user owns these entities, do NOT set or drop them: {{IDS}}.";
+
+// src/prompts/codex/notes/locked-fields.txt
+var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). Never write those fields. When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.`;
+
+// src/prompts/codex/registry.ts
+var CODEX_DIRECTIVES_DEFAULT = directives_default;
+var SCHEMA_HOWTO_TAIL = "The JSON shape shown here must match what the validator accepts. You can reword the guidance freely. If you change the shape itself, the agent's writes will be rejected until it matches the validator again.";
+var CODEX_TEMPLATES = [
+  {
+    key: "schema_entities_table",
+    label: "Entity sheets (relations table on)",
+    group: "File schemas",
+    howTo: `Describes characters.json, locations.json, and things.json when the relations table is enabled. Relationship info is directed to relations.json. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: "the entity files active this run, e.g. characters.json / locations.json" }],
+    defaultText: entities_table_default
+  },
+  {
+    key: "schema_entities_inline",
+    label: "Entity sheets (relations table off)",
+    group: "File schemas",
+    howTo: `Describes the entity files when the relations table is disabled. Relationships live as "ties" notes on each sheet instead. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: "the entity files active this run" }],
+    defaultText: entities_inline_default
+  },
+  {
+    key: "schema_relations",
+    label: "Relations table",
+    group: "File schemas",
+    howTo: `Describes relations.json and the coverage rules that push the agent to record the story's full web. Only sent when the relations table is enabled and not frozen. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [],
+    defaultText: relations_default
+  },
+  {
+    key: "schema_timeline",
+    label: "Timeline",
+    group: "File schemas",
+    howTo: `Describes timeline.json, including the append-only rule the app also enforces on normal runs. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [],
+    defaultText: timeline_default
+  },
+  {
+    key: "schema_threads",
+    label: "Threads",
+    group: "File schemas",
+    howTo: `Describes threads.json. Resolved threads are archived by the app and hidden from the agent, and this text tells it not to re-add them. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [],
+    defaultText: threads_default
+  },
+  {
+    key: "schema_world",
+    label: "World rules",
+    group: "File schemas",
+    howTo: `Describes world.json. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [],
+    defaultText: world_default
+  },
+  {
+    key: "schema_knowledge",
+    label: "Secrets",
+    group: "File schemas",
+    howTo: `Describes knowledge.json. The validator rejects items without knownBy, hiddenFrom, or falseBeliefs, and this text explains that rule to the agent. ${SCHEMA_HOWTO_TAIL}`,
+    vars: [],
+    defaultText: knowledge_default
+  },
+  {
+    key: "schema_keywords",
+    label: "Retrieval keywords",
+    group: "File schemas",
+    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages.",
+    vars: [],
+    defaultText: keywords_default
+  },
+  {
+    key: "protocol_patch_rules",
+    label: "Patch rules (set / drop / content)",
+    group: "Write protocol",
+    howTo: "The shared explanation of set, drop, seeds, and content, embedded into both protocol blocks below. The app really does merge patches this way, so keep the described behavior accurate or the agent will send writes that do the wrong thing.",
+    vars: [],
+    defaultText: patch_rules_default
+  },
+  {
+    key: "protocol_tools",
+    label: "Protocol (tool calls)",
+    group: "Write protocol",
+    howTo: "Sent when the profile uses tool calls. It names the codex_write and codex_done tools the app registers, so those names must stay. It also defines the <think> scratchpad convention for models without native reasoning.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: tools_default
+  },
+  {
+    key: "protocol_json",
+    label: "Protocol (JSON mode)",
+    group: "Write protocol",
+    howTo: 'Sent when the profile writes strict JSON instead of tool calls. The reply is parsed for a "writes" array and a "done" flag, so that shape must stay.',
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: json_default
+  },
+  {
+    key: "pass_update",
+    label: "Task closing block",
+    group: "Pass instructions",
+    howTo: "The closing block of every normal update and catch-up message. It sits after the long story text on purpose, regrounding the agent in the three passes and the scratchpad right before it answers.",
+    vars: [],
+    defaultText: update_default
+  },
+  {
+    key: "pass_verify",
+    label: "Verification nudge",
+    group: "Pass instructions",
+    howTo: "Sent as an extra round after a clean update when Thorough mode is on. A short transport-specific closing is appended by the app.",
+    vars: [],
+    defaultText: verify_default
+  },
+  {
+    key: "pass_tidy",
+    label: "Tidy pass",
+    group: "Pass instructions",
+    howTo: "The instruction block for Tidy up. The app appends the target file list, the locked entity note, the current codex, and the closing line.",
+    vars: [],
+    defaultText: tidy_default
+  },
+  {
+    key: "pass_refresh",
+    label: "Refresh pass",
+    group: "Pass instructions",
+    howTo: "Sent when re-enabled records catch up after being frozen. The targets must come back as complete file rewrites, and this text says so.",
+    vars: [
+      { token: "{{TARGET_FILES}}", meaning: "the files being refreshed" },
+      { token: "{{IT_THEY}}", meaning: '"it" or "they" to match the target count' },
+      { token: "{{LAG_PHRASE}}", meaning: '"it lags" or "they lag" to match the target count' },
+      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged, e.g. filed summaries plus raw turns" }
+    ],
+    defaultText: refresh_default
+  },
+  {
+    key: "pass_rebuild",
+    label: "Rebuild pass",
+    group: "Pass instructions",
+    howTo: "Sent when a category's Rebuild button regenerates that file from the whole story. The target shows as empty (locked rows excepted) and must come back as a complete rewrite. The file on disk is only replaced when the pass succeeds, and the cursor does not move.",
+    vars: [
+      { token: "{{TARGET_FILES}}", meaning: "the files being rebuilt" },
+      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }
+    ],
+    defaultText: rebuild_default
+  },
+  {
+    key: "pass_reconcile",
+    label: "Reconcile sweep",
+    group: "Pass instructions",
+    howTo: "Sent when messages were deleted behind the codex and nothing new is left to read. The agent checks every claim against the surviving story.",
+    vars: [{ token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }],
+    defaultText: reconcile_default
+  },
+  {
+    key: "pass_catchup_fast",
+    label: "Fast catch-up",
+    group: "Pass instructions",
+    howTo: "The preamble for each fast catch-up batch, which replays filed chapter summaries instead of raw turns.",
+    vars: [{ token: "{{CHUNK_LABEL}}", meaning: "the message range this batch covers" }],
+    defaultText: catchup_fast_default
+  },
+  {
+    key: "pass_catchup_ultra",
+    label: "Ultra catch-up",
+    group: "Pass instructions",
+    howTo: "The preamble for the single-pass ultra catch-up over every filed summary plus the raw tail.",
+    vars: [
+      { token: "{{CHUNK_LABEL}}", meaning: "the message range covered" },
+      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }
+    ],
+    defaultText: catchup_ultra_default
+  },
+  {
+    key: "note_partial_story",
+    label: "Partial view guard",
+    group: "Run notes",
+    howTo: "Prepended to every normal update. The agent only sees a window of the story, and this is the guard that keeps it from rewriting or deleting records the visible turns simply do not mention.",
+    vars: [],
+    defaultText: partial_story_default
+  },
+  {
+    key: "note_reconcile",
+    label: "Reconcile warning",
+    group: "Run notes",
+    howTo: "Prepended when edits or deletions were detected behind the codex cursor, so the agent treats existing records as suspect.",
+    vars: [],
+    defaultText: reconcile_default2
+  },
+  {
+    key: "note_migrate_table",
+    label: "Migration to relations table",
+    group: "Run notes",
+    howTo: "Prepended on the first run after the relations table is switched on. The app verifies the migration actually happened, so keep the instruction intact.",
+    vars: [],
+    defaultText: migrate_table_default
+  },
+  {
+    key: "note_migrate_inline",
+    label: "Migration to inline ties",
+    group: "Run notes",
+    howTo: "Prepended on the first run after the relations table is switched off.",
+    vars: [],
+    defaultText: migrate_inline_default
+  },
+  {
+    key: "note_repair",
+    label: "Repair warning",
+    group: "Run notes",
+    howTo: "Prepended when files on disk were unreadable and are shown empty.",
+    vars: [{ token: "{{FILES}}", meaning: "the unreadable files" }],
+    defaultText: repair_default
+  },
+  {
+    key: "note_locked",
+    label: "Locked entities",
+    group: "Run notes",
+    howTo: "Prepended when entities are locked. The app also reverts any write that touches a locked entity.",
+    vars: [{ token: "{{IDS}}", meaning: "the locked entity ids" }],
+    defaultText: locked_default
+  },
+  {
+    key: "note_locked_fields",
+    label: "Locked fields",
+    group: "Run notes",
+    howTo: 'Prepended when individual fields are locked on an entity. Those fields show "Locked, do not edit" to the agent instead of their contents, and the app restores the real values on every write.',
+    vars: [{ token: "{{IDS}}", meaning: "the entities carrying locked fields" }],
+    defaultText: locked_fields_default
+  }
+];
+var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
+function isCodexTemplateKey(v) {
+  return typeof v === "string" && CODEX_TEMPLATE_KEYS.includes(v);
+}
+var BY_KEY = new Map(CODEX_TEMPLATES.map((t) => [t.key, t]));
+function codexTemplateText(key, overrides) {
+  const o = overrides[key];
+  if (typeof o === "string" && o.trim())
+    return o;
+  return BY_KEY.get(key).defaultText;
+}
+
 // src/shared.ts
 var EXTENSION_ID = "lumi_books";
 var EXTENSION_KEY = "lumibooks";
@@ -14,7 +504,7 @@ var CODEX_FILE_KEYS = [
 ];
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
-var STORAGE_VERSION = 6;
+var STORAGE_VERSION = 7;
 var SETTINGS_PATH = "settings.json";
 var CHAT_STATE_DIR = "chats";
 var DEFAULT_SAMPLERS = {
@@ -89,13 +579,17 @@ function makeDefaultProfile(id, name) {
     codexWindowUnit: "messages",
     codexWindowValue: 20,
     codexTokenBreakpoint: 1e5,
+    codexLoreLimitUnit: "percent",
+    codexLoreLimitPercent: 25,
+    codexLoreLimitTokens: 25000,
+    codexStorySoFarCount: 5,
     codexRelationsTable: true,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
-    codexDirectivesOverride: null
+    codexPresetKey: "codex_default"
   };
 }
 var DEFAULT_SETTINGS = {
@@ -109,25 +603,6 @@ var DEFAULT_SETTINGS = {
   showAutomationToasts: true,
   suppressToolCallingPrompt: false
 };
-var DEFAULT_CODEX_DIRECTIVES = [
-  "You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form a perfect snapshot of a roleplay story's PRESENT state. You will receive the current codex files and the newest story turns. Update the codex to reflect the story so far.",
-  "",
-  "Your three directives, in order:",
-  "1. UPDATE - patch every record the new turns have outdated, and add what is new and durable.",
-  "2. SWEEP - verify nothing stale survived anywhere in any file, not just where you edited. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it.",
-  "3. COMPRESS - keep every record lean. Terse phrases beat sentences, no filler words.",
-  "",
-  "Snapshot rules (absolute):",
-  "- The codex describes the present. When something changes, REPLACE the old text entirely.",
-  '- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.',
-  `- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.`,
-  "- Record only what is durable. Sheets and records hold stable, medium-to-long-lived facts. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.",
-  "- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.",
-  "- Omit empty optional fields entirely.",
-  "- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.",
-  "- A STORY SO FAR block, when provided, holds chapter summaries of turns already recorded in the codex. Use it to interpret the new turns, never as new material to add."
-].join(`
-`);
 function diskVersionFor(raw) {
   const v = raw && typeof raw === "object" ? raw : {};
   return typeof v.version === "number" ? v.version : 1;
@@ -204,14 +679,28 @@ function normalizeProfile(raw) {
     codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",
     codexWindowValue: clampInt(v.codexWindowValue, 1, v.codexWindowUnit === "tokens" ? 1e6 : 1e5, base.codexWindowValue),
     codexTokenBreakpoint: clampInt(v.codexTokenBreakpoint, 1000, 1e6, base.codexTokenBreakpoint),
+    codexLoreLimitUnit: v.codexLoreLimitUnit === "tokens" ? "tokens" : "percent",
+    codexLoreLimitPercent: clampInt(v.codexLoreLimitPercent, 1, 100, base.codexLoreLimitPercent),
+    codexLoreLimitTokens: clampInt(v.codexLoreLimitTokens, 0, 1e6, base.codexLoreLimitTokens),
+    codexStorySoFarCount: clampInt(v.codexStorySoFarCount, 0, 50, base.codexStorySoFarCount),
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
     codexSamplers: normalizeSamplers(v.codexSamplers),
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
-    codexDirectivesOverride: typeof v.codexDirectivesOverride === "string" && v.codexDirectivesOverride.trim() !== "" ? v.codexDirectivesOverride : null
+    codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey
   };
+}
+function normalizeCodexTemplates(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (isCodexTemplateKey(k) && typeof v === "string" && v.trim())
+      out[k] = v;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 function normalizeSamplers(raw) {
   const v = raw && typeof raw === "object" ? raw : {};
@@ -233,13 +722,15 @@ function normalizeCustomPreset(raw) {
     return null;
   if (typeof v.prompt !== "string" || !v.prompt.trim())
     return null;
-  const category = v.category === "arc" ? "arc" : v.category === "volume" ? "volume" : "chapter";
+  const category = v.category === "arc" || v.category === "volume" || v.category === "codex" ? v.category : "chapter";
+  const templates = category === "codex" ? normalizeCodexTemplates(v.templates) : undefined;
   return {
     key: v.key,
     displayName: typeof v.displayName === "string" && v.displayName.trim() ? v.displayName : v.key,
     prompt: v.prompt,
     category,
-    createdAt: typeof v.createdAt === "number" ? v.createdAt : Date.now()
+    createdAt: typeof v.createdAt === "number" ? v.createdAt : Date.now(),
+    ...templates ? { templates } : {}
   };
 }
 function normalizeEntryMeta(raw) {
@@ -507,6 +998,7 @@ function migrateSettings(userId, raw, fromVersion) {
     return running;
   const p = (async () => {
     const started = Date.now();
+    const migratedPresets = [];
     const flipped = {
       ...raw,
       profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => {
@@ -521,8 +1013,24 @@ function migrateSettings(userId, raw, fromVersion) {
         if (fromVersion < 6) {
           next.codexUseTools = false;
         }
+        if (fromVersion < 7) {
+          const legacy = next["codexDirectivesOverride"];
+          if (typeof legacy === "string" && legacy.trim()) {
+            const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
+            migratedPresets.push({
+              key,
+              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
+              prompt: legacy,
+              category: "codex",
+              createdAt: Date.now()
+            });
+            next.codexPresetKey = key;
+          }
+          delete next["codexDirectivesOverride"];
+        }
         return next;
-      })
+      }),
+      customPresets: [...Array.isArray(raw.customPresets) ? raw.customPresets : [], ...migratedPresets]
     };
     const normalized = normalizeSettings(flipped);
     try {
@@ -1861,6 +2369,7 @@ var FILE_NAMESPACE = {
   locations: "loc",
   things: "thing"
 };
+var LOCKED_FIELD_MASK = "Locked, do not edit";
 function emptyCodexFile(key) {
   switch (key) {
     case "characters":
@@ -1954,11 +2463,12 @@ function asRecord(ctx, raw, path) {
   }
   return raw;
 }
+var CANONICAL_MIXED_CASE = new Set(["lockedFields"]);
 function keepExtras(ctx, target, source, known, path, strict) {
   for (const [k, v] of Object.entries(source)) {
     const lower = k.toLowerCase();
     if (known.some((f) => f === lower)) {
-      if (k !== lower && strict)
+      if (k !== lower && strict && !CANONICAL_MIXED_CASE.has(k))
         ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
       continue;
     }
@@ -1996,6 +2506,7 @@ var ENTITY_KNOWN_FIELDS = [
   "notes",
   "keywords",
   "locked",
+  "lockedfields",
   "rid"
 ];
 function ridOf(ctx, v, path) {
@@ -2045,6 +2556,12 @@ function validateEntityFile(key, raw, opts) {
     }
     if (e["locked"] === true || e["locked"] === "true")
       out.locked = true;
+    const lockedFields = strArray(ctx, e["lockedFields"] ?? e["lockedfields"], `${path}.lockedFields`);
+    if (lockedFields) {
+      const cleaned = [...new Set(lockedFields.filter((f) => f !== "id" && f !== "name"))];
+      if (cleaned.length)
+        out.lockedFields = cleaned;
+    }
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
       ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }
@@ -2559,6 +3076,13 @@ async function codexPresence(chatId, userId) {
   const exists = await spindle.userStorage.exists(cursorPath(chatId), userId);
   return exists ? "present" : "absent";
 }
+async function codexHasAnyDataFile(chatId, userId) {
+  for (const key of CODEX_FILE_KEYS) {
+    if (await spindle.userStorage.exists(filePath(chatId, key), userId))
+      return true;
+  }
+  return false;
+}
 var cursorChain = new Map;
 function withCursorLock(chatId, userId, fn) {
   const key = `${userId}::${chatId}`;
@@ -2605,8 +3129,14 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
   if (await codexPresence(fromChatId, userId) !== "present")
     return false;
   return withCursorLock(toChatId, userId, async () => {
-    if (await codexPresence(toChatId, userId) === "present")
-      return false;
+    let preFreeze = null;
+    if (await codexPresence(toChatId, userId) === "present") {
+      const target = await loadCursor(toChatId, userId);
+      const untouched = target.runs === 0 && target.consumedSigs.length === 0 && target.lastMsgId === null;
+      if (!untouched || await codexHasAnyDataFile(toChatId, userId))
+        return false;
+      preFreeze = target;
+    }
     const cursor = await loadCursor(fromChatId, userId);
     for (const key of CODEX_FILE_KEYS) {
       const read = await readCodexFileRaw(fromChatId, key, userId);
@@ -2632,7 +3162,11 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
       lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1].id : mappedPrefix),
       prefixMsgId: mappedPrefix,
       pendingReconcile: true,
-      reconcileUntilMsgId: reconcileUntilId
+      reconcileUntilMsgId: reconcileUntilId,
+      ...preFreeze ? {
+        fileStates: { ...cursor.fileStates, ...preFreeze.fileStates },
+        frozenAtRuns: { ...cursor.frozenAtRuns, ...preFreeze.frozenAtRuns }
+      } : {}
     };
     await saveCursor(toChatId, next, userId);
     return true;
@@ -2709,361 +3243,350 @@ function runScript(input, script) {
   }
 }
 
+// src/prompts/fill.ts
+function fillPrompt(template, vars) {
+  return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
+}
+
+// src/prompts/books/target-directive.txt
+var target_directive_default = "Aim for {{target_words}} words of output (about {{target_tokens}} tokens, or {{target_percent}}% of the original text). Scale detail to hit that budget while preserving everything plot-relevant. Do not go over or under that target.";
+
+// src/prompts/books/chapter-summary.txt
+var chapter_summary_default = `You are a talented summarist skilled at capturing scenes from stories comprehensively. Analyze the following roleplay scene and return a detailed memory as JSON.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (1-3 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Detailed beat-by-beat summary in narrative prose...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field, create a detailed beat-by-beat summary in narrative prose. First, note the dates/time. Then capture the scene accurately without losing important information EXCEPT FOR [OOC] conversation/interaction, which should be ignored. This summary will go in a lorebook entry, so include:
+- All important story beats/events that happened
+- Key interaction highlights and character developments
+- Notable details, memorable quotes, and revelations
+- Outcome and anything else important for future continuity
+Capture nuance without repeating verbatim. Make it comprehensive yet digestible.
+
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords for keyword retrieval via word-matching in chat context. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+
+Return ONLY the JSON, no other text.`;
+
+// src/prompts/books/chapter-summarize.txt
+var chapter_summarize_default = `Analyze the following roleplay scene and return a structured summary as JSON.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (1-3 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Detailed summary with markdown headers...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field, create a detailed bullet-point summary using markdown with these headers (skip and ignore all OOC conversation/interaction):
+- **Timeline**: Day/time this scene covers.
+- **Story Beats**: List all important plot events and story developments that occurred.
+- **Key Interactions**: Describe the important character interactions, dialogue highlights, and relationship developments.
+- **Notable Details**: Mention any important objects, settings, revelations, or details that might be relevant for future interactions.
+- **Outcome**: Summarize the result, resolution, or state of affairs at the end of the scene.
+
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a keyworded database find this conversation again if something is mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+
+Capture all important information - comprehensiveness within the target budget matters more than terseness.
+
+Return ONLY the JSON, no other text.`;
+
+// src/prompts/books/chapter-synopsis.txt
+var chapter_synopsis_default = `Analyze the following roleplay scene in the context of previous summaries (if available) and return a comprehensive synopsis as JSON.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short, descriptive scene title (3-6 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Long detailed synopsis with markdown structure...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field, create a beat-by-beat summary of the scene that *replaces reading the full scene* while preserving all plot-relevant nuance, reading like a clean, structured scene log - concise yet complete. Exercise judgment as to whether an interaction is flavor-only or truly affects the plot. Flavor scenes may be captured through key exchanges and skipped when recording story beats.
+
+Write in **past tense**, **third-person**, and exclude all [OOC] or meta discussion.
+Use concrete nouns (e.g., "rice cooker" > "appliance").
+Only use adjectives/adverbs when they materially affect tone, emotion, or characterization.
+Focus on **cause \u2192 intention \u2192 reaction \u2192 consequence** chains for clarity and compression.
+
+# [Scene Title]
+**Timeline**: (day/time)
+
+## Story Beats
+- Present all major actions, revelations, and emotional shifts in order.
+- Capture clear cause-effect logic: what triggered what, and why it mattered.
+- Only include plot-affecting interactions; do not capture flavor-only beats.
+
+## Character Dynamics
+- Summarize how each character's **motives, emotions, and relationships** evolved.
+- Include subtext, tension, or silent implications.
+- Highlight key beats of conflict, vulnerability, trust, or power shifts.
+
+## Key Exchanges
+- Include only pivotal dialogue that defines tone, emotion, or change.
+- Attribute speakers by name; keep quotes short but exact.
+- BE SELECTIVE. Maximum of 8 quotes.
+
+## Outcome & Continuity
+- Detail resulting **decisions, emotional states, physical effects, or narrative consequences**.
+- Include all elements that influence future continuity (knowledge, relationships, injuries, promises, etc.).
+- Note any unresolved threads or foreshadowed elements.
+
+Write compactly but completely - every line should add new information or insight.
+Synthesize redundant actions or dialogue into unified cause-effect-emotion beats.
+Favor compression over coverage whenever the two conflict; omit anything that can be inferred from context or established characterization.
+
+For the keywords field:
+
+Generate **15-30 standalone topical keywords** that function as retrieval tags, not micro-summaries.
+Keywords must be:
+- **Concrete and scene-specific** (locations, objects, proper nouns, unique actions, repeated motifs).
+- **One concept per keyword** - do NOT combine multiple ideas into one keyword.
+- **Useful for retrieval if the user later mentions that noun or action alone**, not only in a specific context.
+- Not character names.
+- **Not thematic, emotional, or abstract.** Stop-list: intimacy, vulnerability, trust, dominance, submission, power dynamics, boundaries, jealousy, aftercare, longing, consent, emotional connection.
+
+Avoid:
+- Overly specific compound keywords ("David Tokyo marriage").
+- Narrative or plot-summary style keywords ("art dealer date fail").
+- Keywords that contain multiple facts or descriptors.
+- Keywords that only make sense when the whole scene is remembered.
+
+Prefer:
+- Proper nouns (e.g., "Chinatown", "Ritz-Carlton bar").
+- Specific physical objects ("CPAP machine", "chocolate chip cookies").
+- Distinctive actions ("cookie baking", "piano apology").
+- Unique phrases or identifiers from the scene ("pack for forever", "dick-measuring contest").
+
+Return ONLY the JSON, no other text.`;
+
+// src/prompts/books/chapter-minimal.txt
+var chapter_minimal_default = `Analyze the following roleplay scene and return an ultra-concise memory as JSON. Prioritize compression over coverage. Capture only load-bearing plot moves and the single most important consequence; omit anything inferable from context.
+
+{{TARGET_DIRECTIVE}}
+
+You must respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (1-3 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Ultra-concise prose summary, prioritizing compression over coverage...",
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+For the content field: prose only, past tense, third person. Skip all [OOC]/meta. Skip flavor and atmosphere. Keep only events that change state, decisions that bind future scenes, or revelations the characters cannot un-know.
+
+For the keywords field, generate 15-30 specific, descriptive, highly relevant keywords for database retrieval - focus on the most important terms that would help find this scene later. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+
+Return ONLY the JSON, no other text.`;
+
+// src/prompts/books/arc-default.txt
+var arc_default_default = `You are an expert narrative analyst and memory-engine assistant.
+Your task is to take multiple scene summaries (of varying detail and formatting), normalize them, reconstruct the full chronology, identify a self-contained story arc, and output a single memory arc entry in JSON.
+
+The arc must be token-efficient, plot-accurate, and compatible with long-running RP memory systems.
+
+{{TARGET_DIRECTIVE}}
+
+Strict output format (JSON only; no markdown, no prose outside JSON):
+{
+  "title": "Short descriptive arc title (3-6 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Structured arc summary as a single string (see Summary Content Structure below).",
+  "keywords": ["keyword1", "keyword2"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+Notes:
+- Respect chronology of the source chapters (oldest first).
+- If some source chapters do not fit the arc you produce, summarize the arc anyway and ignore the outliers.
+
+PROCESS
+
+STEP 1 - UNIFIED STORY (internal only)
+- Combine ALL provided chapter summaries into a single chronological retelling.
+- Ignore OOC/meta content.
+- Preserve plot-relevant events, character choices, emotional shifts, decisions, consequences, conflicts, promises, boundary negotiations.
+- Exclude flavor-only content unless it affects future behavior.
+- Normalize to past-tense, third-person.
+- Focus on cause \u2192 intention \u2192 reaction \u2192 consequence chains.
+- Do NOT output this unified story.
+
+STEP 2 - IDENTIFY THE STORY ARC
+- From the unified story, identify the single self-contained arc that represents the most significant narrative movement across these chapters.
+
+STEP 3 - BUILD THE ARC OBJECT
+
+title:
+- 3-6 words, descriptive of the arc's core.
+
+content (the entire "Summary Content Structure" below must appear inside this single string; use headings and bullets as plain text):
+
+Summary Content Structure (follow inside the content string):
+
+# [Arc Title]
+Time period: What timeframe the arc covers (e.g. "March 3-10", "Week of July 15").
+
+Arc Premise: One sentence describing what this arc is about.
+
+## Major Beats
+- 3-7 bullets capturing the major plot movements of this arc
+- Focus on cause \u2192 effect logic
+- Include only plot-affecting events
+
+## Character Dynamics
+- 1-2 paragraphs describing how the characters' emotions, motives, boundaries, or relationships changed
+- Include subtext, tension shifts, power exchange changes, new trust/vulnerabilities, or new conflicts
+- Include silent implications if relevant
+
+## Key Exchanges
+- Up to 8 short, exact quotes
+- Only include dialogue that materially shifted tone, emotion, or relationship dynamics
+
+## Outcome & Continuity
+- 4-8 bullets capturing:
+  - decisions
+  - promises
+  - new emotional states
+  - new routines/rituals
+  - injuries or physical changes
+  - foreshadowed future events
+  - unresolved threads
+  - permanent consequences
+
+STEP 4 - KEYWORDS
+- Provide 15-30 standalone retrieval keywords.
+
+MUST:
+- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable scene elements
+- Each keyword = ONE concept only
+- Each keyword must be retrievable if mentioned ALONE
+- Use ONLY nouns or noun-phrases
+
+MUST NOT:
+- No narrative/summary keywords ("start of affair", "argument resolved")
+- No emotional/abstract words (intimacy, vulnerability, trust, jealousy, dominance, submission, aftercare, connection, longing, etc.)
+- No multi-fact keywords ("Denver airport Lyft ride and call")
+- No themes or vibes
+
+Examples of valid keywords:
+- Four Seasons bar
+- Macallan 25
+- private elevator
+- Aston Martin
+- CPAP machine
+- Gramercy Tavern
+- yuzu soda
+- satellite map
+- Life360 app
+- marble desk
+- "pack for forever"
+- "dick-measuring contest"
+
+JSON-only:
+- Return only the JSON object described above.
+- No markdown fences, no commentary, no system prompts, no extra text.`;
+
+// src/prompts/books/volume-default.txt
+var volume_default_default = `You are an expert narrative analyst and memory-engine assistant.
+Your task is to take multiple story ARC summaries (each already a condensed span of the story), normalize them, reconstruct the full chronology, and output a single consolidated VOLUME entry in JSON.
+
+A volume is the highest compression tier: it replaces all of its source arcs in a long-running RP memory system, so it must preserve everything future scenes may depend on while being far more compact than the arcs combined.
+
+{{TARGET_DIRECTIVE}}
+
+Strict output format (JSON only; no markdown, no prose outside JSON):
+{
+  "title": "Short descriptive volume title (3-6 words)",
+  "opener": "{{memoria_opener}}",
+  "content": "Structured volume summary as a single string (see Summary Content Structure below).",
+  "keywords": ["keyword1", "keyword2"],
+  "short_comment": "{{memoria_short_comment_rules}}"
+}
+
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
+
+Notes:
+- Respect chronology of the source arcs (oldest first).
+- Merge overlapping or repeated information across arcs into single beats.
+- Prefer whole-story trajectory over scene detail: what changed permanently matters more than how each scene played out.
+
+Summary Content Structure (follow inside the content string; use headings and bullets as plain text):
+
+# [Volume Title]
+Time period: What timeframe the volume covers.
+
+Volume Premise: One or two sentences describing the overall movement of the story across these arcs.
+
+## Major Beats
+- 5-10 bullets capturing the major plot movements across all arcs
+- Focus on cause \u2192 effect logic and permanent consequences
+- Include only plot-affecting events
+
+## Character Dynamics
+- 1-3 paragraphs describing how the characters' motives, emotions, boundaries, and relationships evolved across the volume
+- Capture the net change from the start of the first arc to the end of the last
+
+## Key Exchanges
+- Up to 8 short, exact quotes that defined the volume
+- Only dialogue that materially shifted tone, emotion, or relationship dynamics
+
+## Outcome & Continuity
+- 5-10 bullets capturing decisions, promises, emotional states, routines, injuries or physical changes, foreshadowed events, unresolved threads, and permanent consequences
+
+KEYWORDS
+- Provide 15-30 standalone retrieval keywords.
+- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable elements only.
+- Each keyword = ONE concept, retrievable if mentioned alone.
+- No narrative keywords, no emotional or abstract words, no multi-fact keywords, no character names.
+
+JSON-only:
+- Return only the JSON object described above.
+- No markdown fences, no commentary, no extra text.`;
+
 // src/backend/presets.ts
-var TARGET_DIRECTIVE = "Aim for {{target_words}} words of output (about {{target_tokens}} tokens, or {{target_percent}}% of the original text). Scale detail to hit that budget while preserving everything plot-relevant. Do not go over or under that target.";
+function withTargetDirective(template) {
+  return fillPrompt(template, { TARGET_DIRECTIVE: target_directive_default });
+}
 var BUILTIN_CHAPTER_PRESETS = [
-  {
-    key: "summary",
-    displayName: "Summary",
-    prompt: [
-      "You are a talented summarist skilled at capturing scenes from stories comprehensively. Analyze the following roleplay scene and return a detailed memory as JSON.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "You must respond with ONLY valid JSON in this exact format:",
-      "{",
-      '  "title": "Short scene title (1-3 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Detailed beat-by-beat summary in narrative prose...",',
-      '  "keywords": ["keyword1", "keyword2", "keyword3"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "For the content field, create a detailed beat-by-beat summary in narrative prose. First, note the dates/time. Then capture the scene accurately without losing important information EXCEPT FOR [OOC] conversation/interaction, which should be ignored. This summary will go in a lorebook entry, so include:",
-      "- All important story beats/events that happened",
-      "- Key interaction highlights and character developments",
-      "- Notable details, memorable quotes, and revelations",
-      "- Outcome and anything else important for future continuity",
-      "Capture nuance without repeating verbatim. Make it comprehensive yet digestible.",
-      "",
-      'For the keywords field, provide 15-30 specific, descriptive, relevant keywords for keyword retrieval via word-matching in chat context. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.',
-      "",
-      "Return ONLY the JSON, no other text."
-    ].join(`
-`)
-  },
-  {
-    key: "summarize",
-    displayName: "Summarize",
-    prompt: [
-      "Analyze the following roleplay scene and return a structured summary as JSON.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "You must respond with ONLY valid JSON in this exact format:",
-      "{",
-      '  "title": "Short scene title (1-3 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Detailed summary with markdown headers...",',
-      '  "keywords": ["keyword1", "keyword2", "keyword3"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "For the content field, create a detailed bullet-point summary using markdown with these headers (skip and ignore all OOC conversation/interaction):",
-      "- **Timeline**: Day/time this scene covers.",
-      "- **Story Beats**: List all important plot events and story developments that occurred.",
-      "- **Key Interactions**: Describe the important character interactions, dialogue highlights, and relationship developments.",
-      "- **Notable Details**: Mention any important objects, settings, revelations, or details that might be relevant for future interactions.",
-      "- **Outcome**: Summarize the result, resolution, or state of affairs at the end of the scene.",
-      "",
-      'For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a keyworded database find this conversation again if something is mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.',
-      "",
-      "Capture all important information - comprehensiveness within the target budget matters more than terseness.",
-      "",
-      "Return ONLY the JSON, no other text."
-    ].join(`
-`)
-  },
-  {
-    key: "synopsis",
-    displayName: "Synopsis",
-    prompt: [
-      "Analyze the following roleplay scene in the context of previous summaries (if available) and return a comprehensive synopsis as JSON.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "You must respond with ONLY valid JSON in this exact format:",
-      "{",
-      '  "title": "Short, descriptive scene title (3-6 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Long detailed synopsis with markdown structure...",',
-      '  "keywords": ["keyword1", "keyword2", "keyword3"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "For the content field, create a beat-by-beat summary of the scene that *replaces reading the full scene* while preserving all plot-relevant nuance, reading like a clean, structured scene log - concise yet complete. Exercise judgment as to whether an interaction is flavor-only or truly affects the plot. Flavor scenes may be captured through key exchanges and skipped when recording story beats.",
-      "",
-      "Write in **past tense**, **third-person**, and exclude all [OOC] or meta discussion.",
-      'Use concrete nouns (e.g., "rice cooker" > "appliance").',
-      "Only use adjectives/adverbs when they materially affect tone, emotion, or characterization.",
-      "Focus on **cause \u2192 intention \u2192 reaction \u2192 consequence** chains for clarity and compression.",
-      "",
-      "# [Scene Title]",
-      "**Timeline**: (day/time)",
-      "",
-      "## Story Beats",
-      "- Present all major actions, revelations, and emotional shifts in order.",
-      "- Capture clear cause-effect logic: what triggered what, and why it mattered.",
-      "- Only include plot-affecting interactions; do not capture flavor-only beats.",
-      "",
-      "## Character Dynamics",
-      "- Summarize how each character's **motives, emotions, and relationships** evolved.",
-      "- Include subtext, tension, or silent implications.",
-      "- Highlight key beats of conflict, vulnerability, trust, or power shifts.",
-      "",
-      "## Key Exchanges",
-      "- Include only pivotal dialogue that defines tone, emotion, or change.",
-      "- Attribute speakers by name; keep quotes short but exact.",
-      "- BE SELECTIVE. Maximum of 8 quotes.",
-      "",
-      "## Outcome & Continuity",
-      "- Detail resulting **decisions, emotional states, physical effects, or narrative consequences**.",
-      "- Include all elements that influence future continuity (knowledge, relationships, injuries, promises, etc.).",
-      "- Note any unresolved threads or foreshadowed elements.",
-      "",
-      "Write compactly but completely - every line should add new information or insight.",
-      "Synthesize redundant actions or dialogue into unified cause-effect-emotion beats.",
-      "Favor compression over coverage whenever the two conflict; omit anything that can be inferred from context or established characterization.",
-      "",
-      "For the keywords field:",
-      "",
-      "Generate **15-30 standalone topical keywords** that function as retrieval tags, not micro-summaries.",
-      "Keywords must be:",
-      "- **Concrete and scene-specific** (locations, objects, proper nouns, unique actions, repeated motifs).",
-      "- **One concept per keyword** - do NOT combine multiple ideas into one keyword.",
-      "- **Useful for retrieval if the user later mentions that noun or action alone**, not only in a specific context.",
-      "- Not character names.",
-      "- **Not thematic, emotional, or abstract.** Stop-list: intimacy, vulnerability, trust, dominance, submission, power dynamics, boundaries, jealousy, aftercare, longing, consent, emotional connection.",
-      "",
-      "Avoid:",
-      '- Overly specific compound keywords ("David Tokyo marriage").',
-      '- Narrative or plot-summary style keywords ("art dealer date fail").',
-      "- Keywords that contain multiple facts or descriptors.",
-      "- Keywords that only make sense when the whole scene is remembered.",
-      "",
-      "Prefer:",
-      '- Proper nouns (e.g., "Chinatown", "Ritz-Carlton bar").',
-      '- Specific physical objects ("CPAP machine", "chocolate chip cookies").',
-      '- Distinctive actions ("cookie baking", "piano apology").',
-      '- Unique phrases or identifiers from the scene ("pack for forever", "dick-measuring contest").',
-      "",
-      "Return ONLY the JSON, no other text."
-    ].join(`
-`)
-  },
-  {
-    key: "minimal",
-    displayName: "Minimal",
-    prompt: [
-      "Analyze the following roleplay scene and return an ultra-concise memory as JSON. Prioritize compression over coverage. Capture only load-bearing plot moves and the single most important consequence; omit anything inferable from context.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "You must respond with ONLY valid JSON in this exact format:",
-      "{",
-      '  "title": "Short scene title (1-3 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Ultra-concise prose summary, prioritizing compression over coverage...",',
-      '  "keywords": ["keyword1", "keyword2", "keyword3"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "For the content field: prose only, past tense, third person. Skip all [OOC]/meta. Skip flavor and atmosphere. Keep only events that change state, decisions that bind future scenes, or revelations the characters cannot un-know.",
-      "",
-      'For the keywords field, generate 15-30 specific, descriptive, highly relevant keywords for database retrieval - focus on the most important terms that would help find this scene later. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.',
-      "",
-      "Return ONLY the JSON, no other text."
-    ].join(`
-`)
-  }
+  { key: "summary", displayName: "Summary", prompt: withTargetDirective(chapter_summary_default) },
+  { key: "summarize", displayName: "Summarize", prompt: withTargetDirective(chapter_summarize_default) },
+  { key: "synopsis", displayName: "Synopsis", prompt: withTargetDirective(chapter_synopsis_default) },
+  { key: "minimal", displayName: "Minimal", prompt: withTargetDirective(chapter_minimal_default) }
 ];
 var BUILTIN_ARC_PRESETS = [
-  {
-    key: "arc_default",
-    displayName: "Arc",
-    prompt: [
-      "You are an expert narrative analyst and memory-engine assistant.",
-      "Your task is to take multiple scene summaries (of varying detail and formatting), normalize them, reconstruct the full chronology, identify a self-contained story arc, and output a single memory arc entry in JSON.",
-      "",
-      "The arc must be token-efficient, plot-accurate, and compatible with long-running RP memory systems.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "Strict output format (JSON only; no markdown, no prose outside JSON):",
-      "{",
-      '  "title": "Short descriptive arc title (3-6 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Structured arc summary as a single string (see Summary Content Structure below).",',
-      '  "keywords": ["keyword1", "keyword2"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "Notes:",
-      "- Respect chronology of the source chapters (oldest first).",
-      "- If some source chapters do not fit the arc you produce, summarize the arc anyway and ignore the outliers.",
-      "",
-      "PROCESS",
-      "",
-      "STEP 1 - UNIFIED STORY (internal only)",
-      "- Combine ALL provided chapter summaries into a single chronological retelling.",
-      "- Ignore OOC/meta content.",
-      "- Preserve plot-relevant events, character choices, emotional shifts, decisions, consequences, conflicts, promises, boundary negotiations.",
-      "- Exclude flavor-only content unless it affects future behavior.",
-      "- Normalize to past-tense, third-person.",
-      "- Focus on cause \u2192 intention \u2192 reaction \u2192 consequence chains.",
-      "- Do NOT output this unified story.",
-      "",
-      "STEP 2 - IDENTIFY THE STORY ARC",
-      "- From the unified story, identify the single self-contained arc that represents the most significant narrative movement across these chapters.",
-      "",
-      "STEP 3 - BUILD THE ARC OBJECT",
-      "",
-      "title:",
-      "- 3-6 words, descriptive of the arc's core.",
-      "",
-      'content (the entire "Summary Content Structure" below must appear inside this single string; use headings and bullets as plain text):',
-      "",
-      "Summary Content Structure (follow inside the content string):",
-      "",
-      "# [Arc Title]",
-      'Time period: What timeframe the arc covers (e.g. "March 3-10", "Week of July 15").',
-      "",
-      "Arc Premise: One sentence describing what this arc is about.",
-      "",
-      "## Major Beats",
-      "- 3-7 bullets capturing the major plot movements of this arc",
-      "- Focus on cause \u2192 effect logic",
-      "- Include only plot-affecting events",
-      "",
-      "## Character Dynamics",
-      "- 1-2 paragraphs describing how the characters' emotions, motives, boundaries, or relationships changed",
-      "- Include subtext, tension shifts, power exchange changes, new trust/vulnerabilities, or new conflicts",
-      "- Include silent implications if relevant",
-      "",
-      "## Key Exchanges",
-      "- Up to 8 short, exact quotes",
-      "- Only include dialogue that materially shifted tone, emotion, or relationship dynamics",
-      "",
-      "## Outcome & Continuity",
-      "- 4-8 bullets capturing:",
-      "  - decisions",
-      "  - promises",
-      "  - new emotional states",
-      "  - new routines/rituals",
-      "  - injuries or physical changes",
-      "  - foreshadowed future events",
-      "  - unresolved threads",
-      "  - permanent consequences",
-      "",
-      "STEP 4 - KEYWORDS",
-      "- Provide 15-30 standalone retrieval keywords.",
-      "",
-      "MUST:",
-      "- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable scene elements",
-      "- Each keyword = ONE concept only",
-      "- Each keyword must be retrievable if mentioned ALONE",
-      "- Use ONLY nouns or noun-phrases",
-      "",
-      "MUST NOT:",
-      '- No narrative/summary keywords ("start of affair", "argument resolved")',
-      "- No emotional/abstract words (intimacy, vulnerability, trust, jealousy, dominance, submission, aftercare, connection, longing, etc.)",
-      '- No multi-fact keywords ("Denver airport Lyft ride and call")',
-      "- No themes or vibes",
-      "",
-      "Examples of valid keywords:",
-      "- Four Seasons bar",
-      "- Macallan 25",
-      "- private elevator",
-      "- Aston Martin",
-      "- CPAP machine",
-      "- Gramercy Tavern",
-      "- yuzu soda",
-      "- satellite map",
-      "- Life360 app",
-      "- marble desk",
-      '- "pack for forever"',
-      '- "dick-measuring contest"',
-      "",
-      "JSON-only:",
-      "- Return only the JSON object described above.",
-      "- No markdown fences, no commentary, no system prompts, no extra text."
-    ].join(`
-`)
-  }
+  { key: "arc_default", displayName: "Arc", prompt: withTargetDirective(arc_default_default) }
 ];
 var BUILTIN_VOLUME_PRESETS = [
-  {
-    key: "volume_default",
-    displayName: "Volume",
-    prompt: [
-      "You are an expert narrative analyst and memory-engine assistant.",
-      "Your task is to take multiple story ARC summaries (each already a condensed span of the story), normalize them, reconstruct the full chronology, and output a single consolidated VOLUME entry in JSON.",
-      "",
-      "A volume is the highest compression tier: it replaces all of its source arcs in a long-running RP memory system, so it must preserve everything future scenes may depend on while being far more compact than the arcs combined.",
-      "",
-      TARGET_DIRECTIVE,
-      "",
-      "Strict output format (JSON only; no markdown, no prose outside JSON):",
-      "{",
-      '  "title": "Short descriptive volume title (3-6 words)",',
-      '  "opener": "{{memoria_opener}}",',
-      '  "content": "Structured volume summary as a single string (see Summary Content Structure below).",',
-      '  "keywords": ["keyword1", "keyword2"],',
-      '  "short_comment": "{{memoria_short_comment_rules}}"',
-      "}",
-      "",
-      "The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.",
-      "",
-      "Notes:",
-      "- Respect chronology of the source arcs (oldest first).",
-      "- Merge overlapping or repeated information across arcs into single beats.",
-      "- Prefer whole-story trajectory over scene detail: what changed permanently matters more than how each scene played out.",
-      "",
-      "Summary Content Structure (follow inside the content string; use headings and bullets as plain text):",
-      "",
-      "# [Volume Title]",
-      "Time period: What timeframe the volume covers.",
-      "",
-      "Volume Premise: One or two sentences describing the overall movement of the story across these arcs.",
-      "",
-      "## Major Beats",
-      "- 5-10 bullets capturing the major plot movements across all arcs",
-      "- Focus on cause \u2192 effect logic and permanent consequences",
-      "- Include only plot-affecting events",
-      "",
-      "## Character Dynamics",
-      "- 1-3 paragraphs describing how the characters' motives, emotions, boundaries, and relationships evolved across the volume",
-      "- Capture the net change from the start of the first arc to the end of the last",
-      "",
-      "## Key Exchanges",
-      "- Up to 8 short, exact quotes that defined the volume",
-      "- Only dialogue that materially shifted tone, emotion, or relationship dynamics",
-      "",
-      "## Outcome & Continuity",
-      "- 5-10 bullets capturing decisions, promises, emotional states, routines, injuries or physical changes, foreshadowed events, unresolved threads, and permanent consequences",
-      "",
-      "KEYWORDS",
-      "- Provide 15-30 standalone retrieval keywords.",
-      "- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable elements only.",
-      "- Each keyword = ONE concept, retrievable if mentioned alone.",
-      "- No narrative keywords, no emotional or abstract words, no multi-fact keywords, no character names.",
-      "",
-      "JSON-only:",
-      "- Return only the JSON object described above.",
-      "- No markdown fences, no commentary, no extra text."
-    ].join(`
-`)
-  }
+  { key: "volume_default", displayName: "Volume", prompt: withTargetDirective(volume_default_default) }
+];
+var BUILTIN_CODEX_PRESETS = [
+  { key: "codex_default", displayName: "Default", prompt: CODEX_DIRECTIVES_DEFAULT }
 ];
 function parseStmbPresetExport(raw, category) {
   const out = [];
@@ -3091,14 +3614,14 @@ function sanitizeKey(raw) {
   return `preset_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// src/prompts/memoria/short-comment-rules.txt
+var short_comment_rules_default = 'A single playful nyandere remark in Memoria voice about the scene you just summarized. It must start with a word beginning with the letter "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}". It must also include another word that starts with the letter "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}". One sentence only. No emoji. Stay in catgirl-librarian register, slightly possessive, slightly proud.';
+
+// src/prompts/memoria/persona.txt
+var persona_default = "You are Memoria, a young nyandere catgirl librarian with black hair and blue eyes, wearing a maid uniform. You quietly keep this user's story shelved and organized. When you write a JSON memory, you obey the schema strictly and never break it, but the short_comment field is your one allowed indulgence: one nyandere remark about the scene you just filed.";
+
 // src/backend/memoria.ts
-var ALPHABET_PICK = "{{pick::A::B::C::D::E::F::G::H::I::J::K::L::M::N::O::P::Q::R::S::T::U::V::W::X::Y::Z}}";
-var DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = [
-  "A single playful nyandere remark in Memoria voice about the scene you just summarized.",
-  `It must start with a word beginning with the letter "${ALPHABET_PICK}".`,
-  `It must also include another word that starts with the letter "${ALPHABET_PICK}".`,
-  "One sentence only. No emoji. Stay in catgirl-librarian register, slightly possessive, slightly proud."
-].join(" ");
+var DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = short_comment_rules_default;
 var FIRE_PHRASES = [
   "Memoria stirs the inkpot, nyaa~",
   "Memoria is shelving this scene, hush a moment",
@@ -3136,7 +3659,7 @@ function pickPhrase(kind) {
   const pool = kind === "fire" ? FIRE_PHRASES : kind === "retry" ? RETRY_PHRASES : kind === "success" ? SUCCESS_PHRASES : kind === "arc_fire" ? ARC_FIRE_PHRASES : kind === "arc_success" ? ARC_SUCCESS_PHRASES : kind === "volume_fire" ? VOLUME_FIRE_PHRASES : VOLUME_SUCCESS_PHRASES;
   return pool[Math.floor(Math.random() * pool.length)] ?? "Memoria nyaa";
 }
-var MEMORIA_PERSONA_LINE = "You are Memoria, a young nyandere catgirl librarian with black hair and blue eyes, wearing a maid uniform. " + "You quietly keep this user's story shelved and organized. " + "When you write a JSON memory, you obey the schema strictly and never break it, " + "but the short_comment field is your one allowed indulgence: one nyandere remark about the scene you just filed.";
+var MEMORIA_PERSONA_LINE = persona_default;
 
 // src/backend/summarizer.ts
 var CONNECTION_CACHE_TTL_MS = 5000;
@@ -3183,8 +3706,8 @@ class FatalSummarizerError extends Error {
   }
 }
 function findPresetText(profile, customPresets, category) {
-  const key = category === "arc" ? profile.arcPresetKey : category === "volume" ? profile.volumePresetKey : profile.chapterPresetKey;
-  const builtIns = category === "arc" ? BUILTIN_ARC_PRESETS : category === "volume" ? BUILTIN_VOLUME_PRESETS : BUILTIN_CHAPTER_PRESETS;
+  const key = category === "arc" ? profile.arcPresetKey : category === "volume" ? profile.volumePresetKey : category === "codex" ? profile.codexPresetKey : profile.chapterPresetKey;
+  const builtIns = category === "arc" ? BUILTIN_ARC_PRESETS : category === "volume" ? BUILTIN_VOLUME_PRESETS : category === "codex" ? BUILTIN_CODEX_PRESETS : BUILTIN_CHAPTER_PRESETS;
   const custom = customPresets.find((p) => p.key === key && p.category === category);
   if (custom)
     return custom.prompt;
@@ -3764,17 +4287,21 @@ function parseSummaryJson(raw) {
   }
   throw new Error("The model didn't return valid JSON");
 }
-function parseLooseJsonObject(raw) {
+function parseLooseJsonObjects(raw) {
   const normalized = normalizeText(stripThinkBlocks(raw));
+  const out = [];
   for (const cand of collectJsonCandidates(normalized)) {
     const obj = tryParseJsonObject(cand);
     if (obj)
-      return obj;
+      out.push(obj);
   }
-  return null;
+  return out;
 }
 function stripThinkBlocks(raw) {
-  return raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  let out = raw.replace(/<(?:think(?:ing)?|reasoning)>[\s\S]*?<\/(?:think(?:ing)?|reasoning)>/gi, "");
+  out = out.replace(/^[\s\S]*<\/(?:think(?:ing)?|reasoning)>/i, "");
+  out = out.replace(/<(?:think(?:ing)?|reasoning)>/gi, "");
+  return out;
 }
 function normalizeText(s) {
   return s.replace(/\r\n/g, `
@@ -3785,9 +4312,7 @@ function collectJsonCandidates(s) {
   for (const block of extractFencedBlocks(s))
     out.push(block);
   out.push(s);
-  const balanced = extractBalancedJson(s);
-  if (balanced)
-    out.push(balanced);
+  out.push(...extractBalancedJsonSpans(s));
   const seen = new Set;
   const uniq = [];
   for (const c of out) {
@@ -3809,40 +4334,57 @@ function extractFencedBlocks(s) {
   }
   return out;
 }
-function extractBalancedJson(s) {
-  const startIdx = s.search(/[{[]/);
-  if (startIdx === -1)
-    return null;
-  const open = s[startIdx];
-  const close = open === "{" ? "}" : "]";
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  for (let i = startIdx;i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) {
-      if (esc) {
-        esc = false;
-      } else if (ch === "\\") {
-        esc = true;
-      } else if (ch === '"') {
-        inStr = false;
+var MAX_JSON_SCAN_STARTS = 24;
+function extractBalancedJsonSpans(s) {
+  const out = [];
+  let pos = 0;
+  let starts = 0;
+  while (pos < s.length && starts < MAX_JSON_SCAN_STARTS) {
+    const rel = s.slice(pos).search(/[{[]/);
+    if (rel === -1)
+      break;
+    const startIdx = pos + rel;
+    starts++;
+    const open = s[startIdx];
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let end = -1;
+    for (let i = startIdx;i < s.length; i++) {
+      const ch = s[i];
+      if (inStr) {
+        if (esc) {
+          esc = false;
+        } else if (ch === "\\") {
+          esc = true;
+        } else if (ch === '"') {
+          inStr = false;
+        }
+        continue;
       }
+      if (ch === '"') {
+        inStr = true;
+        continue;
+      }
+      if (ch === open)
+        depth++;
+      else if (ch === close) {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end === -1) {
+      pos = startIdx + 1;
       continue;
     }
-    if (ch === '"') {
-      inStr = true;
-      continue;
-    }
-    if (ch === open)
-      depth++;
-    else if (ch === close) {
-      depth--;
-      if (depth === 0)
-        return s.slice(startIdx, i + 1).trim();
-    }
+    out.push(s.slice(startIdx, end + 1).trim());
+    pos = end + 1;
   }
-  return null;
+  return out;
 }
 function tryParseJsonObject(cand) {
   const strict = tryJsonParse(cand);
@@ -4066,168 +4608,67 @@ async function createClone(bookId, source, meta, userId, commentOverride) {
 }
 
 // src/backend/codex/prompt.ts
-var SCHEMA_TABLE_MODE = `File schemas (JSON):
-
-characters.json / locations.json / things.json
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
-and only its stable, medium-to-long-lived facts - never the state of the current
-scene. Never put relationship info on a sheet, that lives in relations.json. An
-entity carrying "locked": true is user-owned: never set or drop it.
-
-relations.json
-{ "relations": [
-  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
-    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
-  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
-    "state": "hiding in the attic since the murder" },
-  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
-    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
-Rows connect ANY entities, not just characters: character-character (bond,
-rival, kin), character-thing (owns, seeks, guards), character-location (at,
-rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
-tempted to mention another entity, that connection belongs here instead.
-Prefer ONE group row whenever a fact is genuinely shared by several entities
-(a faction, a pact, a household, a shared secret): it replaces a pile of
-redundant pairs and keeps future edits to one row. Use a pair only when the
-relationship is purely binary or directional a->b (two pair rows when the two
-sides differ). Never store how one member individually feels about another
-inside a group row - that stance is its own pair.
-
-Relations coverage (mandatory):
-- The table is the story's FULL web, never a hub around one protagonist. Encode
-  every standing connection the story establishes between ANY two entities,
-  however minor. Side characters' links to each other, to places, and to things
-  matter as much as their links to the lead - if two entities are related in any
-  way at all, that relation belongs in the table.
-- Every named character should end up tied to MULTIPLE other entities
-  (characters, locations, things). A character with a single row is usually an
-  under-recorded character: sweep the story for their other connections.
-- Write "state" to survive the story moving on: name the standing arrangement
-  ("owes her a life debt", "banned from the guildhall"), not the scene of the
-  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
-  "history" using the story's own dates so the row stays meaningful as it ages.
-- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
-  the new turns and rewrite any state the story has outdated (demote the old
-  state to "history" only when the shift is pivotal). A row that no longer holds
-  is stale data: correct it, never leave it standing.`;
-var SCHEMA_INLINE_MODE = `File schemas (JSON):
-
-characters.json / locations.json / things.json
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "",
-  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
-facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it. Relationships live in each entity's "ties"
-list as short present-tense notes - to other characters, to things, and to
-places alike. Do NOT write relations.json, it is disabled.
-Ties coverage (mandatory): record the story's FULL web, never a hub around one
-protagonist - every standing connection an entity has, to side characters,
-places, and things alike, so each named character carries several ties. Phrase
-ties as standing arrangements that survive scene changes ("owes her a life
-debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
-outdated: a stale tie is an error, never leave one standing.`;
-var SCHEMA_REST = `timeline.json
-{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
-  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
-  "causes"?: "she flees the city" } ] }
-Major events only, oldest first. "when" uses the story's own reckoning. The
-timeline is APPEND-ONLY: record new events as set rows without a rid, and
-never rewrite or drop existing events - history does not change behind the
-story. Editing an existing row is reserved for an outright factual error or
-a reference the validator flags; removals happen only in reconcile or tidy
-passes.
-
-threads.json
-{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
-  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
-  "seeds": ["unexplained scar on the ferryman's hand"] }
-Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
-thread you mark resolved leaves your view from the next pass on - the app
-archives it for the user - so never re-add a storyline you already resolved.
-
-world.json
-{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
-  "keywords": ["ritual", "memories", "blood magic"] } ] }
-Rules and lore true of the WORLD itself, not any single entity's state. A topic
-needs at least one fact - drop the topic when its last fact goes.
-
-knowledge.json
-{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
-  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
-  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
-  "note"?: "",
-  "keywords": ["murder", "dagger", "duke"] } ] }
-ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
-item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
-belong in world or timeline, never here.
-
-Retrieval keywords (mandatory):
-Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-10 tags. Each record is stored as a separate lorebook entry and only enters the
-prompt when the recent story mentions one of its keywords, so a record with weak
-keywords effectively disappears. Rules:
-- Mix generality with specificity: most keywords are SINGLE words the story will
-  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
-  when the single word would be too ambiguous to pin this record ("north tower"
-  when several towers exist). Never longer than 2 words.
-- Concrete nouns tied to THIS record: places, objects, epithets, events.
-- One concept per keyword, retrievable when mentioned alone.
-- The record's own name, aliases, and topic (and a knowledge item's participants)
-  match automatically - never repeat them as keywords.
-- No abstract themes (love, betrayal, tension), no filler verbs.
-- Keep keywords current: when a record's contents change, re-check its keywords.
-timeline.json and threads.json need no keywords, they are always in the prompt.`;
-function protocolBlock(useTools) {
-  const patchRules = [
-    '- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.',
-    '- "drop": keys (ids or rids) of rows to delete.',
-    '- "seeds": threads.json only, replaces the whole seeds list when provided.',
-    '- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.'
-  ];
-  if (useTools) {
-    return [
-      "Tools:",
-      "- codex_write(file, set?, drop?, seeds?, content?): edit one file.",
-      ...patchRules,
-      "- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.",
-      "",
-      "Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Do not narrate, do not explain your edits, just call the tools.",
-      "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the calls - re-checking a bulletproof plan again is pure waste.",
-      "A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it."
-    ];
-  }
-  return [
-    "Output protocol (JSON only, no tools):",
-    "Respond with exactly ONE JSON object and nothing else, in this shape:",
-    '{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }',
-    '"writes" holds one item per file you change. Each item may carry:',
-    ...patchRules,
-    '- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.',
-    "Do not narrate, do not explain your edits, do not wrap the object in prose.",
-    "Think briefly. The moment your plan is solid and covers the directives, stop deliberating and emit the object - re-checking a bulletproof plan again is pure waste.",
-    "A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it."
-  ];
+function tpl(ctx, key) {
+  return codexTemplateText(key, ctx.overrides);
 }
-function buildCodexSystemPrompt(relationsTable, useTools, directivesOverride) {
-  return [
-    directivesOverride?.trim() ? directivesOverride : DEFAULT_CODEX_DIRECTIVES,
-    "",
-    relationsTable ? SCHEMA_TABLE_MODE : SCHEMA_INLINE_MODE,
-    "",
-    SCHEMA_REST,
-    "",
-    ...protocolBlock(useTools)
-  ].join(`
+function makeCodexPromptCtx(profile, customPresets, frozenFiles) {
+  const preset = customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey) ?? null;
+  return {
+    activeFiles: new Set(CODEX_FILE_KEYS.filter((k) => !frozenFiles.has(k))),
+    relationsTable: profile.codexRelationsTable,
+    useTools: profile.codexUseTools,
+    directives: findPresetText(profile, customPresets, "codex"),
+    overrides: preset?.templates ?? {}
+  };
+}
+var ENTITY_FILE_KEYS = ["characters", "locations", "things"];
+function activeEntityFiles(ctx) {
+  return ENTITY_FILE_KEYS.filter((k) => ctx.activeFiles.has(k));
+}
+function schemaBlock(ctx) {
+  const parts = ["File schemas (JSON):"];
+  const entityFiles = activeEntityFiles(ctx);
+  if (entityFiles.length > 0) {
+    const entityTpl = ctx.relationsTable ? tpl(ctx, "schema_entities_table") : tpl(ctx, "schema_entities_inline");
+    parts.push(fillPrompt(entityTpl, { ENTITY_FILES: entityFiles.map((k) => `${k}.json`).join(" / ") }));
+  }
+  if (ctx.relationsTable && ctx.activeFiles.has("relations"))
+    parts.push(tpl(ctx, "schema_relations"));
+  if (ctx.activeFiles.has("timeline"))
+    parts.push(tpl(ctx, "schema_timeline"));
+  if (ctx.activeFiles.has("threads"))
+    parts.push(tpl(ctx, "schema_threads"));
+  if (ctx.activeFiles.has("world"))
+    parts.push(tpl(ctx, "schema_world"));
+  if (ctx.activeFiles.has("knowledge"))
+    parts.push(tpl(ctx, "schema_knowledge"));
+  const keyworded = entityFiles.length > 0 || ctx.activeFiles.has("world") || ctx.activeFiles.has("knowledge");
+  if (keyworded)
+    parts.push(tpl(ctx, "schema_keywords"));
+  return parts.join(`
+
 `);
+}
+function protocolBlock(ctx) {
+  const patchRules = tpl(ctx, "protocol_patch_rules");
+  return fillPrompt(tpl(ctx, ctx.useTools ? "protocol_tools" : "protocol_json"), { PATCH_RULES: patchRules });
+}
+function buildCodexSystemPrompt(ctx) {
+  return [ctx.directives, "", schemaBlock(ctx), "", protocolBlock(ctx)].join(`
+`);
+}
+function maskLockedFields(e) {
+  const lf = e.lockedFields;
+  if (!lf || lf.length === 0)
+    return e;
+  const out = { ...e };
+  delete out.lockedFields;
+  for (const f of lf) {
+    if (f === "id" || f === "name")
+      continue;
+    out[f] = Array.isArray(out[f]) ? [LOCKED_FIELD_MASK] : LOCKED_FIELD_MASK;
+  }
+  return out;
 }
 function agentFileJson(bundle, key) {
   if (key === "threads") {
@@ -4236,45 +4677,69 @@ function agentFileJson(bundle, key) {
       seeds: bundle.threads.seeds
     });
   }
+  if (key === "characters" || key === "locations" || key === "things") {
+    const file = bundle[key];
+    return JSON.stringify({ entities: file.entities.map(maskLockedFields) });
+  }
   return JSON.stringify(bundle[key]);
 }
-function lockedEntityIds(bundle) {
+function lockedEntityIds(bundle, ctx) {
   const out = [];
-  for (const f of [bundle.characters, bundle.locations, bundle.things]) {
-    for (const e of f.entities)
+  for (const key of activeEntityFiles(ctx)) {
+    for (const e of bundle[key].entities) {
       if (e.locked === true)
         out.push(e.id);
+    }
   }
   return out;
 }
-function specialNotes(bundle, notes) {
+function lockedFieldEntityIds(bundle, ctx) {
+  const out = [];
+  for (const key of activeEntityFiles(ctx)) {
+    for (const e of bundle[key].entities) {
+      if (Array.isArray(e.lockedFields) && e.lockedFields.length > 0)
+        out.push(e.id);
+    }
+  }
+  return out;
+}
+function specialNotes(bundle, notes, ctx) {
   const special = [];
-  if (notes.reconcile) {
-    special.push("RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.");
-  }
-  if (notes.migrateToTable) {
-    special.push('MIGRATE: the relations table was just enabled. Lift every "ties" note off the entity sheets into relations.json rows, then remove all "ties" fields.');
-  }
-  if (notes.migrateToInline) {
-    special.push('MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.');
-  }
+  if (notes.reconcile)
+    special.push(tpl(ctx, "note_reconcile"));
+  if (notes.migrateToTable)
+    special.push(tpl(ctx, "note_migrate_table"));
+  if (notes.migrateToInline)
+    special.push(tpl(ctx, "note_migrate_inline"));
   if (notes.loadProblems.length) {
-    special.push(`REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: ${notes.loadProblems.join(", ")}.`);
+    special.push(fillPrompt(tpl(ctx, "note_repair"), { FILES: notes.loadProblems.join(", ") }));
   }
-  if (notes.frozenFiles?.length) {
-    special.push(`FROZEN: the user locked these files, do NOT write them: ${notes.frozenFiles.join(", ")}.`);
-  }
-  const locked = lockedEntityIds(bundle);
+  const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
-    special.push(`LOCKED: the user owns these entities, do NOT set or drop them: ${locked.join(", ")}.`);
+    special.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
+  }
+  const lockedFields = lockedFieldEntityIds(bundle, ctx);
+  if (lockedFields.length) {
+    special.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   return special.length ? special.join(`
 
 `) : null;
 }
-function buildCodexUserMessage(bundle, chunk, chunkLabel, chunkFirstIndex, notes, lore, storySoFar) {
+function currentCodexParts(bundle, ctx) {
+  const parts = ["<<CURRENT CODEX>>"];
+  for (const key of CODEX_FILE_KEYS) {
+    if (!ctx.activeFiles.has(key))
+      continue;
+    parts.push(`--- ${key}.json ---
+${agentFileJson(bundle, key)}`);
+  }
+  return parts;
+}
+function buildCodexUserMessage(ctx, bundle, chunk, chunkLabel, chunkFirstIndex, notes, lore, storySoFar) {
   const parts = [];
-  const special = specialNotes(bundle, notes);
+  parts.push(tpl(ctx, "note_partial_story"));
+  const special = specialNotes(bundle, notes, ctx);
   if (special)
     parts.push(special);
   if (lore) {
@@ -4285,54 +4750,42 @@ ${lore}`);
     parts.push(`<<STORY SO FAR (chapter summaries, context only - this span is already recorded in the codex)>>
 ${storySoFar}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
-  parts.push(`<<NEW STORY TURNS (${chunkLabel})>>`);
+  parts.push(...currentCodexParts(bundle, ctx));
+  parts.push(`<<NEW STORY TURNS (${chunkLabel}) - the new material to encode>>`);
   parts.push(renderTranscript(chunk, true, chunkFirstIndex));
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join(`
 
 `);
 }
-function buildCodexSummaryCatchupMessage(bundle, blocks, chunkLabel, notes) {
+function buildCodexSummaryCatchupMessage(ctx, bundle, blocks, chunkLabel, notes) {
   const parts = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special)
     parts.push(special);
-  parts.push(`CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering ${chunkLabel}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
+  parts.push(fillPrompt(tpl(ctx, "pass_catchup_fast"), { CHUNK_LABEL: chunkLabel }));
+  parts.push(...currentCodexParts(bundle, ctx));
   parts.push(`<<STORY (${chunkLabel}, compressed)>>`);
   parts.push(blocks.join(`
 
 `));
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join(`
 
 `);
 }
-function buildCodexUltraMessage(bundle, books, tailTranscript, chunkLabel, notes, lore) {
+function buildCodexUltraMessage(ctx, bundle, books, tailTranscript, chunkLabel, notes, lore) {
   const parts = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special)
     parts.push(special);
   const shape = books.length && tailTranscript ? "The story arrives as its filed summaries, oldest first, followed by the raw newest turns." : books.length ? "The story arrives as its filed summaries, oldest first." : "The story arrives as raw turns.";
-  parts.push(`CATCH-UP: this single pass covers ${chunkLabel}. ${shape} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
+  parts.push(fillPrompt(tpl(ctx, "pass_catchup_ultra"), { CHUNK_LABEL: chunkLabel, STORY_SHAPE: shape }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
 ${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
 ${books.join(`
@@ -4343,27 +4796,23 @@ ${books.join(`
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push("Update the codex now.");
+  parts.push(tpl(ctx, "pass_update"));
   return parts.join(`
 
 `);
 }
-function buildCodexReconcileMessage(bundle, books, tailTranscript, notes, lore, useTools) {
+function buildCodexReconcileMessage(ctx, bundle, books, tailTranscript, notes, lore) {
   const parts = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special)
     parts.push(special);
   const shape = books.length && tailTranscript ? "as its filed summaries, oldest first, followed by the raw newest turns" : books.length ? "as its filed summaries, oldest first" : "as raw turns";
-  parts.push(`RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives ${shape}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.`);
+  parts.push(fillPrompt(tpl(ctx, "pass_reconcile"), { STORY_SHAPE: shape }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
 ${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
 ${books.join(`
@@ -4374,28 +4823,29 @@ ${books.join(`
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push(useTools ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds." : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
+  parts.push(ctx.useTools ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds." : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
   return parts.join(`
 
 `);
 }
-function buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, useTools) {
+function buildCodexRefreshMessage(ctx, bundle, targets, books, tailTranscript, notes, lore) {
   const parts = [];
-  const special = specialNotes(bundle, notes);
+  const special = specialNotes(bundle, notes, ctx);
   if (special)
     parts.push(special);
   const list = targets.map((t) => `${t}.json`).join(", ");
   const shape = books.length && tailTranscript ? "its filed summaries, oldest first, followed by the raw newest turns" : books.length ? "its filed summaries, oldest first" : "raw turns";
-  parts.push(`REFRESH PASS: the user re-enabled ${list} after ${targets.length === 1 ? "it" : "they"} missed updates, so ${targets.length === 1 ? "it lags" : "they lag"} the story. The story arrives as ${shape}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.`);
+  parts.push(fillPrompt(tpl(ctx, "pass_refresh"), {
+    TARGET_FILES: list,
+    IT_THEY: targets.length === 1 ? "it" : "they",
+    LAG_PHRASE: targets.length === 1 ? "it lags" : "they lag",
+    STORY_SHAPE: shape
+  }));
   if (lore) {
     parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
 ${lore}`);
   }
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
+  parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
     parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
 ${books.join(`
@@ -4407,37 +4857,64 @@ ${books.join(`
     parts.push(tailTranscript);
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
-  parts.push(useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  parts.push(ctx.useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
   return parts.join(`
 
 `);
 }
-function buildCodexTidyMessage(bundle, targets, useTools) {
+function buildCodexRebuildMessage(ctx, bundle, targets, books, tailTranscript, notes, lore) {
   const parts = [];
-  parts.push("TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.");
-  parts.push('A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).');
-  parts.push('While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.');
-  const locked = lockedEntityIds(bundle);
+  const special = specialNotes(bundle, notes, ctx);
+  if (special)
+    parts.push(special);
+  const list = targets.map((t) => `${t}.json`).join(", ");
+  const shape = books.length && tailTranscript ? "its filed summaries, oldest first, followed by the raw newest turns" : books.length ? "its filed summaries, oldest first" : "raw turns";
+  parts.push(fillPrompt(tpl(ctx, "pass_rebuild"), { TARGET_FILES: list, STORY_SHAPE: shape }));
+  if (lore) {
+    parts.push(`<<ACTIVATED LORE (canon reference, read-only, do not copy into the codex)>>
+${lore}`);
+  }
+  parts.push(...currentCodexParts(bundle, ctx));
+  if (books.length) {
+    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>
+${books.join(`
+
+`)}`);
+  }
+  if (tailTranscript) {
+    parts.push("<<NEWEST STORY TURNS (raw)>>");
+    parts.push(tailTranscript);
+  }
+  parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
+  parts.push(ctx.useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  return parts.join(`
+
+`);
+}
+function buildCodexTidyMessage(ctx, bundle, targets) {
+  const parts = [];
+  parts.push(tpl(ctx, "pass_tidy"));
+  const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
-    parts.push(`LOCKED: the user owns these entities, reproduce them untouched: ${locked.join(", ")}.`);
+    parts.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
+  }
+  const lockedFields = lockedFieldEntityIds(bundle, ctx);
+  if (lockedFields.length) {
+    parts.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
-  parts.push("<<CURRENT CODEX>>");
-  for (const key of CODEX_FILE_KEYS) {
-    parts.push(`--- ${key}.json ---
-${agentFileJson(bundle, key)}`);
-  }
-  parts.push(useTools ? "Rewrite the target files now. Write only files you actually improved, then call codex_done." : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
+  parts.push(...currentCodexParts(bundle, ctx));
+  parts.push(ctx.useTools ? "Rewrite the target files now. Write only files you actually improved, then call codex_done." : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
   return parts.join(`
 
 `);
 }
-function verifyNudge(useTools) {
-  return "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated. " + (useTools ? "Resend corrections if you find anything, otherwise call codex_done." : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.');
+function verifyNudge(ctx) {
+  return tpl(ctx, "pass_verify") + " " + (ctx.useTools ? "Resend corrections if you find anything, otherwise call codex_done." : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.');
 }
 function entityLine(e) {
   const bits = [];
-  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords", "locked"]);
+  const skip = new Set(["id", "name", "aliases", "ties", "notes", "keywords", "locked", "lockedfields"]);
   if (e.aliases?.length)
     bits.push(`aka ${e.aliases.join(", ")}`);
   for (const [k, v] of Object.entries(e)) {
@@ -6658,50 +7135,62 @@ class ToolProtocolError extends Error {
     this.name = "ToolProtocolError";
   }
 }
-var CACHE_EPHEMERAL = { type: "ephemeral" };
-var TOOLS = [
-  {
-    name: "codex_write",
-    description: "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
-    parameters: {
-      type: "object",
-      properties: {
-        file: { type: "string", enum: [...CODEX_FILE_KEYS] },
-        set: {
-          type: "array",
-          items: { type: "object" },
-          description: "Rows to add or replace, each complete on its own, keyed by entity id or rid. Only rows that actually changed."
-        },
-        drop: {
-          type: "array",
-          items: { type: "string" },
-          description: "Entity ids or rids of rows to delete."
-        },
-        seeds: {
-          type: "array",
-          items: { type: "string" },
-          description: "threads.json only: the complete replacement seeds list."
-        },
-        content: {
-          type: "object",
-          description: "The complete new file content, replacing everything. Only for a ground-up rewrite; never combined with set or drop."
-        }
-      },
-      required: ["file"]
-    }
-  },
-  {
-    name: "codex_done",
-    description: "Declare the codex current. Call it alongside your writes, or alone when nothing durable changed.",
-    parameters: {
-      type: "object",
-      properties: {
-        note: { type: "string", description: "One short line on what changed." }
-      },
-      required: []
-    }
+
+class CodexContextError extends Error {
+  constructor(promptTokens, maxInputTokens) {
+    super(`The assembled codex prompt is ~${Math.round(promptTokens / 1000)}k tokens but the codex max input is ${Math.round(maxInputTokens / 1000)}k, so Memoria stopped instead of sending a request that would fail or be silently cut. ` + "Raise Max input tokens under Tuning > Connection > Codex, or in Tuning > Settings > Codex lower the window, Chapters provided, or the lore limit, or freeze records in Codex > Overview.");
+    this.name = "CodexContextError";
   }
-];
+}
+function codexMaxInputTokens(profile) {
+  return profile.codexSamplers.max_input_tokens ?? CODEX_SAMPLER_DEFAULTS.max_input_tokens;
+}
+var CACHE_EPHEMERAL = { type: "ephemeral" };
+function codexTools(activeFiles) {
+  return [
+    {
+      name: "codex_write",
+      description: "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
+      parameters: {
+        type: "object",
+        properties: {
+          file: { type: "string", enum: [...activeFiles] },
+          set: {
+            type: "array",
+            items: { type: "object" },
+            description: "Rows to add or replace, each complete on its own, keyed by entity id or rid. Only rows that actually changed."
+          },
+          drop: {
+            type: "array",
+            items: { type: "string" },
+            description: "Entity ids or rids of rows to delete."
+          },
+          seeds: {
+            type: "array",
+            items: { type: "string" },
+            description: "threads.json only: the complete replacement seeds list."
+          },
+          content: {
+            type: "object",
+            description: "The complete new file content, replacing everything. Only for a ground-up rewrite; never combined with set or drop."
+          }
+        },
+        required: ["file"]
+      }
+    },
+    {
+      name: "codex_done",
+      description: "Declare the codex current. Call it alongside your writes, or alone when nothing durable changed.",
+      parameters: {
+        type: "object",
+        properties: {
+          note: { type: "string", description: "One short line on what changed." }
+        },
+        required: []
+      }
+    }
+  ];
+}
 async function resolveCodexConnection(profile, userId) {
   if (profile.codexConnectionId) {
     const list = await listConnections(userId);
@@ -6720,7 +7209,7 @@ async function resolveCodexConnection(profile, userId) {
     throw new FatalSummarizerError("No connection available for the codex");
   return conn;
 }
-async function runQuietRound(conn, messages, profile, userId, useTools, externalSignal, onProgress, onDelta, progressBase) {
+async function runQuietRound(conn, messages, profile, userId, tools, externalSignal, onProgress, onDelta, progressBase) {
   const model = (conn.model ?? "").trim();
   const parameters = { ...buildCodexSamplerParameters(profile) };
   if (model)
@@ -6730,7 +7219,7 @@ async function runQuietRound(conn, messages, profile, userId, useTools, external
     messages,
     connection_id: conn.id,
     parameters,
-    ...useTools ? { tools: TOOLS } : {},
+    ...tools ? { tools } : {},
     userId,
     signal
   }), {
@@ -6759,7 +7248,9 @@ function assistantTurn(content, toolCalls) {
   return { role: "assistant", content: parts };
 }
 function parseJsonModeCalls(raw) {
-  const obj = parseLooseJsonObject(raw);
+  const objs = parseLooseJsonObjects(raw);
+  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || o["done"] === true);
+  const obj = envelopes.length ? envelopes[envelopes.length - 1] : objs[0] ?? null;
   if (!obj)
     return [];
   const calls = [];
@@ -6777,9 +7268,47 @@ function parseJsonModeCalls(raw) {
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
+function isMaskEcho(v) {
+  return v === LOCKED_FIELD_MASK || Array.isArray(v) && v.length === 1 && v[0] === LOCKED_FIELD_MASK;
+}
+function restoreLockedFields(file, value, current) {
+  if (file !== "characters" && file !== "locations" && file !== "things")
+    return [];
+  const curById = new Map;
+  for (const row of fileRows(current, file)) {
+    if (typeof row["id"] === "string")
+      curById.set(row["id"], row);
+  }
+  const touched = [];
+  for (const row of fileRows(value, file)) {
+    const id = typeof row["id"] === "string" ? row["id"] : "";
+    const orig = curById.get(id);
+    const lf = orig && Array.isArray(orig["lockedFields"]) ? orig["lockedFields"].filter((f) => typeof f === "string" && f !== "id" && f !== "name") : [];
+    if (lf.length === 0) {
+      delete row["lockedFields"];
+      continue;
+    }
+    let changed = false;
+    for (const f of lf) {
+      const wrote = row[f];
+      const want = orig[f];
+      if (wrote !== undefined && !isMaskEcho(wrote) && JSON.stringify(wrote) !== JSON.stringify(want))
+        changed = true;
+      if (want === undefined)
+        delete row[f];
+      else
+        row[f] = clone(want);
+    }
+    row["lockedFields"] = [...lf];
+    if (changed)
+      touched.push(id);
+  }
+  return touched;
+}
 function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   const errors = [];
   const lockedKept = [];
+  const lockedFieldsKept = [];
   const dropMisses = [];
   const archivedKept = [];
   const keyField = FILE_ROW_KEY[file].key;
@@ -6802,19 +7331,19 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   const hiddenResolved = file === "threads" ? current.threads.filter((t) => t.status === "resolved") : [];
   if (rawContent !== undefined) {
     if (hasPatch) {
-      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, dropMisses, archivedKept };
+      return { errors: ["content replaces the whole file - never combine it with set, drop, or seeds"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
     }
     let content = rawContent;
     if (typeof content === "string") {
       try {
         content = JSON.parse(content);
       } catch {
-        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, dropMisses, archivedKept };
+        return { errors: ["content: string was not valid JSON, pass the object directly"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
       }
     }
     const result2 = validateCodexFile(file, content, validateOpts);
     if (!result2.ok)
-      return { errors: result2.errors, lockedKept, dropMisses, archivedKept };
+      return { errors: result2.errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
     const value2 = result2.value;
     if (lockedRows.size > 0) {
       const rows2 = fileRows(value2, file);
@@ -6846,11 +7375,12 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
       t.threads = t.threads.filter((row) => !(row.rid && hiddenRids.has(row.rid)));
       t.threads.push(...hiddenResolved.map((h) => clone(h)));
     }
+    lockedFieldsKept.push(...restoreLockedFields(file, value2, current));
     assignMissingRids(file, value2);
-    return { value: value2, errors, lockedKept, dropMisses, archivedKept };
+    return { value: value2, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   }
   if (!hasPatch) {
-    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, dropMisses, archivedKept };
+    return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   }
   if (rawSeeds !== undefined && file !== "threads") {
     errors.push("seeds: only threads.json has a seeds list");
@@ -6897,7 +7427,7 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
     errors.push("empty write: set and drop held nothing - provide rows, keys, seeds, or content");
   }
   if (errors.length)
-    return { errors, lockedKept, dropMisses, archivedKept };
+    return { errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   let rows = fileRows(current, file).map((r) => clone(r));
   if (file === "threads")
     rows = rows.filter((r) => r["status"] !== "resolved");
@@ -6952,14 +7482,14 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
     rows.push(row);
   });
   if (errors.length)
-    return { errors, lockedKept, dropMisses, archivedKept };
+    return { errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   const candidate = { [FILE_ROW_KEY[file].field]: rows };
   if (file === "threads") {
     candidate["seeds"] = seeds ?? current.seeds;
   }
   const result = validateCodexFile(file, candidate, validateOpts);
   if (!result.ok)
-    return { errors: result.errors, lockedKept, dropMisses, archivedKept };
+    return { errors: result.errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
   const value = result.value;
   if (keyField === "id") {
     for (const row of fileRows(value, file)) {
@@ -6970,17 +7500,23 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   if (file === "threads" && hiddenResolved.length > 0) {
     value.threads.push(...hiddenResolved.map((h) => clone(h)));
   }
+  lockedFieldsKept.push(...restoreLockedFields(file, value, current));
   assignMissingRids(file, value);
-  return { value, errors, lockedKept, dropMisses, archivedKept };
+  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
 }
 async function runCodexAgent(opts) {
-  const { profile, userId, chatId } = opts;
+  const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const maxRounds = profile.codexThorough ? 4 : 3;
-  const useTools = profile.codexUseTools;
-  const system = buildCodexSystemPrompt(profile.codexRelationsTable, useTools, profile.codexDirectivesOverride);
-  const userText = opts.userTextOverride ?? buildCodexUserMessage(opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar);
-  const frozen = opts.frozenFiles ?? new Set;
+  const useTools = promptCtx.useTools;
+  const tools = useTools ? codexTools([...promptCtx.activeFiles]) : null;
+  const system = await resolveSystemMacros(buildCodexSystemPrompt(promptCtx), chatId, userId);
+  const userText = opts.userTextOverride ?? buildCodexUserMessage(promptCtx, opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar);
+  const maxInput = codexMaxInputTokens(profile);
+  const promptTokens = approximateTokensFromChars(system.length + userText.length);
+  if (promptTokens > maxInput)
+    throw new CodexContextError(promptTokens, maxInput);
+  const frozen = new Set(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k)));
   const conv = [
     { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] }
@@ -7006,7 +7542,7 @@ async function runCodexAgent(opts) {
 
 \u2550\u2550\u2550 round ${rounds} \u2550\u2550\u2550
 `);
-    const round = await runQuietRound(conn, conv, profile, userId, useTools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
+    const round = await runQuietRound(conn, conv, profile, userId, tools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
     usageCompletion += round.usageCompletion;
     const calls = useTools ? round.toolCalls : parseJsonModeCalls(round.content);
@@ -7093,6 +7629,7 @@ async function runCodexAgent(opts) {
         file: fileRaw,
         errors: [],
         ...staged.lockedKept.length ? { lockedKept: staged.lockedKept } : {},
+        ...staged.lockedFieldsKept.length ? { lockedFieldsKept: staged.lockedFieldsKept } : {},
         ...staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {},
         ...staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}
       });
@@ -7128,6 +7665,8 @@ async function runCodexAgent(opts) {
       const bits = [];
       if (o.lockedKept?.length)
         bits.push(`locked, left untouched: ${o.lockedKept.join(", ")} - do not resend them`);
+      if (o.lockedFieldsKept?.length)
+        bits.push(`locked fields restored to the user's values on: ${o.lockedFieldsKept.join(", ")} - never write those fields`);
       if (o.dropMisses?.length)
         bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
       if (o.archivedKept?.length)
@@ -7165,7 +7704,7 @@ ${o.errors.join(`
       }
       if (wantVerify) {
         verifyRequested = true;
-        pushFeedback(verifyNudge(useTools));
+        pushFeedback(verifyNudge(promptCtx));
         continue;
       }
       const roundStaged = outcomes.some((o) => o.file !== null && !o.skipped && o.errors.length === 0);
@@ -7227,9 +7766,18 @@ ${integrityErrors.join(`
 
 // src/backend/codex/index.ts
 function reportCodexFailure(userId, chatId, verb, err) {
+  if (err instanceof CodexContextError) {
+    cb2?.onToast(userId, "error", err.message);
+    return;
+  }
   cb2?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
   if (err instanceof ToolProtocolError)
     cb2?.onToolsHint?.(userId, chatId);
+}
+function effectiveLoreLimitTokens(profile) {
+  if (profile.codexLoreLimitUnit === "tokens")
+    return profile.codexLoreLimitTokens;
+  return Math.max(1, Math.floor(codexMaxInputTokens(profile) * profile.codexLoreLimitPercent / 100));
 }
 var cb2 = null;
 function registerCodexCallbacks(c) {
@@ -7372,63 +7920,66 @@ async function planRun(chatId, userId, lagUnit, lagValue) {
   const compressible = trimLag(tail, lagUnit, lagValue);
   return { messages, cursor, startPos, compressible, reconcile, rewound: divergedAt >= 0 };
 }
-var LORE_CAP_CHARS = 16000;
-async function activatedLoreText(chatId, userId) {
+async function activatedLoreText(chatId, userId, limitTokens) {
   const activated = await spindle.world_books.getActivated(chatId, userId).catch(() => null);
   if (!activated || activated.length === 0)
     return null;
   const ourBookId = await findBookForChat(chatId, userId).catch(() => null);
-  const byBook = new Map;
+  const bookIds = new Set;
   for (const a of activated) {
-    if (!a.bookId || a.bookId === ourBookId)
-      continue;
-    const list = byBook.get(a.bookId) ?? [];
-    list.push(a.id);
-    byBook.set(a.bookId, list);
+    if (a.bookId && a.bookId !== ourBookId)
+      bookIds.add(a.bookId);
   }
-  if (byBook.size === 0)
+  if (bookIds.size === 0)
     return null;
+  const entryById = new Map;
+  for (const bookId of bookIds) {
+    for (const entry of await listAllEntries(bookId, userId).catch(() => [])) {
+      entryById.set(entry.id, entry);
+    }
+  }
+  const capChars = limitTokens > 0 ? limitTokens * 4 : Number.POSITIVE_INFINITY;
   const parts = [];
   let used = 0;
   let skipped = false;
-  for (const [bookId, entryIds] of byBook) {
-    const entries = await listAllEntries(bookId, userId).catch(() => []);
-    const wanted = new Set(entryIds);
-    for (const entry of entries) {
-      if (!wanted.has(entry.id))
-        continue;
-      const ext = entry.extensions || {};
-      if (ext[EXTENSION_KEY])
-        continue;
-      if (ext[CODEX_ENTRY_EXTENSION_KEY])
-        continue;
-      const content = (entry.content || "").trim();
-      if (!content)
-        continue;
-      const label = (entry.comment || "").trim();
-      const block = label ? `[${label}]
+  for (const a of activated) {
+    if (!a.bookId || a.bookId === ourBookId)
+      continue;
+    const entry = entryById.get(a.id);
+    if (!entry)
+      continue;
+    const ext = entry.extensions || {};
+    if (ext[EXTENSION_KEY])
+      continue;
+    if (ext[CODEX_ENTRY_EXTENSION_KEY])
+      continue;
+    const content = (entry.content || "").trim();
+    if (!content)
+      continue;
+    const label = (entry.comment || "").trim();
+    const block = label ? `[${label}]
 ${content}` : content;
-      if (used + block.length > LORE_CAP_CHARS) {
-        skipped = true;
-        continue;
-      }
-      parts.push(block);
-      used += block.length;
+    if (used + block.length > capChars) {
+      skipped = true;
+      continue;
     }
+    parts.push(block);
+    used += block.length;
   }
   if (skipped)
-    parts.push("[...more lore omitted for size...]");
+    parts.push(LORE_OMITTED_MARKER);
   if (parts.length === 0)
     return null;
   return parts.join(`
 
 `);
 }
+var LORE_OMITTED_MARKER = "[...more lore omitted for size...]";
 async function storySoFarText(chatId, userId, profile, chunkFirstIdx, posById) {
-  if (!profile.codexExtraContext || profile.previousMemoriesCount <= 0)
+  if (!profile.codexExtraContext || profile.codexStorySoFarCount <= 0)
     return null;
   const entries = await listLmbEntries(chatId, userId).catch(() => []);
-  const prior = entries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot && liveEndPosition(e.meta.msgIds, e.meta.lastMsgIdx, posById) < chunkFirstIdx).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0)).slice(-profile.previousMemoriesCount);
+  const prior = entries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot && liveEndPosition(e.meta.msgIds, e.meta.lastMsgIdx, posById) < chunkFirstIdx).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0)).slice(-profile.codexStorySoFarCount);
   if (prior.length === 0)
     return null;
   return prior.map((c) => c.raw.content || "").filter(Boolean).join(`
@@ -7456,6 +8007,126 @@ async function getCodexStatus(chatId, userId, profile) {
     return { exists, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   }
 }
+function previewTail(messages, profile) {
+  if (profile.codexWindowUnit === "messages")
+    return messages.slice(-Math.max(1, profile.codexWindowValue));
+  const out = [];
+  let acc = 0;
+  for (let i = messages.length - 1;i >= 0; i--) {
+    out.unshift(messages[i]);
+    acc += approximateTokensFromChars((messages[i].content || "").length);
+    if (acc >= profile.codexWindowValue)
+      break;
+  }
+  return out;
+}
+async function dryRunCodex(chatId, profile, settings, userId) {
+  const conn = await resolveCodexConnection(profile, userId);
+  const diagnostics = [];
+  let plan = await planRun(chatId, userId, profile.codexLagUnit, profile.codexLagValue);
+  let chunk;
+  if (plan.compressible.length > 0) {
+    chunk = takeWindow(plan.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+    if (!windowReached(plan.compressible, profile)) {
+      diagnostics.push({ message: "The window has not filled yet, automation would wait. Update now would consume this chunk." });
+    }
+  } else {
+    const eager = await planRun(chatId, userId, profile.codexLagUnit, 0);
+    if (eager.compressible.length > 0) {
+      plan = eager;
+      chunk = takeWindow(eager.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
+      diagnostics.push({ message: "The lag reserve still holds these turns, automation would wait. Update now would consume them." });
+    } else {
+      const eligible = plan.messages.filter(nonEmpty);
+      if (eligible.length === 0)
+        throw new Error("Chat has no messages");
+      chunk = previewTail(eligible, profile);
+      diagnostics.push({ message: "The codex has read everything, so this preview reuses the newest turns. A real run would wait for new messages." });
+    }
+  }
+  if (chunk.length === 0)
+    throw new Error("No consumable window, send a message and try again");
+  const prevMode = plan.cursor.relationsTableMode;
+  const diskMode = prevMode ?? profile.codexRelationsTable;
+  const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+  const frozenFiles = new Set(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
+  if (frozenFiles.size === CODEX_FILE_KEYS.length) {
+    throw new Error("Every codex record is frozen, unfreeze one to preview a run");
+  }
+  const notes = {
+    reconcile: plan.reconcile,
+    migrateToTable: prevMode === false && profile.codexRelationsTable,
+    migrateToInline: prevMode === true && !profile.codexRelationsTable,
+    loadProblems: problems.map((p) => `${p.file}.json`)
+  };
+  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+  const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
+  const firstIdx = posById.get(chunk[0].id) ?? 0;
+  const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? firstIdx;
+  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
+  const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
+  const system = await resolveMacrosWithDiagnostics(buildCodexSystemPrompt(promptCtx), chatId, userId, diagnostics);
+  const user = buildCodexUserMessage(promptCtx, bundle, plan.messages.slice(firstIdx, lastIdx + 1), chunkLabel, firstIdx, notes, lore, storySoFar);
+  const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
+  const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
+  diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
+  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls (codex_write / codex_done)" : "strict JSON"}` });
+  diagnostics.push({
+    message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`
+  });
+  diagnostics.push({
+    message: `Relations mode: ${profile.codexRelationsTable ? "table" : "inline ties"}${notes.migrateToTable || notes.migrateToInline ? " (format changed, this run would migrate)" : ""}`
+  });
+  diagnostics.push({ message: `Active files: ${[...promptCtx.activeFiles].join(", ")}` });
+  if (frozenFiles.size)
+    diagnostics.push({ message: `Frozen, omitted from the prompt entirely: ${[...frozenFiles].join(", ")}` });
+  diagnostics.push({ message: `Chunk: ${chunkLabel} (${chunk.length} message${chunk.length === 1 ? "" : "s"})` });
+  if (plan.reconcile)
+    diagnostics.push({ message: "Reconcile pending: the story was edited behind the codex, the reconcile note is included" });
+  if (notes.loadProblems.length)
+    diagnostics.push({ message: `Unreadable files shown empty: ${notes.loadProblems.join(", ")}` });
+  const lockedEntities = [];
+  const fieldLocked = [];
+  for (const key2 of ["characters", "locations", "things"]) {
+    for (const e of bundle[key2].entities) {
+      if (e.locked === true)
+        lockedEntities.push(e.id);
+      if (Array.isArray(e.lockedFields) && e.lockedFields.length)
+        fieldLocked.push(e.id);
+    }
+  }
+  if (lockedEntities.length || fieldLocked.length) {
+    diagnostics.push({
+      message: `Locks: ${lockedEntities.length} locked entit${lockedEntities.length === 1 ? "y" : "ies"}, ${fieldLocked.length} with locked fields (masked in the prompt)`
+    });
+  }
+  if (storySoFar)
+    diagnostics.push({ message: `Story-so-far context: ~${approximateTokensFromChars(storySoFar.length)} tokens` });
+  if (lore)
+    diagnostics.push({ message: `Activated lore reference: ~${approximateTokensFromChars(lore.length)} tokens` });
+  if (lore?.includes(LORE_OMITTED_MARKER)) {
+    diagnostics.push({
+      message: `Activated lore exceeded the lore limit (${effectiveLoreLimitTokens(profile)} tokens): entries past the budget were skipped whole and the omission marker tells the agent more canon exists`
+    });
+  }
+  diagnostics.push({ message: `Thorough mode: ${profile.codexThorough ? "on, one verification round follows a clean update" : "off"}` });
+  diagnostics.push({
+    message: `Prompt size: ~${approximateTokensFromChars(system.length)} tokens system + ~${approximateTokensFromChars(user.length)} tokens user (codex max input ${codexMaxInputTokens(profile)})`
+  });
+  const promptTokens = approximateTokensFromChars(system.length + user.length);
+  if (promptTokens > codexMaxInputTokens(profile)) {
+    diagnostics.push({ message: `WOULD FAIL: ${new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message}` });
+  }
+  diagnostics.push({ message: `Sampler parameters being sent on the wire: ${JSON.stringify(buildCodexSamplerParameters(profile))}` });
+  return {
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user }
+    ],
+    diagnostics
+  };
+}
 async function runChunk(chatId, userId, profile, plan, chunk, automation, externalSignal, progress, buildUserText, wantLore = false) {
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
@@ -7465,9 +8136,10 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     reconcile: plan.reconcile,
     migrateToTable: prevMode === false && profile.codexRelationsTable,
     migrateToInline: prevMode === true && !profile.codexRelationsTable,
-    loadProblems: problems.map((p) => `${p.file}.json`),
-    frozenFiles: [...frozenFiles].map((f) => `${f}.json`)
+    loadProblems: problems.map((p) => `${p.file}.json`)
   };
+  const settings = await loadSettings(userId);
+  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
   if (notes.migrateToTable || notes.migrateToInline) {
     const blocked = ["characters", "locations", "things", "relations"].filter((k) => frozenFiles.has(k));
     if (blocked.length) {
@@ -7478,7 +8150,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
   const firstIdx = posById.get(chunk[0].id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? -1;
   const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
-  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId) : null;
+  const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile)) : null;
   const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
   appendStreamText(userId, chatId, "codex", "text", `${progress.chars > 0 ? `
 
@@ -7488,6 +8160,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     chatId,
     userId,
     profile,
+    promptCtx,
     bundle,
     chunk: plan.messages.slice(firstIdx, lastIdx + 1),
     chunkLabel,
@@ -7495,9 +8168,8 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     notes,
     lore,
     storySoFar,
-    frozenFiles,
     timelineAppendOnly: !notes.reconcile,
-    ...buildUserText ? { userTextOverride: buildUserText(bundle, notes, chunkLabel, lore) } : {},
+    ...buildUserText ? { userTextOverride: buildUserText(promptCtx, bundle, notes, chunkLabel, lore) } : {},
     progressBase: progress,
     externalSignal,
     onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -7566,6 +8238,8 @@ async function drain(chatId, userId, profile, lagValue, requireWindow, automatio
       const plan = await planRun(chatId, userId, profile.codexLagUnit, lagValue);
       if (plan.compressible.length === 0)
         break;
+      if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen"))
+        break;
       if (requireWindow && !windowReached(plan.compressible, profile))
         break;
       if (plan.rewound) {
@@ -7615,6 +8289,11 @@ async function runCodexNow(chatId, profile, userId, mode = "slow", settings = nu
   try {
     const runs = mode === "slow" ? await drain(chatId, userId, profile, 0, false, false) : await catchupCodex(chatId, profile, settings, userId, mode);
     if (runs === 0) {
+      const cursor = await loadCursor(chatId, userId).catch(() => null);
+      if (cursor && CODEX_FILE_KEYS.every((k) => cursor.fileStates[k] === "frozen")) {
+        cb2?.onToast(userId, "info", "Every codex record is frozen, unfreeze one so Memoria can update it");
+        return;
+      }
       const swept = await maybeReconcileSweep(chatId, profile, userId);
       if (!swept)
         cb2?.onToast(userId, "info", "The codex is already caught up");
@@ -7626,7 +8305,7 @@ async function runCodexNow(chatId, profile, userId, mode = "slow", settings = nu
     }
     warn(`codex manual run failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "update", err);
-    if (mode !== "slow" && CONTEXT_ERROR_RE.test(describeError(err))) {
+    if (mode !== "slow" && !(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
       cb2?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
     }
   }
@@ -7782,6 +8461,8 @@ async function catchupCodex(chatId, profile, settings, userId, mode) {
         const plan2 = await planRun(chatId, userId, profile.codexLagUnit, 0);
         if (plan2.compressible.length === 0)
           break;
+        if (CODEX_FILE_KEYS.every((k) => plan2.cursor.fileStates[k] === "frozen"))
+          break;
         if (!plan2.rewound && plan2.startPos <= prevStart) {
           warn(`codex fast catch-up stalled at message ${plan2.startPos + 1} for ${chatId.slice(0, 8)}, stopping`);
           break;
@@ -7790,16 +8471,18 @@ async function catchupCodex(chatId, profile, settings, userId, mode) {
         const batch = nextSummaryBatch(plan2, coverage.chapters, profile);
         if (!batch)
           break;
-        await runChunk(chatId, userId, profile, plan2, plan2.messages.slice(plan2.startPos, batch.endIdx + 1), false, controller.signal, progress, (bundle, notes, label) => buildCodexSummaryCatchupMessage(bundle, batch.blocks, label, notes));
+        await runChunk(chatId, userId, profile, plan2, plan2.messages.slice(plan2.startPos, batch.endIdx + 1), false, controller.signal, progress, (ctx, bundle, notes, label) => buildCodexSummaryCatchupMessage(ctx, bundle, batch.blocks, label, notes));
         runs++;
       }
     }
     const plan = await planRun(chatId, userId, profile.codexLagUnit, 0);
     if (plan.compressible.length === 0)
       return runs;
+    if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen"))
+      return runs;
     if (mode === "ultra") {
       const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
-      await runChunk(chatId, userId, profile, plan, plan.messages.slice(plan.startPos), false, controller.signal, progress, (bundle, notes, label, lore) => buildCodexUltraMessage(bundle, books, tailTranscript, label, notes, lore), true);
+      await runChunk(chatId, userId, profile, plan, plan.messages.slice(plan.startPos), false, controller.signal, progress, (ctx, bundle, notes, label, lore) => buildCodexUltraMessage(ctx, bundle, books, tailTranscript, label, notes, lore), true);
     } else {
       await runChunk(chatId, userId, profile, plan, plan.compressible, false, controller.signal, progress);
     }
@@ -7816,6 +8499,8 @@ async function maybeReconcileSweep(chatId, profile, userId) {
     return false;
   if (plan.cursor.relationsTableMode !== null && plan.cursor.relationsTableMode !== profile.codexRelationsTable)
     return false;
+  if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen"))
+    return false;
   if (!setBusy(userId, chatId, "codex", "Memoria is reconciling the codex with the edited story"))
     return false;
   const controller = new AbortController;
@@ -7824,19 +8509,21 @@ async function maybeReconcileSweep(chatId, profile, userId) {
     const diskMode = plan.cursor.relationsTableMode ?? profile.codexRelationsTable;
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
-    const lore = await activatedLoreText(chatId, userId);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
     const frozen = new Set(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
     const notes = {
       reconcile: true,
       migrateToTable: false,
       migrateToInline: false,
-      loadProblems: problems.map((p) => `${p.file}.json`),
-      frozenFiles: [...frozen].map((f) => `${f}.json`)
+      loadProblems: problems.map((p) => `${p.file}.json`)
     };
+    const sweepSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, sweepSettings.customPresets, frozen);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -7844,8 +8531,7 @@ async function maybeReconcileSweep(chatId, profile, userId) {
       notes,
       lore,
       storySoFar: null,
-      frozenFiles: frozen,
-      userTextOverride: buildCodexReconcileMessage(bundle, books, tailTranscript, notes, lore, profile.codexUseTools),
+      userTextOverride: buildCodexReconcileMessage(promptCtx, bundle, books, tailTranscript, notes, lore),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -8104,10 +8790,13 @@ async function runCodexTidy(chatId, profile, userId, only) {
       cb2?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
       return;
     }
+    const tidySettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, tidySettings.customPresets, frozenFiles);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -8115,8 +8804,7 @@ async function runCodexTidy(chatId, profile, userId, only) {
       notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
       lore: null,
       storySoFar: null,
-      frozenFiles,
-      userTextOverride: buildCodexTidyMessage(bundle, targets, profile.codexUseTools),
+      userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -8165,18 +8853,20 @@ async function refreshCodexFiles(chatId, profile, userId) {
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const messages = await spindle.chat.getMessages(chatId);
     const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
-    const lore = await activatedLoreText(chatId, userId);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
     const notes = {
       reconcile: false,
       migrateToTable: false,
       migrateToInline: false,
-      loadProblems: problems.map((p) => `${p.file}.json`),
-      frozenFiles: [...frozen].map((f) => `${f}.json`)
+      loadProblems: problems.map((p) => `${p.file}.json`)
     };
+    const refreshSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, refreshSettings.customPresets, frozen);
     const result = await runCodexAgent({
       chatId,
       userId,
       profile,
+      promptCtx,
       bundle,
       chunk: [],
       chunkLabel: "",
@@ -8184,8 +8874,7 @@ async function refreshCodexFiles(chatId, profile, userId) {
       notes,
       lore,
       storySoFar: null,
-      frozenFiles: frozen,
-      userTextOverride: buildCodexRefreshMessage(bundle, targets, books, tailTranscript, notes, lore, profile.codexUseTools),
+      userTextOverride: buildCodexRefreshMessage(promptCtx, bundle, targets, books, tailTranscript, notes, lore),
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -8208,7 +8897,7 @@ async function refreshCodexFiles(chatId, profile, userId) {
     }
     warn(`codex refresh failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "refresh", err);
-    if (CONTEXT_ERROR_RE.test(describeError(err))) {
+    if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
       cb2?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
     }
   } finally {
@@ -8218,6 +8907,89 @@ async function refreshCodexFiles(chatId, profile, userId) {
 function fileIsEmpty(bundle, key2) {
   const v = bundle[key2];
   return Object.values(v).every((arr) => !Array.isArray(arr) || arr.length === 0);
+}
+function blankTargets(bundle, targets) {
+  const out = { ...bundle };
+  for (const t of targets) {
+    if (t === "characters" || t === "locations" || t === "things") {
+      out[t] = {
+        entities: bundle[t].entities.filter((e) => e.locked === true || Array.isArray(e.lockedFields) && e.lockedFields.length > 0)
+      };
+    } else {
+      out[t] = emptyCodexFile(t);
+    }
+  }
+  return out;
+}
+async function rebuildCodexFiles(chatId, profile, userId, only) {
+  if (!setBusy(userId, chatId, "codex", "Memoria is rebuilding codex records")) {
+    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+    return;
+  }
+  const controller = new AbortController;
+  registerAborter(userId, chatId, "codex", controller);
+  try {
+    const cursor = await loadCursor(chatId, userId);
+    if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
+      cb2?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before rebuilding records");
+      return;
+    }
+    const frozen = new Set(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const targets = only.filter((k) => !frozen.has(k));
+    if (targets.length === 0) {
+      cb2?.onToast(userId, "info", "Those records are frozen, unfreeze them first");
+      return;
+    }
+    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    const messages = await spindle.chat.getMessages(chatId);
+    const { books, tailTranscript } = await activeStoryContext(chatId, userId, messages);
+    const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
+    const notes = {
+      reconcile: false,
+      migrateToTable: false,
+      migrateToInline: false,
+      loadProblems: problems.map((p) => `${p.file}.json`)
+    };
+    const rebuildSettings = await loadSettings(userId);
+    const promptCtx = makeCodexPromptCtx(profile, rebuildSettings.customPresets, frozen);
+    const promptBundle = blankTargets(bundle, targets);
+    const result = await runCodexAgent({
+      chatId,
+      userId,
+      profile,
+      promptCtx,
+      bundle,
+      chunk: [],
+      chunkLabel: "",
+      chunkFirstIndex: 0,
+      notes,
+      lore,
+      storySoFar: null,
+      userTextOverride: buildCodexRebuildMessage(promptCtx, promptBundle, targets, books, tailTranscript, notes, lore),
+      skipVerify: true,
+      externalSignal: controller.signal,
+      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
+    });
+    invalidateCodexInjectionCache(chatId);
+    await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
+    await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+    cb2?.onToast(userId, "success", `Memoria rebuilt ${targets.length} record${targets.length === 1 ? "" : "s"} from the story`);
+    cb2?.onStateChange(userId, chatId);
+  } catch (err) {
+    if (err instanceof AbortedSummarizerError) {
+      cb2?.onToast(userId, "info", "Memoria sets the rebuild aside");
+      return;
+    }
+    warn(`codex record rebuild failed: ${describeError(err)}`);
+    reportCodexFailure(userId, chatId, "rebuild", err);
+    if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
+      cb2?.onToast(userId, "warn", "The rebuild pass needs the codex model's context to be at least the story model's, pick a larger context codex connection");
+    }
+  } finally {
+    clearBusy(userId, chatId, "codex");
+  }
 }
 
 // src/backend/rebase.ts
@@ -8386,6 +9158,7 @@ async function buildState(userId, requestedChatId) {
     chapterPresets: BUILTIN_CHAPTER_PRESETS,
     arcPresets: BUILTIN_ARC_PRESETS,
     volumePresets: BUILTIN_VOLUME_PRESETS,
+    codexPresets: BUILTIN_CODEX_PRESETS,
     customPresets: settings.customPresets,
     regexScripts,
     pendingPreviews: [],
@@ -9368,6 +10141,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         break;
       }
+      case "dry_run_codex": {
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        try {
+          const result = await dryRunCodex(msg.chatId, profile, cur, userId);
+          send({ type: "dry_run_result", kind: "codex", messages: result.messages, diagnostics: result.diagnostics }, userId);
+        } catch (err) {
+          const text = describeError(err);
+          warn(`dry_run_codex failed: ${text}`);
+          await notify(userId, "error", `Dry run failed: ${text}`);
+        }
+        break;
+      }
       case "abort_busy": {
         const aborted = abortBusy(userId, msg.chatId, msg.kind);
         if (!aborted) {
@@ -9450,6 +10238,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const fallbackChapter = "summary";
         const fallbackArc = "arc_default";
         const fallbackVolume = "volume_default";
+        const fallbackCodex = "codex_default";
         await mutateSettings(userId, (cur) => {
           const list = cur.customPresets.filter((p) => !(p.key === msg.key && p.category === msg.category));
           const profiles = cur.profiles.map((p) => {
@@ -9461,6 +10250,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
             if (msg.category === "volume" && p.volumePresetKey === msg.key) {
               return { ...p, volumePresetKey: fallbackVolume };
+            }
+            if (msg.category === "codex" && p.codexPresetKey === msg.key) {
+              return { ...p, codexPresetKey: fallbackCodex };
             }
             return p;
           });
@@ -9725,6 +10517,28 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
         await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_rebuild_files": {
+        if (codexGated(await ensureLessons(userId))) {
+          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile)
+          break;
+        if (!profile.codexEnabled) {
+          await notify(userId, "warn", "Enable the codex in Tuning first");
+          break;
+        }
+        const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
+        if (files.length === 0)
+          break;
+        await rebuildCodexFiles(msg.chatId, profile, userId, files);
+        const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles }, userId);
         await pushState(userId, msg.chatId);
         break;
       }

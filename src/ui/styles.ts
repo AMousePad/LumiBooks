@@ -640,6 +640,25 @@ export const STYLES = `
   text-transform: uppercase;
   color: var(--lmb-ink-dim);
 }
+/* Per-field lock toggle riding inside a field label (codex entity editor). */
+.lmb-field-lock {
+  margin-left: 8px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--lmb-ink-dim);
+  background: transparent;
+  border: 1px solid var(--lmb-hairline);
+  border-radius: var(--lmb-r-sm);
+  cursor: pointer;
+}
+.lmb-field-lock:hover { color: var(--lmb-ink); border-color: var(--lmb-frame-strong); }
+.lmb-field-lock.active {
+  color: var(--lmb-warning);
+  border-color: var(--lmb-warning-frame);
+  background: var(--lmb-warning-wash);
+}
 
 /* Search field: a visible container so an active filter can't masquerade as
    floating text, with a magnifier and a clear affordance. */

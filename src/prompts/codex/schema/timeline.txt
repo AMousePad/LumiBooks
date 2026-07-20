@@ -1,0 +1,10 @@
+timeline.json
+{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
+  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
+  "causes"?: "she flees the city" } ] }
+Major events only, oldest first. "when" uses the story's own reckoning. The
+timeline is APPEND-ONLY: record new events as set rows without a rid, and
+never rewrite or drop existing events - history does not change behind the
+story. Editing an existing row is reserved for an outright factual error or
+a reference the validator flags; removals happen only in reconcile or tidy
+passes.
