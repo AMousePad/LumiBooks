@@ -3383,7 +3383,7 @@ var tools_default = `Tools:
 {{PATCH_RULES}}
 - codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.
 
-Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Once your plan covers every section, stop planning and emit the calls.
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
 
 Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
   codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
@@ -3396,7 +3396,7 @@ A rejected write stages nothing at all: fix the validation errors you get back a
 // src/prompts/codex/protocol/json.txt
 var json_default = `Output protocol (JSON only, no tools):
 
-Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
 
 After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
 { "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }
