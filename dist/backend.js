@@ -529,7 +529,7 @@ var CODEX_SAMPLER_DEFAULTS = {
   temperature: 0.4,
   top_p: 1,
   top_k: 0,
-  max_tokens: 1e5,
+  max_tokens: 65536,
   max_input_tokens: 500000,
   frequency_penalty: 0,
   presence_penalty: 0
