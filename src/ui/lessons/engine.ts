@@ -519,14 +519,14 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         return;
       }
       if (m.type === "codex_read") {
-        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles);
+        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0);
         scheduleDemoRerender(step);
         return;
       }
       if (m.type === "codex_write_file") {
         // Free-play edits in the sandbox still land, so Save buttons work.
         active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
-        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, m.file, m.seq);
+        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
         showToast("success", `Memoria saved ${m.file}.json`);
         scheduleDemoRerender(step);
         return;
@@ -565,7 +565,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     }
     if (m.type === "codex_write_file") {
       active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
-      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, m.file, m.seq);
+      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
       showToast("success", `Memoria saved ${m.file}.json`);
       markDoDone(step);
       scheduleDemoRerender(step);

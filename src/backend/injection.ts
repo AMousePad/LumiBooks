@@ -65,11 +65,32 @@ function orderEntries(coverage: CoverageMap, msgIdToIdx: Map<string, number>): O
   return ordered;
 }
 
+/** Last assembly step each chat reached, so a budget timeout can name the
+ * stage that ran long instead of just the total. */
+const stageByChat = new Map<string, { stage: string; at: number }>();
+const STAGE_CAP = 200;
+
+export function lastInjectionStage(chatId: string): string {
+  const s = stageByChat.get(chatId);
+  return s ? `${s.stage} (${Date.now() - s.at}ms in)` : "not started";
+}
+
 export async function buildInjection(
   chatId: string,
   llmMessages: LlmMessageDTO[],
   userId: string,
 ): Promise<InterceptorResultDTO | null> {
+  const started = Date.now();
+  const stage = (name: string): void => {
+    stageByChat.delete(chatId);
+    stageByChat.set(chatId, { stage: name, at: started });
+    while (stageByChat.size > STAGE_CAP) {
+      const oldest = stageByChat.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      stageByChat.delete(oldest);
+    }
+  };
+  stage("reading the lorebook");
   const [activated, allEntries, attachedBookIds] = await Promise.all([
     spindle.world_books.getActivated(chatId, userId).catch(() => null),
     listLmbEntries(chatId, userId),
@@ -96,6 +117,7 @@ export async function buildInjection(
   const entriesForCoverage: LMBEntry[] = activatedIds && hostScanningOurBook
     ? allEntries.filter((e) => activatedIds.has(e.raw.id))
     : allEntries.filter((e) => !e.raw.disabled);
+  stage("working out what is already covered");
   const coverage: CoverageMap = await buildCoverage(chatId, userId, entriesForCoverage);
   if (coverage.activeEntries.length === 0) return null;
 
@@ -157,6 +179,7 @@ export async function buildInjection(
   // missing - identical behavior to the original.
   let msgIdToIdx: Map<string, number>;
   if (anyCovered || missingIdx) {
+    stage("reading the chat");
     let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>>;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -184,6 +207,7 @@ export async function buildInjection(
     msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx!] as const));
   }
 
+  stage("placing the memories");
   const ordered: OrderedEntry[] = orderEntries(coverage, msgIdToIdx);
   if (ordered.length === 0) return null;
 

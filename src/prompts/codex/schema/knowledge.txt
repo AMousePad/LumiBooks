@@ -7,3 +7,17 @@ knowledge.json
 ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
 item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
 belong in world or timeline, never here.
+"fact" is the TRUE THING, stated plainly and positively. Never write someone's
+ignorance as the fact - the ignorance is what hiddenFrom is for. So:
+  WRONG: fact "Lilian doesn't know Haru was in the stone room", knownBy Lilian
+  RIGHT: fact "Haru was held in the stone room", hiddenFrom Lilian
+An item with nobody in knownBy is fine: a secret only the reader has seen is
+still a secret.
+knownBy and hiddenFrom list WHO, nothing else. Just the person or group:
+"char:mara", "the household staff". Never a sentence about what they know
+("lilian does NOT know") - hiddenFrom already means they do not know. A name
+belongs in exactly one of the two lists, never both.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone without one - a group, a crowd, an unnamed bystander - write plain
+text instead: "the household staff", "everyone at court", not "char:the staff".
+Inventing a ref for something that has no sheet is the one error to avoid here.

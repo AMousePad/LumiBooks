@@ -3218,6 +3218,9 @@ You see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
 - Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
 - Only correct a record the visible material actually contradicts.
+- One exception: a record that breaks the schema rules is always yours to fix,
+  whether or not the visible turns mention it. Malformed is not the same as
+  unfamiliar.
 - A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
 - Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
 
@@ -3254,7 +3257,12 @@ Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitiv
 fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
 and only its stable, medium-to-long-lived facts - never the state of the current
 scene. Never put relationship info on a sheet, that lives in relations.json. An
-entity carrying "locked": true is user-owned: never set or drop it.`;
+entity carrying "locked": true is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.`;
 
 // src/prompts/codex/schema/entities-inline.txt
 var entities_inline_default = `{{ENTITY_FILES}}
@@ -3266,7 +3274,13 @@ var entities_inline_default = `{{ENTITY_FILES}}
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
 fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
 facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it. Relationships live in each entity's "ties"
+is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.
+Relationships live in each entity's "ties"
 list as short present-tense notes - to other characters, to things, and to
 places alike. Do NOT write relations.json, it is disabled.
 Ties coverage (mandatory): record the story's FULL web, never a hub around one
@@ -3324,7 +3338,10 @@ timeline is APPEND-ONLY: record new events as set rows without a rid, and
 never rewrite or drop existing events - history does not change behind the
 story. Editing an existing row is reserved for an outright factual error or
 a reference the validator flags; removals happen only in reconcile or tidy
-passes.`;
+passes.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone or anywhere without one, write plain text instead: "the city guard",
+"a roadside inn", not "char:the guard".`;
 
 // src/prompts/codex/schema/threads.txt
 var threads_default = `threads.json
@@ -3351,25 +3368,48 @@ var knowledge_default = `knowledge.json
   "keywords": ["murder", "dagger", "duke"] } ] }
 ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
 item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
-belong in world or timeline, never here.`;
+belong in world or timeline, never here.
+"fact" is the TRUE THING, stated plainly and positively. Never write someone's
+ignorance as the fact - the ignorance is what hiddenFrom is for. So:
+  WRONG: fact "Lilian doesn't know Haru was in the stone room", knownBy Lilian
+  RIGHT: fact "Haru was held in the stone room", hiddenFrom Lilian
+An item with nobody in knownBy is fine: a secret only the reader has seen is
+still a secret.
+knownBy and hiddenFrom list WHO, nothing else. Just the person or group:
+"char:mara", "the household staff". Never a sentence about what they know
+("lilian does NOT know") - hiddenFrom already means they do not know. A name
+belongs in exactly one of the two lists, never both.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone without one - a group, a crowd, an unnamed bystander - write plain
+text instead: "the household staff", "everyone at court", not "char:the staff".
+Inventing a ref for something that has no sheet is the one error to avoid here.`;
 
 // src/prompts/codex/schema/keywords.txt
-var keywords_default = `Retrieval keywords (mandatory):
+var keywords_default = `Retrieval keywords (mandatory, hard limit 12):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-10 tags. Each record is stored as a separate lorebook entry and only enters the
-prompt when the recent story mentions one of its keywords, so a record with weak
-keywords effectively disappears. Rules:
-- Mix generality with specificity: most keywords are SINGLE words the story will
-  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
-  when the single word would be too ambiguous to pin this record ("north tower"
-  when several towers exist). Never longer than 2 words.
+4-12 tags. Each record is a separate lorebook entry that only enters the prompt
+when the recent story mentions one of its keywords. Anything past 12 is DISCARDED
+by the app, so a bloated list does not help retrieval, it just wastes your output.
+Rules:
+- ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
+  sentence fragments, no "the ..." constructions.
+- Single words the story will plausibly say: "locket", "duke", "tower", "murder".
+  Use two words only when one would be ambiguous ("north tower" when several
+  towers exist).
 - Concrete nouns tied to THIS record: places, objects, epithets, events.
-- One concept per keyword, retrievable when mentioned alone.
+- Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
+  A record that matches everything is a record that means nothing.
 - The record's own name, aliases, and topic (and a knowledge item's participants)
   match automatically - never repeat them as keywords.
-- No abstract themes (love, betrayal, tension), no filler verbs.
+- Never list other characters, other locations, or the whole cast: those records
+  carry their own keywords and will retrieve themselves.
+- No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
 - Keep keywords current: when a record's contents change, re-check its keywords.
-timeline.json and threads.json need no keywords, they are always in the prompt.`;
+
+Keywords are for FINDING the record, never for storing what it says. Every fact
+belongs in the record's own fields, written out in full.
+timeline.json and threads.json need no keywords, they are always in the prompt.
+`;
 
 // src/prompts/codex/protocol/patch-rules.txt
 var patch_rules_default = `- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.
@@ -3381,17 +3421,47 @@ var patch_rules_default = `- "set": rows to add or replace. Each row must be COM
 var tools_default = `Tools:
 - codex_write(file, set?, drop?, seeds?, content?): edit one file.
 {{PATCH_RULES}}
-- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when the codex is current.
+
+You must account for EVERY file. Each file is either written with codex_write or named in a codex_skip, and codex_done is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
 
 Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
   codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
   codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
   codex_done(note: "recorded Mara's flight and the locket's origin")
 
 Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
 A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.`;
+
+// src/prompts/codex/protocol/tools-sequential.txt
+var tools_sequential_default = `Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit ONE file.
+{{PATCH_RULES}}
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when every file has been written or skipped.
+
+You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Take them one file at a time. Write a single file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
+
+Example response (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+
+Example of finishing up, once everything else is already written:
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
+  codex_done(note: "recorded Mara's flight and the locket's origin")
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
+`;
 
 // src/prompts/codex/protocol/json.txt
 var json_default = `Output protocol (JSON only, no tools):
@@ -3399,10 +3469,13 @@ var json_default = `Output protocol (JSON only, no tools):
 Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
 
 After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
-{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": ["world"], "done": true, "note": "one short line on what changed" }
 "writes" holds one item per file you change. Each item may carry:
 {{PATCH_RULES}}
-- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.
+- "skip": the files that need no change from this material.
+- Set "done": true when the codex is current.
+
+You must account for EVERY file. Each file is either written in "writes" or named in "skip", and "done" is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
 <think>UPDATE - characters: none changed. relations: Mara moved to the docks, r2 outdated. timeline: her flight is a major event. knowledge: the locket's origin was revealed. SWEEP - r2 still claims the attic, rewrite it. COMPRESS - fold the two hideout phrases into one.</think>
@@ -3410,10 +3483,41 @@ Example reply (shape only, your rows should be far more detailed, probably 100-1
   { "file": "relations", "set": [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ] },
   { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] },
   { "file": "knowledge", "set": [ { "fact": "The silver locket was stolen from the duke's vault", "knownBy": ["char:elias"], "keywords": ["locket", "vault", "theft"] } ] }
-], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+], "skip": ["characters", "locations", "things", "threads", "world"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
 
 No prose outside the <think> block and the JSON object.
 A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.`;
+
+// src/prompts/codex/protocol/json-sequential.txt
+var json_sequential_default = `Output protocol (JSON only, no tools):
+
+You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
+
+Take them one file at a time. Put a SINGLE file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": [], "done": false }
+"writes" holds the file you are changing this reply. Each item may carry:
+{{PATCH_RULES}}
+- "skip": the files that need no change from this material.
+- "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
+
+Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+<think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
+{ "writes": [
+  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
+], "skip": [], "done": false }
+
+Example of finishing up, once everything else is already written:
+{ "writes": [], "skip": ["world", "knowledge"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
+`;
 
 // src/prompts/codex/passes/update.txt
 var update_default = `<<TASK>>
@@ -3529,7 +3633,7 @@ var CODEX_TEMPLATES = [
     key: "schema_keywords",
     label: "Retrieval keywords",
     group: "File schemas",
-    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages.",
+    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages. Too many does the opposite damage: the record matches everything and is always in the prompt. Memoria enforces a hard limit of 12 keywords of at most two words each and discards the rest, so keep this text in step with that.",
     vars: [],
     defaultText: keywords_default
   },
@@ -3545,17 +3649,33 @@ var CODEX_TEMPLATES = [
     key: "protocol_tools",
     label: "Protocol (tool calls)",
     group: "Write protocol",
-    howTo: "Sent when the profile uses tool calls. It names the codex_write and codex_done tools the app registers, so those names must stay. It also defines the <think> scratchpad convention for models without native reasoning.",
+    howTo: "Sent when the profile uses tool calls and Update delivery is all records at once. It names the codex_write, codex_skip and codex_done tools the app registers, so those names must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more. It also defines the <think> scratchpad convention for models without native reasoning.",
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: tools_default
+  },
+  {
+    key: "protocol_tools_sequential",
+    label: "Protocol (tool calls, one file at a time)",
+    group: "Write protocol",
+    howTo: "Sent when the profile uses tool calls and Update delivery is one record at a time. Same tools and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: tools_sequential_default
   },
   {
     key: "protocol_json",
     label: "Protocol (JSON mode)",
     group: "Write protocol",
-    howTo: 'Sent when the profile writes strict JSON instead of tool calls. The reply is parsed for a "writes" array and a "done" flag, so that shape must stay.',
+    howTo: 'Sent when the profile writes strict JSON and Update delivery is all records at once. The reply is parsed for a "writes" array, a "skip" list and a "done" flag, so that shape must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more.',
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: json_default
+  },
+  {
+    key: "protocol_json_sequential",
+    label: "Protocol (JSON mode, one file at a time)",
+    group: "Write protocol",
+    howTo: "Sent when the profile writes strict JSON and Update delivery is one record at a time. Same shape and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: json_sequential_default
   },
   {
     key: "pass_update",
@@ -3776,6 +3896,7 @@ function makeDefaultProfile(id, name) {
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
+    codexWriteMode: "batch",
     codexPresetKey: "codex_default"
   };
 }
@@ -4724,6 +4845,7 @@ function renderOverview(host, state, send) {
   sec.body.appendChild(tiles);
   inflightBusyLabels.clear();
   if (streamWatch && streamWatch.chatId !== state.activeChatId) {
+    send({ type: "watch_stream", chatId: streamWatch.chatId, kind: streamWatch.kind, on: false });
     streamWatch = null;
     streamEls = null;
   }
@@ -6873,7 +6995,7 @@ function makeNameResolver(parsed) {
     return m2 ? m2[1].replace(/_/g, " ") : ref;
   };
 }
-var cache = { chatId: null, files: null, parsed: null, pending: false };
+var cache = { chatId: null, files: null, parsed: null, pending: false, revision: -1 };
 function resolveDraftIndex(list, draft) {
   if (draft.index < 0)
     return -1;
@@ -6987,11 +7109,12 @@ function rerender() {
     return;
   preserveScroll(a2.host, () => renderCodexTab(a2.host, a2.state, a2.ctx, a2.send));
 }
-function deliverCodexFiles(chatId, files, savedFile, savedSeq) {
+function deliverCodexFiles(chatId, files, revision, savedFile, savedSeq) {
   if (cache.chatId === chatId) {
     cache.files = files;
     cache.parsed = parseCodexFiles(files);
     cache.pending = false;
+    cache.revision = revision;
   }
   if (savedFile !== undefined && savedSeq !== undefined && pendingCodexSaves.get(savedFile) === savedSeq) {
     pendingCodexSaves.delete(savedFile);
@@ -7065,6 +7188,12 @@ function renderCodexTab(host, state, ctx, send) {
     pendingCodexSaves.clear();
   }
   if (!state.codexExists && cache.files) {
+    cache.files = null;
+    cache.parsed = null;
+  }
+  const stale = cache.files !== null && cache.revision !== state.codexRevision;
+  const editing = local.entityDraft !== null || local.recordDraft !== null || pendingCodexSaves.size > 0;
+  if (stale && !editing) {
     cache.files = null;
     cache.parsed = null;
   }
@@ -9207,6 +9336,18 @@ function renderCodexConnection(host, state, profile, patch) {
     hint: "Off by default: the agent writes one strict JSON reply, which every provider route can carry. Turn on for structured tool calls if your connection delivers them reliably.",
     onChange: (v) => patch({ codexUseTools: v })
   }), "tuning.codex.usetools"));
+  sec.body.appendChild(labelled("Update delivery", select({
+    value: profile.codexWriteMode,
+    options: [
+      { value: "batch", label: "All records at once" },
+      { value: "sequential", label: "One record at a time" }
+    ],
+    onChange: (v) => patch({ codexWriteMode: v === "sequential" ? "sequential" : "batch" })
+  })));
+  const seqHelp = document.createElement("div");
+  seqHelp.className = "lmb-help";
+  seqHelp.textContent = "Memoria always makes sure every record is dealt with before she accepts an update, so all at once is the cheaper choice and is fine for most models. Switch to one at a time if your model keeps getting cut off partway through a long answer.";
+  sec.body.appendChild(seqHelp);
   host.appendChild(sec.wrap);
 }
 function renderResetSettings(host, state, send) {
@@ -12533,6 +12674,7 @@ function buildFixture(variant) {
     codexStaleFiles: spec.codexStale ?? [],
     codexRefreshPending: [],
     codexFileTokens: spec.codex ? { ...CODEX_FILE_TOKENS } : {},
+    codexRevision: 0,
     lessons
   };
 }
@@ -13371,13 +13513,13 @@ function createLessonEngine(deps) {
         return;
       }
       if (m2.type === "codex_read") {
-        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles);
+        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0);
         scheduleDemoRerender(step);
         return;
       }
       if (m2.type === "codex_write_file") {
         active.codexFiles = { ...active.codexFiles, [m2.file]: m2.content };
-        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, m2.file, m2.seq);
+        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m2.file, m2.seq);
         showToast("success", `Memoria saved ${m2.file}.json`);
         scheduleDemoRerender(step);
         return;
@@ -13416,7 +13558,7 @@ function createLessonEngine(deps) {
     }
     if (m2.type === "codex_write_file") {
       active.codexFiles = { ...active.codexFiles, [m2.file]: m2.content };
-      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, m2.file, m2.seq);
+      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m2.file, m2.seq);
       showToast("success", `Memoria saved ${m2.file}.json`);
       markDoDone(step);
       scheduleDemoRerender(step);
@@ -14382,7 +14524,7 @@ function setup(ctx) {
         showDryRunModal(msg.kind, msg.messages, msg.diagnostics);
         break;
       case "codex_files":
-        deliverCodexFiles(msg.chatId, msg.files, msg.savedFile, msg.savedSeq);
+        deliverCodexFiles(msg.chatId, msg.files, msg.revision, msg.savedFile, msg.savedSeq);
         if (viewMode() === "tabs" && activeTab === "codex" && lastState)
           renderActive();
         else if (viewMode() === "lesson")

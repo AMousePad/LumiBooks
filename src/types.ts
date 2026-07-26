@@ -160,6 +160,9 @@ export interface FrontendState {
   codexRefreshPending: string[];
   /** Approx prompt tokens per codex file, priced on the rendered injection text. */
   codexFileTokens: Record<string, number>;
+  /** Bumped on every codex mutation; the Codex tab refetches file contents
+   * when it moves past the revision its cache was filled from. */
+  codexRevision: number;
   /** Lessons from Memoria progress, account-wide. */
   lessons: LessonsState;
 }
@@ -252,7 +255,7 @@ export type BackendToFrontend =
   | { type: "busy"; entries: BusyEntry[] }
   | { type: "error"; text: string }
   | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume" | "codex"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
-  | { type: "codex_files"; chatId: string; files: Record<string, string>; savedFile?: string; savedSeq?: number }
+  | { type: "codex_files"; chatId: string; files: Record<string, string>; revision: number; savedFile?: string; savedSeq?: number }
   | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean }
   /** A codex run died because the model narrated instead of tool-calling:
    * the frontend offers the JSON fallback once (unless suppressed). */

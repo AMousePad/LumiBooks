@@ -10,7 +10,7 @@ import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBindin
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
-import { getCodexFileTokens, getCodexPanelState, getCodexStatus } from "./codex/index";
+import { getCodexFileTokens, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
@@ -102,6 +102,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexStaleFiles: [],
     codexRefreshPending: [],
     codexFileTokens: {},
+    codexRevision: 0,
     lessons,
   };
 
@@ -253,6 +254,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexStaleFiles: codexPanel.staleFiles,
     codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens,
+    codexRevision: getCodexRevision(chat.id),
   };
 }
 

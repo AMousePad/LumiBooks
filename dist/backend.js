@@ -6,6 +6,9 @@ You see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
 - Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
 - Only correct a record the visible material actually contradicts.
+- One exception: a record that breaks the schema rules is always yours to fix,
+  whether or not the visible turns mention it. Malformed is not the same as
+  unfamiliar.
 - A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
 - Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
 
@@ -42,7 +45,12 @@ Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitiv
 fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
 and only its stable, medium-to-long-lived facts - never the state of the current
 scene. Never put relationship info on a sheet, that lives in relations.json. An
-entity carrying "locked": true is user-owned: never set or drop it.`;
+entity carrying "locked": true is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.`;
 
 // src/prompts/codex/schema/entities-inline.txt
 var entities_inline_default = `{{ENTITY_FILES}}
@@ -54,7 +62,13 @@ var entities_inline_default = `{{ENTITY_FILES}}
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
 fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
 facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it. Relationships live in each entity's "ties"
+is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.
+Relationships live in each entity's "ties"
 list as short present-tense notes - to other characters, to things, and to
 places alike. Do NOT write relations.json, it is disabled.
 Ties coverage (mandatory): record the story's FULL web, never a hub around one
@@ -112,7 +126,10 @@ timeline is APPEND-ONLY: record new events as set rows without a rid, and
 never rewrite or drop existing events - history does not change behind the
 story. Editing an existing row is reserved for an outright factual error or
 a reference the validator flags; removals happen only in reconcile or tidy
-passes.`;
+passes.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone or anywhere without one, write plain text instead: "the city guard",
+"a roadside inn", not "char:the guard".`;
 
 // src/prompts/codex/schema/threads.txt
 var threads_default = `threads.json
@@ -139,25 +156,48 @@ var knowledge_default = `knowledge.json
   "keywords": ["murder", "dagger", "duke"] } ] }
 ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
 item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
-belong in world or timeline, never here.`;
+belong in world or timeline, never here.
+"fact" is the TRUE THING, stated plainly and positively. Never write someone's
+ignorance as the fact - the ignorance is what hiddenFrom is for. So:
+  WRONG: fact "Lilian doesn't know Haru was in the stone room", knownBy Lilian
+  RIGHT: fact "Haru was held in the stone room", hiddenFrom Lilian
+An item with nobody in knownBy is fine: a secret only the reader has seen is
+still a secret.
+knownBy and hiddenFrom list WHO, nothing else. Just the person or group:
+"char:mara", "the household staff". Never a sentence about what they know
+("lilian does NOT know") - hiddenFrom already means they do not know. A name
+belongs in exactly one of the two lists, never both.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone without one - a group, a crowd, an unnamed bystander - write plain
+text instead: "the household staff", "everyone at court", not "char:the staff".
+Inventing a ref for something that has no sheet is the one error to avoid here.`;
 
 // src/prompts/codex/schema/keywords.txt
-var keywords_default = `Retrieval keywords (mandatory):
+var keywords_default = `Retrieval keywords (mandatory, hard limit 12):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-10 tags. Each record is stored as a separate lorebook entry and only enters the
-prompt when the recent story mentions one of its keywords, so a record with weak
-keywords effectively disappears. Rules:
-- Mix generality with specificity: most keywords are SINGLE words the story will
-  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
-  when the single word would be too ambiguous to pin this record ("north tower"
-  when several towers exist). Never longer than 2 words.
+4-12 tags. Each record is a separate lorebook entry that only enters the prompt
+when the recent story mentions one of its keywords. Anything past 12 is DISCARDED
+by the app, so a bloated list does not help retrieval, it just wastes your output.
+Rules:
+- ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
+  sentence fragments, no "the ..." constructions.
+- Single words the story will plausibly say: "locket", "duke", "tower", "murder".
+  Use two words only when one would be ambiguous ("north tower" when several
+  towers exist).
 - Concrete nouns tied to THIS record: places, objects, epithets, events.
-- One concept per keyword, retrievable when mentioned alone.
+- Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
+  A record that matches everything is a record that means nothing.
 - The record's own name, aliases, and topic (and a knowledge item's participants)
   match automatically - never repeat them as keywords.
-- No abstract themes (love, betrayal, tension), no filler verbs.
+- Never list other characters, other locations, or the whole cast: those records
+  carry their own keywords and will retrieve themselves.
+- No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
 - Keep keywords current: when a record's contents change, re-check its keywords.
-timeline.json and threads.json need no keywords, they are always in the prompt.`;
+
+Keywords are for FINDING the record, never for storing what it says. Every fact
+belongs in the record's own fields, written out in full.
+timeline.json and threads.json need no keywords, they are always in the prompt.
+`;
 
 // src/prompts/codex/protocol/patch-rules.txt
 var patch_rules_default = `- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.
@@ -169,17 +209,47 @@ var patch_rules_default = `- "set": rows to add or replace. Each row must be COM
 var tools_default = `Tools:
 - codex_write(file, set?, drop?, seeds?, content?): edit one file.
 {{PATCH_RULES}}
-- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when the codex is current.
+
+You must account for EVERY file. Each file is either written with codex_write or named in a codex_skip, and codex_done is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
 
 Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
   codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
   codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
   codex_done(note: "recorded Mara's flight and the locket's origin")
 
 Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
 A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.`;
+
+// src/prompts/codex/protocol/tools-sequential.txt
+var tools_sequential_default = `Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit ONE file.
+{{PATCH_RULES}}
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when every file has been written or skipped.
+
+You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Take them one file at a time. Write a single file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
+
+Example response (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+
+Example of finishing up, once everything else is already written:
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
+  codex_done(note: "recorded Mara's flight and the locket's origin")
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
+`;
 
 // src/prompts/codex/protocol/json.txt
 var json_default = `Output protocol (JSON only, no tools):
@@ -187,10 +257,13 @@ var json_default = `Output protocol (JSON only, no tools):
 Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
 
 After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
-{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": ["world"], "done": true, "note": "one short line on what changed" }
 "writes" holds one item per file you change. Each item may carry:
 {{PATCH_RULES}}
-- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.
+- "skip": the files that need no change from this material.
+- Set "done": true when the codex is current.
+
+You must account for EVERY file. Each file is either written in "writes" or named in "skip", and "done" is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
 <think>UPDATE - characters: none changed. relations: Mara moved to the docks, r2 outdated. timeline: her flight is a major event. knowledge: the locket's origin was revealed. SWEEP - r2 still claims the attic, rewrite it. COMPRESS - fold the two hideout phrases into one.</think>
@@ -198,10 +271,41 @@ Example reply (shape only, your rows should be far more detailed, probably 100-1
   { "file": "relations", "set": [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ] },
   { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] },
   { "file": "knowledge", "set": [ { "fact": "The silver locket was stolen from the duke's vault", "knownBy": ["char:elias"], "keywords": ["locket", "vault", "theft"] } ] }
-], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+], "skip": ["characters", "locations", "things", "threads", "world"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
 
 No prose outside the <think> block and the JSON object.
 A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.`;
+
+// src/prompts/codex/protocol/json-sequential.txt
+var json_sequential_default = `Output protocol (JSON only, no tools):
+
+You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
+
+Take them one file at a time. Put a SINGLE file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": [], "done": false }
+"writes" holds the file you are changing this reply. Each item may carry:
+{{PATCH_RULES}}
+- "skip": the files that need no change from this material.
+- "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
+
+Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+<think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
+{ "writes": [
+  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
+], "skip": [], "done": false }
+
+Example of finishing up, once everything else is already written:
+{ "writes": [], "skip": ["world", "knowledge"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
+`;
 
 // src/prompts/codex/passes/update.txt
 var update_default = `<<TASK>>
@@ -317,7 +421,7 @@ var CODEX_TEMPLATES = [
     key: "schema_keywords",
     label: "Retrieval keywords",
     group: "File schemas",
-    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages.",
+    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages. Too many does the opposite damage: the record matches everything and is always in the prompt. Memoria enforces a hard limit of 12 keywords of at most two words each and discards the rest, so keep this text in step with that.",
     vars: [],
     defaultText: keywords_default
   },
@@ -333,17 +437,33 @@ var CODEX_TEMPLATES = [
     key: "protocol_tools",
     label: "Protocol (tool calls)",
     group: "Write protocol",
-    howTo: "Sent when the profile uses tool calls. It names the codex_write and codex_done tools the app registers, so those names must stay. It also defines the <think> scratchpad convention for models without native reasoning.",
+    howTo: "Sent when the profile uses tool calls and Update delivery is all records at once. It names the codex_write, codex_skip and codex_done tools the app registers, so those names must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more. It also defines the <think> scratchpad convention for models without native reasoning.",
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: tools_default
+  },
+  {
+    key: "protocol_tools_sequential",
+    label: "Protocol (tool calls, one file at a time)",
+    group: "Write protocol",
+    howTo: "Sent when the profile uses tool calls and Update delivery is one record at a time. Same tools and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: tools_sequential_default
   },
   {
     key: "protocol_json",
     label: "Protocol (JSON mode)",
     group: "Write protocol",
-    howTo: 'Sent when the profile writes strict JSON instead of tool calls. The reply is parsed for a "writes" array and a "done" flag, so that shape must stay.',
+    howTo: 'Sent when the profile writes strict JSON and Update delivery is all records at once. The reply is parsed for a "writes" array, a "skip" list and a "done" flag, so that shape must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more.',
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: json_default
+  },
+  {
+    key: "protocol_json_sequential",
+    label: "Protocol (JSON mode, one file at a time)",
+    group: "Write protocol",
+    howTo: "Sent when the profile writes strict JSON and Update delivery is one record at a time. Same shape and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: json_sequential_default
   },
   {
     key: "pass_update",
@@ -589,6 +709,7 @@ function makeDefaultProfile(id, name) {
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
+    codexWriteMode: "batch",
     codexPresetKey: "codex_default"
   };
 }
@@ -689,6 +810,7 @@ function normalizeProfile(raw) {
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
     codexSamplers: normalizeSamplers(v.codexSamplers),
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
+    codexWriteMode: v.codexWriteMode === "sequential" ? "sequential" : "batch",
     codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey
   };
 }
@@ -2226,7 +2348,25 @@ function orderEntries(coverage, msgIdToIdx) {
   ordered.sort((a, b) => a.firstIdx - b.firstIdx);
   return ordered;
 }
+var stageByChat = new Map;
+var STAGE_CAP = 200;
+function lastInjectionStage(chatId) {
+  const s = stageByChat.get(chatId);
+  return s ? `${s.stage} (${Date.now() - s.at}ms in)` : "not started";
+}
 async function buildInjection(chatId, llmMessages, userId) {
+  const started = Date.now();
+  const stage = (name) => {
+    stageByChat.delete(chatId);
+    stageByChat.set(chatId, { stage: name, at: started });
+    while (stageByChat.size > STAGE_CAP) {
+      const oldest = stageByChat.keys().next().value;
+      if (oldest === undefined)
+        break;
+      stageByChat.delete(oldest);
+    }
+  };
+  stage("reading the lorebook");
   const [activated, allEntries, attachedBookIds] = await Promise.all([
     spindle.world_books.getActivated(chatId, userId).catch(() => null),
     listLmbEntries(chatId, userId),
@@ -2239,6 +2379,7 @@ async function buildInjection(chatId, llmMessages, userId) {
   const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
   const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
   const entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
+  stage("working out what is already covered");
   const coverage = await buildCoverage(chatId, userId, entriesForCoverage);
   if (coverage.activeEntries.length === 0)
     return null;
@@ -2278,6 +2419,7 @@ async function buildInjection(chatId, llmMessages, userId) {
   }
   let msgIdToIdx;
   if (anyCovered || missingIdx) {
+    stage("reading the chat");
     let chatMessages;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -2307,6 +2449,7 @@ async function buildInjection(chatId, llmMessages, userId) {
   } else {
     msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx]));
   }
+  stage("placing the memories");
   const ordered = orderEntries(coverage, msgIdToIdx);
   if (ordered.length === 0)
     return null;
@@ -2402,6 +2545,32 @@ function emptyBundle() {
 }
 function bundleIsEmpty(bundle) {
   return bundle.characters.entities.length === 0 && bundle.locations.entities.length === 0 && bundle.things.entities.length === 0 && bundle.relations.relations.length === 0 && bundle.timeline.events.length === 0 && bundle.threads.threads.length === 0 && bundle.threads.seeds.length === 0 && bundle.world.entries.length === 0 && bundle.knowledge.items.length === 0;
+}
+var KEYWORD_LIMIT = 12;
+var KEYWORD_MAX_WORDS = 2;
+var KEYWORD_MAX_CHARS = 40;
+function keywordArray(ctx, v, path, reserved) {
+  const raw = strArray(ctx, v, path);
+  if (!raw)
+    return;
+  const skip = new Set(reserved.map((r) => r.toLowerCase()));
+  const seen = new Set;
+  const out = [];
+  let dropped = 0;
+  for (const k of raw) {
+    const key = k.toLowerCase();
+    const tooLong = k.length > KEYWORD_MAX_CHARS || k.split(/\s+/).length > KEYWORD_MAX_WORDS;
+    if (tooLong || seen.has(key) || skip.has(key) || out.length >= KEYWORD_LIMIT) {
+      dropped++;
+      continue;
+    }
+    seen.add(key);
+    out.push(k);
+  }
+  if (dropped > 0) {
+    ctx.notes.push(`${path}: kept ${out.length} of ${raw.length}, dropped the rest as duplicates, over ${KEYWORD_MAX_WORDS} words, already matched by the record's own name, or past the ${KEYWORD_LIMIT} keyword limit`);
+  }
+  return out.length ? out : undefined;
 }
 function fail(errors) {
   return { ok: false, errors };
@@ -2519,7 +2688,7 @@ function ridOf(ctx, v, path) {
   return v.trim().slice(0, 24);
 }
 function validateEntityFile(key, raw, opts) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, key);
   if (!root)
     return fail(ctx.errors);
@@ -2565,11 +2734,14 @@ function validateEntityFile(key, raw, opts) {
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
       ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }
-    for (const f of ["traits", "goals", "keywords"]) {
+    for (const f of ["traits", "goals"]) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
       if (v)
         out[f] = v;
     }
+    const kw = keywordArray(ctx, e["keywords"], `${path}.keywords`, [name, ...out.aliases ?? []]);
+    if (kw)
+      out.keywords = kw;
     const ties = strArray(ctx, e["ties"], `${path}.ties`);
     if (ties) {
       if (opts.relationsTable && !out.locked) {
@@ -2583,10 +2755,10 @@ function validateEntityFile(key, raw, opts) {
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { entities } };
+  return { ok: true, value: { entities }, notes: ctx.notes };
 }
 function validateRelationsFile(raw, opts) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "relations");
   if (!root)
     return fail(ctx.errors);
@@ -2661,10 +2833,10 @@ function validateRelationsFile(raw, opts) {
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { relations } };
+  return { ok: true, value: { relations }, notes: ctx.notes };
 }
 function validateTimelineFile(raw) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "timeline");
   if (!root)
     return fail(ctx.errors);
@@ -2690,10 +2862,10 @@ function validateTimelineFile(raw) {
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { events } };
+  return { ok: true, value: { events }, notes: ctx.notes };
 }
 function validateThreadsFile(raw) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "threads");
   if (!root)
     return fail(ctx.errors);
@@ -2722,10 +2894,10 @@ function validateThreadsFile(raw) {
   const seeds = strArray(ctx, root["seeds"], "seeds") ?? [];
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { threads, seeds } };
+  return { ok: true, value: { threads, seeds }, notes: ctx.notes };
 }
 function validateWorldFile(raw) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "world");
   if (!root)
     return fail(ctx.errors);
@@ -2741,15 +2913,15 @@ function validateWorldFile(raw) {
       ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
       continue;
     }
-    const keywords = strArray(ctx, e["keywords"], `${path}.keywords`);
+    const keywords = keywordArray(ctx, e["keywords"], `${path}.keywords`, [topic]);
     entries.push({ ...rid ? { rid } : {}, topic, facts, ...keywords ? { keywords } : {} });
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { entries } };
+  return { ok: true, value: { entries }, notes: ctx.notes };
 }
 function validateKnowledgeFile(raw) {
-  const ctx = { errors: [] };
+  const ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "knowledge");
   if (!root)
     return fail(ctx.errors);
@@ -2782,9 +2954,17 @@ function validateKnowledgeFile(raw) {
     const note = str(ctx, k["note"], `${path}.note`, false);
     if (note)
       out.note = note;
-    const keywords = strArray(ctx, k["keywords"], `${path}.keywords`);
+    const keywords = keywordArray(ctx, k["keywords"], `${path}.keywords`, []);
     if (keywords)
       out.keywords = keywords;
+    if (out.knownBy && out.hiddenFrom) {
+      const known = new Set(out.knownBy.map((s) => s.toLowerCase()));
+      const both = out.hiddenFrom.filter((s) => known.has(s.toLowerCase()));
+      if (both.length) {
+        ctx.errors.push(`${path}: ${both.join(", ")} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as "fact", then list who knows it and who it is hidden from - never write the ignorance as the fact`);
+        continue;
+      }
+    }
     if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
       ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
       continue;
@@ -2793,7 +2973,7 @@ function validateKnowledgeFile(raw) {
   }
   if (ctx.errors.length)
     return fail(ctx.errors);
-  return { ok: true, value: { items } };
+  return { ok: true, value: { items }, notes: ctx.notes };
 }
 function validateCodexFile(key, raw, opts) {
   switch (key) {
@@ -2856,7 +3036,7 @@ function formatDangling(d) {
 function checkIntegrity(bundle) {
   return collectDangling(bundle).map(formatDangling);
 }
-function newDanglingErrors(bundle, tolerate) {
+function newDangling(bundle, tolerate) {
   const used = new Map;
   const out = [];
   for (const d of collectDangling(bundle)) {
@@ -2866,9 +3046,54 @@ function newDanglingErrors(bundle, tolerate) {
     used.set(key, spent + 1);
     if (spent < budget)
       continue;
-    out.push(formatDangling(d));
+    out.push(d);
   }
   return out;
+}
+function danglingKey(d) {
+  return `${d.file}::${d.ref}`;
+}
+function formatDanglingRef(d) {
+  return formatDangling(d);
+}
+function newDanglingErrors(bundle, tolerate) {
+  return newDangling(bundle, tolerate).map(formatDangling);
+}
+function repairDanglingRefs(bundle, files) {
+  const ids = collectEntityIds(bundle);
+  const fixed = [];
+  const fix = (ref, path) => {
+    if (!looksLikeEntityRef(ref) || ids.has(ref))
+      return ref;
+    const plain = ref.slice(ref.indexOf(":") + 1).replace(/_/g, " ").trim();
+    if (!plain)
+      return ref;
+    fixed.push(`${path}: "${ref}" was not a known entity, recorded as "${plain}"`);
+    return plain;
+  };
+  if (files.has("knowledge")) {
+    bundle.knowledge.items.forEach((k, i) => {
+      if (k.knownBy)
+        k.knownBy = k.knownBy.map((w) => fix(w, `knowledge items[${i}].knownBy`));
+      if (k.hiddenFrom)
+        k.hiddenFrom = k.hiddenFrom.map((w) => fix(w, `knowledge items[${i}].hiddenFrom`));
+      (k.falseBeliefs ?? []).forEach((b, j) => {
+        b.who = fix(b.who, `knowledge items[${i}].falseBeliefs[${j}].who`);
+      });
+    });
+  }
+  if (files.has("timeline")) {
+    bundle.timeline.events.forEach((e, i) => {
+      if (e.participants)
+        e.participants = e.participants.map((p) => fix(p, `timeline events[${i}].participants`));
+      if (e.where)
+        e.where = fix(e.where, `timeline events[${i}].where`);
+    });
+  }
+  return fixed;
+}
+function newDanglingFiles(bundle, tolerate) {
+  return new Set(newDangling(bundle, tolerate).map((d) => d.file));
 }
 function danglingRefCounts(bundle) {
   const m = new Map;
@@ -4617,6 +4842,7 @@ function makeCodexPromptCtx(profile, customPresets, frozenFiles) {
     activeFiles: new Set(CODEX_FILE_KEYS.filter((k) => !frozenFiles.has(k))),
     relationsTable: profile.codexRelationsTable,
     useTools: profile.codexUseTools,
+    sequential: profile.codexWriteMode === "sequential",
     directives: findPresetText(profile, customPresets, "codex"),
     overrides: preset?.templates ?? {}
   };
@@ -4651,7 +4877,8 @@ function schemaBlock(ctx) {
 }
 function protocolBlock(ctx) {
   const patchRules = tpl(ctx, "protocol_patch_rules");
-  return fillPrompt(tpl(ctx, ctx.useTools ? "protocol_tools" : "protocol_json"), { PATCH_RULES: patchRules });
+  const key = ctx.useTools ? ctx.sequential ? "protocol_tools_sequential" : "protocol_tools" : ctx.sequential ? "protocol_json_sequential" : "protocol_json";
+  return fillPrompt(tpl(ctx, key), { PATCH_RULES: patchRules });
 }
 function buildCodexSystemPrompt(ctx) {
   return [ctx.directives, "", schemaBlock(ctx), "", protocolBlock(ctx)].join(`
@@ -4823,7 +5050,7 @@ ${books.join(`
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push(ctx.useTools ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds." : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
+  parts.push(ctx.useTools ? `Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite)${ctx.sequential ? ", one file per response" : ""}, name every file that still holds in codex_skip, then call codex_done.` : `Sweep now. Respond with a JSON object: corrections in "writes"${ctx.sequential ? ", one file per reply" : ""}, every file that still holds in "skip", and "done": true once all of them are accounted for.`);
   return parts.join(`
 
 `);
@@ -4857,7 +5084,7 @@ ${books.join(`
     parts.push(tailTranscript);
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
-  parts.push(ctx.useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  parts.push(ctx.useTools ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}, then call codex_done.` : `Rewrite the target files now, each as full "content" in "writes"${ctx.sequential ? ", one per reply" : ""}, and set "done": true.`);
   return parts.join(`
 
 `);
@@ -4886,7 +5113,7 @@ ${books.join(`
     parts.push(tailTranscript);
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
-  parts.push(ctx.useTools ? "Rewrite the target files now, then call codex_done." : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+  parts.push(ctx.useTools ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}, then call codex_done.` : `Rewrite the target files now, each as full "content" in "writes"${ctx.sequential ? ", one per reply" : ""}, and set "done": true.`);
   return parts.join(`
 
 `);
@@ -4904,13 +5131,13 @@ function buildCodexTidyMessage(ctx, bundle, targets) {
   }
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
   parts.push(...currentCodexParts(bundle, ctx));
-  parts.push(ctx.useTools ? "Rewrite the target files now. Write only files you actually improved, then call codex_done." : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
+  parts.push(ctx.useTools ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}. Write only files you actually improved, skip the rest, then call codex_done.` : `Rewrite the target files now${ctx.sequential ? ", one per reply" : ""}. Put only files you actually improved in "writes", the rest in "skip", and set "done": true.`);
   return parts.join(`
 
 `);
 }
 function verifyNudge(ctx) {
-  return tpl(ctx, "pass_verify") + " " + (ctx.useTools ? "Resend corrections if you find anything, otherwise call codex_done." : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.');
+  return tpl(ctx, "pass_verify") + " " + (ctx.useTools ? "Resend corrections if you find anything, then call codex_done. Every file is already accounted for, so codex_done alone ends the pass." : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true. Every file is already accounted for, so no "skip" is needed.');
 }
 function entityLine(e) {
   const bits = [];
@@ -5846,6 +6073,13 @@ function setBusy(userId, chatId, kind, label) {
   progressState.set(key2, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key2);
   streamLastPush.delete(key2);
+  capMap(streamBufs, STREAM_MAP_CAP);
+  while (streamWatchers.size > STREAM_MAP_CAP) {
+    const oldest = streamWatchers.values().next().value;
+    if (oldest === undefined)
+      break;
+    streamWatchers.delete(oldest);
+  }
   const list = busyByUser.get(userId) ?? [];
   list.push(entry);
   busyByUser.set(userId, list);
@@ -5861,12 +6095,8 @@ function clearBusy(userId, chatId, kind) {
   progressState.delete(key2);
   if (streamWatchers.has(key2)) {
     const buf = streamBufs.get(key2);
-    cb?.onStreamText(userId, chatId, kind, {
-      content: buf?.content ?? "",
-      thinking: buf?.thinking ?? "",
-      running: false
-    });
-    streamWatchers.delete(key2);
+    if (buf)
+      cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: false });
   }
   streamLastPush.delete(key2);
   const fresh = [];
@@ -5947,6 +6177,7 @@ var streamBufs = new Map;
 var streamWatchers = new Set;
 var streamLastPush = new Map;
 var STREAM_PUSH_INTERVAL_MS = 350;
+var STREAM_MAP_CAP = 50;
 var STREAM_BUF_CAP = 200000;
 function capStreamPart(s) {
   if (s.length <= STREAM_BUF_CAP)
@@ -7136,6 +7367,13 @@ class ToolProtocolError extends Error {
   }
 }
 
+class CodexValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CodexValidationError";
+  }
+}
+
 class CodexContextError extends Error {
   constructor(promptTokens, maxInputTokens) {
     super(`The assembled codex prompt is ~${Math.round(promptTokens / 1000)}k tokens but the codex max input is ${Math.round(maxInputTokens / 1000)}k, so Memoria stopped instead of sending a request that would fail or be silently cut. ` + "Raise Max input tokens under Tuning > Connection > Codex, or in Tuning > Settings > Codex lower the window, Chapters provided, or the lore limit, or freeze records in Codex > Overview.");
@@ -7146,11 +7384,13 @@ function codexMaxInputTokens(profile) {
   return profile.codexSamplers.max_input_tokens ?? CODEX_SAMPLER_DEFAULTS.max_input_tokens;
 }
 var CACHE_EPHEMERAL = { type: "ephemeral" };
-function codexTools(activeFiles) {
-  return [
+var INTEGRITY_ROUNDS = 3;
+var COVERAGE_NUDGES = 3;
+function codexTools(activeFiles, sequential) {
+  const tools = [
     {
       name: "codex_write",
-      description: "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
+      description: sequential ? "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. One file per call. If writing every remaining file at once would be a strain, write one and you will be asked for the next." : "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
       parameters: {
         type: "object",
         properties: {
@@ -7180,7 +7420,7 @@ function codexTools(activeFiles) {
     },
     {
       name: "codex_done",
-      description: "Declare the codex current. Call it alongside your writes, or alone when nothing durable changed.",
+      description: "Declare the codex current. Only honored once every file has been written or skipped.",
       parameters: {
         type: "object",
         properties: {
@@ -7190,6 +7430,19 @@ function codexTools(activeFiles) {
       }
     }
   ];
+  tools.push({
+    name: "codex_skip",
+    description: "Declare that the listed files need no change from this material. List several at once when several are genuinely unaffected. Skipping a file the story did change loses that information permanently.",
+    parameters: {
+      type: "object",
+      properties: {
+        files: { type: "array", items: { type: "string", enum: [...activeFiles] }, description: "The files that need no change." },
+        reason: { type: "string", description: "One short line on why nothing changed." }
+      },
+      required: ["files"]
+    }
+  });
+  return tools;
 }
 async function resolveCodexConnection(profile, userId) {
   if (profile.codexConnectionId) {
@@ -7249,7 +7502,7 @@ function assistantTurn(content, toolCalls) {
 }
 function parseJsonModeCalls(raw) {
   const objs = parseLooseJsonObjects(raw);
-  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || o["done"] === true);
+  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || Array.isArray(o["skip"]) || o["done"] === true);
   const obj = envelopes.length ? envelopes[envelopes.length - 1] : objs[0] ?? null;
   if (!obj)
     return [];
@@ -7259,6 +7512,10 @@ function parseJsonModeCalls(raw) {
     const args = w && typeof w === "object" && !Array.isArray(w) ? w : {};
     calls.push({ call_id: `json_w${i}`, name: "codex_write", args });
   });
+  const skip = Array.isArray(obj["skip"]) ? obj["skip"] : [];
+  if (skip.length) {
+    calls.push({ call_id: "json_skip", name: "codex_skip", args: { files: skip } });
+  }
   if (obj["done"] === true) {
     const args = typeof obj["note"] === "string" ? { note: obj["note"] } : {};
     calls.push({ call_id: "json_done", name: "codex_done", args });
@@ -7377,7 +7634,7 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
     }
     lockedFieldsKept.push(...restoreLockedFields(file, value2, current));
     assignMissingRids(file, value2);
-    return { value: value2, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
+    return { value: value2, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result2.notes };
   }
   if (!hasPatch) {
     return { errors: ["empty write: provide set, drop, seeds, or content"], lockedKept, lockedFieldsKept, dropMisses, archivedKept };
@@ -7502,14 +7759,18 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   }
   lockedFieldsKept.push(...restoreLockedFields(file, value, current));
   assignMissingRids(file, value);
-  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
+  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
 }
 async function runCodexAgent(opts) {
   const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
-  const maxRounds = profile.codexThorough ? 4 : 3;
   const useTools = promptCtx.useTools;
-  const tools = useTools ? codexTools([...promptCtx.activeFiles]) : null;
+  const sequential = promptCtx.sequential;
+  const skipPhrase = useTools ? "call codex_skip" : 'name them in "skip"';
+  const donePhrase = useTools ? "Then call codex_done." : 'Set "done": true once everything is accounted for.';
+  const coverage = new Set((opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k)));
+  const maxRounds = coverage.size + COVERAGE_NUDGES + (profile.codexThorough ? 4 : 3);
+  const tools = useTools ? codexTools([...promptCtx.activeFiles], sequential) : null;
   const system = await resolveSystemMacros(buildCodexSystemPrompt(promptCtx), chatId, userId);
   const userText = opts.userTextOverride ?? buildCodexUserMessage(promptCtx, opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar);
   const maxInput = codexMaxInputTokens(profile);
@@ -7533,6 +7794,28 @@ async function runCodexAgent(opts) {
   let unresolvedErrors = false;
   const rejectedFiles = new Set;
   let rounds = 0;
+  const remaining = new Set(coverage);
+  let jsonRetryUsed = false;
+  let coverageNudges = 0;
+  let lastNudgeRemaining = Number.POSITIVE_INFINITY;
+  const danglingSeen = new Set;
+  let prevDanglingCount = Number.POSITIVE_INFINITY;
+  let integrityRounds = 0;
+  const persistClean = async () => {
+    const broken = newDanglingFiles(working, baselineDangling);
+    const clean = [...changed].filter((k) => !rejectedFiles.has(k) && !broken.has(k));
+    const saved = [];
+    for (const key2 of clean) {
+      try {
+        await saveCodexFile(chatId, key2, working[key2], userId);
+        saved.push(key2);
+      } catch (err) {
+        warn(`codex: failed to persist ${key2}.json from a failed run: ${describeError(err)}`);
+      }
+    }
+    return saved;
+  };
+  const keptSuffix = (saved) => saved.length ? ` Memoria kept the ${saved.length} record${saved.length === 1 ? "" : "s"} she finished and will try the rest next time.` : "";
   while (rounds < maxRounds) {
     if (opts.externalSignal.aborted)
       throw new AbortedSummarizerError;
@@ -7574,6 +7857,10 @@ async function runCodexAgent(opts) {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` \u2014 ${call.args["note"].trim()}` : "";
         opts.onDelta?.("text", `
 \u2726 codex_done${note}`);
+      } else if (call.name === "codex_skip") {
+        const files = Array.isArray(call.args["files"]) ? call.args["files"].filter((f) => typeof f === "string") : [];
+        opts.onDelta?.("text", `
+\u25CB codex_skip ${files.length ? files.map((f) => `${f}.json`).join(", ") : "(no files)"}`);
       } else {
         opts.onDelta?.("text", `
 \u2717 unknown tool ${call.name}`);
@@ -7583,14 +7870,43 @@ async function runCodexAgent(opts) {
       if (rounds === 1 && !round.content.trim()) {
         throw new Error("The codex agent returned an empty response");
       }
+      if (!useTools && !jsonRetryUsed && rounds < maxRounds && round.content.trim()) {
+        jsonRetryUsed = true;
+        opts.onDelta?.("text", `
+\u2717 no JSON object found in the reply, asking for a resend`);
+        conv.push({ role: "assistant", content: round.content });
+        conv.push({
+          role: "user",
+          content: "No JSON object could be parsed from that reply. Send the update again as exactly ONE JSON object" + ' with "writes" and "done", and nothing outside it except an optional <think> block.' + " Do not wrap it in prose and do not truncate it."
+        });
+        continue;
+      }
       if (unresolvedErrors) {
-        throw new Error(rejectedFiles.size > 0 ? "The codex agent abandoned a rejected write instead of correcting it" : "The codex agent left an unresolved integrity error instead of correcting it");
+        const saved = await persistClean();
+        throw new CodexValidationError("Memoria couldn't finish the codex update because the model gave up instead of fixing a record she rejected." + keptSuffix(saved));
       }
       if (changed.size === 0) {
         if (useTools) {
           throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
         }
         throw new Error("The codex agent replied without a parsable JSON update");
+      }
+      if (remaining.size > 0) {
+        if (remaining.size < lastNudgeRemaining)
+          coverageNudges = 0;
+        if (coverageNudges < COVERAGE_NUDGES && rounds < maxRounds) {
+          coverageNudges++;
+          lastNudgeRemaining = remaining.size;
+          const said = round.content.trim() || "(no reply)";
+          conv.push(useTools ? assistantTurn(said, []) : { role: "assistant", content: said });
+          conv.push({
+            role: "user",
+            content: `Still to account for: ${[...remaining].map((k) => `${k}.json`).join(", ")}.` + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.` + ` ${donePhrase}`
+          });
+          continue;
+        }
+        const saved = await persistClean();
+        throw new CodexValidationError(`Memoria couldn't finish the codex update, the model stopped before writing ${[...remaining].join(", ")}.` + keptSuffix(saved));
       }
       break;
     }
@@ -7602,8 +7918,19 @@ async function runCodexAgent(opts) {
         doneCalls.push(call);
         continue;
       }
+      if (call.name === "codex_skip") {
+        const raw = call.args["files"];
+        const files = (Array.isArray(raw) ? raw : [raw]).filter((f) => isCodexFileKey(f) && !frozen.has(f));
+        if (files.length === 0) {
+          outcomes.push({ callId: call.call_id, file: null, errors: [`files: expected one or more of ${[...remaining].join(", ")}`] });
+          continue;
+        }
+        const cleared = files.filter((f) => remaining.delete(f));
+        outcomes.push({ callId: call.call_id, file: null, errors: [], skipCleared: cleared });
+        continue;
+      }
       if (call.name !== "codex_write") {
-        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist - resend the payload through codex_write`] });
+        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write, codex_skip and codex_done exist - resend the payload through codex_write`] });
         continue;
       }
       const fileRaw = call.args["file"];
@@ -7612,6 +7939,7 @@ async function runCodexAgent(opts) {
         continue;
       }
       if (frozen.has(fileRaw)) {
+        remaining.delete(fileRaw);
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
@@ -7623,6 +7951,7 @@ async function runCodexAgent(opts) {
       }
       working[fileRaw] = staged.value;
       changed.add(fileRaw);
+      remaining.delete(fileRaw);
       rejectedFiles.delete(fileRaw);
       outcomes.push({
         callId: call.call_id,
@@ -7631,7 +7960,8 @@ async function runCodexAgent(opts) {
         ...staged.lockedKept.length ? { lockedKept: staged.lockedKept } : {},
         ...staged.lockedFieldsKept.length ? { lockedFieldsKept: staged.lockedFieldsKept } : {},
         ...staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {},
-        ...staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}
+        ...staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {},
+        ...staged.notes?.length ? { trimmed: staged.notes } : {}
       });
     }
     let sawDone = false;
@@ -7644,13 +7974,43 @@ async function runCodexAgent(opts) {
         });
         continue;
       }
+      if (remaining.size > 0) {
+        outcomes.push({
+          callId: call.call_id,
+          file: null,
+          errors: [
+            `Not yet. These files have not been written or skipped: ${[...remaining].map((k) => `${k}.json`).join(", ")}.` + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.`
+          ]
+        });
+        continue;
+      }
       sawDone = true;
       const note = call.args["note"];
       if (typeof note === "string" && note.trim())
         doneNote = note.trim();
       outcomes.push({ callId: call.call_id, file: null, errors: [] });
     }
-    const integrityErrors = newDanglingErrors(working, baselineDangling);
+    let dangling = remaining.size === 0 ? newDangling(working, baselineDangling) : [];
+    if (dangling.length > 0) {
+      integrityRounds++;
+      const stalled = dangling.length >= prevDanglingCount;
+      const outOfRoad = integrityRounds >= INTEGRITY_ROUNDS || rounds >= maxRounds - 1;
+      if (stalled || outOfRoad) {
+        const stubborn = dangling.filter((d) => danglingSeen.has(danglingKey(d)));
+        if (stubborn.length > 0) {
+          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file)));
+          for (const r of fixed)
+            opts.onDelta?.("text", `
+\u2933 ${r}`);
+          if (fixed.length > 0)
+            dangling = newDangling(working, baselineDangling);
+        }
+      }
+      prevDanglingCount = dangling.length;
+      for (const d of dangling)
+        danglingSeen.add(danglingKey(d));
+    }
+    const integrityErrors = dangling.map(formatDanglingRef);
     for (const o of outcomes) {
       if (o.errors.length)
         opts.onDelta?.("text", `
@@ -7671,19 +8031,29 @@ async function runCodexAgent(opts) {
         bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
       if (o.archivedKept?.length)
         bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
+      if (o.trimmed?.length)
+        bits.push(`${o.trimmed.join("; ")} - send only the few strongest keywords next time`);
       return bits.length ? ` (${bits.join("; ")})` : "";
+    };
+    const okNote = (o) => {
+      if (o.skipCleared) {
+        return o.skipCleared.length ? `noted, left unchanged: ${o.skipCleared.map((k) => `${k}.json`).join(", ")}` : "already accounted for";
+      }
+      if (o.skipped)
+        return `skipped, ${o.file}.json is frozen by the user - do not resend it`;
+      return o.file ? `ok, staged${lockedNote(o)}` : "ok";
     };
     const resultParts = outcomes.map((o) => ({
       type: "tool_result",
       tool_use_id: o.callId,
       content: o.errors.length ? `REJECTED, nothing from this write was staged - resend it corrected in full:
 ${o.errors.join(`
-`)}` : o.skipped ? `skipped, ${o.file}.json is frozen by the user - do not resend it` : o.file ? `ok, staged${lockedNote(o)}` : "ok",
+`)}` : okNote(o),
       ...o.errors.length ? { is_error: true } : {}
     }));
     const feedbackLines = outcomes.map((o) => o.errors.length ? `REJECTED ${o.file ? `${o.file}.json` : "write"}, nothing from it was staged - resend it corrected in full:
 ${o.errors.join(`
-`)}` : o.skipped ? `${o.file}.json skipped, it is frozen by the user - do not resend it` : o.file ? `${o.file}.json staged.${lockedNote(o)}` : "done acknowledged.");
+`)}` : o.file || o.skipCleared ? `${o.file ? `${o.file}.json ` : ""}${okNote(o)}` : "done acknowledged.");
     const pushFeedback = (extra) => {
       if (useTools) {
         if (extra)
@@ -7696,7 +8066,7 @@ ${o.errors.join(`
       }
     };
     if (!hadErrors) {
-      const wantVerify = profile.codexThorough && changed.size > 0 && !verifyRequested && !opts.skipVerify;
+      const wantVerify = profile.codexThorough && sawDone && changed.size > 0 && !verifyRequested && !opts.skipVerify;
       if (sawDone && !wantVerify) {
         if (useTools)
           conv.push({ role: "user", content: resultParts });
@@ -7705,6 +8075,10 @@ ${o.errors.join(`
       if (wantVerify) {
         verifyRequested = true;
         pushFeedback(verifyNudge(promptCtx));
+        continue;
+      }
+      if (remaining.size > 0) {
+        pushFeedback(`Still to account for: ${[...remaining].map((k) => `${k}.json`).join(", ")}.` + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.` + ` ${donePhrase}`);
         continue;
       }
       const roundStaged = outcomes.some((o) => o.file !== null && !o.skipped && o.errors.length === 0);
@@ -7722,16 +8096,27 @@ ${integrityErrors.join(`
 
 `));
     if (rounds >= maxRounds) {
-      const remaining = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
-      throw new Error(`Codex update failed validation after ${rounds} rounds: ${remaining.slice(0, 3).join("; ")}`);
+      const left = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
+      const saved = await persistClean();
+      throw new CodexValidationError(`Memoria couldn't finish the codex update after ${rounds} tries. The model kept sending records she can't accept: ${left.slice(0, 3).join(", ")}.${keptSuffix(saved)}`);
     }
   }
   if (rejectedFiles.size > 0) {
-    throw new Error(`Codex run ended with unresolved rejections: ${[...rejectedFiles].join(", ")}`);
+    const saved = await persistClean();
+    throw new CodexValidationError(`Memoria couldn't finish the codex update, these records were never corrected: ${[...rejectedFiles].join(", ")}.${keptSuffix(saved)}`);
   }
+  if (remaining.size > 0) {
+    const saved = await persistClean();
+    throw new CodexValidationError(`Memoria couldn't finish the codex update, the model never wrote ${[...remaining].join(", ")}.${keptSuffix(saved)}`);
+  }
+  const repaired = repairDanglingRefs(working, new Set(changed));
+  for (const r of repaired)
+    opts.onDelta?.("text", `
+\u2933 ${r}`);
   const finalIntegrity = newDanglingErrors(working, baselineDangling);
   if (finalIntegrity.length) {
-    throw new Error(`Codex left dangling references: ${finalIntegrity.slice(0, 3).join("; ")}`);
+    const saved = await persistClean();
+    throw new CodexValidationError(`Memoria couldn't finish the codex update, some records point at people or places that don't exist: ${finalIntegrity.slice(0, 3).join(", ")}.${keptSuffix(saved)}`);
   }
   if (opts.notes.migrateToTable) {
     const leftover = ["characters", "locations", "things"].filter((k) => working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0));
@@ -7766,7 +8151,7 @@ ${integrityErrors.join(`
 
 // src/backend/codex/index.ts
 function reportCodexFailure(userId, chatId, verb, err) {
-  if (err instanceof CodexContextError) {
+  if (err instanceof CodexContextError || err instanceof CodexValidationError) {
     cb2?.onToast(userId, "error", err.message);
     return;
   }
@@ -8071,7 +8456,10 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
   const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
   diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
-  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls (codex_write / codex_done)" : "strict JSON"}` });
+  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls" : "strict JSON"}` });
+  diagnostics.push({
+    message: `Update delivery: ${promptCtx.sequential ? "one record per reply" : "all records in one reply"}` + `, and every record must be written or skipped before Memoria accepts the update (${[...promptCtx.activeFiles].length} to cover)`
+  });
   diagnostics.push({
     message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`
   });
@@ -8574,10 +8962,21 @@ var INJECTION_CACHE_TTL_MS = 60000;
 var INJECTION_CACHE_CAP = 200;
 var injectionTextCache = new Map;
 var fileTokensCache = new Map;
+var codexRevisions = new Map;
+function getCodexRevision(chatId) {
+  return codexRevisions.get(chatId) ?? 0;
+}
 function invalidateCodexInjectionCache(chatId) {
   if (chatId) {
     injectionTextCache.delete(chatId);
     fileTokensCache.delete(chatId);
+    codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
+    while (codexRevisions.size > INJECTION_CACHE_CAP) {
+      const oldest = codexRevisions.keys().next().value;
+      if (oldest === undefined || oldest === chatId)
+        break;
+      codexRevisions.delete(oldest);
+    }
   } else {
     injectionTextCache.clear();
     fileTokensCache.clear();
@@ -8805,6 +9204,7 @@ async function runCodexTidy(chatId, profile, userId, only) {
       lore: null,
       storySoFar: null,
       userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -8875,6 +9275,7 @@ async function refreshCodexFiles(chatId, profile, userId) {
       lore,
       storySoFar: null,
       userTextOverride: buildCodexRefreshMessage(promptCtx, bundle, targets, books, tailTranscript, notes, lore),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -8967,6 +9368,7 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
       lore,
       storySoFar: null,
       userTextOverride: buildCodexRebuildMessage(promptCtx, promptBundle, targets, books, tailTranscript, notes, lore),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -9177,6 +9579,7 @@ async function buildState(userId, requestedChatId) {
     codexStaleFiles: [],
     codexRefreshPending: [],
     codexFileTokens: {},
+    codexRevision: 0,
     lessons
   };
   if (!chat)
@@ -9307,7 +9710,8 @@ async function buildState(userId, requestedChatId) {
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
     codexRefreshPending: codexPanel.refreshPending,
-    codexFileTokens
+    codexFileTokens,
+    codexRevision: getCodexRevision(chat.id)
   };
 }
 function countArcBacklog(activeChapters, profile) {
@@ -9508,10 +9912,11 @@ spindle.registerInterceptor(async (messages, context) => {
     try {
       const result = await Promise.race([work, budget]);
       if (result === "timeout") {
-        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)}, skipping this turn to stay inside the host interceptor budget`);
+        const stage = lastInjectionStage(chatId);
+        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)} while ${stage}, skipping this turn to stay inside the host interceptor budget`);
         const toastUser = resolveUserId(chatId);
         if (toastUser)
-          notify(toastUser, "error", "Memoria took too long assembling memories and skipped this turn");
+          notify(toastUser, "error", `Memoria was still ${stage.replace(/ \(\d+ms in\)$/, "")} and skipped this turn`);
         return messages;
       }
       if (result === "skip" || !result)
@@ -10383,7 +10788,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_read": {
         const files = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
         break;
       }
       case "codex_write_file": {
@@ -10443,7 +10848,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         const files = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -10475,7 +10880,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           clearBusy(userId, msg.chatId, "codex");
         }
         const wiped = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: wiped }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: wiped, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -10498,7 +10903,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -10538,7 +10943,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -10557,7 +10962,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         await refreshCodexFiles(msg.chatId, profile, userId);
         const refreshed = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: refreshed }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: refreshed, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }

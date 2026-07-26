@@ -1,0 +1,28 @@
+Output protocol (JSON only, no tools):
+
+You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
+
+Take them one file at a time. Put a SINGLE file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": [], "done": false }
+"writes" holds the file you are changing this reply. Each item may carry:
+{{PATCH_RULES}}
+- "skip": the files that need no change from this material.
+- "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
+
+Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+<think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
+{ "writes": [
+  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
+], "skip": [], "done": false }
+
+Example of finishing up, once everything else is already written:
+{ "writes": [], "skip": ["world", "knowledge"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.

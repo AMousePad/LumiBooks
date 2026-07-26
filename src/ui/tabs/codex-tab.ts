@@ -144,9 +144,11 @@ interface CodexTabCache {
   files: Record<string, string> | null;
   parsed: ParsedCodex | null;
   pending: boolean;
+  /** Backend revision these files came from; a mismatch means refetch. */
+  revision: number;
 }
 
-const cache: CodexTabCache = { chatId: null, files: null, parsed: null, pending: false };
+const cache: CodexTabCache = { chatId: null, files: null, parsed: null, pending: false, revision: -1 };
 
 interface EntityDraft {
   group: EntityGroup;
@@ -313,6 +315,7 @@ function rerender(): void {
 export function deliverCodexFiles(
   chatId: string,
   files: Record<string, string>,
+  revision: number,
   savedFile?: string,
   savedSeq?: number,
 ): void {
@@ -320,6 +323,7 @@ export function deliverCodexFiles(
     cache.files = files;
     cache.parsed = parseCodexFiles(files);
     cache.pending = false;
+    cache.revision = revision;
   }
   // Editor ack: the save landed, close whichever form was in flight. An
   // unsolicited refresh (agent run finished) carries no seq and leaves
@@ -404,6 +408,15 @@ export function renderCodexTab(
   }
   // A reset wiped the files behind our back: drop the stale view.
   if (!state.codexExists && cache.files) {
+    cache.files = null;
+    cache.parsed = null;
+  }
+  // An agent run, tidy, or rebuild changed the codex under us. Refetch rather
+  // than keep rendering counts from the version we first loaded. Drafts in
+  // flight hold the refresh so a save cannot be clobbered mid-edit.
+  const stale = cache.files !== null && cache.revision !== state.codexRevision;
+  const editing = local.entityDraft !== null || local.recordDraft !== null || pendingCodexSaves.size > 0;
+  if (stale && !editing) {
     cache.files = null;
     cache.parsed = null;
   }

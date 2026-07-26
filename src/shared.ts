@@ -36,6 +36,8 @@ export const STORAGE_VERSION = 7 as const;
 export const SETTINGS_PATH = "settings.json" as const;
 export const CHAT_STATE_DIR = "chats" as const;
 
+export type CodexWriteMode = "batch" | "sequential";
+
 export type CompressionUnit = "messages" | "tokens";
 export type CompressionTargetUnit = "percent" | "tokens";
 export type ArcTriggerMode = "chapters" | "tokens" | "manual";
@@ -114,6 +116,10 @@ export interface LMBProfile {
   /** Structured tool calls for the codex agent, opt-in. Off (the default)
    * uses strict JSON output, which every provider route can carry. */
   codexUseTools: boolean;
+  /** How the agent is ASKED to deliver an update. Every record must be written
+   * or skipped before it may finish either way; this only sets whether the
+   * prompt asks for one record per reply or the whole update at once. */
+  codexWriteMode: CodexWriteMode;
   /** The codex prompt preset, mirroring chapterPresetKey: built-in or custom
    * "codex" category preset. The preset carries the directives text plus any
    * per-template overrides, so switching it swaps the whole prompt set. */
@@ -263,6 +269,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexExtraContext: true,
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
+    codexWriteMode: "batch",
     codexPresetKey: "codex_default",
   };
 }
@@ -381,6 +388,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexExtraContext: typeof v.codexExtraContext === "boolean" ? v.codexExtraContext : base.codexExtraContext,
     codexSamplers: normalizeSamplers(v.codexSamplers),
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
+    codexWriteMode: v.codexWriteMode === "sequential" ? "sequential" : "batch",
     codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
   };
 }

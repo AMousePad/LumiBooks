@@ -415,6 +415,7 @@ export function buildFixture(variant: string): FrontendState {
     codexStaleFiles: spec.codexStale ?? [],
     codexRefreshPending: [],
     codexFileTokens: spec.codex ? { ...CODEX_FILE_TOKENS } : {},
+    codexRevision: 0,
     lessons,
   };
 }

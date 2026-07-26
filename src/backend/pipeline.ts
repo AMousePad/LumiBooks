@@ -141,6 +141,12 @@ export function setBusy(userId: string, chatId: string, kind: BusyKind, label: s
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key);
   streamLastPush.delete(key);
+  capMap(streamBufs, STREAM_MAP_CAP);
+  while (streamWatchers.size > STREAM_MAP_CAP) {
+    const oldest = streamWatchers.values().next().value as string | undefined;
+    if (oldest === undefined) break;
+    streamWatchers.delete(oldest);
+  }
   const list = busyByUser.get(userId) ?? [];
   list.push(entry);
   busyByUser.set(userId, list);
@@ -155,14 +161,10 @@ export function clearBusy(userId: string, chatId: string, kind: BusyKind): void 
   aborters.delete(key);
   progressLastPush.delete(key);
   progressState.delete(key);
+  // The frontend owns the watcher's lifetime; an empty buffer sends nothing.
   if (streamWatchers.has(key)) {
     const buf = streamBufs.get(key);
-    cb?.onStreamText(userId, chatId, kind, {
-      content: buf?.content ?? "",
-      thinking: buf?.thinking ?? "",
-      running: false,
-    });
-    streamWatchers.delete(key);
+    if (buf) cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: false });
   }
   streamLastPush.delete(key);
   const fresh: BusyEntry[] = [];
@@ -244,6 +246,7 @@ const streamBufs = new Map<string, StreamBuf>();
 const streamWatchers = new Set<string>();
 const streamLastPush = new Map<string, number>();
 const STREAM_PUSH_INTERVAL_MS = 350;
+const STREAM_MAP_CAP = 50;
 /** Per-part cap; the viewer is a window, not an archive. */
 const STREAM_BUF_CAP = 200_000;
 

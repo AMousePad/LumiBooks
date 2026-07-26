@@ -7,7 +7,13 @@
 Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
 fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
 facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it. Relationships live in each entity's "ties"
+is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.
+Relationships live in each entity's "ties"
 list as short present-tense notes - to other characters, to things, and to
 places alike. Do NOT write relations.json, it is disabled.
 Ties coverage (mandatory): record the story's FULL web, never a hub around one

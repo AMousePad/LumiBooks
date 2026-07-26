@@ -4,6 +4,9 @@ You see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
 - Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
 - Only correct a record the visible material actually contradicts.
+- One exception: a record that breaks the schema rules is always yours to fix,
+  whether or not the visible turns mention it. Malformed is not the same as
+  unfamiliar.
 - A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
 - Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
 

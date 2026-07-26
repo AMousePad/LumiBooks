@@ -15,7 +15,12 @@ import {
   danglingRefCounts,
   fileRows,
   isCodexFileKey,
+  danglingKey,
+  formatDanglingRef,
+  newDangling,
   newDanglingErrors,
+  newDanglingFiles,
+  repairDanglingRefs,
   validateCodexFile,
 } from "./schema";
 import { buildCodexSystemPrompt, buildCodexUserMessage, verifyNudge, type CodexPromptCtx, type CodexRunNotes } from "./prompt";
@@ -38,6 +43,15 @@ export class ToolProtocolError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ToolProtocolError";
+  }
+}
+
+/** Carries the validator's wording plus what was kept, so the toast path must
+ * show it whole instead of trimming to the first sentence. */
+export class CodexValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CodexValidationError";
   }
 }
 
@@ -64,14 +78,23 @@ export function codexMaxInputTokens(profile: LMBProfile): number {
 
 const CACHE_EPHEMERAL = { type: "ephemeral" } as const;
 
+/** Rounds the agent gets to clear its own dangling refs while still making
+ * progress, before the rest are demoted to plain text. */
+const INTEGRITY_ROUNDS = 3;
+
+/** Consecutive fruitless nudges before a stalled run is given up on. Resets
+ * whenever a nudge actually lands a record. */
+const COVERAGE_NUDGES = 3;
+
 /** Tool schemas for one run. The file enum carries only the active files, so
  * a frozen file cannot even be addressed by a tool call. */
-function codexTools(activeFiles: readonly CodexFileKey[]): ToolSchemaDTO[] {
-  return [
+function codexTools(activeFiles: readonly CodexFileKey[], sequential: boolean): ToolSchemaDTO[] {
+  const tools: ToolSchemaDTO[] = [
   {
     name: "codex_write",
-    description:
-      "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
+    description: sequential
+      ? "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. One file per call. If writing every remaining file at once would be a strain, write one and you will be asked for the next."
+      : "Edit one codex file. Default is a patch: set adds or replaces complete rows by key, drop deletes by key, untouched rows survive without being resent. content replaces the whole file and is only for ground-up rewrites. Call once per changed file, and put every call for this update in a single response.",
     parameters: {
       type: "object",
       properties: {
@@ -101,7 +124,7 @@ function codexTools(activeFiles: readonly CodexFileKey[]): ToolSchemaDTO[] {
   },
   {
     name: "codex_done",
-    description: "Declare the codex current. Call it alongside your writes, or alone when nothing durable changed.",
+    description: "Declare the codex current. Only honored once every file has been written or skipped.",
     parameters: {
       type: "object",
       properties: {
@@ -111,6 +134,20 @@ function codexTools(activeFiles: readonly CodexFileKey[]): ToolSchemaDTO[] {
     },
   },
   ];
+  tools.push({
+    name: "codex_skip",
+    description:
+      "Declare that the listed files need no change from this material. List several at once when several are genuinely unaffected. Skipping a file the story did change loses that information permanently.",
+    parameters: {
+      type: "object",
+      properties: {
+        files: { type: "array", items: { type: "string", enum: [...activeFiles] }, description: "The files that need no change." },
+        reason: { type: "string", description: "One short line on why nothing changed." },
+      },
+      required: ["files"],
+    },
+  });
+  return tools;
 }
 
 export interface CodexAgentOptions {
@@ -135,6 +172,9 @@ export interface CodexAgentOptions {
   skipVerify?: boolean;
   /** Reject timeline drops: history only shrinks in reconcile/tidy/refresh. */
   timelineAppendOnly?: boolean;
+  /** Files that must be accounted for before done. Defaults to every active
+   * file; target-list passes pass their targets. */
+  coverageFiles?: readonly CodexFileKey[];
   /** Cumulative progress counters owned by the caller. A drain passes one
    * object across all its queued chunks so the busy label keeps counting up
    * in step with the stream viewer instead of resetting (and appearing
@@ -253,7 +293,7 @@ function assistantTurn(content: string, toolCalls: ToolCallDTO[]): LlmMessageDTO
  */
 function parseJsonModeCalls(raw: string): ToolCallDTO[] {
   const objs = parseLooseJsonObjects(raw);
-  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || o["done"] === true);
+  const envelopes = objs.filter((o) => Array.isArray(o["writes"]) || Array.isArray(o["skip"]) || o["done"] === true);
   const obj = envelopes.length ? envelopes[envelopes.length - 1]! : objs[0] ?? null;
   if (!obj) return [];
   const calls: ToolCallDTO[] = [];
@@ -262,6 +302,10 @@ function parseJsonModeCalls(raw: string): ToolCallDTO[] {
     const args = w && typeof w === "object" && !Array.isArray(w) ? (w as Record<string, unknown>) : {};
     calls.push({ call_id: `json_w${i}`, name: "codex_write", args } as ToolCallDTO);
   });
+  const skip = Array.isArray(obj["skip"]) ? obj["skip"] : [];
+  if (skip.length) {
+    calls.push({ call_id: "json_skip", name: "codex_skip", args: { files: skip } } as ToolCallDTO);
+  }
   if (obj["done"] === true) {
     const args = typeof obj["note"] === "string" ? { note: obj["note"] } : {};
     calls.push({ call_id: "json_done", name: "codex_done", args } as ToolCallDTO);
@@ -283,6 +327,10 @@ interface WriteOutcome {
   dropMisses?: string[];
   /** Archived resolved threads the write tried to touch; left alone, acked. */
   archivedKept?: string[];
+  /** Sequential mode: files this codex_skip cleared from the owed list. */
+  skipCleared?: CodexFileKey[];
+  /** Validator corrections applied on the way in (keyword trims). */
+  trimmed?: string[];
 }
 
 interface StagedWrite {
@@ -296,6 +344,8 @@ interface StagedWrite {
   dropMisses: string[];
   /** Archived resolved threads the write tried to touch; left alone, acked. */
   archivedKept: string[];
+  /** Silent validator corrections (keyword trims), acked so the agent adapts. */
+  notes?: string[];
 }
 
 function clone<T>(v: T): T {
@@ -428,7 +478,7 @@ function stageWrite(
     }
     lockedFieldsKept.push(...restoreLockedFields(file, value, current));
     assignMissingRids(file, value);
-    return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
+    return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
   }
 
   if (!hasPatch) {
@@ -546,7 +596,7 @@ function stageWrite(
   }
   lockedFieldsKept.push(...restoreLockedFields(file, value, current));
   assignMissingRids(file, value);
-  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept };
+  return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
 }
 
 /**
@@ -558,9 +608,17 @@ function stageWrite(
 export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunResult> {
   const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
-  const maxRounds = profile.codexThorough ? 4 : 3;
   const useTools = promptCtx.useTools;
-  const tools = useTools ? codexTools([...promptCtx.activeFiles]) : null;
+  const sequential = promptCtx.sequential;
+  const skipPhrase = useTools ? "call codex_skip" : 'name them in "skip"';
+  const donePhrase = useTools ? "Then call codex_done." : 'Set "done": true once everything is accounted for.';
+  const coverage = new Set<CodexFileKey>(
+    (opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k)),
+  );
+  // Headroom for one round per file plus the nudges a stalling model needs.
+  // A model that batches never reaches any of them.
+  const maxRounds = coverage.size + COVERAGE_NUDGES + (profile.codexThorough ? 4 : 3);
+  const tools = useTools ? codexTools([...promptCtx.activeFiles], sequential) : null;
 
   // Host macros resolve on the system prompt only, mirroring the summarizer:
   // the user message carries codex JSON and raw story text that must never be
@@ -596,6 +654,36 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   /** Files whose write was rejected and not yet successfully restaged. */
   const rejectedFiles = new Set<string>();
   let rounds = 0;
+  /** Files still owed a write or a skip. */
+  const remaining = new Set<CodexFileKey>(coverage);
+  let jsonRetryUsed = false;
+  let coverageNudges = 0;
+  let lastNudgeRemaining = Number.POSITIVE_INFINITY;
+  /** Dangling refs already reported, so a repeat can be repaired instead. */
+  const danglingSeen = new Set<string>();
+  let prevDanglingCount = Number.POSITIVE_INFINITY;
+  let integrityRounds = 0;
+
+  /** Keep what validated when the run as a whole fails. The caller still sees
+   * the throw, so the cursor holds and the chunk is re-read next pass. */
+  const persistClean = async (): Promise<CodexFileKey[]> => {
+    const broken = newDanglingFiles(working, baselineDangling);
+    const clean = [...changed].filter((k) => !rejectedFiles.has(k) && !broken.has(k));
+    const saved: CodexFileKey[] = [];
+    for (const key of clean) {
+      try {
+        await saveCodexFile(chatId, key, working[key], userId);
+        saved.push(key);
+      } catch (err) {
+        warn(`codex: failed to persist ${key}.json from a failed run: ${describeError(err)}`);
+      }
+    }
+    return saved;
+  };
+  const keptSuffix = (saved: CodexFileKey[]): string =>
+    saved.length
+      ? ` Memoria kept the ${saved.length} record${saved.length === 1 ? "" : "s"} she finished and will try the rest next time.`
+      : "";
 
   while (rounds < maxRounds) {
     if (opts.externalSignal.aborted) throw new AbortedSummarizerError();
@@ -629,6 +717,11 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       } else if (call.name === "codex_done") {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` — ${call.args["note"].trim()}` : "";
         opts.onDelta?.("text", `\n✦ codex_done${note}`);
+      } else if (call.name === "codex_skip") {
+        const files = Array.isArray(call.args["files"])
+          ? (call.args["files"] as unknown[]).filter((f): f is string => typeof f === "string")
+          : [];
+        opts.onDelta?.("text", `\n○ codex_skip ${files.length ? files.map((f) => `${f}.json`).join(", ") : "(no files)"}`);
       } else {
         opts.onDelta?.("text", `\n✗ unknown tool ${call.name}`);
       }
@@ -638,14 +731,28 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       if (rounds === 1 && !round.content.trim()) {
         throw new Error("The codex agent returned an empty response");
       }
+      // One stray character should not cost a whole pass.
+      if (!useTools && !jsonRetryUsed && rounds < maxRounds && round.content.trim()) {
+        jsonRetryUsed = true;
+        opts.onDelta?.("text", "\n✗ no JSON object found in the reply, asking for a resend");
+        conv.push({ role: "assistant", content: round.content });
+        conv.push({
+          role: "user",
+          content:
+            "No JSON object could be parsed from that reply. Send the update again as exactly ONE JSON object"
+            + ' with "writes" and "done", and nothing outside it except an optional <think> block.'
+            + " Do not wrap it in prose and do not truncate it.",
+        });
+        continue;
+      }
       // A text-only reply while corrections are outstanding is an abandon,
       // not a natural stop: persisting would advance the cursor past
       // corrections that never happened.
       if (unresolvedErrors) {
-        throw new Error(
-          rejectedFiles.size > 0
-            ? "The codex agent abandoned a rejected write instead of correcting it"
-            : "The codex agent left an unresolved integrity error instead of correcting it",
+        const saved = await persistClean();
+        throw new CodexValidationError(
+          "Memoria couldn't finish the codex update because the model gave up instead of fixing a record she rejected."
+          + keptSuffix(saved),
         );
       }
       // Nothing staged and no done signal: treating this as a clean no-op
@@ -657,6 +764,33 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
           throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
         }
         throw new Error("The codex agent replied without a parsable JSON update");
+      }
+      if (remaining.size > 0) {
+        // An empty or narrated reply mid-list is a stall, not a refusal. Keep
+        // asking while records are still landing, and only give up once the
+        // nudges stop producing any.
+        if (remaining.size < lastNudgeRemaining) coverageNudges = 0;
+        if (coverageNudges < COVERAGE_NUDGES && rounds < maxRounds) {
+          coverageNudges++;
+          lastNudgeRemaining = remaining.size;
+          // A stalled model often replies with nothing at all, and an empty
+          // assistant turn is not a valid message.
+          const said = round.content.trim() || "(no reply)";
+          conv.push(useTools ? assistantTurn(said, []) : { role: "assistant", content: said });
+          conv.push({
+            role: "user",
+            content:
+              `Still to account for: ${[...remaining].map((k) => `${k}.json`).join(", ")}.`
+              + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.`
+              + ` ${donePhrase}`,
+          });
+          continue;
+        }
+        const saved = await persistClean();
+        throw new CodexValidationError(
+          `Memoria couldn't finish the codex update, the model stopped before writing ${[...remaining].join(", ")}.`
+          + keptSuffix(saved),
+        );
       }
       break;
     }
@@ -674,10 +808,23 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         doneCalls.push(call);
         continue;
       }
+      if (call.name === "codex_skip") {
+        const raw = call.args["files"];
+        const files = (Array.isArray(raw) ? raw : [raw])
+          .filter((f): f is CodexFileKey => isCodexFileKey(f) && !frozen.has(f));
+        if (files.length === 0) {
+          outcomes.push({ callId: call.call_id, file: null, errors: [`files: expected one or more of ${[...remaining].join(", ")}`] });
+          continue;
+        }
+        // A skip only clears what is still owed, never retracting a write.
+        const cleared = files.filter((f) => remaining.delete(f));
+        outcomes.push({ callId: call.call_id, file: null, errors: [], skipCleared: cleared });
+        continue;
+      }
       if (call.name !== "codex_write") {
         // hadErrors blocks done THIS round; a corrected next round recovers,
         // unlike a permanent rejectedFiles sentinel which nothing could clear.
-        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write and codex_done exist - resend the payload through codex_write`] });
+        outcomes.push({ callId: call.call_id, file: null, errors: [`Unknown tool "${call.name}", only codex_write, codex_skip and codex_done exist - resend the payload through codex_write`] });
         continue;
       }
       const fileRaw = call.args["file"];
@@ -688,6 +835,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       if (frozen.has(fileRaw)) {
         // A frozen write is dropped, not retried: the agent should simply
         // move on without that file.
+        remaining.delete(fileRaw);
         outcomes.push({ callId: call.call_id, file: fileRaw, errors: [], skipped: true });
         continue;
       }
@@ -699,6 +847,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       }
       (working as Record<CodexFileKey, CodexFileValue>)[fileRaw] = staged.value;
       changed.add(fileRaw);
+      remaining.delete(fileRaw);
       rejectedFiles.delete(fileRaw);
       outcomes.push({
         callId: call.call_id,
@@ -708,6 +857,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         ...(staged.lockedFieldsKept.length ? { lockedFieldsKept: staged.lockedFieldsKept } : {}),
         ...(staged.dropMisses.length ? { dropMisses: staged.dropMisses } : {}),
         ...(staged.archivedKept.length ? { archivedKept: staged.archivedKept } : {}),
+        ...(staged.notes?.length ? { trimmed: staged.notes } : {}),
       });
     }
 
@@ -723,13 +873,44 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         });
         continue;
       }
+      if (remaining.size > 0) {
+        outcomes.push({
+          callId: call.call_id,
+          file: null,
+          errors: [
+            `Not yet. These files have not been written or skipped: ${[...remaining].map((k) => `${k}.json`).join(", ")}.`
+            + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.`,
+          ],
+        });
+        continue;
+      }
       sawDone = true;
       const note = call.args["note"];
       if (typeof note === "string" && note.trim()) doneNote = note.trim();
       outcomes.push({ callId: call.call_id, file: null, errors: [] });
     }
 
-    const integrityErrors = newDanglingErrors(working, baselineDangling);
+    // Files still owed may hold the entity a written ref points at, so this
+    // only binds once coverage is complete. The agent's own fix beats a
+    // mechanical demotion, so keep asking while it is still clearing refs and
+    // only repair once it stalls, runs out of patience, or runs out of rounds.
+    let dangling = remaining.size === 0 ? newDangling(working, baselineDangling) : [];
+    if (dangling.length > 0) {
+      integrityRounds++;
+      const stalled = dangling.length >= prevDanglingCount;
+      const outOfRoad = integrityRounds >= INTEGRITY_ROUNDS || rounds >= maxRounds - 1;
+      if (stalled || outOfRoad) {
+        const stubborn = dangling.filter((d) => danglingSeen.has(danglingKey(d)));
+        if (stubborn.length > 0) {
+          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file)));
+          for (const r of fixed) opts.onDelta?.("text", `\n⤳ ${r}`);
+          if (fixed.length > 0) dangling = newDangling(working, baselineDangling);
+        }
+      }
+      prevDanglingCount = dangling.length;
+      for (const d of dangling) danglingSeen.add(danglingKey(d));
+    }
+    const integrityErrors = dangling.map(formatDanglingRef);
     for (const o of outcomes) {
       if (o.errors.length) opts.onDelta?.("text", `\n✗ rejected${o.file ? ` ${o.file}.json` : ""}: ${o.errors[0]}`);
     }
@@ -746,28 +927,32 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       if (o.lockedFieldsKept?.length) bits.push(`locked fields restored to the user's values on: ${o.lockedFieldsKept.join(", ")} - never write those fields`);
       if (o.dropMisses?.length) bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
       if (o.archivedKept?.length) bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
+      if (o.trimmed?.length) bits.push(`${o.trimmed.join("; ")} - send only the few strongest keywords next time`);
       return bits.length ? ` (${bits.join("; ")})` : "";
+    };
+    const okNote = (o: WriteOutcome): string => {
+      if (o.skipCleared) {
+        return o.skipCleared.length
+          ? `noted, left unchanged: ${o.skipCleared.map((k) => `${k}.json`).join(", ")}`
+          : "already accounted for";
+      }
+      if (o.skipped) return `skipped, ${o.file}.json is frozen by the user - do not resend it`;
+      return o.file ? `ok, staged${lockedNote(o)}` : "ok";
     };
     const resultParts: LlmMessagePartDTO[] = outcomes.map((o) => ({
       type: "tool_result",
       tool_use_id: o.callId,
       content: o.errors.length
         ? `REJECTED, nothing from this write was staged - resend it corrected in full:\n${o.errors.join("\n")}`
-        : o.skipped
-          ? `skipped, ${o.file}.json is frozen by the user - do not resend it`
-          : o.file
-            ? `ok, staged${lockedNote(o)}`
-            : "ok",
+        : okNote(o),
       ...(o.errors.length ? { is_error: true } : {}),
     }));
     const feedbackLines: string[] = outcomes.map((o) =>
       o.errors.length
         ? `REJECTED ${o.file ? `${o.file}.json` : "write"}, nothing from it was staged - resend it corrected in full:\n${o.errors.join("\n")}`
-        : o.skipped
-          ? `${o.file}.json skipped, it is frozen by the user - do not resend it`
-          : o.file
-            ? `${o.file}.json staged.${lockedNote(o)}`
-            : "done acknowledged.",
+        : o.file || o.skipCleared
+          ? `${o.file ? `${o.file}.json ` : ""}${okNote(o)}`
+          : "done acknowledged.",
     );
     const pushFeedback = (extra: string): void => {
       if (useTools) {
@@ -779,7 +964,9 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     };
 
     if (!hadErrors) {
-      const wantVerify = profile.codexThorough && changed.size > 0 && !verifyRequested && !opts.skipVerify;
+      // Verify follows the agent's own stop, not its first write, or a model
+      // that writes one file per round loses a round to it mid-list.
+      const wantVerify = profile.codexThorough && sawDone && changed.size > 0 && !verifyRequested && !opts.skipVerify;
       if (sawDone && !wantVerify) {
         if (useTools) conv.push({ role: "user", content: resultParts });
         break;
@@ -789,7 +976,14 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
         pushFeedback(verifyNudge(promptCtx));
         continue;
       }
-      // Writes landed (or were skipped) with no done signal: one round to finish.
+      if (remaining.size > 0) {
+        pushFeedback(
+          `Still to account for: ${[...remaining].map((k) => `${k}.json`).join(", ")}.`
+          + ` Write the next one now, or ${skipPhrase} for the ones this material genuinely does not change.`
+          + ` ${donePhrase}`,
+        );
+        continue;
+      }
       const roundStaged = outcomes.some((o) => o.file !== null && !o.skipped && o.errors.length === 0);
       pushFeedback(roundStaged
         ? (useTools
@@ -811,8 +1005,11 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     pushFeedback(fixup.join("\n\n"));
 
     if (rounds >= maxRounds) {
-      const remaining = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
-      throw new Error(`Codex update failed validation after ${rounds} rounds: ${remaining.slice(0, 3).join("; ")}`);
+      const left = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
+      const saved = await persistClean();
+      throw new CodexValidationError(
+        `Memoria couldn't finish the codex update after ${rounds} tries. The model kept sending records she can't accept: ${left.slice(0, 3).join(", ")}.${keptSuffix(saved)}`,
+      );
     }
   }
 
@@ -821,7 +1018,16 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   // must not persist: the caller would advance the cursor past corrections
   // that never landed. Force the chunk to retry.
   if (rejectedFiles.size > 0) {
-    throw new Error(`Codex run ended with unresolved rejections: ${[...rejectedFiles].join(", ")}`);
+    const saved = await persistClean();
+    throw new CodexValidationError(
+      `Memoria couldn't finish the codex update, these records were never corrected: ${[...rejectedFiles].join(", ")}.${keptSuffix(saved)}`,
+    );
+  }
+  if (remaining.size > 0) {
+    const saved = await persistClean();
+    throw new CodexValidationError(
+      `Memoria couldn't finish the codex update, the model never wrote ${[...remaining].join(", ")}.${keptSuffix(saved)}`,
+    );
   }
 
   // Final gates before anything touches disk. The integrity check catches
@@ -829,9 +1035,14 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   // danglers in untouched files are tolerated so they can't stall consumption);
   // the ties check catches a table migration that left an entity file
   // un-rewritten, which would brick that file under the new recorded mode.
+  const repaired = repairDanglingRefs(working, new Set(changed));
+  for (const r of repaired) opts.onDelta?.("text", `\n⤳ ${r}`);
   const finalIntegrity = newDanglingErrors(working, baselineDangling);
   if (finalIntegrity.length) {
-    throw new Error(`Codex left dangling references: ${finalIntegrity.slice(0, 3).join("; ")}`);
+    const saved = await persistClean();
+    throw new CodexValidationError(
+      `Memoria couldn't finish the codex update, some records point at people or places that don't exist: ${finalIntegrity.slice(0, 3).join(", ")}.${keptSuffix(saved)}`,
+    );
   }
   // Locked entities are exempt from both migration gates: the agent may not
   // touch them, so their ties can neither be lifted nor receive folds.

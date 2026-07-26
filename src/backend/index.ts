@@ -43,7 +43,7 @@ import {
   reassertChatBinding,
   registerBookAnomalyCallback,
 } from "./world-book";
-import { buildInjection, registerInjectionAnomalyCallback } from "./injection";
+import { buildInjection, lastInjectionStage, registerInjectionAnomalyCallback } from "./injection";
 import {
   abortBusy,
   acceptPreview,
@@ -75,6 +75,7 @@ import { clearBusy } from "./pipeline";
 import { buildCoverage, computeCoverageStats, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
 import {
   dryRunCodex,
+  getCodexRevision,
   invalidateCodexInjectionCache,
   maybeRunCodex,
   publishCodexPool,
@@ -279,9 +280,10 @@ spindle.registerInterceptor(async (messages, context) => {
     try {
       const result = await Promise.race([work, budget]);
       if (result === "timeout") {
-        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)}, skipping this turn to stay inside the host interceptor budget`);
+        const stage = lastInjectionStage(chatId);
+        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)} while ${stage}, skipping this turn to stay inside the host interceptor budget`);
         const toastUser = resolveUserId(chatId);
-        if (toastUser) void notify(toastUser, "error", "Memoria took too long assembling memories and skipped this turn");
+        if (toastUser) void notify(toastUser, "error", `Memoria was still ${stage.replace(/ \(\d+ms in\)$/, "")} and skipped this turn`);
         return messages;
       }
       if (result === "skip" || !result) return messages;
@@ -1223,7 +1225,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_read": {
         const files = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
         break;
       }
 
@@ -1291,7 +1293,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         const files = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1326,7 +1328,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         // The codex tab caches file contents; without a fresh push it keeps
         // rendering the wiped records.
         const wiped = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: wiped }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: wiped, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1349,7 +1351,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1388,7 +1390,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (files.length === 0) break;
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1407,7 +1409,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         await refreshCodexFiles(msg.chatId, profile, userId);
         const refreshed = await readCodexFilesRaw(msg.chatId, userId);
-        send({ type: "codex_files", chatId: msg.chatId, files: refreshed }, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: refreshed, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }

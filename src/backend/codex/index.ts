@@ -8,7 +8,7 @@ import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../
 import type { CodexCursor, CodexFileState } from "./store";
 import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
-import { CodexContextError, ToolProtocolError, codexMaxInputTokens, resolveCodexConnection, runCodexAgent } from "./agent";
+import { CodexContextError, CodexValidationError, ToolProtocolError, codexMaxInputTokens, resolveCodexConnection, runCodexAgent } from "./agent";
 import {
   buildCodexRebuildMessage,
   buildCodexReconcileMessage,
@@ -50,9 +50,9 @@ export interface CodexCallbacks {
 /** Shared failure tail for every codex entry point: toast the error, and on
  * a tool-transport failure also surface the JSON-fallback offer. */
 function reportCodexFailure(userId: string, chatId: string, verb: string, err: unknown): void {
-  // The context preflight's remedy list is the whole point of the error:
-  // shortErrorText would trim it to the first sentence.
-  if (err instanceof CodexContextError) {
+  // These carry their remedy and what survived past the first sentence, which
+  // is exactly what shortErrorText would cut off.
+  if (err instanceof CodexContextError || err instanceof CodexValidationError) {
     cb?.onToast(userId, "error", err.message);
     return;
   }
@@ -471,7 +471,11 @@ export async function dryRunCodex(
   const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
   const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
   diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
-  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls (codex_write / codex_done)" : "strict JSON"}` });
+  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls" : "strict JSON"}` });
+  diagnostics.push({
+    message: `Update delivery: ${promptCtx.sequential ? "one record per reply" : "all records in one reply"}`
+      + `, and every record must be written or skipped before Memoria accepts the update (${[...promptCtx.activeFiles].length} to cover)`,
+  });
   diagnostics.push({
     message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`,
   });
@@ -1098,10 +1102,25 @@ const INJECTION_CACHE_CAP = 200;
 const injectionTextCache = new Map<string, { at: number; text: string | null }>();
 const fileTokensCache = new Map<string, { at: number; tokens: Record<string, number> }>();
 
+/** Bumped on every codex mutation. The frontend compares it against the
+ * revision its cached file contents came from and refetches on a mismatch,
+ * so a run finishing updates the Codex tab without pushing the whole codex. */
+const codexRevisions = new Map<string, number>();
+
+export function getCodexRevision(chatId: string): number {
+  return codexRevisions.get(chatId) ?? 0;
+}
+
 export function invalidateCodexInjectionCache(chatId?: string): void {
   if (chatId) {
     injectionTextCache.delete(chatId);
     fileTokensCache.delete(chatId);
+    codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
+    while (codexRevisions.size > INJECTION_CACHE_CAP) {
+      const oldest = codexRevisions.keys().next().value as string | undefined;
+      if (oldest === undefined || oldest === chatId) break;
+      codexRevisions.delete(oldest);
+    }
   } else {
     injectionTextCache.clear();
     fileTokensCache.clear();
@@ -1387,6 +1406,7 @@ export async function runCodexTidy(
       lore: null,
       storySoFar: null,
       userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -1460,6 +1480,7 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
       lore,
       storySoFar: null,
       userTextOverride: buildCodexRefreshMessage(promptCtx, bundle, targets, books, tailTranscript, notes, lore),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
@@ -1571,6 +1592,7 @@ export async function rebuildCodexFiles(
       lore,
       storySoFar: null,
       userTextOverride: buildCodexRebuildMessage(promptCtx, promptBundle, targets, books, tailTranscript, notes, lore),
+      coverageFiles: targets,
       skipVerify: true,
       externalSignal: controller.signal,
       onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),

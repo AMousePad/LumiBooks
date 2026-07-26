@@ -285,7 +285,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         showDryRunModal(msg.kind, msg.messages, msg.diagnostics);
         break;
       case "codex_files":
-        deliverCodexFiles(msg.chatId, msg.files, msg.savedFile, msg.savedSeq);
+        deliverCodexFiles(msg.chatId, msg.files, msg.revision, msg.savedFile, msg.savedSeq);
         if (viewMode() === "tabs" && activeTab === "codex" && lastState) renderActive();
         // A real-mode lesson pane showing the codex needs the fresh files too.
         else if (viewMode() === "lesson") engine.onHostState();

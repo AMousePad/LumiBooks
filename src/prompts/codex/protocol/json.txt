@@ -3,10 +3,13 @@ Output protocol (JSON only, no tools):
 Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
 
 After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
-{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "done": true, "note": "one short line on what changed" }
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": ["world"], "done": true, "note": "one short line on what changed" }
 "writes" holds one item per file you change. Each item may carry:
 {{PATCH_RULES}}
-- Set "done": true when the codex is current. If the new turns changed nothing durable, respond { "writes": [], "done": true }.
+- "skip": the files that need no change from this material.
+- Set "done": true when the codex is current.
+
+You must account for EVERY file. Each file is either written in "writes" or named in "skip", and "done" is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
 <think>UPDATE - characters: none changed. relations: Mara moved to the docks, r2 outdated. timeline: her flight is a major event. knowledge: the locket's origin was revealed. SWEEP - r2 still claims the attic, rewrite it. COMPRESS - fold the two hideout phrases into one.</think>
@@ -14,7 +17,7 @@ Example reply (shape only, your rows should be far more detailed, probably 100-1
   { "file": "relations", "set": [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ] },
   { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] },
   { "file": "knowledge", "set": [ { "fact": "The silver locket was stolen from the duke's vault", "knownBy": ["char:elias"], "keywords": ["locket", "vault", "theft"] } ] }
-], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+], "skip": ["characters", "locations", "things", "threads", "world"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
 
 No prose outside the <think> block and the JSON object.
 A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.

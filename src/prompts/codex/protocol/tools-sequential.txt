@@ -1,0 +1,23 @@
+Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit ONE file.
+{{PATCH_RULES}}
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when every file has been written or skipped.
+
+You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
+
+Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+
+Take them one file at a time. Write a single file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
+
+Example response (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+
+Example of finishing up, once everything else is already written:
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
+  codex_done(note: "recorded Mara's flight and the locket's origin")
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.

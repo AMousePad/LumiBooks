@@ -8,3 +8,6 @@ never rewrite or drop existing events - history does not change behind the
 story. Editing an existing row is reserved for an outright factual error or
 a reference the validator flags; removals happen only in reconcile or tidy
 passes.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone or anywhere without one, write plain text instead: "the city guard",
+"a roadside inn", not "char:the guard".

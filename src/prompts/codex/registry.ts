@@ -19,7 +19,9 @@ import knowledgeTxt from "./schema/knowledge.txt";
 import keywordsTxt from "./schema/keywords.txt";
 import patchRulesTxt from "./protocol/patch-rules.txt";
 import protocolToolsTxt from "./protocol/tools.txt";
+import protocolToolsSequentialTxt from "./protocol/tools-sequential.txt";
 import protocolJsonTxt from "./protocol/json.txt";
+import protocolJsonSequentialTxt from "./protocol/json-sequential.txt";
 import passUpdateTxt from "./passes/update.txt";
 import passVerifyTxt from "./passes/verify.txt";
 import passTidyTxt from "./passes/tidy.txt";
@@ -51,7 +53,9 @@ export type CodexTemplateKey =
   | "schema_keywords"
   | "protocol_patch_rules"
   | "protocol_tools"
+  | "protocol_tools_sequential"
   | "protocol_json"
+  | "protocol_json_sequential"
   | "pass_update"
   | "pass_verify"
   | "pass_tidy"
@@ -149,7 +153,7 @@ export const CODEX_TEMPLATES: readonly CodexTemplateDef[] = [
     key: "schema_keywords",
     label: "Retrieval keywords",
     group: "File schemas",
-    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages.",
+    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages. Too many does the opposite damage: the record matches everything and is always in the prompt. Memoria enforces a hard limit of 12 keywords of at most two words each and discards the rest, so keep this text in step with that.",
     vars: [],
     defaultText: keywordsTxt,
   },
@@ -165,17 +169,33 @@ export const CODEX_TEMPLATES: readonly CodexTemplateDef[] = [
     key: "protocol_tools",
     label: "Protocol (tool calls)",
     group: "Write protocol",
-    howTo: "Sent when the profile uses tool calls. It names the codex_write and codex_done tools the app registers, so those names must stay. It also defines the <think> scratchpad convention for models without native reasoning.",
+    howTo: "Sent when the profile uses tool calls and Update delivery is all records at once. It names the codex_write, codex_skip and codex_done tools the app registers, so those names must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more. It also defines the <think> scratchpad convention for models without native reasoning.",
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: protocolToolsTxt,
+  },
+  {
+    key: "protocol_tools_sequential",
+    label: "Protocol (tool calls, one file at a time)",
+    group: "Write protocol",
+    howTo: "Sent when the profile uses tool calls and Update delivery is one record at a time. Same tools and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: protocolToolsSequentialTxt,
   },
   {
     key: "protocol_json",
     label: "Protocol (JSON mode)",
     group: "Write protocol",
-    howTo: 'Sent when the profile writes strict JSON instead of tool calls. The reply is parsed for a "writes" array and a "done" flag, so that shape must stay.',
+    howTo: 'Sent when the profile writes strict JSON and Update delivery is all records at once. The reply is parsed for a "writes" array, a "skip" list and a "done" flag, so that shape must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more.',
     vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
     defaultText: protocolJsonTxt,
+  },
+  {
+    key: "protocol_json_sequential",
+    label: "Protocol (JSON mode, one file at a time)",
+    group: "Write protocol",
+    howTo: 'Sent when the profile writes strict JSON and Update delivery is one record at a time. Same shape and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.',
+    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    defaultText: protocolJsonSequentialTxt,
   },
   {
     key: "pass_update",

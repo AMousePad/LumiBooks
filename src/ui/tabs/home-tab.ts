@@ -819,8 +819,8 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   sec.body.appendChild(tiles);
 
   inflightBusyLabels.clear();
-  // A watch on a chat we're no longer looking at is dead weight.
   if (streamWatch && streamWatch.chatId !== state.activeChatId) {
+    send({ type: "watch_stream", chatId: streamWatch.chatId, kind: streamWatch.kind, on: false });
     streamWatch = null;
     streamEls = null;
   }

@@ -16,6 +16,8 @@ export interface CodexPromptCtx {
   activeFiles: ReadonlySet<CodexFileKey>;
   relationsTable: boolean;
   useTools: boolean;
+  /** The prompt asks for one record per reply. Coverage is enforced either way. */
+  sequential: boolean;
   directives: string;
   overrides: Partial<Record<CodexTemplateKey, string>>;
 }
@@ -37,6 +39,7 @@ export function makeCodexPromptCtx(
     activeFiles: new Set(CODEX_FILE_KEYS.filter((k) => !frozenFiles.has(k))),
     relationsTable: profile.codexRelationsTable,
     useTools: profile.codexUseTools,
+    sequential: profile.codexWriteMode === "sequential",
     directives: findPresetText(profile, customPresets, "codex"),
     overrides: preset?.templates ?? {},
   };
@@ -74,7 +77,10 @@ function schemaBlock(ctx: CodexPromptCtx): string {
  * can't carry structured tool calls (codexUseTools off). */
 function protocolBlock(ctx: CodexPromptCtx): string {
   const patchRules = tpl(ctx, "protocol_patch_rules");
-  return fillPrompt(tpl(ctx, ctx.useTools ? "protocol_tools" : "protocol_json"), { PATCH_RULES: patchRules });
+  const key = ctx.useTools
+    ? (ctx.sequential ? "protocol_tools_sequential" : "protocol_tools")
+    : (ctx.sequential ? "protocol_json_sequential" : "protocol_json");
+  return fillPrompt(tpl(ctx, key), { PATCH_RULES: patchRules });
 }
 
 export function buildCodexSystemPrompt(ctx: CodexPromptCtx): string {
@@ -286,8 +292,8 @@ export function buildCodexReconcileMessage(
     parts.push(tailTranscript);
   }
   parts.push(ctx.useTools
-    ? "Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite), then call codex_done - or call codex_done alone if everything holds."
-    : 'Sweep now. Respond with a JSON object: corrections in "writes" (patches, or full content for a heavy rewrite) and "done": true - or an empty "writes" with "done": true if everything holds.');
+    ? `Sweep now. Send corrections as set/drop patches (or full content for a heavy rewrite)${ctx.sequential ? ", one file per response" : ""}, name every file that still holds in codex_skip, then call codex_done.`
+    : `Sweep now. Respond with a JSON object: corrections in "writes"${ctx.sequential ? ", one file per reply" : ""}, every file that still holds in "skip", and "done": true once all of them are accounted for.`);
   return parts.join("\n\n");
 }
 
@@ -329,8 +335,8 @@ export function buildCodexRefreshMessage(
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
   parts.push(ctx.useTools
-    ? "Rewrite the target files now, then call codex_done."
-    : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+    ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}, then call codex_done.`
+    : `Rewrite the target files now, each as full "content" in "writes"${ctx.sequential ? ", one per reply" : ""}, and set "done": true.`);
   return parts.join("\n\n");
 }
 
@@ -369,8 +375,8 @@ export function buildCodexRebuildMessage(
   }
   parts.push(`TARGET FILES: ${list}. Do not write any other file.`);
   parts.push(ctx.useTools
-    ? "Rewrite the target files now, then call codex_done."
-    : 'Rewrite the target files now, each as full "content" in "writes", and set "done": true.');
+    ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}, then call codex_done.`
+    : `Rewrite the target files now, each as full "content" in "writes"${ctx.sequential ? ", one per reply" : ""}, and set "done": true.`);
   return parts.join("\n\n");
 }
 
@@ -393,8 +399,8 @@ export function buildCodexTidyMessage(
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
   parts.push(...currentCodexParts(bundle, ctx));
   parts.push(ctx.useTools
-    ? "Rewrite the target files now. Write only files you actually improved, then call codex_done."
-    : 'Rewrite the target files now. Put only files you actually improved in "writes", and set "done": true.');
+    ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}. Write only files you actually improved, skip the rest, then call codex_done.`
+    : `Rewrite the target files now${ctx.sequential ? ", one per reply" : ""}. Put only files you actually improved in "writes", the rest in "skip", and set "done": true.`);
   return parts.join("\n\n");
 }
 
@@ -403,8 +409,8 @@ export function verifyNudge(ctx: CodexPromptCtx): string {
     tpl(ctx, "pass_verify")
     + " "
     + (ctx.useTools
-      ? "Resend corrections if you find anything, otherwise call codex_done."
-      : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true.')
+      ? "Resend corrections if you find anything, then call codex_done. Every file is already accounted for, so codex_done alone ends the pass."
+      : 'Respond with a JSON object: corrections in "writes" if you find anything (else an empty "writes"), and "done": true. Every file is already accounted for, so no "skip" is needed.')
   );
 }
 

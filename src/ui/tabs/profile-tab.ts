@@ -236,6 +236,20 @@ export function renderCodexConnection(
     onChange: (v) => patch({ codexUseTools: v }),
   }), "tuning.codex.usetools"));
 
+  sec.body.appendChild(labelled("Update delivery", select({
+    value: profile.codexWriteMode,
+    options: [
+      { value: "batch", label: "All records at once" },
+      { value: "sequential", label: "One record at a time" },
+    ],
+    onChange: (v) => patch({ codexWriteMode: v === "sequential" ? "sequential" : "batch" }),
+  })));
+  const seqHelp = document.createElement("div");
+  seqHelp.className = "lmb-help";
+  seqHelp.textContent =
+    "Memoria always makes sure every record is dealt with before she accepts an update, so all at once is the cheaper choice and is fine for most models. Switch to one at a time if your model keeps getting cut off partway through a long answer.";
+  sec.body.appendChild(seqHelp);
+
   host.appendChild(sec.wrap);
 }
 

@@ -1,16 +1,24 @@
-Retrieval keywords (mandatory):
+Retrieval keywords (mandatory, hard limit 12):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-10 tags. Each record is stored as a separate lorebook entry and only enters the
-prompt when the recent story mentions one of its keywords, so a record with weak
-keywords effectively disappears. Rules:
-- Mix generality with specificity: most keywords are SINGLE words the story will
-  plausibly say ("locket", "duke", "tower", "murder"). Add a 2-word keyword only
-  when the single word would be too ambiguous to pin this record ("north tower"
-  when several towers exist). Never longer than 2 words.
+4-12 tags. Each record is a separate lorebook entry that only enters the prompt
+when the recent story mentions one of its keywords. Anything past 12 is DISCARDED
+by the app, so a bloated list does not help retrieval, it just wastes your output.
+Rules:
+- ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
+  sentence fragments, no "the ..." constructions.
+- Single words the story will plausibly say: "locket", "duke", "tower", "murder".
+  Use two words only when one would be ambiguous ("north tower" when several
+  towers exist).
 - Concrete nouns tied to THIS record: places, objects, epithets, events.
-- One concept per keyword, retrievable when mentioned alone.
+- Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
+  A record that matches everything is a record that means nothing.
 - The record's own name, aliases, and topic (and a knowledge item's participants)
   match automatically - never repeat them as keywords.
-- No abstract themes (love, betrayal, tension), no filler verbs.
+- Never list other characters, other locations, or the whole cast: those records
+  carry their own keywords and will retrieve themselves.
+- No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
 - Keep keywords current: when a record's contents change, re-check its keywords.
+
+Keywords are for FINDING the record, never for storing what it says. Every fact
+belongs in the record's own fields, written out in full.
 timeline.json and threads.json need no keywords, they are always in the prompt.

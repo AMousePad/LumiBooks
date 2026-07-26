@@ -223,11 +223,44 @@ export function bundleIsEmpty(bundle: CodexBundle): boolean {
 }
 
 export type ValidationResult<T> =
-  | { ok: true; value: T }
+  | { ok: true; value: T; notes: string[] }
   | { ok: false; errors: string[] };
 
 interface Ctx {
   errors: string[];
+  /** Silent corrections worth telling the agent about, not failures. */
+  notes: string[];
+}
+
+/** Keywords are lorebook activation keys. Past a dozen they match everything,
+ * the record goes constant, and keyword retrieval stops meaning anything. */
+export const KEYWORD_LIMIT = 12;
+const KEYWORD_MAX_WORDS = 2;
+const KEYWORD_MAX_CHARS = 40;
+
+function keywordArray(ctx: Ctx, v: unknown, path: string, reserved: readonly string[]): string[] | undefined {
+  const raw = strArray(ctx, v, path);
+  if (!raw) return undefined;
+  const skip = new Set(reserved.map((r) => r.toLowerCase()));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let dropped = 0;
+  for (const k of raw) {
+    const key = k.toLowerCase();
+    const tooLong = k.length > KEYWORD_MAX_CHARS || k.split(/\s+/).length > KEYWORD_MAX_WORDS;
+    if (tooLong || seen.has(key) || skip.has(key) || out.length >= KEYWORD_LIMIT) {
+      dropped++;
+      continue;
+    }
+    seen.add(key);
+    out.push(k);
+  }
+  if (dropped > 0) {
+    ctx.notes.push(
+      `${path}: kept ${out.length} of ${raw.length}, dropped the rest as duplicates, over ${KEYWORD_MAX_WORDS} words, already matched by the record's own name, or past the ${KEYWORD_LIMIT} keyword limit`,
+    );
+  }
+  return out.length ? out : undefined;
 }
 
 function fail<T>(errors: string[]): ValidationResult<T> {
@@ -360,7 +393,7 @@ function validateEntityFile(
   raw: unknown,
   opts: ValidateOptions,
 ): ValidationResult<CodexEntityFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, key);
   if (!root) return fail(ctx.errors);
   const ns = FILE_NAMESPACE[key]!;
@@ -401,10 +434,12 @@ function validateEntityFile(
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
       ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
     }
-    for (const f of ["traits", "goals", "keywords"] as const) {
+    for (const f of ["traits", "goals"] as const) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
       if (v) out[f] = v;
     }
+    const kw = keywordArray(ctx, e["keywords"], `${path}.keywords`, [name, ...(out.aliases ?? [])]);
+    if (kw) out.keywords = kw;
     const ties = strArray(ctx, e["ties"], `${path}.ties`);
     if (ties) {
       // Locked rows keep their ties even in table mode: the agent may not
@@ -419,11 +454,11 @@ function validateEntityFile(
     entities.push(out);
   }
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { entities } };
+  return { ok: true, value: { entities }, notes: ctx.notes };
 }
 
 function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationResult<CodexRelationsFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "relations");
   if (!root) return fail(ctx.errors);
   // Check the raw array length, not the object-filtered rows: a populated but
@@ -484,11 +519,11 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
     }
   }
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { relations } };
+  return { ok: true, value: { relations }, notes: ctx.notes };
 }
 
 function validateTimelineFile(raw: unknown): ValidationResult<CodexTimelineFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "timeline");
   if (!root) return fail(ctx.errors);
   const events: CodexTimelineEvent[] = [];
@@ -508,11 +543,11 @@ function validateTimelineFile(raw: unknown): ValidationResult<CodexTimelineFile>
     events.push(out);
   }
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { events } };
+  return { ok: true, value: { events }, notes: ctx.notes };
 }
 
 function validateThreadsFile(raw: unknown): ValidationResult<CodexThreadsFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "threads");
   if (!root) return fail(ctx.errors);
   const threads: CodexThread[] = [];
@@ -536,11 +571,11 @@ function validateThreadsFile(raw: unknown): ValidationResult<CodexThreadsFile> {
   }
   const seeds = strArray(ctx, root["seeds"], "seeds") ?? [];
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { threads, seeds } };
+  return { ok: true, value: { threads, seeds }, notes: ctx.notes };
 }
 
 function validateWorldFile(raw: unknown): ValidationResult<CodexWorldFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "world");
   if (!root) return fail(ctx.errors);
   const entries: CodexWorldEntry[] = [];
@@ -554,15 +589,15 @@ function validateWorldFile(raw: unknown): ValidationResult<CodexWorldFile> {
       ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
       continue;
     }
-    const keywords = strArray(ctx, e["keywords"], `${path}.keywords`);
+    const keywords = keywordArray(ctx, e["keywords"], `${path}.keywords`, [topic]);
     entries.push({ ...(rid ? { rid } : {}), topic, facts, ...(keywords ? { keywords } : {}) });
   }
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { entries } };
+  return { ok: true, value: { entries }, notes: ctx.notes };
 }
 
 function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFile> {
-  const ctx: Ctx = { errors: [] };
+  const ctx: Ctx = { errors: [], notes: [] };
   const root = asRecord(ctx, raw, "knowledge");
   if (!root) return fail(ctx.errors);
   const items: CodexKnowledgeItem[] = [];
@@ -588,8 +623,18 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
     }
     const note = str(ctx, k["note"], `${path}.note`, false);
     if (note) out.note = note;
-    const keywords = strArray(ctx, k["keywords"], `${path}.keywords`);
+    const keywords = keywordArray(ctx, k["keywords"], `${path}.keywords`, []);
     if (keywords) out.keywords = keywords;
+    if (out.knownBy && out.hiddenFrom) {
+      const known = new Set(out.knownBy.map((s) => s.toLowerCase()));
+      const both = out.hiddenFrom.filter((s) => known.has(s.toLowerCase()));
+      if (both.length) {
+        ctx.errors.push(
+          `${path}: ${both.join(", ")} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as "fact", then list who knows it and who it is hidden from - never write the ignorance as the fact`,
+        );
+        continue;
+      }
+    }
     if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
       ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
       continue;
@@ -597,7 +642,7 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
     items.push(out);
   }
   if (ctx.errors.length) return fail(ctx.errors);
-  return { ok: true, value: { items } };
+  return { ok: true, value: { items }, notes: ctx.notes };
 }
 
 export function validateCodexFile(
@@ -631,7 +676,7 @@ function collectEntityIds(bundle: CodexBundle): Set<string> {
   return ids;
 }
 
-interface DanglingRef {
+export interface DanglingRef {
   path: string;
   ref: string;
   /** File holding the reference, so tolerance budgets stay per file. */
@@ -687,18 +732,65 @@ export function checkIntegrity(bundle: CodexBundle): string[] {
  * broken minus what was already broken on disk. Tolerance is per file and
  * ref, so a new occurrence can never consume an untouched file's budget.
  */
-export function newDanglingErrors(bundle: CodexBundle, tolerate: Map<string, number>): string[] {
+export function newDangling(bundle: CodexBundle, tolerate: Map<string, number>): DanglingRef[] {
   const used = new Map<string, number>();
-  const out: string[] = [];
+  const out: DanglingRef[] = [];
   for (const d of collectDangling(bundle)) {
     const key = `${d.file}::${d.ref}`;
     const budget = tolerate.get(key) ?? 0;
     const spent = used.get(key) ?? 0;
     used.set(key, spent + 1);
     if (spent < budget) continue; // within the pre-existing count, tolerate
-    out.push(formatDangling(d));
+    out.push(d);
   }
   return out;
+}
+
+export function danglingKey(d: DanglingRef): string {
+  return `${d.file}::${d.ref}`;
+}
+
+export function formatDanglingRef(d: DanglingRef): string {
+  return formatDangling(d);
+}
+
+export function newDanglingErrors(bundle: CodexBundle, tolerate: Map<string, number>): string[] {
+  return newDangling(bundle, tolerate).map(formatDangling);
+}
+
+/** Demote unresolvable refs to plain text; knowledge and timeline take prose,
+ * relations do not and stay with the validator. */
+export function repairDanglingRefs(bundle: CodexBundle, files: ReadonlySet<CodexFileKey>): string[] {
+  const ids = collectEntityIds(bundle);
+  const fixed: string[] = [];
+  const fix = (ref: string, path: string): string => {
+    if (!looksLikeEntityRef(ref) || ids.has(ref)) return ref;
+    const plain = ref.slice(ref.indexOf(":") + 1).replace(/_/g, " ").trim();
+    if (!plain) return ref;
+    fixed.push(`${path}: "${ref}" was not a known entity, recorded as "${plain}"`);
+    return plain;
+  };
+  if (files.has("knowledge")) {
+    bundle.knowledge.items.forEach((k, i) => {
+      if (k.knownBy) k.knownBy = k.knownBy.map((w) => fix(w, `knowledge items[${i}].knownBy`));
+      if (k.hiddenFrom) k.hiddenFrom = k.hiddenFrom.map((w) => fix(w, `knowledge items[${i}].hiddenFrom`));
+      (k.falseBeliefs ?? []).forEach((b, j) => {
+        b.who = fix(b.who, `knowledge items[${i}].falseBeliefs[${j}].who`);
+      });
+    });
+  }
+  if (files.has("timeline")) {
+    bundle.timeline.events.forEach((e, i) => {
+      if (e.participants) e.participants = e.participants.map((p) => fix(p, `timeline events[${i}].participants`));
+      if (e.where) e.where = fix(e.where, `timeline events[${i}].where`);
+    });
+  }
+  return fixed;
+}
+
+/** Files still carrying a dangling ref this run is answerable for. */
+export function newDanglingFiles(bundle: CodexBundle, tolerate: Map<string, number>): Set<CodexFileKey> {
+  return new Set(newDangling(bundle, tolerate).map((d) => d.file));
 }
 
 export function danglingRefCounts(bundle: CodexBundle): Map<string, number> {

@@ -1,13 +1,17 @@
 Tools:
 - codex_write(file, set?, drop?, seeds?, content?): edit one file.
 {{PATCH_RULES}}
-- codex_done(note): call when the codex is current. If the new turns changed nothing durable, call codex_done without writing.
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when the codex is current.
+
+You must account for EVERY file. Each file is either written with codex_write or named in a codex_skip, and codex_done is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
 
 Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
 
 Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
   codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
   codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
   codex_done(note: "recorded Mara's flight and the locket's origin")
 
 Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
