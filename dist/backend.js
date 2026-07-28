@@ -2324,6 +2324,13 @@ function sourceIndexInChat(lm) {
   const v = lm["sourceIndexInChat"];
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
+function sourceMessageMetadata(lm) {
+  const record = lm;
+  if (!Object.prototype.hasOwnProperty.call(record, "sourceMessageMetadata"))
+    return;
+  const value = record["sourceMessageMetadata"];
+  return value && typeof value === "object" ? value : {};
+}
 function orderEntries(coverage, msgIdToIdx) {
   const ordered = [];
   for (const entry of coverage.activeEntries) {
@@ -2348,39 +2355,62 @@ function orderEntries(coverage, msgIdToIdx) {
   ordered.sort((a, b) => a.firstIdx - b.firstIdx);
   return ordered;
 }
-var stageByChat = new Map;
-var STAGE_CAP = 200;
-async function buildInjection(chatId, llmMessages, userId) {
-  const started = Date.now();
-  const stage = (name) => {
-    stageByChat.delete(chatId);
-    stageByChat.set(chatId, { stage: name, at: started });
-    while (stageByChat.size > STAGE_CAP) {
-      const oldest = stageByChat.keys().next().value;
-      if (oldest === undefined)
-        break;
-      stageByChat.delete(oldest);
-    }
-  };
-  stage("reading the lorebook");
-  const [activated, allEntries, attachedBookIds] = await Promise.all([
-    spindle.world_books.getActivated(chatId, userId).catch(() => null),
-    listLmbEntries(chatId, userId),
-    getChatAttachedBookIds(chatId, userId).catch(() => null)
-  ]);
+var LEGACY_ACTIVATION_WAIT_MS = 2000;
+var legacyActivationInflight = new Map;
+async function getLegacyActivated(chatId, userId) {
+  const key = `${userId}:${chatId}`;
+  let pending = legacyActivationInflight.get(key);
+  if (!pending) {
+    const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
+    pending = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), LEGACY_ACTIVATION_WAIT_MS);
+      raw.then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+        if (legacyActivationInflight.get(key) === pending) {
+          legacyActivationInflight.delete(key);
+        }
+      });
+    });
+    legacyActivationInflight.set(key, pending);
+  }
+  return await pending;
+}
+async function buildInjection(chatId, llmMessages, userId, context = { worldInfoActivationCapture: false }) {
+  let activated = null;
+  let attachedBookIds = null;
+  let allEntries;
+  if (context.capturedWorldInfo === undefined && !context.worldInfoActivationCapture) {
+    [activated, allEntries, attachedBookIds] = await Promise.all([
+      getLegacyActivated(chatId, userId),
+      listLmbEntries(chatId, userId),
+      getChatAttachedBookIds(chatId, userId).catch(() => null)
+    ]);
+  } else {
+    allEntries = await listLmbEntries(chatId, userId);
+  }
   if (allEntries.length === 0)
     return null;
-  const ourBookId = allEntries[0].raw.world_book_id;
-  const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
-  const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
-  const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
-  const entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
-  stage("working out what is already covered");
+  let entriesForCoverage;
+  if (context.capturedWorldInfo !== undefined) {
+    const capturedIds = new Set(context.capturedWorldInfo.map((entry) => entry.id));
+    entriesForCoverage = allEntries.filter((entry) => capturedIds.has(entry.raw.id));
+  } else if (context.worldInfoActivationCapture) {
+    entriesForCoverage = allEntries.filter((entry) => !entry.raw.disabled);
+  } else {
+    const ourBookId = allEntries[0].raw.world_book_id;
+    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
+    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
+    const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
+    entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
+  }
   const coverage = await buildCoverage(chatId, userId, entriesForCoverage);
   if (coverage.activeEntries.length === 0)
     return null;
   const historyMsgs = llmMessages.filter(isAssembledHistory);
   if (historyMsgs.length === 0) {
+    if (context.capturedWorldInfo !== undefined)
+      return null;
     let chatMessages = null;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -2398,7 +2428,6 @@ async function buildInjection(chatId, llmMessages, userId) {
   }
   const plan = [];
   let missingIdx = false;
-  let anyCovered = false;
   for (const m of historyMsgs) {
     const id = sourceMessageId(m);
     if (id === undefined) {
@@ -2408,14 +2437,16 @@ async function buildInjection(chatId, llmMessages, userId) {
     const idx = sourceIndexInChat(m);
     if (idx === undefined)
       missingIdx = true;
-    const covered = coverage.coveredBy.has(id);
-    if (covered)
-      anyCovered = true;
-    plan.push({ id, idx, covered });
+    plan.push({
+      id,
+      idx,
+      covered: coverage.coveredBy.has(id),
+      metadata: sourceMessageMetadata(m)
+    });
   }
   let msgIdToIdx;
-  if (anyCovered || missingIdx) {
-    stage("reading the chat");
+  const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
+  if (missingIdx || needsMetadata) {
     let chatMessages;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -2437,15 +2468,17 @@ async function buildInjection(chatId, llmMessages, userId) {
       }
       p.idx = idx;
       if (p.covered) {
-        const md = chatMessages[idx]?.metadata;
-        if (md && md["lmb_excluded"] === true)
-          p.covered = false;
+        p.metadata = chatMessages[idx]?.metadata ?? {};
       }
     }
   } else {
     msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx]));
   }
-  stage("placing the memories");
+  for (const item of plan) {
+    if (item.covered && item.metadata?.["lmb_excluded"] === true) {
+      item.covered = false;
+    }
+  }
   const ordered = orderEntries(coverage, msgIdToIdx);
   if (ordered.length === 0)
     return null;
@@ -9833,15 +9866,17 @@ registerCodexCallbacks({
   }
 });
 spindle.registerWorldInfoInterceptor(async (ctx) => {
-  const ours = [];
+  const lmbIds = [];
+  const disabledIds = [];
   const codexIds = [];
   for (const entry of ctx.entries) {
     const ext = entry.extensions;
     if (!ext)
       continue;
-    if (ext[EXTENSION_KEY])
-      ours.push(entry.id);
-    else if (ext[CODEX_ENTRY_EXTENSION_KEY])
+    if (ext[EXTENSION_KEY]) {
+      lmbIds.push(entry.id);
+      disabledIds.push(entry.id);
+    } else if (ext[CODEX_ENTRY_EXTENSION_KEY])
       codexIds.push(entry.id);
   }
   if (codexIds.length > 0) {
@@ -9863,7 +9898,7 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
         if (off === "timeout") {
           warn("world-info codex gate timed out, leaving codex entries active this turn");
         } else if (off) {
-          ours.push(...codexIds);
+          disabledIds.push(...codexIds);
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
@@ -9873,34 +9908,45 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
       }
     }
   }
-  return ours.length ? { disabled: ours } : undefined;
+  if (disabledIds.length === 0)
+    return;
+  const contracts = spindle.contracts;
+  return {
+    disabled: disabledIds,
+    ...lmbIds.length > 0 && (contracts?.["worldInfoActivationCapture"] ?? 0) >= 1 ? { captured: lmbIds } : {}
+  };
 }, 90);
 spindle.registerInterceptor(async (messages, context) => {
   try {
-    const chatId = context && typeof context === "object" && typeof context.chatId === "string" ? context.chatId : null;
+    const interceptorContext = context && typeof context === "object" ? context : null;
+    const chatId = interceptorContext && typeof interceptorContext["chatId"] === "string" ? interceptorContext["chatId"] : null;
     if (!chatId)
       return messages;
-    const work = (async () => {
-      let userId = resolveUserId(chatId);
-      if (!userId) {
-        const bootstrap = getBootstrapUserId();
-        if (bootstrap) {
-          const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
-          if (chat) {
-            rememberChatUser(chatId, bootstrap);
-            userId = bootstrap;
-          }
+    const capturedValue = interceptorContext?.["capturedWorldInfo"];
+    const capturedWorldInfo = Array.isArray(capturedValue) ? capturedValue.flatMap((value) => value && typeof value === "object" && typeof value.id === "string" ? [{ id: value.id }] : []) : undefined;
+    const contracts = spindle.contracts;
+    const worldInfoActivationCapture = (contracts?.["worldInfoActivationCapture"] ?? 0) >= 1;
+    let userId = resolveUserId(chatId);
+    if (!userId) {
+      const bootstrap = getBootstrapUserId();
+      if (bootstrap) {
+        const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
+        if (chat) {
+          rememberChatUser(chatId, bootstrap);
+          userId = bootstrap;
         }
       }
-      if (!userId)
-        return "skip";
-      const settings = await loadSettings(userId);
-      if (!settings.enabled)
-        return "skip";
-      return buildInjection(chatId, messages, userId);
-    })();
-    const result = await work;
-    if (result === "skip" || !result)
+    }
+    if (!userId)
+      return messages;
+    const settings = await loadSettings(userId);
+    if (!settings.enabled)
+      return messages;
+    const result = await buildInjection(chatId, messages, userId, {
+      capturedWorldInfo,
+      worldInfoActivationCapture
+    });
+    if (!result)
       return messages;
     return { messages: result.messages, breakdown: result.breakdown };
   } catch (err) {

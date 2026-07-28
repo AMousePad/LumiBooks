@@ -25,6 +25,20 @@ function sourceIndexInChat(lm: LlmMessageDTO): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function sourceMessageMetadata(lm: LlmMessageDTO): Record<string, unknown> | undefined {
+  const record = lm as unknown as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(record, "sourceMessageMetadata")) return undefined;
+  const value = record["sourceMessageMetadata"];
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export interface InjectionContext {
+  capturedWorldInfo?: readonly { id: string }[];
+  worldInfoActivationCapture: boolean;
+}
+
 interface OrderedEntry {
   entry: LMBEntry;
   label: string;
@@ -65,64 +79,80 @@ function orderEntries(coverage: CoverageMap, msgIdToIdx: Map<string, number>): O
   return ordered;
 }
 
-/** Last assembly step each chat reached, so a budget timeout can name the
- * stage that ran long instead of just the total. */
-const stageByChat = new Map<string, { stage: string; at: number }>();
-const STAGE_CAP = 200;
+const LEGACY_ACTIVATION_WAIT_MS = 2000;
+type ActivatedEntries = Awaited<ReturnType<typeof spindle.world_books.getActivated>>;
+const legacyActivationInflight = new Map<string, Promise<ActivatedEntries | null>>();
 
-export function lastInjectionStage(chatId: string): string {
-  const s = stageByChat.get(chatId);
-  return s ? `${s.stage} (${Date.now() - s.at}ms in)` : "not started";
+async function getLegacyActivated(
+  chatId: string,
+  userId: string,
+): Promise<ActivatedEntries | null> {
+  const key = `${userId}:${chatId}`;
+  let pending = legacyActivationInflight.get(key);
+  if (!pending) {
+    const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
+    pending = new Promise((resolve) => {
+      const timer = setTimeout(
+        () => resolve(null),
+        LEGACY_ACTIVATION_WAIT_MS,
+      );
+      void raw.then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+        if (legacyActivationInflight.get(key) === pending) {
+          legacyActivationInflight.delete(key);
+        }
+      });
+    });
+    legacyActivationInflight.set(key, pending);
+  }
+  return await pending;
 }
 
 export async function buildInjection(
   chatId: string,
   llmMessages: LlmMessageDTO[],
   userId: string,
+  context: InjectionContext = { worldInfoActivationCapture: false },
 ): Promise<InterceptorResultDTO | null> {
-  const started = Date.now();
-  const stage = (name: string): void => {
-    stageByChat.delete(chatId);
-    stageByChat.set(chatId, { stage: name, at: started });
-    while (stageByChat.size > STAGE_CAP) {
-      const oldest = stageByChat.keys().next().value as string | undefined;
-      if (oldest === undefined) break;
-      stageByChat.delete(oldest);
-    }
-  };
-  stage("reading the lorebook");
-  const [activated, allEntries, attachedBookIds] = await Promise.all([
-    spindle.world_books.getActivated(chatId, userId).catch(() => null),
-    listLmbEntries(chatId, userId),
-    getChatAttachedBookIds(chatId, userId).catch(() => null),
-  ]);
+  let activated: Awaited<ReturnType<typeof spindle.world_books.getActivated>> | null = null;
+  let attachedBookIds: string[] | null = null;
+  let allEntries: LMBEntry[];
+  if (
+    context.capturedWorldInfo === undefined &&
+    !context.worldInfoActivationCapture
+  ) {
+    [activated, allEntries, attachedBookIds] = await Promise.all([
+      getLegacyActivated(chatId, userId),
+      listLmbEntries(chatId, userId),
+      getChatAttachedBookIds(chatId, userId).catch(() => null),
+    ]);
+  } else {
+    allEntries = await listLmbEntries(chatId, userId);
+  }
   if (allEntries.length === 0) return null;
 
-  // Coverage needs no chat messages, so compute it first and short-circuit
-  // before the getMessages round-trip when there is nothing to inject: a chat
-  // with entries but no active ones (all superseded/disabled) returns here
-  // without paying for a message fetch on the hot path.
-  const ourBookId = allEntries[0]!.raw.world_book_id;
-  // getActivated reflects only the books the host is actually scanning for this
-  // chat. If our book has been unbound from chat_world_book_ids (e.g. a wholesale
-  // chat-metadata write by another actor dropped it), getActivated reports none
-  // of our entries - and gating on it would then silently drop every memory.
-  // Trust getActivated as the activation authority when the host is clearly
-  // scanning our book (it activated some of our entries, or our book is still
-  // chat-attached); otherwise fall open to enabled entries (still honoring
-  // user-disabled ones). Off-hot-path handlers re-assert the binding.
-  const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
-  const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
-  const hostScanningOurBook = anyOursActivated || (!!attachedBookIds && attachedBookIds.includes(ourBookId));
-  const entriesForCoverage: LMBEntry[] = activatedIds && hostScanningOurBook
-    ? allEntries.filter((e) => activatedIds.has(e.raw.id))
-    : allEntries.filter((e) => !e.raw.disabled);
-  stage("working out what is already covered");
+  let entriesForCoverage: LMBEntry[];
+  if (context.capturedWorldInfo !== undefined) {
+    const capturedIds = new Set(context.capturedWorldInfo.map((entry) => entry.id));
+    entriesForCoverage = allEntries.filter((entry) => capturedIds.has(entry.raw.id));
+  } else if (context.worldInfoActivationCapture) {
+    entriesForCoverage = allEntries.filter((entry) => !entry.raw.disabled);
+  } else {
+    const ourBookId = allEntries[0]!.raw.world_book_id;
+    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
+    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
+    const hostScanningOurBook = anyOursActivated || (!!attachedBookIds && attachedBookIds.includes(ourBookId));
+    entriesForCoverage = activatedIds && hostScanningOurBook
+      ? allEntries.filter((e) => activatedIds.has(e.raw.id))
+      : allEntries.filter((e) => !e.raw.disabled);
+  }
   const coverage: CoverageMap = await buildCoverage(chatId, userId, entriesForCoverage);
   if (coverage.activeEntries.length === 0) return null;
 
   const historyMsgs = llmMessages.filter(isAssembledHistory);
   if (historyMsgs.length === 0) {
+    if (context.capturedWorldInfo !== undefined) return null;
     // Anomalous shape: verify against the chat before shouting. A fully
     // covered chat legitimately assembles zero history.
     let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>> | null = null;
@@ -152,10 +182,14 @@ export async function buildInjection(
 
   // Identity contract: the host stamps each assembled history message with
   // its source id and chat index.
-  interface PlanItem { id: string; idx: number | undefined; covered: boolean }
+  interface PlanItem {
+    id: string;
+    idx: number | undefined;
+    covered: boolean;
+    metadata: Record<string, unknown> | undefined;
+  }
   const plan: PlanItem[] = [];
   let missingIdx = false;
-  let anyCovered = false;
   for (const m of historyMsgs) {
     const id = sourceMessageId(m);
     if (id === undefined) {
@@ -167,19 +201,17 @@ export async function buildInjection(
     }
     const idx = sourceIndexInChat(m);
     if (idx === undefined) missingIdx = true;
-    const covered = coverage.coveredBy.has(id);
-    if (covered) anyCovered = true;
-    plan.push({ id, idx, covered });
+    plan.push({
+      id,
+      idx,
+      covered: coverage.coveredBy.has(id),
+      metadata: sourceMessageMetadata(m),
+    });
   }
 
-  // Fast path: nothing to drop and host-stamped indexes available, so the
-  // full chat fetch (the heaviest RPC on long chats, and the main way this
-  // interceptor can blow the host's time budget) is skipped. Slow path only
-  // when a drop is pending (needs lmb_excluded metadata) or indexes are
-  // missing - identical behavior to the original.
   let msgIdToIdx: Map<string, number>;
-  if (anyCovered || missingIdx) {
-    stage("reading the chat");
+  const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
+  if (missingIdx || needsMetadata) {
     let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>>;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -199,15 +231,20 @@ export async function buildInjection(
       }
       p.idx = idx;
       if (p.covered) {
-        const md = (chatMessages[idx] as { metadata?: Record<string, unknown> } | undefined)?.metadata;
-        if (md && md["lmb_excluded"] === true) p.covered = false;
+        p.metadata =
+          (chatMessages[idx] as { metadata?: Record<string, unknown> } | undefined)?.metadata ??
+          {};
       }
     }
   } else {
     msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx!] as const));
   }
+  for (const item of plan) {
+    if (item.covered && item.metadata?.["lmb_excluded"] === true) {
+      item.covered = false;
+    }
+  }
 
-  stage("placing the memories");
   const ordered: OrderedEntry[] = orderEntries(coverage, msgIdToIdx);
   if (ordered.length === 0) return null;
 

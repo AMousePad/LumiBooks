@@ -200,12 +200,16 @@ registerCodexCallbacks({
 });
 
 spindle.registerWorldInfoInterceptor(async (ctx) => {
-  const ours: string[] = [];
+  const lmbIds: string[] = [];
+  const disabledIds: string[] = [];
   const codexIds: string[] = [];
   for (const entry of ctx.entries) {
     const ext = entry.extensions as Record<string, unknown> | undefined;
     if (!ext) continue;
-    if (ext[EXTENSION_KEY]) ours.push(entry.id);
+    if (ext[EXTENSION_KEY]) {
+      lmbIds.push(entry.id);
+      disabledIds.push(entry.id);
+    }
     else if (ext[CODEX_ENTRY_EXTENSION_KEY]) codexIds.push(entry.id);
   }
   // The codex gate is evaluated per activation and timeboxed: the host drops
@@ -229,7 +233,7 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
         if (off === "timeout") {
           warn("world-info codex gate timed out, leaving codex entries active this turn");
         } else if (off) {
-          ours.push(...codexIds);
+          disabledIds.push(...codexIds);
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
@@ -238,35 +242,68 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
       }
     }
   }
-  return ours.length ? { disabled: ours } : undefined;
+  if (disabledIds.length === 0) return undefined;
+  const contracts = (spindle as unknown as {
+    contracts?: Readonly<Record<string, number>>;
+  }).contracts;
+  return {
+    disabled: disabledIds,
+    ...(lmbIds.length > 0 && (contracts?.["worldInfoActivationCapture"] ?? 0) >= 1
+      ? { captured: lmbIds }
+      : {}),
+  };
 }, 90);
 
 spindle.registerInterceptor(async (messages, context) => {
   try {
+    const interceptorContext =
+      context && typeof context === "object"
+        ? (context as Record<string, unknown>)
+        : null;
     const chatId =
-      context && typeof context === "object" && typeof (context as { chatId?: unknown }).chatId === "string"
-        ? ((context as { chatId?: unknown }).chatId as string)
+      interceptorContext && typeof interceptorContext["chatId"] === "string"
+        ? interceptorContext["chatId"]
         : null;
     if (!chatId) return messages;
-    const work = (async (): Promise<InterceptorResultDTO | "skip" | null> => {
-      let userId = resolveUserId(chatId);
-      if (!userId) {
-        const bootstrap = getBootstrapUserId();
-        if (bootstrap) {
-          const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
-          if (chat) {
-            rememberChatUser(chatId, bootstrap);
-            userId = bootstrap;
-          }
+    const capturedValue = interceptorContext?.["capturedWorldInfo"];
+    const capturedWorldInfo = Array.isArray(capturedValue)
+      ? capturedValue.flatMap((value) =>
+          value &&
+          typeof value === "object" &&
+          typeof (value as { id?: unknown }).id === "string"
+            ? [{ id: (value as { id: string }).id }]
+            : [],
+        )
+      : undefined;
+    const contracts = (spindle as unknown as {
+      contracts?: Readonly<Record<string, number>>;
+    }).contracts;
+    const worldInfoActivationCapture =
+      (contracts?.["worldInfoActivationCapture"] ?? 0) >= 1;
+    let userId = resolveUserId(chatId);
+    if (!userId) {
+      const bootstrap = getBootstrapUserId();
+      if (bootstrap) {
+        const chat = await spindle.chats.get(chatId, bootstrap).catch(() => null);
+        if (chat) {
+          rememberChatUser(chatId, bootstrap);
+          userId = bootstrap;
         }
       }
-      if (!userId) return "skip";
-      const settings = await loadSettings(userId);
-      if (!settings.enabled) return "skip";
-      return buildInjection(chatId, messages as LlmMessageDTO[], userId);
-    })();
-    const result = await work;
-    if (result === "skip" || !result) return messages;
+    }
+    if (!userId) return messages;
+    const settings = await loadSettings(userId);
+    if (!settings.enabled) return messages;
+    const result = await buildInjection(
+      chatId,
+      messages as LlmMessageDTO[],
+      userId,
+      {
+        capturedWorldInfo,
+        worldInfoActivationCapture,
+      },
+    );
+    if (!result) return messages;
     return { messages: result.messages, breakdown: result.breakdown };
   } catch (err) {
     warn(`interceptor failed: ${describeError(err)}`);
