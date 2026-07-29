@@ -43,7 +43,7 @@ import {
   reassertChatBinding,
   registerBookAnomalyCallback,
 } from "./world-book";
-import { buildInjection, lastInjectionStage, registerInjectionAnomalyCallback } from "./injection";
+import { buildInjection, registerInjectionAnomalyCallback } from "./injection";
 import {
   abortBusy,
   acceptPreview,
@@ -241,11 +241,6 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
   return ours.length ? { disabled: ours } : undefined;
 }, 90);
 
-/** Finish comfortably inside the host's interceptor budget (default 10s,
- * users run as low as 4s): timing out at the host level drops the injection
- * anyway but logs a scary host error. Better to skip one turn cleanly. */
-const INJECTION_BUDGET_MS = 3000;
-
 spindle.registerInterceptor(async (messages, context) => {
   try {
     const chatId =
@@ -253,12 +248,6 @@ spindle.registerInterceptor(async (messages, context) => {
         ? ((context as { chatId?: unknown }).chatId as string)
         : null;
     if (!chatId) return messages;
-    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
-    const budget = new Promise<"timeout">((resolve) => {
-      budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
-    });
-    // The whole path sits inside the timebox: the settings read and bootstrap
-    // chat lookup can stall just like assembly can.
     const work = (async (): Promise<InterceptorResultDTO | "skip" | null> => {
       let userId = resolveUserId(chatId);
       if (!userId) {
@@ -276,21 +265,9 @@ spindle.registerInterceptor(async (messages, context) => {
       if (!settings.enabled) return "skip";
       return buildInjection(chatId, messages as LlmMessageDTO[], userId);
     })();
-    work.catch(() => {});
-    try {
-      const result = await Promise.race([work, budget]);
-      if (result === "timeout") {
-        const stage = lastInjectionStage(chatId);
-        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)} while ${stage}, skipping this turn to stay inside the host interceptor budget`);
-        const toastUser = resolveUserId(chatId);
-        if (toastUser) void notify(toastUser, "error", `Memoria was still ${stage.replace(/ \(\d+ms in\)$/, "")} and skipped this turn`);
-        return messages;
-      }
-      if (result === "skip" || !result) return messages;
-      return { messages: result.messages, breakdown: result.breakdown };
-    } finally {
-      if (budgetTimer) clearTimeout(budgetTimer);
-    }
+    const result = await work;
+    if (result === "skip" || !result) return messages;
+    return { messages: result.messages, breakdown: result.breakdown };
   } catch (err) {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;

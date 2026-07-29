@@ -2350,10 +2350,6 @@ function orderEntries(coverage, msgIdToIdx) {
 }
 var stageByChat = new Map;
 var STAGE_CAP = 200;
-function lastInjectionStage(chatId) {
-  const s = stageByChat.get(chatId);
-  return s ? `${s.stage} (${Date.now() - s.at}ms in)` : "not started";
-}
 async function buildInjection(chatId, llmMessages, userId) {
   const started = Date.now();
   const stage = (name) => {
@@ -9879,16 +9875,11 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
   }
   return ours.length ? { disabled: ours } : undefined;
 }, 90);
-var INJECTION_BUDGET_MS = 3000;
 spindle.registerInterceptor(async (messages, context) => {
   try {
     const chatId = context && typeof context === "object" && typeof context.chatId === "string" ? context.chatId : null;
     if (!chatId)
       return messages;
-    let budgetTimer;
-    const budget = new Promise((resolve) => {
-      budgetTimer = setTimeout(() => resolve("timeout"), INJECTION_BUDGET_MS);
-    });
     const work = (async () => {
       let userId = resolveUserId(chatId);
       if (!userId) {
@@ -9908,24 +9899,10 @@ spindle.registerInterceptor(async (messages, context) => {
         return "skip";
       return buildInjection(chatId, messages, userId);
     })();
-    work.catch(() => {});
-    try {
-      const result = await Promise.race([work, budget]);
-      if (result === "timeout") {
-        const stage = lastInjectionStage(chatId);
-        error(`injection: assembly exceeded ${INJECTION_BUDGET_MS}ms for chat ${chatId.slice(0, 8)} while ${stage}, skipping this turn to stay inside the host interceptor budget`);
-        const toastUser = resolveUserId(chatId);
-        if (toastUser)
-          notify(toastUser, "error", `Memoria was still ${stage.replace(/ \(\d+ms in\)$/, "")} and skipped this turn`);
-        return messages;
-      }
-      if (result === "skip" || !result)
-        return messages;
-      return { messages: result.messages, breakdown: result.breakdown };
-    } finally {
-      if (budgetTimer)
-        clearTimeout(budgetTimer);
-    }
+    const result = await work;
+    if (result === "skip" || !result)
+      return messages;
+    return { messages: result.messages, breakdown: result.breakdown };
   } catch (err) {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;
