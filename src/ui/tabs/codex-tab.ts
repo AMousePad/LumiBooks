@@ -29,9 +29,10 @@ import {
   textNode,
 } from "../components";
 import { confirmDelete, requestCodexRebuild, requestCodexUpdate } from "../modals";
+import { renderContinuitySection } from "../continuity";
 import { renderCodexTabLock } from "../lessons/seal";
 
-type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore" | "secrets";
+type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore" | "secrets" | "manage";
 
 const SUBTABS: { key: CodexSubtab; label: string }[] = [
   { key: "overview", label: "Overview" },
@@ -41,6 +42,7 @@ const SUBTABS: { key: CodexSubtab; label: string }[] = [
   { key: "threads", label: "Threads" },
   { key: "lore", label: "Lore" },
   { key: "secrets", label: "Secrets" },
+  { key: "manage", label: "Manage" },
 ];
 
 /* ------------------------------------------------------- tolerant parsing */
@@ -254,7 +256,8 @@ export function codexWantsRefresh(chatId: string): boolean {
  * real subtab click so a draft or filter left by free play can't linger. */
 export function setCodexSubtab(key: string): void {
   if (key === "overview" || key === "entities" || key === "relations"
-    || key === "timeline" || key === "threads" || key === "lore" || key === "secrets") {
+    || key === "timeline" || key === "threads" || key === "lore" || key === "secrets"
+    || key === "manage") {
     if (local.subtab !== key) {
       local.query = "";
       local.queryRaw = "";
@@ -489,6 +492,7 @@ export function renderCodexTab(
       case "threads": renderThreads(paneHost, parsed, state, ctx, send); break;
       case "lore": renderLore(paneHost, parsed, state, ctx, send); break;
       case "secrets": renderSecrets(paneHost, parsed, state, ctx, send); break;
+      case "manage": renderManage(paneHost, state, ctx, send); break;
       default: break;
     }
   };
@@ -676,12 +680,6 @@ function renderOverview(
     ));
   }
 
-  if (state.codexRootOrigin) {
-    sec.body.appendChild(textNode(`Carried over from ${state.codexRootOriginName}. Wipe the codex to detach it.`, "lmb-help"));
-  } else if (!state.codexExists && state.codexSources.length > 0) {
-    sec.body.appendChild(renderContinuity(state, chatId, ctx, send, busy));
-  }
-
   const row = document.createElement("div");
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
@@ -700,13 +698,6 @@ function renderOverview(
           disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
           title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information",
         }),
-    makeButton("Rebuild codex", async () => {
-      const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
-      if (ok) requestCodexRebuild(state, chatId, send);
-    }, {
-      disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-      title: "Wipe and regenerate the whole story bible from the start of the chat",
-    }),
     makeButton(
       state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo",
       async () => {
@@ -720,53 +711,106 @@ function renderOverview(
           : "Nothing to undo yet, Memoria snapshots the codex before each change",
       },
     ),
-    makeButton("Back up", () => send({ type: "codex_backup", chatId }), {
-      disabled: busy || !state.codexExists,
-      title: "Download every codex file plus its inject switches as one JSON file",
-    }),
-    makeButton("Restore", async () => {
-      const ok = await confirmDelete(ctx, "Restore a codex backup?", "Memoria will replace every codex file in this chat with the ones in the backup. This cannot be undone.");
-      if (ok) restoreBackup(ctx, chatId, send);
-    }, { disabled: busy, title: "Replace this chat's codex with a backup file" }),
-    makeButton("Wipe codex", async () => {
-      const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
-      if (ok) send({ type: "codex_reset", chatId });
-    }, { danger: true, disabled: busy || !state.codexExists }),
   );
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
 }
 
-/** Continuing a story in a fresh chat: carry the previous chat's codex over
- * instead of re-reading a story the archivist already encoded. */
-function renderContinuity(
+/** Rebuild, wipe, and file transfer, plus the continuity picker. Kept off the
+ * Overview so the everyday row stays down to Update, Tidy, and Undo. */
+function renderManage(
+  host: HTMLElement,
   state: FrontendState,
-  chatId: string,
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
-  busy: boolean,
-): HTMLElement {
-  const wrap = document.createElement("div");
-  wrap.className = "lmb-actions";
-  // Survives re-renders: a state push mid-choice must not silently reset the
-  // dropdown to the first chat under the user's cursor.
-  const known = state.codexSources.some((s) => s.chatId === local.codexSourceId);
-  if (!known) local.codexSourceId = state.codexSources[0]!.chatId;
-  wrap.append(
-    textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"),
-    select({
-      value: local.codexSourceId!,
-      options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
-      onChange: (v) => { local.codexSourceId = v; },
+): void {
+  const chatId = state.activeChatId!;
+  const profile = state.activeProfile;
+  const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
+  const sources = state.codexSources;
+
+  const known = sources.some((s) => s.chatId === local.codexSourceId);
+  if (!known) local.codexSourceId = "";
+
+  renderContinuitySection(host, ctx, {
+    emptyText: "No other chat has a codex to carry over yet",
+    inherited: state.codexRootOrigin
+      ? {
+          text: `Carried over from ${state.codexRootOriginName}. Memoria indexes this chat's own messages from the start.`,
+          detach: {
+            label: "Detach codex",
+            title: "Erase the carried-over codex from this chat",
+            confirmTitle: "Detach the carried-over codex?",
+            confirmBody: "Codex records merge as Memoria works, so there is nothing left to separate. Detaching wipes the codex and starts blank on the next update. This cannot be undone.",
+            run: () => send({ type: "codex_reset", chatId }),
+          },
+        }
+      : null,
+    picker: !state.codexExists && sources.length > 0
+      ? {
+          help: "Continuing an earlier chat? Carry its story bible over instead of re-reading a story Memoria already encoded.",
+          ariaLabel: "Source chat to carry the codex from",
+          placeholder: "Pick a source chat...",
+          options: sources.map((s) => ({ chatId: s.chatId, chatName: s.chatName })),
+          selectedId: local.codexSourceId ?? "",
+          onSelect: (v) => { local.codexSourceId = v; },
+          action: {
+            label: "Carry codex over",
+            title: "Copy another chat's codex into this one",
+            primary: true,
+            confirm: {
+              title: "Carry the codex over?",
+              body: "Memoria will copy the chosen chat's story bible into this chat, then index this chat's own messages from the start.",
+            },
+            run: (sourceChatId) => send({ type: "codex_adopt", chatId, sourceChatId }),
+          },
+        }
+      : null,
+  });
+
+  const files = section("Codex files");
+  files.body.appendChild(textNode(
+    "Export writes every codex file and its inject switches to one JSON file. Import replaces them all from such a file.",
+    "lmb-help",
+  ));
+  const fileRow = document.createElement("div");
+  fileRow.className = "lmb-actions";
+  fileRow.append(
+    makeButton("Export", () => send({ type: "codex_backup", chatId }), {
+      disabled: busy || !state.codexExists,
+      title: "Download every codex file plus its inject switches as one JSON file",
     }),
-    makeButton("Carry codex over", async () => {
-      const sourceId = local.codexSourceId!;
-      const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
-      const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
-      if (ok) send({ type: "codex_adopt", chatId, sourceChatId: sourceId });
-    }, { disabled: busy, title: "Copy another chat's codex into this one" }),
+    makeButton("Import", async () => {
+      const ok = await confirmDelete(ctx, "Import a codex file?", "Memoria will replace every codex file in this chat with the ones in the imported file. This cannot be undone.");
+      if (ok) restoreBackup(ctx, chatId, send);
+    }, { disabled: busy, title: "Replace this chat's codex from an exported file" }),
   );
-  return wrap;
+  files.body.appendChild(fileRow);
+  host.appendChild(files.wrap);
+
+  const danger = section("Start over");
+  danger.body.appendChild(textNode(
+    "Rebuild re-reads the whole chat from message one. Wipe clears the codex and leaves it blank until the next update.",
+    "lmb-help",
+  ));
+  const dangerRow = document.createElement("div");
+  dangerRow.className = "lmb-actions";
+  lessonMark(dangerRow, "codex.manage.startover");
+  dangerRow.append(
+    makeButton("Rebuild codex", async () => {
+      const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+      if (ok) requestCodexRebuild(state, chatId, send);
+    }, {
+      disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+      title: "Wipe and regenerate the whole story bible from the start of the chat",
+    }),
+    makeButton("Wipe codex", async () => {
+      const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
+      if (ok) send({ type: "codex_reset", chatId });
+    }, { danger: true, disabled: busy || !state.codexExists }),
+  );
+  danger.body.appendChild(dangerRow);
+  host.appendChild(danger.wrap);
 }
 
 function restoreBackup(

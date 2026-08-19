@@ -5082,6 +5082,69 @@ function resetHomeTabLocal() {
   promptCache.expanded.clear();
 }
 
+// src/ui/continuity.ts
+function renderContinuitySection(host, ctx, spec) {
+  const sec = section("Continuity (root)");
+  if (!spec.inherited && !spec.picker) {
+    sec.body.appendChild(textNode(spec.emptyText, "lmb-empty"));
+    host.appendChild(sec.wrap);
+    return sec.wrap;
+  }
+  if (spec.inherited) {
+    sec.body.appendChild(textNode(spec.inherited.text, "lmb-help"));
+    if (spec.inherited.detail)
+      sec.body.appendChild(spec.inherited.detail);
+    const detachRow = document.createElement("div");
+    detachRow.className = "lmb-actions";
+    const d = spec.inherited.detach;
+    detachRow.appendChild(makeButton(d.label, async () => {
+      if (await confirmDelete(ctx, d.confirmTitle, d.confirmBody))
+        d.run();
+    }, { small: true, danger: true, title: d.title }));
+    sec.body.appendChild(detachRow);
+  }
+  if (spec.picker) {
+    const p = spec.picker;
+    sec.body.appendChild(textNode(p.help, "lmb-help"));
+    const row = document.createElement("div");
+    row.className = "lmb-actions";
+    let actionBtn;
+    const picker = select({
+      value: p.selectedId,
+      ariaLabel: p.ariaLabel,
+      options: [
+        { value: "", label: p.placeholder },
+        ...p.options.map((o) => ({
+          value: o.chatId,
+          label: o.detail ? `${o.chatName} (${o.detail})` : o.chatName
+        }))
+      ],
+      onChange: (v) => {
+        p.onSelect(v);
+        actionBtn.disabled = !v;
+      }
+    });
+    row.appendChild(picker);
+    actionBtn = makeButton(p.action.label, async () => {
+      const sourceChatId = picker.value;
+      if (!sourceChatId)
+        return;
+      const c = p.action.confirm;
+      if (c && !await confirmDelete(ctx, c.title, c.body))
+        return;
+      p.action.run(sourceChatId);
+    }, {
+      ...p.action.primary ? { primary: true } : {},
+      disabled: !p.selectedId,
+      title: p.action.title
+    });
+    row.appendChild(actionBtn);
+    sec.body.appendChild(row);
+  }
+  host.appendChild(sec.wrap);
+  return sec.wrap;
+}
+
 // src/ui/tabs/books-tab.ts
 var SUBTABS = [
   { key: "shelf", label: "Shelf" },
@@ -5777,90 +5840,70 @@ function renderContinuity(host, state, ctx, send) {
   const hasOwn = state.chapters.some((ch) => !ch.isRoot && !ch.isGhost) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot);
   const hasRoot = state.rootEntryCount > 0;
   const candidates = state.availableRoots;
-  if (!hasRoot && candidates.length === 0) {
-    const sec2 = section("Continuity (root)");
-    lessonMark(sec2.wrap, "books.cont.root");
-    sec2.body.appendChild(textNode("No other chat has memories to inherit from yet", "lmb-empty"));
-    host.appendChild(sec2.wrap);
-    return;
-  }
-  const sec = section("Continuity (root)");
-  lessonMark(sec.wrap, "books.cont.root");
+  let detail = null;
   if (hasRoot) {
-    const status = document.createElement("div");
-    status.className = "lmb-help";
-    const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
-    status.textContent = `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`;
-    sec.body.appendChild(status);
     const rootEntries = [
       ...state.volumes.filter((v) => v.isRoot),
       ...state.arcs.filter((a) => a.isRoot),
       ...state.chapters.filter((ch) => ch.isRoot)
     ];
     if (rootEntries.length) {
-      const list = document.createElement("div");
-      list.className = "lmb-multiselect";
+      detail = document.createElement("div");
+      detail.className = "lmb-multiselect";
       for (const e of rootEntries) {
         const rowEl = document.createElement("div");
         rowEl.className = "lmb-multiselect-row";
         rowEl.style.opacity = "0.75";
         const tag = e.meta.tier === 3 ? "VOL" : e.meta.tier === 2 ? "ARC" : "CH";
         rowEl.textContent = `[${tag}] ${e.comment || e.meta.title || e.entryId.slice(0, 6)} (${formatTokens(e.contentTokens)}t)`;
-        list.appendChild(rowEl);
+        detail.appendChild(rowEl);
       }
-      sec.body.appendChild(list);
     }
-    const detachRow = document.createElement("div");
-    detachRow.className = "lmb-actions";
-    detachRow.appendChild(makeButton("Detach root", async () => {
-      const ok = await confirmDelete(ctx, "Detach inherited memories?", "Memoria will remove the inherited memories from this chat. Your own chapters and arcs stay.");
-      if (ok)
-        send({ type: "detach_root", chatId });
-    }, { small: true, danger: true, title: "Remove the inherited root memories from this chat" }));
-    sec.body.appendChild(detachRow);
   }
-  if (candidates.length > 0) {
-    const help = document.createElement("div");
-    help.className = "lmb-help";
-    help.textContent = hasOwn ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root." : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.";
-    sec.body.appendChild(help);
-    const row = document.createElement("div");
-    row.className = "lmb-actions";
-    let actionBtn;
-    const picker = select({
-      value: localState.rebaseSourceId,
+  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
+  const wrap = renderContinuitySection(host, ctx, {
+    emptyText: "No other chat has memories to inherit from yet",
+    inherited: hasRoot ? {
+      text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`,
+      detail,
+      detach: {
+        label: "Detach root",
+        title: "Remove the inherited root memories from this chat",
+        confirmTitle: "Detach inherited memories?",
+        confirmBody: "Memoria will remove the inherited memories from this chat. Your own chapters and arcs stay.",
+        run: () => send({ type: "detach_root", chatId })
+      }
+    } : null,
+    picker: candidates.length > 0 ? {
+      help: hasOwn ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root." : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.",
       ariaLabel: "Source chat to inherit memories from",
-      options: [
-        { value: "", label: "Pick a source chat..." },
-        ...candidates.map((cand) => ({ value: cand.chatId, label: `${cand.chatName} (${cand.entryCount})` }))
-      ],
-      onChange: (v) => {
+      placeholder: "Pick a source chat...",
+      options: candidates.map((cand) => ({
+        chatId: cand.chatId,
+        chatName: cand.chatName,
+        detail: String(cand.entryCount)
+      })),
+      selectedId: localState.rebaseSourceId,
+      onSelect: (v) => {
         localState.rebaseSourceId = v;
-        actionBtn.disabled = !v;
+      },
+      action: hasOwn ? {
+        label: "Rebuild from...",
+        title: "Replaces this chat's memories with the chosen root (asks to confirm)",
+        confirm: {
+          title: "Rebuild from root?",
+          body: "Memoria will DELETE this chat's existing chapters and arcs, seed the chosen root, then re-summarize this chat from scratch. This cannot be undone."
+        },
+        run: (sourceChatId) => send({ type: "rebuild_root", chatId, sourceChatId })
+      } : {
+        label: "Rebase",
+        title: "Seed this chat with the chosen chat's memories",
+        primary: true,
+        run: (sourceChatId) => send({ type: "rebase_root", chatId, sourceChatId })
       }
-    });
-    row.appendChild(picker);
-    if (hasOwn) {
-      actionBtn = makeButton("Rebuild from...", async () => {
-        const sourceChatId = picker.value;
-        if (!sourceChatId)
-          return;
-        const ok = await confirmDelete(ctx, "Rebuild from root?", "Memoria will DELETE this chat's existing chapters and arcs, seed the chosen root, then re-summarize this chat from scratch. This cannot be undone.");
-        if (ok)
-          send({ type: "rebuild_root", chatId, sourceChatId });
-      }, { disabled: !localState.rebaseSourceId, title: "Replaces this chat's memories with the chosen root (asks to confirm)" });
-    } else {
-      actionBtn = makeButton("Rebase", () => {
-        const sourceChatId = picker.value;
-        if (!sourceChatId)
-          return;
-        send({ type: "rebase_root", chatId, sourceChatId });
-      }, { primary: true, disabled: !localState.rebaseSourceId, title: "Seed this chat with the chosen chat's memories" });
-    }
-    row.appendChild(actionBtn);
-    sec.body.appendChild(row);
-  }
-  host.appendChild(sec.wrap);
+    } : null
+  });
+  lessonMark(wrap, "books.cont.root");
 }
 function renderMaintenance(host, state, ctx, send) {
   const chatId = state.activeChatId;
@@ -6911,7 +6954,8 @@ var SUBTABS2 = [
   { key: "timeline", label: "Timeline" },
   { key: "threads", label: "Threads" },
   { key: "lore", label: "Lore" },
-  { key: "secrets", label: "Secrets" }
+  { key: "secrets", label: "Secrets" },
+  { key: "manage", label: "Manage" }
 ];
 var ENTITY_GROUPS = [
   { key: "characters", title: "Characters", singular: "character", ns: "char" },
@@ -7071,7 +7115,7 @@ function codexWantsRefresh(chatId) {
   return cache.chatId === chatId;
 }
 function setCodexSubtab(key) {
-  if (key === "overview" || key === "entities" || key === "relations" || key === "timeline" || key === "threads" || key === "lore" || key === "secrets") {
+  if (key === "overview" || key === "entities" || key === "relations" || key === "timeline" || key === "threads" || key === "lore" || key === "secrets" || key === "manage") {
     if (local.subtab !== key) {
       local.query = "";
       local.queryRaw = "";
@@ -7265,6 +7309,9 @@ function renderCodexTab(host, state, ctx, send) {
       case "secrets":
         renderSecrets(paneHost, parsed, state, ctx, send);
         break;
+      case "manage":
+        renderManage(paneHost, state, ctx, send);
+        break;
       default:
         break;
     }
@@ -7428,11 +7475,6 @@ function renderOverview2(host, state, ctx, send, parsed) {
     sec.body.appendChild(textNode("Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.", "lmb-help"));
     sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records.", "lmb-help"));
   }
-  if (state.codexRootOrigin) {
-    sec.body.appendChild(textNode(`Carried over from ${state.codexRootOriginName}. Wipe the codex to detach it.`, "lmb-help"));
-  } else if (!state.codexExists && state.codexSources.length > 0) {
-    sec.body.appendChild(renderContinuity2(state, chatId, ctx, send, busy));
-  }
   const row = document.createElement("div");
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
@@ -7446,13 +7488,6 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }) : makeButton("Tidy up", () => send({ type: "codex_tidy", chatId }), {
     disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
     title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information"
-  }), makeButton("Rebuild codex", async () => {
-    const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
-    if (ok)
-      requestCodexRebuild(state, chatId, send);
-  }, {
-    disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-    title: "Wipe and regenerate the whole story bible from the start of the chat"
   }), makeButton(state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo", async () => {
     const ok = await confirmDelete(ctx, "Undo the last codex change?", `Memoria will roll the codex back to the snapshot she took before the ${state.codexUndoReason ?? "update"} ${relativeTime(state.codexUndoAt)}. Anything written since is lost.`);
     if (ok)
@@ -7460,41 +7495,84 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }, {
     disabled: busy || !state.codexUndoAt,
     title: state.codexUndoAt ? "Roll back to the snapshot taken before the last codex change" : "Nothing to undo yet, Memoria snapshots the codex before each change"
-  }), makeButton("Back up", () => send({ type: "codex_backup", chatId }), {
+  }));
+  sec.body.appendChild(row);
+  host.appendChild(sec.wrap);
+}
+function renderManage(host, state, ctx, send) {
+  const chatId = state.activeChatId;
+  const profile = state.activeProfile;
+  const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
+  const sources = state.codexSources;
+  const known = sources.some((s) => s.chatId === local.codexSourceId);
+  if (!known)
+    local.codexSourceId = "";
+  renderContinuitySection(host, ctx, {
+    emptyText: "No other chat has a codex to carry over yet",
+    inherited: state.codexRootOrigin ? {
+      text: `Carried over from ${state.codexRootOriginName}. Memoria indexes this chat's own messages from the start.`,
+      detach: {
+        label: "Detach codex",
+        title: "Erase the carried-over codex from this chat",
+        confirmTitle: "Detach the carried-over codex?",
+        confirmBody: "Codex records merge as Memoria works, so there is nothing left to separate. Detaching wipes the codex and starts blank on the next update. This cannot be undone.",
+        run: () => send({ type: "codex_reset", chatId })
+      }
+    } : null,
+    picker: !state.codexExists && sources.length > 0 ? {
+      help: "Continuing an earlier chat? Carry its story bible over instead of re-reading a story Memoria already encoded.",
+      ariaLabel: "Source chat to carry the codex from",
+      placeholder: "Pick a source chat...",
+      options: sources.map((s) => ({ chatId: s.chatId, chatName: s.chatName })),
+      selectedId: local.codexSourceId ?? "",
+      onSelect: (v) => {
+        local.codexSourceId = v;
+      },
+      action: {
+        label: "Carry codex over",
+        title: "Copy another chat's codex into this one",
+        primary: true,
+        confirm: {
+          title: "Carry the codex over?",
+          body: "Memoria will copy the chosen chat's story bible into this chat, then index this chat's own messages from the start."
+        },
+        run: (sourceChatId) => send({ type: "codex_adopt", chatId, sourceChatId })
+      }
+    } : null
+  });
+  const files = section("Codex files");
+  files.body.appendChild(textNode("Export writes every codex file and its inject switches to one JSON file. Import replaces them all from such a file.", "lmb-help"));
+  const fileRow = document.createElement("div");
+  fileRow.className = "lmb-actions";
+  fileRow.append(makeButton("Export", () => send({ type: "codex_backup", chatId }), {
     disabled: busy || !state.codexExists,
     title: "Download every codex file plus its inject switches as one JSON file"
-  }), makeButton("Restore", async () => {
-    const ok = await confirmDelete(ctx, "Restore a codex backup?", "Memoria will replace every codex file in this chat with the ones in the backup. This cannot be undone.");
+  }), makeButton("Import", async () => {
+    const ok = await confirmDelete(ctx, "Import a codex file?", "Memoria will replace every codex file in this chat with the ones in the imported file. This cannot be undone.");
     if (ok)
       restoreBackup(ctx, chatId, send);
-  }, { disabled: busy, title: "Replace this chat's codex with a backup file" }), makeButton("Wipe codex", async () => {
+  }, { disabled: busy, title: "Replace this chat's codex from an exported file" }));
+  files.body.appendChild(fileRow);
+  host.appendChild(files.wrap);
+  const danger = section("Start over");
+  danger.body.appendChild(textNode("Rebuild re-reads the whole chat from message one. Wipe clears the codex and leaves it blank until the next update.", "lmb-help"));
+  const dangerRow = document.createElement("div");
+  dangerRow.className = "lmb-actions";
+  lessonMark(dangerRow, "codex.manage.startover");
+  dangerRow.append(makeButton("Rebuild codex", async () => {
+    const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+    if (ok)
+      requestCodexRebuild(state, chatId, send);
+  }, {
+    disabled: busy || !state.settings.enabled || !profile.codexEnabled,
+    title: "Wipe and regenerate the whole story bible from the start of the chat"
+  }), makeButton("Wipe codex", async () => {
     const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
     if (ok)
       send({ type: "codex_reset", chatId });
   }, { danger: true, disabled: busy || !state.codexExists }));
-  sec.body.appendChild(row);
-  host.appendChild(sec.wrap);
-}
-function renderContinuity2(state, chatId, ctx, send, busy) {
-  const wrap = document.createElement("div");
-  wrap.className = "lmb-actions";
-  const known = state.codexSources.some((s) => s.chatId === local.codexSourceId);
-  if (!known)
-    local.codexSourceId = state.codexSources[0].chatId;
-  wrap.append(textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"), select({
-    value: local.codexSourceId,
-    options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
-    onChange: (v) => {
-      local.codexSourceId = v;
-    }
-  }), makeButton("Carry codex over", async () => {
-    const sourceId = local.codexSourceId;
-    const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
-    const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
-    if (ok)
-      send({ type: "codex_adopt", chatId, sourceChatId: sourceId });
-  }, { disabled: busy, title: "Copy another chat's codex into this one" }));
-  return wrap;
+  danger.body.appendChild(dangerRow);
+  host.appendChild(danger.wrap);
 }
 function restoreBackup(ctx, chatId, send) {
   ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20000000 }).then((files) => {
@@ -11502,7 +11580,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.actions",
-          text: "These are quick actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Rebuild erases the bible and re-reads the whole chat. Wipe just erases."
+          text: "These are the everyday actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Undo rolls back my last change. Rebuild and Wipe live in the Manage tab, along with import and export."
         },
         {
           kind: "do",
@@ -11538,10 +11616,10 @@ var COURSE_CODEX = {
           id: "c5",
           scored: true,
           tab: "codex",
-          subtab: "overview",
+          subtab: "manage",
           fixture: { variant: "codex" },
-          prep: () => setCodexSubtab("overview"),
-          anchor: "codex.actions",
+          prep: () => setCodexSubtab("manage"),
+          anchor: "codex.manage.startover",
           text: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
           options: [
             { text: "Rebuild re-reads the whole chat right away and keeps your tile settings. Wipe waits, and the next update starts from message one anyway", correct: true },

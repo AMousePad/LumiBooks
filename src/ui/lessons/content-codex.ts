@@ -77,7 +77,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.actions",
-          text: "These are quick actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Rebuild erases the bible and re-reads the whole chat. Wipe just erases.",
+          text: "These are the everyday actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Undo rolls back my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
         },
         {
           kind: "do",
@@ -113,10 +113,10 @@ export const COURSE_CODEX: LessonCourseDef = {
           id: "c5",
           scored: true,
           tab: "codex",
-          subtab: "overview",
+          subtab: "manage",
           fixture: { variant: "codex" },
-          prep: () => setCodexSubtab("overview"),
-          anchor: "codex.actions",
+          prep: () => setCodexSubtab("manage"),
+          anchor: "codex.manage.startover",
           text: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
           options: [
             { text: "Rebuild re-reads the whole chat right away and keeps your tile settings. Wipe waits, and the next update starts from message one anyway", correct: true },

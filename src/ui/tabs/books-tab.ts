@@ -15,6 +15,7 @@ import {
   textNode,
 } from "../components";
 import { confirmDelete, openEditModal } from "../modals";
+import { renderContinuitySection } from "../continuity";
 
 type BooksSubtab = "shelf" | "compose" | "continuity";
 
@@ -859,102 +860,78 @@ function renderContinuity(
     || state.volumes.some((v) => !v.isRoot);
   const hasRoot = state.rootEntryCount > 0;
   const candidates = state.availableRoots;
-  if (!hasRoot && candidates.length === 0) {
-    const sec = section("Continuity (root)");
-    lessonMark(sec.wrap, "books.cont.root");
-    sec.body.appendChild(textNode("No other chat has memories to inherit from yet", "lmb-empty"));
-    host.appendChild(sec.wrap);
-    return;
-  }
 
-  const sec = section("Continuity (root)");
-  lessonMark(sec.wrap, "books.cont.root");
-
+  let detail: HTMLElement | null = null;
   if (hasRoot) {
-    const status = document.createElement("div");
-    status.className = "lmb-help";
-    const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
-    status.textContent = `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`;
-    sec.body.appendChild(status);
-
     const rootEntries = [
       ...state.volumes.filter((v) => v.isRoot),
       ...state.arcs.filter((a) => a.isRoot),
       ...state.chapters.filter((ch) => ch.isRoot),
     ];
     if (rootEntries.length) {
-      const list = document.createElement("div");
-      list.className = "lmb-multiselect";
+      detail = document.createElement("div");
+      detail.className = "lmb-multiselect";
       for (const e of rootEntries) {
         const rowEl = document.createElement("div");
         rowEl.className = "lmb-multiselect-row";
         rowEl.style.opacity = "0.75";
         const tag = e.meta.tier === 3 ? "VOL" : e.meta.tier === 2 ? "ARC" : "CH";
         rowEl.textContent = `[${tag}] ${e.comment || e.meta.title || e.entryId.slice(0, 6)} (${formatTokens(e.contentTokens)}t)`;
-        list.appendChild(rowEl);
+        detail.appendChild(rowEl);
       }
-      sec.body.appendChild(list);
     }
-
-    const detachRow = document.createElement("div");
-    detachRow.className = "lmb-actions";
-    detachRow.appendChild(
-      makeButton("Detach root", async () => {
-        const ok = await confirmDelete(ctx, "Detach inherited memories?", "Memoria will remove the inherited memories from this chat. Your own chapters and arcs stay.");
-        if (ok) send({ type: "detach_root", chatId });
-      }, { small: true, danger: true, title: "Remove the inherited root memories from this chat" }),
-    );
-    sec.body.appendChild(detachRow);
   }
 
-  if (candidates.length > 0) {
-    const help = document.createElement("div");
-    help.className = "lmb-help";
-    help.textContent = hasOwn
-      ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root."
-      : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.";
-    sec.body.appendChild(help);
-
-    const row = document.createElement("div");
-    row.className = "lmb-actions";
-    // The action button stays dead until a source is chosen - an enabled
-    // button that silently no-ops reads as broken.
-    let actionBtn: HTMLButtonElement;
-    const picker = select({
-      value: localState.rebaseSourceId,
-      ariaLabel: "Source chat to inherit memories from",
-      options: [
-        { value: "", label: "Pick a source chat..." },
-        ...candidates.map((cand) => ({ value: cand.chatId, label: `${cand.chatName} (${cand.entryCount})` })),
-      ],
-      onChange: (v) => {
-        localState.rebaseSourceId = v;
-        actionBtn.disabled = !v;
-      },
-    });
-    row.appendChild(picker);
-
-    if (hasOwn) {
-      // Neutral entry point: the danger styling belongs to the confirm step,
-      // not the pane's only visible button.
-      actionBtn = makeButton("Rebuild from...", async () => {
-        const sourceChatId = picker.value;
-        if (!sourceChatId) return;
-        const ok = await confirmDelete(ctx, "Rebuild from root?", "Memoria will DELETE this chat's existing chapters and arcs, seed the chosen root, then re-summarize this chat from scratch. This cannot be undone.");
-        if (ok) send({ type: "rebuild_root", chatId, sourceChatId });
-      }, { disabled: !localState.rebaseSourceId, title: "Replaces this chat's memories with the chosen root (asks to confirm)" });
-    } else {
-      actionBtn = makeButton("Rebase", () => {
-        const sourceChatId = picker.value;
-        if (!sourceChatId) return;
-        send({ type: "rebase_root", chatId, sourceChatId });
-      }, { primary: true, disabled: !localState.rebaseSourceId, title: "Seed this chat with the chosen chat's memories" });
-    }
-    row.appendChild(actionBtn);
-    sec.body.appendChild(row);
-  }
-
-  host.appendChild(sec.wrap);
+  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
+  const wrap = renderContinuitySection(host, ctx, {
+    emptyText: "No other chat has memories to inherit from yet",
+    inherited: hasRoot
+      ? {
+          text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`,
+          detail,
+          detach: {
+            label: "Detach root",
+            title: "Remove the inherited root memories from this chat",
+            confirmTitle: "Detach inherited memories?",
+            confirmBody: "Memoria will remove the inherited memories from this chat. Your own chapters and arcs stay.",
+            run: () => send({ type: "detach_root", chatId }),
+          },
+        }
+      : null,
+    picker: candidates.length > 0
+      ? {
+          help: hasOwn
+            ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root."
+            : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.",
+          ariaLabel: "Source chat to inherit memories from",
+          placeholder: "Pick a source chat...",
+          options: candidates.map((cand) => ({
+            chatId: cand.chatId,
+            chatName: cand.chatName,
+            detail: String(cand.entryCount),
+          })),
+          selectedId: localState.rebaseSourceId,
+          onSelect: (v) => { localState.rebaseSourceId = v; },
+          action: hasOwn
+            ? {
+                label: "Rebuild from...",
+                title: "Replaces this chat's memories with the chosen root (asks to confirm)",
+                confirm: {
+                  title: "Rebuild from root?",
+                  body: "Memoria will DELETE this chat's existing chapters and arcs, seed the chosen root, then re-summarize this chat from scratch. This cannot be undone.",
+                },
+                run: (sourceChatId) => send({ type: "rebuild_root", chatId, sourceChatId }),
+              }
+            : {
+                label: "Rebase",
+                title: "Seed this chat with the chosen chat's memories",
+                primary: true,
+                run: (sourceChatId) => send({ type: "rebase_root", chatId, sourceChatId }),
+              },
+        }
+      : null,
+  });
+  lessonMark(wrap, "books.cont.root");
 }
 
 function renderMaintenance(
