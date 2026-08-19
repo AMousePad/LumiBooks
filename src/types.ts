@@ -155,6 +155,9 @@ export interface FrontendState {
   codexUndoReason: string | null;
   /** Other chats holding a codex this one could continue from. */
   codexSources: RootSourceOption[];
+  /** Chat this codex was carried over from, mirroring rootOrigin for the shelf. */
+  codexRootOrigin: string | null;
+  codexRootOriginName: string | null;
   /** Approx tokens of the constant codex entries (timeline + threads); the
    * keyword-retrieved records cost extra only when a scene activates them. */
   codexInjectedTokens: number;

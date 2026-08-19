@@ -81,6 +81,8 @@ test("carries the files over and resets consumption to zero", async () => {
   // would be validated under the wrong schema.
   expect(cursor.fileStates).toEqual({ threads: "frozen" });
   expect(cursor.relationsTableMode).toBe(true);
+  // Origin is recorded the way the shelf records rootOrigin.
+  expect(cursor.rootOrigin).toBe(SRC);
 });
 
 test("refuses to overwrite a chat that already has codex data", async () => {

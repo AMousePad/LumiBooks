@@ -413,6 +413,8 @@ export function buildFixture(variant: string): FrontendState {
     codexUndoAt: null,
     codexUndoReason: null,
     codexSources: [],
+    codexRootOrigin: null,
+    codexRootOriginName: null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],

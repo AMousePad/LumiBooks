@@ -54,6 +54,8 @@ export interface CodexCursor {
    * validation must use THIS mode, not the profile's, or a toggle would reject
    * the very files the migration run needs to read. */
   relationsTableMode: boolean | null;
+  /** Chat this codex was carried over from, mirroring the shelf's root origin. */
+  rootOrigin: string | null;
   lastRunAt: number | null;
   lastRunStats: CodexRunStats | null;
   runs: number;
@@ -72,6 +74,7 @@ export function emptyCursor(): CodexCursor {
     pendingReconcile: false,
     reconcileUntilMsgId: null,
     relationsTableMode: null,
+    rootOrigin: null,
     lastRunAt: null,
     lastRunStats: null,
     runs: 0,
@@ -159,6 +162,7 @@ export async function loadCursor(chatId: string, userId: string): Promise<CodexC
     pendingReconcile: raw.pendingReconcile === true,
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
     relationsTableMode: typeof raw.relationsTableMode === "boolean" ? raw.relationsTableMode : null,
+    rootOrigin: typeof raw.rootOrigin === "string" && raw.rootOrigin ? raw.rootOrigin : null,
     lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : null,
     lastRunStats: normalizeRunStats(raw.lastRunStats),
     runs: typeof raw.runs === "number" && Number.isFinite(raw.runs) ? raw.runs : 0,
@@ -419,6 +423,7 @@ export async function adoptCodexFrom(
       ...emptyCursor(),
       fileStates: { ...source.fileStates },
       relationsTableMode: source.relationsTableMode,
+      rootOrigin: fromChatId,
       updatedAt: Date.now(),
     };
     await saveCursor(toChatId, next, userId);

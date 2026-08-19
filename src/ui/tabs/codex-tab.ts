@@ -675,7 +675,9 @@ function renderOverview(
     ));
   }
 
-  if (!state.codexExists && state.codexSources.length > 0) {
+  if (state.codexRootOrigin) {
+    sec.body.appendChild(textNode(`Carried over from ${state.codexRootOriginName}. Wipe the codex to detach it.`, "lmb-help"));
+  } else if (!state.codexExists && state.codexSources.length > 0) {
     sec.body.appendChild(renderContinuity(state, chatId, ctx, send, busy));
   }
 

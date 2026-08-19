@@ -7427,7 +7427,9 @@ function renderOverview2(host, state, ctx, send, parsed) {
     sec.body.appendChild(textNode("Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.", "lmb-help"));
     sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.", "lmb-help"));
   }
-  if (!state.codexExists && state.codexSources.length > 0) {
+  if (state.codexRootOrigin) {
+    sec.body.appendChild(textNode(`Carried over from ${state.codexRootOriginName}. Wipe the codex to detach it.`, "lmb-help"));
+  } else if (!state.codexExists && state.codexSources.length > 0) {
     sec.body.appendChild(renderContinuity2(state, chatId, ctx, send, busy));
   }
   const row = document.createElement("div");
@@ -12741,6 +12743,8 @@ function buildFixture(variant) {
     codexUndoAt: null,
     codexUndoReason: null,
     codexSources: [],
+    codexRootOrigin: null,
+    codexRootOriginName: null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],

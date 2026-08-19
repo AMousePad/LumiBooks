@@ -12,7 +12,7 @@ import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
 import { getCodexFileTokens, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
 import { codexUndoInfo } from "./codex/backup";
-import { listCodexChatIds } from "./codex/store";
+import { listCodexChatIds, loadCursor } from "./codex/store";
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
@@ -116,6 +116,8 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexUndoAt: null,
     codexUndoReason: null,
     codexSources: [],
+    codexRootOrigin: null,
+    codexRootOriginName: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -231,6 +233,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const codexSources: RootSourceOption[] = codexStatus.exists
     ? []
     : await listCodexSources(chat.id, userId).catch(() => []);
+  const codexCursor = await loadCursor(chat.id, userId).catch(() => null);
+  const codexRootOrigin = codexCursor?.rootOrigin ?? null;
+  const codexRootOriginName = codexRootOrigin
+    ? ((await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim()
+      || codexRootOrigin.slice(0, 8))
+    : null;
   const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   // Constant entries only (timeline + threads), keyworded records cost per scene.
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
@@ -275,6 +283,8 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexUndoAt: undo?.savedAt ?? null,
     codexUndoReason: undo?.reason ?? null,
     codexSources,
+    codexRootOrigin,
+    codexRootOriginName,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,

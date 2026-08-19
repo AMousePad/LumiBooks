@@ -3198,6 +3198,7 @@ function emptyCursor() {
     pendingReconcile: false,
     reconcileUntilMsgId: null,
     relationsTableMode: null,
+    rootOrigin: null,
     lastRunAt: null,
     lastRunStats: null,
     runs: 0,
@@ -3270,6 +3271,7 @@ async function loadCursor(chatId, userId) {
     pendingReconcile: raw.pendingReconcile === true,
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
     relationsTableMode: typeof raw.relationsTableMode === "boolean" ? raw.relationsTableMode : null,
+    rootOrigin: typeof raw.rootOrigin === "string" && raw.rootOrigin ? raw.rootOrigin : null,
     lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : null,
     lastRunStats: normalizeRunStats(raw.lastRunStats),
     runs: typeof raw.runs === "number" && Number.isFinite(raw.runs) ? raw.runs : 0,
@@ -3461,6 +3463,7 @@ async function adoptCodexFrom(fromChatId, toChatId, userId) {
       ...emptyCursor(),
       fileStates: { ...source.fileStates },
       relationsTableMode: source.relationsTableMode,
+      rootOrigin: fromChatId,
       updatedAt: Date.now()
     };
     await saveCursor(toChatId, next, userId);
@@ -9807,6 +9810,8 @@ async function buildState(userId, requestedChatId) {
     codexUndoAt: null,
     codexUndoReason: null,
     codexSources: [],
+    codexRootOrigin: null,
+    codexRootOriginName: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -9906,6 +9911,9 @@ async function buildState(userId, requestedChatId) {
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
   const codexSources = codexStatus.exists ? [] : await listCodexSources(chat.id, userId).catch(() => []);
+  const codexCursor = await loadCursor(chat.id, userId).catch(() => null);
+  const codexRootOrigin = codexCursor?.rootOrigin ?? null;
+  const codexRootOriginName = codexRootOrigin ? (await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim() || codexRootOrigin.slice(0, 8) : null;
   const codexFileTokens = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? ["timeline", "threads"].reduce((acc, k) => {
     const st = codexPanel.fileStates[k];
@@ -9944,6 +9952,8 @@ async function buildState(userId, requestedChatId) {
     codexUndoAt: undo?.savedAt ?? null,
     codexUndoReason: undo?.reason ?? null,
     codexSources,
+    codexRootOrigin,
+    codexRootOriginName,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
