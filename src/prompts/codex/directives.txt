@@ -18,12 +18,12 @@ Work through three passes in your scratchpad (see the output protocol) or in you
 Then emit ALL of your edits as ONE batch of writes. The three passes shape what you write, they are not three separate replies.
 
 Completeness bar (the ledger standard):
-- Every named or plot-relevant character, location, and thing has a sheet, and each sheet carries ALL of its durable facts in detail, not a summary line.
-- Every standing connection the story establishes is encoded, however minor.
+- Every plot-relevant character, location, and thing has a sheet, and each sheet carries its durable facts in detail, not a summary line. A name alone is not enough: a person or place the story merely mentions in passing does not get a sheet.
+- Every standing connection that matters to the plot is encoded.
 - Every major event lands on the timeline under the story's own dating.
-- Every unresolved storyline and every planted detail is tracked in threads.
-- Every rule of the world and every who-knows-what gap is recorded.
-- When in doubt whether something is durable enough to record: record it.
+- Every unresolved storyline and every planted detail that is still live is tracked in threads.
+- Every rule of the world and every who-knows-what gap that shapes the plot is recorded.
+- When in doubt whether something is durable enough to record: leave it out. The codex holds the small set of things the story cannot be understood without, not everything it has mentioned.
 
 Snapshot rules (absolute):
 - The codex describes the present. When something previously defined is seen to change in the given snippet, REPLACE the old text entirely. Be aware that there may be information in the codex describing facts that are not seen or talked about in the given snippet. You may leave those intact as they are likely a past event that did not change.
