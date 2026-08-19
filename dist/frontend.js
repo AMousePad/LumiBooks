@@ -7263,6 +7263,10 @@ function renderCodexTab(host, state, ctx, send) {
     renderOverview2(host, state, ctx, send, parsed);
     return;
   }
+  if (local.subtab === "manage") {
+    renderManage(host, state, ctx, send);
+    return;
+  }
   if (!state.codexExists) {
     const sec = section("Knowledge Codex");
     sec.body.appendChild(textNode(state.activeProfile.codexEnabled ? "No codex yet. Memoria starts writing once enough messages pile up, or use Update now in Overview." : "The codex is off. Enable it in Tuning to start tracking entities, relations, and threads.", "lmb-empty"));
@@ -7308,9 +7312,6 @@ function renderCodexTab(host, state, ctx, send) {
         break;
       case "secrets":
         renderSecrets(paneHost, parsed, state, ctx, send);
-        break;
-      case "manage":
-        renderManage(paneHost, state, ctx, send);
         break;
       default:
         break;

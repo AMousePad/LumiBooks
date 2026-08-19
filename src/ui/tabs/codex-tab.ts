@@ -446,6 +446,12 @@ export function renderCodexTab(
     renderOverview(host, state, ctx, send, parsed);
     return;
   }
+  // Manage reads no records, and an empty chat is exactly when carrying a
+  // codex over or importing one matters, so it sits ahead of the file gates.
+  if (local.subtab === "manage") {
+    renderManage(host, state, ctx, send);
+    return;
+  }
 
   // Content panes need files.
   if (!state.codexExists) {
@@ -492,7 +498,6 @@ export function renderCodexTab(
       case "threads": renderThreads(paneHost, parsed, state, ctx, send); break;
       case "lore": renderLore(paneHost, parsed, state, ctx, send); break;
       case "secrets": renderSecrets(paneHost, parsed, state, ctx, send); break;
-      case "manage": renderManage(paneHost, state, ctx, send); break;
       default: break;
     }
   };
