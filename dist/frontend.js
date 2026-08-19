@@ -7235,17 +7235,13 @@ function renderCodexTab(host, state, ctx, send) {
     local.showFullTimeline = false;
     pendingCodexSaves.clear();
   }
-  if (!state.codexExists && cache.files) {
-    cache.files = null;
-    cache.parsed = null;
-  }
   const stale = cache.files !== null && cache.revision !== state.codexRevision;
   const editing = local.entityDraft !== null || local.recordDraft !== null || pendingCodexSaves.size > 0;
   if (stale && !editing) {
     cache.files = null;
     cache.parsed = null;
   }
-  if (state.codexExists && !cache.files && !cache.pending) {
+  if (!cache.files && !cache.pending) {
     cache.pending = true;
     send({ type: "codex_read", chatId });
   }
@@ -7265,12 +7261,6 @@ function renderCodexTab(host, state, ctx, send) {
   }
   if (local.subtab === "manage") {
     renderManage(host, state, ctx, send);
-    return;
-  }
-  if (!state.codexExists) {
-    const sec = section("Knowledge Codex");
-    sec.body.appendChild(textNode(state.activeProfile.codexEnabled ? "No codex yet. Memoria starts writing once enough messages pile up, or use Update now in Overview." : "The codex is off. Enable it in Tuning to start tracking entities, relations, and threads.", "lmb-empty"));
-    host.appendChild(sec.wrap);
     return;
   }
   if (!parsed) {

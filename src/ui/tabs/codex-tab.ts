@@ -410,21 +410,18 @@ export function renderCodexTab(
     local.showFullTimeline = false;
     pendingCodexSaves.clear();
   }
-  // A reset wiped the files behind our back: drop the stale view.
-  if (!state.codexExists && cache.files) {
-    cache.files = null;
-    cache.parsed = null;
-  }
-  // An agent run, tidy, or rebuild changed the codex under us. Refetch rather
-  // than keep rendering counts from the version we first loaded. Drafts in
-  // flight hold the refresh so a save cannot be clobbered mid-edit.
+  // Any mutation bumps the revision, a wipe included, so this one check covers
+  // runs, tidies, rebuilds, imports, and resets alike. Drafts in flight hold
+  // the refresh so a save cannot be clobbered mid-edit.
   const stale = cache.files !== null && cache.revision !== state.codexRevision;
   const editing = local.entityDraft !== null || local.recordDraft !== null || pendingCodexSaves.size > 0;
   if (stale && !editing) {
     cache.files = null;
     cache.parsed = null;
   }
-  if (state.codexExists && !cache.files && !cache.pending) {
+  // Fetched whether or not a codex exists: the backend answers with empty
+  // scaffolds, which is what lets the panes be hand-authored from nothing.
+  if (!cache.files && !cache.pending) {
     cache.pending = true;
     send({ type: "codex_read", chatId });
   }
@@ -453,18 +450,6 @@ export function renderCodexTab(
     return;
   }
 
-  // Content panes need files.
-  if (!state.codexExists) {
-    const sec = section("Knowledge Codex");
-    sec.body.appendChild(textNode(
-      state.activeProfile.codexEnabled
-        ? "No codex yet. Memoria starts writing once enough messages pile up, or use Update now in Overview."
-        : "The codex is off. Enable it in Tuning to start tracking entities, relations, and threads.",
-      "lmb-empty",
-    ));
-    host.appendChild(sec.wrap);
-    return;
-  }
   if (!parsed) {
     const sec = section("Knowledge Codex");
     sec.body.appendChild(textNode("Memoria is fetching the codex files...", "lmb-empty"));
