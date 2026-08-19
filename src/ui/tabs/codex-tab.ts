@@ -635,7 +635,7 @@ function renderOverview(
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
       sec.body.appendChild(textNode(
-        "No codex yet, so every record sits at zero. The switches already work. Freeze a record now and Memoria skips it from the very first pass.",
+        "No codex yet.",
         "lmb-help",
       ));
     }
@@ -670,7 +670,7 @@ function renderOverview(
       "lmb-help",
     ));
     sec.body.appendChild(textNode(
-      "Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.",
+      "Shorter and simpler chats often run better with fewer records.",
       "lmb-help",
     ));
   }

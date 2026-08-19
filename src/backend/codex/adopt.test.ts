@@ -103,3 +103,27 @@ test("lists chats holding a codex", async () => {
   store.set(`codex/${DST}/cursor.json`, { version: 1 });
   expect((await listCodexChatIds(userId)).sort()).toEqual([DST, SRC].sort());
 });
+
+test("reads the host's listing shapes, backslashes and prefix-relative alike", async () => {
+  const bs = String.fromCharCode(92);
+  const win = (s: string): string => s.split("/").join(bs);
+  const shapes: string[][] = [
+    [`${SRC}/cursor.json`, `${SRC}/world.json`, `${DST}/cursor.json`],
+    [win(`${SRC}/cursor.json`), win(`${SRC}/world.json`), win(`${DST}/cursor.json`)],
+    [`codex/${SRC}/cursor.json`, `codex/${DST}/cursor.json`],
+    [win(`codex/${SRC}/cursor.json`), win(`codex/${DST}/cursor.json`)],
+  ];
+  const spindleMock = globalWithSpindle.spindle as { userStorage: { list: (p: string) => Promise<string[]> } };
+  const realList = spindleMock.userStorage.list;
+  try {
+    for (const listing of shapes) {
+      spindleMock.userStorage.list = async () => listing;
+      expect((await listCodexChatIds(userId)).sort()).toEqual([DST, SRC].sort());
+    }
+    // A stray file directly under the codex dir names no chat.
+    spindleMock.userStorage.list = async () => ["stray.json"];
+    expect(await listCodexChatIds(userId)).toEqual([]);
+  } finally {
+    spindleMock.userStorage.list = realList;
+  }
+});

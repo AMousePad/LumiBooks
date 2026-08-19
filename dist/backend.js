@@ -3473,10 +3473,11 @@ async function adoptCodexFrom(fromChatId, toChatId, userId) {
 async function listCodexChatIds(userId) {
   const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => []);
   const ids = new Set;
-  for (const p of paths) {
+  for (const raw of paths) {
+    const p = raw.replace(/\\/g, "/");
     const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
     const chatId = rest.split("/")[0];
-    if (chatId)
+    if (chatId && chatId !== rest)
       ids.add(chatId);
   }
   return [...ids];

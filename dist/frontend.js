@@ -7402,7 +7402,7 @@ function renderOverview2(host, state, ctx, send, parsed) {
     }
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
-      sec.body.appendChild(textNode("No codex yet, so every record sits at zero. The switches already work. Freeze a record now and Memoria skips it from the very first pass.", "lmb-help"));
+      sec.body.appendChild(textNode("No codex yet.", "lmb-help"));
     }
     const pending = state.codexRefreshPending ?? [];
     if (pending.length > 0) {
@@ -7425,7 +7425,7 @@ function renderOverview2(host, state, ctx, send, parsed) {
       sec.body.appendChild(banner);
     }
     sec.body.appendChild(textNode("Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.", "lmb-help"));
-    sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.", "lmb-help"));
+    sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records.", "lmb-help"));
   }
   if (state.codexRootOrigin) {
     sec.body.appendChild(textNode(`Carried over from ${state.codexRootOriginName}. Wipe the codex to detach it.`, "lmb-help"));

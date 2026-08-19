@@ -435,10 +435,12 @@ export async function adoptCodexFrom(
 export async function listCodexChatIds(userId: string): Promise<string[]> {
   const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => [] as string[]);
   const ids = new Set<string>();
-  for (const p of paths) {
+  for (const raw of paths) {
+    // The host lists via readdirSync, which separates with a backslash on Windows.
+    const p = raw.replace(/\\/g, "/");
     const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
     const chatId = rest.split("/")[0];
-    if (chatId) ids.add(chatId);
+    if (chatId && chatId !== rest) ids.add(chatId);
   }
   return [...ids];
 }
