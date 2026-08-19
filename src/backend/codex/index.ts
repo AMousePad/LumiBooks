@@ -730,7 +730,10 @@ export async function maybeRunCodex(
   if (!settings.enabled || !profile.codexEnabled) return;
   // A fork drain before inheritance settles would forfeit the ancestor's codex.
   if (await forkCodexPending(chatId, userId).catch(() => false)) return;
+  // Entry sync stays on the generation cadence even in manual mode: it is what
+  // sweeps entries orphaned by a wipe this process never saw.
   await ensureCodexEntriesSynced(chatId, userId, profile);
+  if (profile.codexManualOnly) return;
   try {
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {

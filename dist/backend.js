@@ -696,6 +696,7 @@ function makeDefaultProfile(id, name) {
     memoriaPersonaOverride: null,
     ttftTimeoutSecs: 60,
     codexEnabled: true,
+    codexManualOnly: false,
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
@@ -797,6 +798,7 @@ function normalizeProfile(raw) {
     memoriaPersonaOverride: typeof v.memoriaPersonaOverride === "string" && v.memoriaPersonaOverride.trim() !== "" ? v.memoriaPersonaOverride : null,
     ttftTimeoutSecs: clampInt(v.ttftTimeoutSecs, 10, 600, base.ttftTimeoutSecs),
     codexEnabled: typeof v.codexEnabled === "boolean" ? v.codexEnabled : base.codexEnabled,
+    codexManualOnly: typeof v.codexManualOnly === "boolean" ? v.codexManualOnly : base.codexManualOnly,
     codexLagUnit: v.codexLagUnit === "tokens" ? "tokens" : "messages",
     codexLagValue: clampInt(v.codexLagValue, 0, v.codexLagUnit === "tokens" ? 1e6 : 1e5, base.codexLagValue),
     codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",
@@ -8710,6 +8712,8 @@ async function maybeRunCodex(chatId, profile, settings, userId) {
   if (await forkCodexPending(chatId, userId).catch(() => false))
     return;
   await ensureCodexEntriesSynced(chatId, userId, profile);
+  if (profile.codexManualOnly)
+    return;
   try {
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {

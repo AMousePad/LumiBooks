@@ -91,6 +91,8 @@ export interface LMBProfile {
   memoriaPersonaOverride: string | null;
   ttftTimeoutSecs: number;
   codexEnabled: boolean;
+  /** Codex only runs when you ask it to: no automatic pass after a generation. */
+  codexManualOnly: boolean;
   codexLagUnit: CompressionUnit;
   codexLagValue: number;
   codexWindowUnit: CompressionUnit;
@@ -254,6 +256,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     memoriaPersonaOverride: null,
     ttftTimeoutSecs: 60,
     codexEnabled: true,
+    codexManualOnly: false,
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
@@ -373,6 +376,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
         : null,
     ttftTimeoutSecs: clampInt(v.ttftTimeoutSecs, 10, 600, base.ttftTimeoutSecs),
     codexEnabled: typeof v.codexEnabled === "boolean" ? v.codexEnabled : base.codexEnabled,
+    codexManualOnly: typeof v.codexManualOnly === "boolean" ? v.codexManualOnly : base.codexManualOnly,
     codexLagUnit: v.codexLagUnit === "tokens" ? "tokens" : "messages",
     codexLagValue: clampInt(v.codexLagValue, 0, v.codexLagUnit === "tokens" ? 1000000 : 100000, base.codexLagValue),
     codexWindowUnit: v.codexWindowUnit === "tokens" ? "tokens" : "messages",

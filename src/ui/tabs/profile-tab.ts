@@ -46,8 +46,17 @@ export function renderCodexSettings(
     onChange: (v) => patch({ codexEnabled: v }),
   }), "tuning.codex.enabled"));
 
+  sec.body.appendChild(checkbox({
+    checked: profile.codexManualOnly,
+    label: "Manual only",
+    hint: "Memoria never updates the codex on her own. Lag and window are ignored, use Update now on Home or the Codex tab.",
+    onChange: (v) => patch({ codexManualOnly: v }),
+  }));
+
   const fields = document.createElement("div");
-  fields.className = profile.codexEnabled ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
+  fields.className = profile.codexEnabled && !profile.codexManualOnly
+    ? "lmb-subgroup"
+    : "lmb-subgroup lmb-greyed";
   sec.body.appendChild(fields);
 
   const lagGrid = document.createElement("div");

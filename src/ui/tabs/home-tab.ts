@@ -807,7 +807,7 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   } else if (state.activeProfile.codexEnabled || state.codexExists) {
     const value = state.codexBacklog > 0 ? String(state.codexBacklog) : "✓";
     const subText = state.codexBacklog > 0
-      ? "msgs unindexed"
+      ? state.activeProfile.codexManualOnly ? "msgs unindexed, manual only" : "msgs unindexed"
       : state.codexLastRunAt
         ? `updated ${relativeTime(state.codexLastRunAt)}`
         : "no codex yet";

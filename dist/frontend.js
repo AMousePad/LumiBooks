@@ -3883,6 +3883,7 @@ function makeDefaultProfile(id, name) {
     memoriaPersonaOverride: null,
     ttftTimeoutSecs: 60,
     codexEnabled: true,
+    codexManualOnly: false,
     codexLagUnit: "messages",
     codexLagValue: 6,
     codexWindowUnit: "messages",
@@ -4839,7 +4840,7 @@ function renderOverview(host, state, send) {
     tiles.appendChild(lessonMark(locked, "home.tile.codex"));
   } else if (state.activeProfile.codexEnabled || state.codexExists) {
     const value = state.codexBacklog > 0 ? String(state.codexBacklog) : "✓";
-    const subText = state.codexBacklog > 0 ? "msgs unindexed" : state.codexLastRunAt ? `updated ${relativeTime(state.codexLastRunAt)}` : "no codex yet";
+    const subText = state.codexBacklog > 0 ? state.activeProfile.codexManualOnly ? "msgs unindexed, manual only" : "msgs unindexed" : state.codexLastRunAt ? `updated ${relativeTime(state.codexLastRunAt)}` : "no codex yet";
     tiles.appendChild(statTile(value, "Codex", subText, "Messages the story bible has not read yet"));
   } else {
     tiles.appendChild(statTile("—", "Codex", "off, enable in Tuning"));
@@ -9224,8 +9225,14 @@ function renderCodexSettings(host, state, profile, patch) {
     hint: "Runs automatically after generations once the backlog fills. Manual updates live on Home and the Codex tab.",
     onChange: (v) => patch({ codexEnabled: v })
   }), "tuning.codex.enabled"));
+  sec.body.appendChild(checkbox({
+    checked: profile.codexManualOnly,
+    label: "Manual only",
+    hint: "Memoria never updates the codex on her own. Lag and window are ignored, use Update now on Home or the Codex tab.",
+    onChange: (v) => patch({ codexManualOnly: v })
+  }));
   const fields = document.createElement("div");
-  fields.className = profile.codexEnabled ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
+  fields.className = profile.codexEnabled && !profile.codexManualOnly ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
   sec.body.appendChild(fields);
   const lagGrid = document.createElement("div");
   lagGrid.className = "lmb-grid-2";
