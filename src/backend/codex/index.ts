@@ -26,6 +26,7 @@ import {
 } from "./prompt";
 import { loadSettings } from "../storage";
 import { syncCodexEntries, wipeCodexEntries } from "./sync";
+import { snapshotCodexForUndo } from "./backup";
 import {
   AbortedSummarizerError,
   buildCodexSamplerParameters,
@@ -735,6 +736,7 @@ export async function maybeRunCodex(
   await ensureCodexEntriesSynced(chatId, userId, profile);
   if (profile.codexManualOnly) return;
   try {
+    await snapshotCodexForUndo(chatId, userId, "automatic update");
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {

@@ -8209,6 +8209,116 @@ ${integrityErrors.join(`
   };
 }
 
+// src/backend/codex/backup.ts
+var CODEX_BACKUP_KIND = "lumibooks.codex.backup";
+var CODEX_BACKUP_VERSION = 1;
+async function buildCodexBackup(chatId, userId) {
+  const [files, cursor] = await Promise.all([
+    readCodexFilesRaw(chatId, userId),
+    loadCursor(chatId, userId)
+  ]);
+  return {
+    kind: CODEX_BACKUP_KIND,
+    version: CODEX_BACKUP_VERSION,
+    chatId,
+    savedAt: Date.now(),
+    files,
+    fileStates: cursor.fileStates,
+    relationsTableMode: cursor.relationsTableMode
+  };
+}
+function parseCodexBackup(raw, fallbackRelationsTable) {
+  if (!raw || typeof raw !== "object")
+    return { error: "that file is not a codex backup" };
+  const v = raw;
+  if (v.kind !== CODEX_BACKUP_KIND)
+    return { error: "that file is not a codex backup" };
+  if (typeof v.version !== "number" || v.version > CODEX_BACKUP_VERSION) {
+    return { error: `this backup was written by a newer LumiBooks (version ${String(v.version)})` };
+  }
+  if (!v.files || typeof v.files !== "object")
+    return { error: "the backup has no codex files in it" };
+  const relationsTableMode = typeof v.relationsTableMode === "boolean" ? v.relationsTableMode : null;
+  const relationsTable = relationsTableMode ?? fallbackRelationsTable;
+  const values = [];
+  for (const key2 of CODEX_FILE_KEYS) {
+    const rawText = v.files[key2];
+    if (typeof rawText !== "string")
+      continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return { error: `${key2}.json in the backup is not valid JSON` };
+    }
+    const result = validateCodexFile(key2, parsed, { relationsTable });
+    if (!result.ok)
+      return { error: `${key2}.json in the backup is invalid: ${result.errors[0]}` };
+    values.push({ key: key2, value: result.value });
+  }
+  if (values.length === 0)
+    return { error: "the backup has no codex files in it" };
+  const fileStates = {};
+  const rawStates = v.fileStates && typeof v.fileStates === "object" ? v.fileStates : {};
+  for (const [key2, state] of Object.entries(rawStates)) {
+    if (!isCodexFileKey(key2))
+      continue;
+    if (state === "on" || state === "noInject" || state === "frozen")
+      fileStates[key2] = state;
+  }
+  return { values, fileStates, relationsTableMode };
+}
+var UNDO_DIR = "codex-undo";
+function undoPath(chatId) {
+  return `${UNDO_DIR}/${chatId}.json`;
+}
+async function snapshotCodexForUndo(chatId, userId, reason) {
+  try {
+    const backup = await buildCodexBackup(chatId, userId);
+    await spindle.userStorage.setJson(undoPath(chatId), { ...backup, reason }, { indent: 0, userId });
+  } catch (err) {
+    warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+  }
+}
+async function readCodexUndo(chatId, userId) {
+  try {
+    if (!await spindle.userStorage.exists(undoPath(chatId), userId))
+      return null;
+    const raw = await spindle.userStorage.getJson(undoPath(chatId), { userId });
+    if (!raw || typeof raw !== "object")
+      return null;
+    const v = raw;
+    if (v.kind !== CODEX_BACKUP_KIND)
+      return null;
+    return v;
+  } catch (err) {
+    warn(`codex undo read failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+    return null;
+  }
+}
+async function codexUndoInfo(chatId, userId) {
+  const snap = await readCodexUndo(chatId, userId);
+  if (!snap)
+    return null;
+  return { savedAt: snap.savedAt, reason: typeof snap.reason === "string" ? snap.reason : "update" };
+}
+async function clearCodexUndo(chatId, userId) {
+  await spindle.userStorage.delete(undoPath(chatId), userId).catch(() => {});
+}
+async function applyCodexBackup(chatId, userId, parsed) {
+  for (const { key: key2, value } of parsed.values) {
+    await saveCodexFile(chatId, key2, value, userId);
+  }
+  await withCursorLock(chatId, userId, async () => {
+    const cur = await loadCursor(chatId, userId);
+    cur.fileStates = parsed.fileStates;
+    if (parsed.relationsTableMode !== null)
+      cur.relationsTableMode = parsed.relationsTableMode;
+    cur.updatedAt = Date.now();
+    await saveCursor(chatId, cur, userId);
+  });
+}
+
 // src/backend/codex/index.ts
 function reportCodexFailure(userId, chatId, verb, err) {
   if (err instanceof CodexContextError || err instanceof CodexValidationError) {
@@ -8715,6 +8825,7 @@ async function maybeRunCodex(chatId, profile, settings, userId) {
   if (profile.codexManualOnly)
     return;
   try {
+    await snapshotCodexForUndo(chatId, userId, "automatic update");
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
@@ -9456,79 +9567,6 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   }
 }
 
-// src/backend/codex/backup.ts
-var CODEX_BACKUP_KIND = "lumibooks.codex.backup";
-var CODEX_BACKUP_VERSION = 1;
-async function buildCodexBackup(chatId, userId) {
-  const [files, cursor] = await Promise.all([
-    readCodexFilesRaw(chatId, userId),
-    loadCursor(chatId, userId)
-  ]);
-  return {
-    kind: CODEX_BACKUP_KIND,
-    version: CODEX_BACKUP_VERSION,
-    chatId,
-    savedAt: Date.now(),
-    files,
-    fileStates: cursor.fileStates,
-    relationsTableMode: cursor.relationsTableMode
-  };
-}
-function parseCodexBackup(raw, fallbackRelationsTable) {
-  if (!raw || typeof raw !== "object")
-    return { error: "that file is not a codex backup" };
-  const v = raw;
-  if (v.kind !== CODEX_BACKUP_KIND)
-    return { error: "that file is not a codex backup" };
-  if (typeof v.version !== "number" || v.version > CODEX_BACKUP_VERSION) {
-    return { error: `this backup was written by a newer LumiBooks (version ${String(v.version)})` };
-  }
-  if (!v.files || typeof v.files !== "object")
-    return { error: "the backup has no codex files in it" };
-  const relationsTableMode = typeof v.relationsTableMode === "boolean" ? v.relationsTableMode : null;
-  const relationsTable = relationsTableMode ?? fallbackRelationsTable;
-  const values = [];
-  for (const key2 of CODEX_FILE_KEYS) {
-    const rawText = v.files[key2];
-    if (typeof rawText !== "string")
-      continue;
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      return { error: `${key2}.json in the backup is not valid JSON` };
-    }
-    const result = validateCodexFile(key2, parsed, { relationsTable });
-    if (!result.ok)
-      return { error: `${key2}.json in the backup is invalid: ${result.errors[0]}` };
-    values.push({ key: key2, value: result.value });
-  }
-  if (values.length === 0)
-    return { error: "the backup has no codex files in it" };
-  const fileStates = {};
-  const rawStates = v.fileStates && typeof v.fileStates === "object" ? v.fileStates : {};
-  for (const [key2, state] of Object.entries(rawStates)) {
-    if (!isCodexFileKey(key2))
-      continue;
-    if (state === "on" || state === "noInject" || state === "frozen")
-      fileStates[key2] = state;
-  }
-  return { values, fileStates, relationsTableMode };
-}
-async function applyCodexBackup(chatId, userId, parsed) {
-  for (const { key: key2, value } of parsed.values) {
-    await saveCodexFile(chatId, key2, value, userId);
-  }
-  await withCursorLock(chatId, userId, async () => {
-    const cur = await loadCursor(chatId, userId);
-    cur.fileStates = parsed.fileStates;
-    if (parsed.relationsTableMode !== null)
-      cur.relationsTableMode = parsed.relationsTableMode;
-    cur.updatedAt = Date.now();
-    await saveCursor(chatId, cur, userId);
-  });
-}
-
 // src/backend/rebase.ts
 var inFlight = new Set;
 function lockKey(userId, chatId) {
@@ -9709,6 +9747,8 @@ async function buildState(userId, requestedChatId) {
     codexBacklog: 0,
     codexBacklogPasses: 0,
     codexLastRunAt: null,
+    codexUndoAt: null,
+    codexUndoReason: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -9806,6 +9846,7 @@ async function buildState(userId, requestedChatId) {
     return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   });
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
+  const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
   const codexFileTokens = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? ["timeline", "threads"].reduce((acc, k) => {
     const st = codexPanel.fileStates[k];
@@ -9841,6 +9882,8 @@ async function buildState(userId, requestedChatId) {
     codexBacklog: codexStatus.backlog,
     codexBacklogPasses: codexStatus.backlogPasses,
     codexLastRunAt: codexStatus.lastRunAt,
+    codexUndoAt: undo?.savedAt ?? null,
+    codexUndoReason: undo?.reason ?? null,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
@@ -10912,6 +10955,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "update");
         await runCodexNow(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         await pushState(userId, msg.chatId);
         break;
@@ -10960,6 +11004,42 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_undo": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const snap = await readCodexUndo(msg.chatId, userId);
+        if (!snap) {
+          await notify(userId, "warn", "Memoria has no codex snapshot to undo to");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        const parsedSnap = parseCodexBackup(snap, profileMode);
+        if ("error" in parsedSnap) {
+          await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
+          break;
+        }
+        await applyCodexBackup(msg.chatId, userId, parsedSnap);
+        invalidateCodexInjectionCache(msg.chatId);
+        await clearCodexUndo(msg.chatId, userId);
+        const undoneFiles = parsedSnap.values.map((v) => v.key);
+        if (profile)
+          await publishCodexPool(msg.chatId, userId, profile, undoneFiles, "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, parsedSnap.relationsTableMode ?? profileMode);
+        } catch (err) {
+          warn(`codex_undo entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", "Memoria rolled the codex back");
+        const undoneRaw = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: undoneRaw, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -11030,6 +11110,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         try {
+          await snapshotCodexForUndo(msg.chatId, userId, "wipe");
           const failed = await deleteCodex(msg.chatId, userId);
           invalidateCodexInjectionCache(msg.chatId);
           if (failed.length > 0) {
@@ -11073,6 +11154,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Memoria is updating the codex, abort that first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "rebuild");
         await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
@@ -11093,6 +11175,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
+        await snapshotCodexForUndo(msg.chatId, userId, "tidy");
         await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
         await pushState(userId, msg.chatId);
         break;
@@ -11113,6 +11196,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
         if (files.length === 0)
           break;
+        await snapshotCodexForUndo(msg.chatId, userId, "rebuild files");
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
@@ -11132,6 +11216,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "catch-up");
         await refreshCodexFiles(msg.chatId, profile, userId);
         const refreshed = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: refreshed, revision: getCodexRevision(msg.chatId) }, userId);

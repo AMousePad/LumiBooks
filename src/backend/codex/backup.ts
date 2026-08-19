@@ -1,4 +1,7 @@
+declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
+
 import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
+import { describeError, warn } from "../runtime";
 import { isCodexFileKey, validateCodexFile, type CodexFileValue } from "./schema";
 import { loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./store";
 import type { CodexFileState } from "./store";
@@ -73,6 +76,52 @@ export function parseCodexBackup(raw: unknown, fallbackRelationsTable: boolean):
     if (state === "on" || state === "noInject" || state === "frozen") fileStates[key] = state;
   }
   return { values, fileStates, relationsTableMode };
+}
+
+const UNDO_DIR = "codex-undo" as const;
+
+function undoPath(chatId: string): string {
+  return `${UNDO_DIR}/${chatId}.json`;
+}
+
+export interface CodexUndoInfo {
+  savedAt: number;
+  reason: string;
+}
+
+/** Snapshot the codex before a run so a bad pass can be rolled back. Best
+ * effort: a snapshot failure must never block the run it precedes. */
+export async function snapshotCodexForUndo(chatId: string, userId: string, reason: string): Promise<void> {
+  try {
+    const backup = await buildCodexBackup(chatId, userId);
+    await spindle.userStorage.setJson(undoPath(chatId), { ...backup, reason }, { indent: 0, userId });
+  } catch (err) {
+    warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+  }
+}
+
+export async function readCodexUndo(chatId: string, userId: string): Promise<(CodexBackup & CodexUndoInfo) | null> {
+  try {
+    if (!(await spindle.userStorage.exists(undoPath(chatId), userId))) return null;
+    const raw = await spindle.userStorage.getJson<unknown>(undoPath(chatId), { userId });
+    if (!raw || typeof raw !== "object") return null;
+    const v = raw as CodexBackup & CodexUndoInfo;
+    if (v.kind !== CODEX_BACKUP_KIND) return null;
+    return v;
+  } catch (err) {
+    warn(`codex undo read failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+    return null;
+  }
+}
+
+export async function codexUndoInfo(chatId: string, userId: string): Promise<CodexUndoInfo | null> {
+  const snap = await readCodexUndo(chatId, userId);
+  if (!snap) return null;
+  return { savedAt: snap.savedAt, reason: typeof snap.reason === "string" ? snap.reason : "update" };
+}
+
+export async function clearCodexUndo(chatId: string, userId: string): Promise<void> {
+  await spindle.userStorage.delete(undoPath(chatId), userId).catch(() => {});
 }
 
 export async function applyCodexBackup(chatId: string, userId: string, parsed: ParsedBackup): Promise<void> {

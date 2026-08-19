@@ -11,6 +11,7 @@ import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
 import { getCodexFileTokens, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
+import { codexUndoInfo } from "./codex/backup";
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
@@ -97,6 +98,8 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexBacklog: 0,
     codexBacklogPasses: 0,
     codexLastRunAt: null,
+    codexUndoAt: null,
+    codexUndoReason: null,
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -208,6 +211,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     return { exists: false, backlog: 0, lastRunAt: null, backlogPasses: 0 };
   });
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
+  const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
   const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   // Constant entries only (timeline + threads), keyworded records cost per scene.
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
@@ -249,6 +253,8 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexBacklog: codexStatus.backlog,
     codexBacklogPasses: codexStatus.backlogPasses,
     codexLastRunAt: codexStatus.lastRunAt,
+    codexUndoAt: undo?.savedAt ?? null,
+    codexUndoReason: undo?.reason ?? null,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,

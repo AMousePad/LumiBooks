@@ -700,6 +700,19 @@ function renderOverview(
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
       title: "Wipe and regenerate the whole story bible from the start of the chat",
     }),
+    makeButton(
+      state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo",
+      async () => {
+        const ok = await confirmDelete(ctx, "Undo the last codex change?", `Memoria will roll the codex back to the snapshot she took before the ${state.codexUndoReason ?? "update"} ${relativeTime(state.codexUndoAt!)}. Anything written since is lost.`);
+        if (ok) send({ type: "codex_undo", chatId });
+      },
+      {
+        disabled: busy || !state.codexUndoAt,
+        title: state.codexUndoAt
+          ? "Roll back to the snapshot taken before the last codex change"
+          : "Nothing to undo yet, Memoria snapshots the codex before each change",
+      },
+    ),
     makeButton("Back up", () => send({ type: "codex_backup", chatId }), {
       disabled: busy || !state.codexExists,
       title: "Download every codex file plus its inject switches as one JSON file",

@@ -88,7 +88,7 @@ import {
   setCodexFileState,
 } from "./codex/index";
 import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
-import { applyCodexBackup, buildCodexBackup, parseCodexBackup } from "./codex/backup";
+import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
 import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
@@ -1234,6 +1234,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "update");
         await runCodexNow(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         await pushState(userId, msg.chatId);
         break;
@@ -1284,6 +1285,43 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_undo": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const snap = await readCodexUndo(msg.chatId, userId);
+        if (!snap) {
+          await notify(userId, "warn", "Memoria has no codex snapshot to undo to");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        const parsedSnap = parseCodexBackup(snap, profileMode);
+        if ("error" in parsedSnap) {
+          await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
+          break;
+        }
+        await applyCodexBackup(msg.chatId, userId, parsedSnap);
+        invalidateCodexInjectionCache(msg.chatId);
+        // One undo per snapshot: keeping it would silently re-apply stale files.
+        await clearCodexUndo(msg.chatId, userId);
+        const undoneFiles = parsedSnap.values.map((v) => v.key);
+        if (profile) await publishCodexPool(msg.chatId, userId, profile, undoneFiles, "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, parsedSnap.relationsTableMode ?? profileMode);
+        } catch (err) {
+          warn(`codex_undo entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", "Memoria rolled the codex back");
+        const undoneRaw = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: undoneRaw, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1363,6 +1401,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         try {
+          await snapshotCodexForUndo(msg.chatId, userId, "wipe");
           const failed = await deleteCodex(msg.chatId, userId);
           invalidateCodexInjectionCache(msg.chatId);
           if (failed.length > 0) {
@@ -1408,6 +1447,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Memoria is updating the codex, abort that first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "rebuild");
         await rebuildCodex(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
@@ -1428,6 +1468,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
+        await snapshotCodexForUndo(msg.chatId, userId, "tidy");
         await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
         await pushState(userId, msg.chatId);
         break;
@@ -1447,6 +1488,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
         if (files.length === 0) break;
+        await snapshotCodexForUndo(msg.chatId, userId, "rebuild files");
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
@@ -1466,6 +1508,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", "Enable the codex in Tuning first");
           break;
         }
+        await snapshotCodexForUndo(msg.chatId, userId, "catch-up");
         await refreshCodexFiles(msg.chatId, profile, userId);
         const refreshed = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: refreshed, revision: getCodexRevision(msg.chatId) }, userId);

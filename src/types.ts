@@ -149,6 +149,10 @@ export interface FrontendState {
   /** Estimated slow-mode passes the backlog would take at the current window. */
   codexBacklogPasses: number;
   codexLastRunAt: number | null;
+  /** When the pre-run snapshot was taken, or null when there is nothing to undo. */
+  codexUndoAt: number | null;
+  /** What the snapshot was taken before ("tidy", "wipe", ...). */
+  codexUndoReason: string | null;
   /** Approx tokens of the constant codex entries (timeline + threads); the
    * keyword-retrieved records cost extra only when a scene activates them. */
   codexInjectedTokens: number;
@@ -218,6 +222,7 @@ export type FrontendToBackend =
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
   | { type: "codex_backup"; chatId: string }
   | { type: "codex_restore"; chatId: string; raw: unknown }
+  | { type: "codex_undo"; chatId: string }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
   | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean }
