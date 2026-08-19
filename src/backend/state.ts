@@ -20,18 +20,29 @@ import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BU
 
 type ChatMessageDTO = ChatMessage;
 
-/** Chats holding a codex this one could continue from, newest name first. */
+const CODEX_SOURCES_TTL_MS = 8000;
+const codexSourcesCache = new Map<string, { at: number; data: RootSourceOption[] }>();
+
+/** Chats holding a codex this one could continue from. Cached: this runs on
+ * every state push for a chat without a codex, and costs a read per chat. */
 async function listCodexSources(chatId: string, userId: string): Promise<RootSourceOption[]> {
-  const ids = await listCodexChatIds(userId);
-  const out: RootSourceOption[] = [];
-  for (const id of ids) {
-    if (id === chatId) continue;
-    const chat = await spindle.chats.get(id, userId).catch(() => null);
-    if (!chat) continue;
-    out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
-  }
-  out.sort((a, b) => a.chatName.localeCompare(b.chatName));
-  return out;
+  const cached = codexSourcesCache.get(userId);
+  const all = cached && Date.now() - cached.at < CODEX_SOURCES_TTL_MS
+    ? cached.data
+    : await (async () => {
+        const ids = await listCodexChatIds(userId);
+        const out: RootSourceOption[] = [];
+        for (const id of ids) {
+          const chat = await spindle.chats.get(id, userId).catch(() => null);
+          if (!chat) continue;
+          out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
+        }
+        out.sort((a, b) => a.chatName.localeCompare(b.chatName));
+        if (codexSourcesCache.size > 200) codexSourcesCache.clear();
+        codexSourcesCache.set(userId, { at: Date.now(), data: out });
+        return out;
+      })();
+  return all.filter((s) => s.chatId !== chatId);
 }
 
 export async function buildState(userId: string, requestedChatId?: string | null): Promise<FrontendState> {
@@ -230,10 +241,14 @@ export async function buildState(userId: string, requestedChatId?: string | null
   });
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
+  // Mutually exclusive: the picker only shows without a codex, the origin
+  // line only with one, so this costs one read either way.
   const codexSources: RootSourceOption[] = codexStatus.exists
     ? []
     : await listCodexSources(chat.id, userId).catch(() => []);
-  const codexCursor = await loadCursor(chat.id, userId).catch(() => null);
+  const codexCursor = codexStatus.exists
+    ? await loadCursor(chat.id, userId).catch(() => null)
+    : null;
   const codexRootOrigin = codexCursor?.rootOrigin ?? null;
   const codexRootOriginName = codexRootOrigin
     ? ((await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim()

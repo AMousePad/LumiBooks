@@ -1348,7 +1348,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
           break;
         }
-        await applyCodexBackup(msg.chatId, userId, parsedSnap);
+        await applyCodexBackup(msg.chatId, userId, parsedSnap, snap.cursor);
         invalidateCodexInjectionCache(msg.chatId);
         // One undo per snapshot: keeping it would silently re-apply stale files.
         await clearCodexUndo(msg.chatId, userId);

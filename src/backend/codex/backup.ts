@@ -4,7 +4,7 @@ import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
 import { describeError, warn } from "../runtime";
 import { isCodexFileKey, validateCodexFile, type CodexFileValue } from "./schema";
 import { loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./store";
-import type { CodexFileState } from "./store";
+import type { CodexCursor, CodexFileState } from "./store";
 
 export const CODEX_BACKUP_KIND = "lumibooks.codex.backup";
 export const CODEX_BACKUP_VERSION = 1;
@@ -89,23 +89,32 @@ export interface CodexUndoInfo {
   reason: string;
 }
 
+/** The undo snapshot carries the whole cursor, unlike a user-facing backup.
+ * Rolling back the files without it would leave the consumed-message marks
+ * advanced, so the undone turns would never be read again. */
+interface CodexUndoSnapshot extends CodexBackup, CodexUndoInfo {
+  cursor?: CodexCursor;
+}
+
 /** Snapshot the codex before a run so a bad pass can be rolled back. Best
  * effort: a snapshot failure must never block the run it precedes. */
 export async function snapshotCodexForUndo(chatId: string, userId: string, reason: string): Promise<void> {
   try {
     const backup = await buildCodexBackup(chatId, userId);
-    await spindle.userStorage.setJson(undoPath(chatId), { ...backup, reason }, { indent: 0, userId });
+    const cursor = await loadCursor(chatId, userId).catch(() => null);
+    const snap: CodexUndoSnapshot = { ...backup, reason, ...(cursor ? { cursor } : {}) };
+    await spindle.userStorage.setJson(undoPath(chatId), snap, { indent: 0, userId });
   } catch (err) {
     warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
   }
 }
 
-export async function readCodexUndo(chatId: string, userId: string): Promise<(CodexBackup & CodexUndoInfo) | null> {
+export async function readCodexUndo(chatId: string, userId: string): Promise<CodexUndoSnapshot | null> {
   try {
     if (!(await spindle.userStorage.exists(undoPath(chatId), userId))) return null;
     const raw = await spindle.userStorage.getJson<unknown>(undoPath(chatId), { userId });
     if (!raw || typeof raw !== "object") return null;
-    const v = raw as CodexBackup & CodexUndoInfo;
+    const v = raw as CodexUndoSnapshot;
     if (v.kind !== CODEX_BACKUP_KIND) return null;
     return v;
   } catch (err) {
@@ -124,12 +133,19 @@ export async function clearCodexUndo(chatId: string, userId: string): Promise<vo
   await spindle.userStorage.delete(undoPath(chatId), userId).catch(() => {});
 }
 
-export async function applyCodexBackup(chatId: string, userId: string, parsed: ParsedBackup): Promise<void> {
+export async function applyCodexBackup(
+  chatId: string,
+  userId: string,
+  parsed: ParsedBackup,
+  /** Undo only: put consumption back exactly as it was. A user-facing restore
+   * must not, or a backup from another chat would import its message marks. */
+  restoreCursor?: CodexCursor,
+): Promise<void> {
   for (const { key, value } of parsed.values) {
     await saveCodexFile(chatId, key, value, userId);
   }
   await withCursorLock(chatId, userId, async () => {
-    const cur = await loadCursor(chatId, userId);
+    const cur = restoreCursor ? { ...restoreCursor } : await loadCursor(chatId, userId);
     cur.fileStates = parsed.fileStates;
     if (parsed.relationsTableMode !== null) cur.relationsTableMode = parsed.relationsTableMode;
     cur.updatedAt = Date.now();

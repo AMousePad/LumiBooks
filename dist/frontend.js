@@ -7039,7 +7039,8 @@ var local = {
   expandedSecrets: new Set,
   relationsView: "list",
   expandedThreads: new Set,
-  showFullTimeline: false
+  showFullTimeline: false,
+  codexSourceId: null
 };
 function clearExpansions() {
   local.expandedRelations.clear();
@@ -7477,14 +7478,17 @@ function renderOverview2(host, state, ctx, send, parsed) {
 function renderContinuity2(state, chatId, ctx, send, busy) {
   const wrap = document.createElement("div");
   wrap.className = "lmb-actions";
-  let sourceId = state.codexSources[0].chatId;
+  const known = state.codexSources.some((s) => s.chatId === local.codexSourceId);
+  if (!known)
+    local.codexSourceId = state.codexSources[0].chatId;
   wrap.append(textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"), select({
-    value: sourceId,
+    value: local.codexSourceId,
     options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
     onChange: (v) => {
-      sourceId = v;
+      local.codexSourceId = v;
     }
   }), makeButton("Carry codex over", async () => {
+    const sourceId = local.codexSourceId;
     const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
     const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
     if (ok)

@@ -8322,7 +8322,9 @@ function undoPath(chatId) {
 async function snapshotCodexForUndo(chatId, userId, reason) {
   try {
     const backup = await buildCodexBackup(chatId, userId);
-    await spindle.userStorage.setJson(undoPath(chatId), { ...backup, reason }, { indent: 0, userId });
+    const cursor = await loadCursor(chatId, userId).catch(() => null);
+    const snap = { ...backup, reason, ...cursor ? { cursor } : {} };
+    await spindle.userStorage.setJson(undoPath(chatId), snap, { indent: 0, userId });
   } catch (err) {
     warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
   }
@@ -8352,12 +8354,12 @@ async function codexUndoInfo(chatId, userId) {
 async function clearCodexUndo(chatId, userId) {
   await spindle.userStorage.delete(undoPath(chatId), userId).catch(() => {});
 }
-async function applyCodexBackup(chatId, userId, parsed) {
+async function applyCodexBackup(chatId, userId, parsed, restoreCursor) {
   for (const { key: key2, value } of parsed.values) {
     await saveCodexFile(chatId, key2, value, userId);
   }
   await withCursorLock(chatId, userId, async () => {
-    const cur = await loadCursor(chatId, userId);
+    const cur = restoreCursor ? { ...restoreCursor } : await loadCursor(chatId, userId);
     cur.fileStates = parsed.fileStates;
     if (parsed.relationsTableMode !== null)
       cur.relationsTableMode = parsed.relationsTableMode;
@@ -9721,19 +9723,26 @@ async function detachRoot(targetChatId, userId) {
 }
 
 // src/backend/state.ts
+var CODEX_SOURCES_TTL_MS = 8000;
+var codexSourcesCache = new Map;
 async function listCodexSources(chatId, userId) {
-  const ids = await listCodexChatIds(userId);
-  const out = [];
-  for (const id of ids) {
-    if (id === chatId)
-      continue;
-    const chat = await spindle.chats.get(id, userId).catch(() => null);
-    if (!chat)
-      continue;
-    out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
-  }
-  out.sort((a, b) => a.chatName.localeCompare(b.chatName));
-  return out;
+  const cached = codexSourcesCache.get(userId);
+  const all = cached && Date.now() - cached.at < CODEX_SOURCES_TTL_MS ? cached.data : await (async () => {
+    const ids = await listCodexChatIds(userId);
+    const out = [];
+    for (const id of ids) {
+      const chat = await spindle.chats.get(id, userId).catch(() => null);
+      if (!chat)
+        continue;
+      out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
+    }
+    out.sort((a, b) => a.chatName.localeCompare(b.chatName));
+    if (codexSourcesCache.size > 200)
+      codexSourcesCache.clear();
+    codexSourcesCache.set(userId, { at: Date.now(), data: out });
+    return out;
+  })();
+  return all.filter((s) => s.chatId !== chatId);
 }
 async function buildState(userId, requestedChatId) {
   const settings = await loadSettings(userId);
@@ -9912,7 +9921,7 @@ async function buildState(userId, requestedChatId) {
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
   const codexSources = codexStatus.exists ? [] : await listCodexSources(chat.id, userId).catch(() => []);
-  const codexCursor = await loadCursor(chat.id, userId).catch(() => null);
+  const codexCursor = codexStatus.exists ? await loadCursor(chat.id, userId).catch(() => null) : null;
   const codexRootOrigin = codexCursor?.rootOrigin ?? null;
   const codexRootOriginName = codexRootOrigin ? (await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim() || codexRootOrigin.slice(0, 8) : null;
   const codexFileTokens = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
@@ -11131,7 +11140,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
           break;
         }
-        await applyCodexBackup(msg.chatId, userId, parsedSnap);
+        await applyCodexBackup(msg.chatId, userId, parsedSnap, snap.cursor);
         invalidateCodexInjectionCache(msg.chatId);
         await clearCodexUndo(msg.chatId, userId);
         const undoneFiles = parsedSnap.values.map((v) => v.key);

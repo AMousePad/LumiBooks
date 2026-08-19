@@ -217,6 +217,7 @@ const local = {
   relationsView: "list" as "list" | "graph",
   expandedThreads: new Set<string>(),
   showFullTimeline: false,
+  codexSourceId: null as string | null,
 };
 
 function clearExpansions(): void {
@@ -747,15 +748,19 @@ function renderContinuity(
 ): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "lmb-actions";
-  let sourceId = state.codexSources[0]!.chatId;
+  // Survives re-renders: a state push mid-choice must not silently reset the
+  // dropdown to the first chat under the user's cursor.
+  const known = state.codexSources.some((s) => s.chatId === local.codexSourceId);
+  if (!known) local.codexSourceId = state.codexSources[0]!.chatId;
   wrap.append(
     textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"),
     select({
-      value: sourceId,
+      value: local.codexSourceId!,
       options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
-      onChange: (v) => { sourceId = v; },
+      onChange: (v) => { local.codexSourceId = v; },
     }),
     makeButton("Carry codex over", async () => {
+      const sourceId = local.codexSourceId!;
       const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
       const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
       if (ok) send({ type: "codex_adopt", chatId, sourceChatId: sourceId });
