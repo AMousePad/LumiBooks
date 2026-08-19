@@ -7446,13 +7446,45 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }, {
     disabled: busy || !state.settings.enabled || !profile.codexEnabled,
     title: "Wipe and regenerate the whole story bible from the start of the chat"
-  }), makeButton("Wipe codex", async () => {
+  }), makeButton("Back up", () => send({ type: "codex_backup", chatId }), {
+    disabled: busy || !state.codexExists,
+    title: "Download every codex file plus its inject switches as one JSON file"
+  }), makeButton("Restore", async () => {
+    const ok = await confirmDelete(ctx, "Restore a codex backup?", "Memoria will replace every codex file in this chat with the ones in the backup. This cannot be undone.");
+    if (ok)
+      restoreBackup(ctx, chatId, send);
+  }, { disabled: busy, title: "Replace this chat's codex with a backup file" }), makeButton("Wipe codex", async () => {
     const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
     if (ok)
       send({ type: "codex_reset", chatId });
   }, { danger: true, disabled: busy || !state.codexExists }));
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
+}
+function restoreBackup(ctx, chatId, send) {
+  ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20000000 }).then((files) => {
+    if (!files.length)
+      return;
+    let parsed;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(files[0].bytes));
+    } catch (err) {
+      console.warn("[LumiBooks] codex backup parse failed", err);
+      showToast("error", "Memoria couldn't read that backup file");
+      return;
+    }
+    send({ type: "codex_restore", chatId, raw: parsed });
+  }).catch((err) => {
+    console.warn("[LumiBooks] codex backup picker failed", err);
+  });
+}
+function downloadCodexBackup(filename, content) {
+  const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+  const a2 = document.createElement("a");
+  a2.href = url;
+  a2.download = filename;
+  a2.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderBibleTile(def, parsed, state, ctx, send, busy) {
   const chatId = state.activeChatId;
@@ -14534,6 +14566,9 @@ function setup(ctx) {
         break;
       case "stream_text":
         deliverStreamText(msg);
+        break;
+      case "codex_backup_data":
+        downloadCodexBackup(msg.filename, msg.content);
         break;
       case "codex_tools_hint":
         if (lastState && !lastState.settings.suppressToolCallingPrompt) {

@@ -9452,6 +9452,79 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   }
 }
 
+// src/backend/codex/backup.ts
+var CODEX_BACKUP_KIND = "lumibooks.codex.backup";
+var CODEX_BACKUP_VERSION = 1;
+async function buildCodexBackup(chatId, userId) {
+  const [files, cursor] = await Promise.all([
+    readCodexFilesRaw(chatId, userId),
+    loadCursor(chatId, userId)
+  ]);
+  return {
+    kind: CODEX_BACKUP_KIND,
+    version: CODEX_BACKUP_VERSION,
+    chatId,
+    savedAt: Date.now(),
+    files,
+    fileStates: cursor.fileStates,
+    relationsTableMode: cursor.relationsTableMode
+  };
+}
+function parseCodexBackup(raw, fallbackRelationsTable) {
+  if (!raw || typeof raw !== "object")
+    return { error: "that file is not a codex backup" };
+  const v = raw;
+  if (v.kind !== CODEX_BACKUP_KIND)
+    return { error: "that file is not a codex backup" };
+  if (typeof v.version !== "number" || v.version > CODEX_BACKUP_VERSION) {
+    return { error: `this backup was written by a newer LumiBooks (version ${String(v.version)})` };
+  }
+  if (!v.files || typeof v.files !== "object")
+    return { error: "the backup has no codex files in it" };
+  const relationsTableMode = typeof v.relationsTableMode === "boolean" ? v.relationsTableMode : null;
+  const relationsTable = relationsTableMode ?? fallbackRelationsTable;
+  const values = [];
+  for (const key2 of CODEX_FILE_KEYS) {
+    const rawText = v.files[key2];
+    if (typeof rawText !== "string")
+      continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return { error: `${key2}.json in the backup is not valid JSON` };
+    }
+    const result = validateCodexFile(key2, parsed, { relationsTable });
+    if (!result.ok)
+      return { error: `${key2}.json in the backup is invalid: ${result.errors[0]}` };
+    values.push({ key: key2, value: result.value });
+  }
+  if (values.length === 0)
+    return { error: "the backup has no codex files in it" };
+  const fileStates = {};
+  const rawStates = v.fileStates && typeof v.fileStates === "object" ? v.fileStates : {};
+  for (const [key2, state] of Object.entries(rawStates)) {
+    if (!isCodexFileKey(key2))
+      continue;
+    if (state === "on" || state === "noInject" || state === "frozen")
+      fileStates[key2] = state;
+  }
+  return { values, fileStates, relationsTableMode };
+}
+async function applyCodexBackup(chatId, userId, parsed) {
+  for (const { key: key2, value } of parsed.values) {
+    await saveCodexFile(chatId, key2, value, userId);
+  }
+  await withCursorLock(chatId, userId, async () => {
+    const cur = await loadCursor(chatId, userId);
+    cur.fileStates = parsed.fileStates;
+    if (parsed.relationsTableMode !== null)
+      cur.relationsTableMode = parsed.relationsTableMode;
+    cur.updatedAt = Date.now();
+    await saveCursor(chatId, cur, userId);
+  });
+}
+
 // src/backend/rebase.ts
 var inFlight = new Set;
 function lockKey(userId, chatId) {
@@ -10842,6 +10915,48 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "codex_read": {
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        break;
+      }
+      case "codex_backup": {
+        const backup = await buildCodexBackup(msg.chatId, userId);
+        const stamp = new Date(backup.savedAt).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        send({
+          type: "codex_backup_data",
+          chatId: msg.chatId,
+          filename: `lumibooks-codex-${msg.chatId.slice(0, 8)}-${stamp}.json`,
+          content: JSON.stringify(backup, null, 2)
+        }, userId);
+        break;
+      }
+      case "codex_restore": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, restore again when she finishes");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        const cursor = await loadCursor(msg.chatId, userId);
+        const parsedBackup = parseCodexBackup(msg.raw, cursor.relationsTableMode ?? profileMode);
+        if ("error" in parsedBackup) {
+          await notify(userId, "error", `Memoria couldn't restore that backup: ${parsedBackup.error}`);
+          break;
+        }
+        await applyCodexBackup(msg.chatId, userId, parsedBackup);
+        invalidateCodexInjectionCache(msg.chatId);
+        const restoredFiles = parsedBackup.values.map((v) => v.key);
+        if (profile)
+          await publishCodexPool(msg.chatId, userId, profile, restoredFiles, "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, parsedBackup.relationsTableMode ?? profileMode);
+        } catch (err) {
+          warn(`codex_restore entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
         break;
       }
       case "codex_write_file": {

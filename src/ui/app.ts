@@ -5,7 +5,7 @@ import { preserveScroll, scrollPaneTop, showToast } from "./components";
 import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
-import { codexWantsRefresh, deliverCodexFiles, renderCodexTab } from "./tabs/codex-tab";
+import { codexWantsRefresh, deliverCodexFiles, downloadCodexBackup, renderCodexTab } from "./tabs/codex-tab";
 import { renderTuningTab } from "./tabs/tuning-tab";
 import { renderAboutTab } from "./tabs/about-tab";
 import { createLessonEngine } from "./lessons/engine";
@@ -292,6 +292,9 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         break;
       case "stream_text":
         deliverStreamText(msg);
+        break;
+      case "codex_backup_data":
+        downloadCodexBackup(msg.filename, msg.content);
         break;
       case "codex_tools_hint":
         // The backend already checks the suppress flag; re-check the local

@@ -88,6 +88,7 @@ import {
   setCodexFileState,
 } from "./codex/index";
 import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
+import { applyCodexBackup, buildCodexBackup, parseCodexBackup } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
 import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
@@ -1241,6 +1242,49 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "codex_read": {
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        break;
+      }
+
+      case "codex_backup": {
+        const backup = await buildCodexBackup(msg.chatId, userId);
+        const stamp = new Date(backup.savedAt).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        send({
+          type: "codex_backup_data",
+          chatId: msg.chatId,
+          filename: `lumibooks-codex-${msg.chatId.slice(0, 8)}-${stamp}.json`,
+          content: JSON.stringify(backup, null, 2),
+        }, userId);
+        break;
+      }
+
+      case "codex_restore": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, restore again when she finishes");
+          break;
+        }
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        const profileMode = profile ? profile.codexRelationsTable : true;
+        const cursor = await loadCursor(msg.chatId, userId);
+        const parsedBackup = parseCodexBackup(msg.raw, cursor.relationsTableMode ?? profileMode);
+        if ("error" in parsedBackup) {
+          await notify(userId, "error", `Memoria couldn't restore that backup: ${parsedBackup.error}`);
+          break;
+        }
+        await applyCodexBackup(msg.chatId, userId, parsedBackup);
+        invalidateCodexInjectionCache(msg.chatId);
+        const restoredFiles = parsedBackup.values.map((v) => v.key);
+        if (profile) await publishCodexPool(msg.chatId, userId, profile, restoredFiles, "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, parsedBackup.relationsTableMode ?? profileMode);
+        } catch (err) {
+          warn(`codex_restore entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
+        const files = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
         break;
       }
 

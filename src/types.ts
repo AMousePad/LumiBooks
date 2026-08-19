@@ -216,6 +216,8 @@ export type FrontendToBackend =
   | { type: "codex_rebuild_files"; chatId: string; files: string[] }
   | { type: "codex_refresh"; chatId: string }
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
+  | { type: "codex_backup"; chatId: string }
+  | { type: "codex_restore"; chatId: string; raw: unknown }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
   | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean }
@@ -259,4 +261,5 @@ export type BackendToFrontend =
   | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean }
   /** A codex run died because the model narrated instead of tool-calling:
    * the frontend offers the JSON fallback once (unless suppressed). */
-  | { type: "codex_tools_hint"; chatId: string };
+  | { type: "codex_tools_hint"; chatId: string }
+  | { type: "codex_backup_data"; chatId: string; filename: string; content: string };

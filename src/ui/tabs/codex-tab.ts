@@ -700,6 +700,14 @@ function renderOverview(
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
       title: "Wipe and regenerate the whole story bible from the start of the chat",
     }),
+    makeButton("Back up", () => send({ type: "codex_backup", chatId }), {
+      disabled: busy || !state.codexExists,
+      title: "Download every codex file plus its inject switches as one JSON file",
+    }),
+    makeButton("Restore", async () => {
+      const ok = await confirmDelete(ctx, "Restore a codex backup?", "Memoria will replace every codex file in this chat with the ones in the backup. This cannot be undone.");
+      if (ok) restoreBackup(ctx, chatId, send);
+    }, { disabled: busy, title: "Replace this chat's codex with a backup file" }),
     makeButton("Wipe codex", async () => {
       const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
       if (ok) send({ type: "codex_reset", chatId });
@@ -707,6 +715,39 @@ function renderOverview(
   );
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
+}
+
+function restoreBackup(
+  ctx: SpindleFrontendContext,
+  chatId: string,
+  send: (msg: FrontendToBackend) => void,
+): void {
+  ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20_000_000 })
+    .then((files) => {
+      if (!files.length) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(new TextDecoder().decode(files[0]!.bytes));
+      } catch (err) {
+        console.warn("[LumiBooks] codex backup parse failed", err);
+        showToast("error", "Memoria couldn't read that backup file");
+        return;
+      }
+      send({ type: "codex_restore", chatId, raw: parsed });
+    })
+    .catch((err) => {
+      console.warn("[LumiBooks] codex backup picker failed", err);
+    });
+}
+
+/** Backup content arrives from the backend so it reflects disk, not the tab cache. */
+export function downloadCodexBackup(filename: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function renderBibleTile(
