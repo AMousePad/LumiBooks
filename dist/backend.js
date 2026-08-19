@@ -6420,7 +6420,7 @@ function selectGhostWindow(messages, coverage, effProfile) {
   }
   return [];
 }
-async function createChapterAuto(chatId, profile, settings, userId, automation = false, ghost = false) {
+async function createChapterAuto(chatId, profile, settings, userId, automation = false, ghost = false, manual = false) {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
     return null;
   try {
@@ -6441,7 +6441,7 @@ async function createChapterAuto(chatId, profile, settings, userId, automation =
       window = selectGhostWindow(messages, coverage, effProfile);
     } else {
       const stats = computeCoverageStats(messages, coverage, effProfile);
-      if (!stats.lagSatisfied || !stats.windowAvailable)
+      if (!stats.lagSatisfied || !manual && !stats.windowAvailable)
         return null;
       const uncoveredTail = pickUncoveredTail(messages, coverage);
       window = selectNextChapterWindow(uncoveredTail, effProfile);
@@ -10414,11 +10414,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const chapterMessages = await spindle.chat.getMessages(msg.chatId);
         const chapterCoverage = await buildCoverage(msg.chatId, userId, undefined, extraContextActive(profile));
         const chapterStats = computeCoverageStats(chapterMessages, chapterCoverage, profile);
-        if (!chapterStats.lagSatisfied || !chapterStats.windowAvailable) {
+        if (!chapterStats.lagSatisfied || countCompressibleEligible(chapterMessages, chapterCoverage, profile) === 0) {
           await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
           break;
         }
-        await createChapterAuto(msg.chatId, profile, cur, userId);
+        await createChapterAuto(msg.chatId, profile, cur, userId, false, false, true);
         await maybeRunArcCheck(msg.chatId, profile, cur, userId);
         await pushState(userId, msg.chatId);
         break;

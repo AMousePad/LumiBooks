@@ -474,6 +474,9 @@ export async function createChapterAuto(
   userId: string,
   automation = false,
   ghost = false,
+  /** A hand-pressed File chapter files what is there, ignoring the window
+   * cadence. The lag reserve still holds: it keeps recent turns raw. */
+  manual = false,
 ): Promise<string | null> {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
   try {
@@ -498,7 +501,7 @@ export async function createChapterAuto(
       window = selectGhostWindow(messages, coverage, effProfile);
     } else {
       const stats = computeCoverageStats(messages, coverage, effProfile);
-      if (!stats.lagSatisfied || !stats.windowAvailable) return null;
+      if (!stats.lagSatisfied || (!manual && !stats.windowAvailable)) return null;
       const uncoveredTail = pickUncoveredTail(messages, coverage);
       window = selectNextChapterWindow(uncoveredTail, effProfile);
     }

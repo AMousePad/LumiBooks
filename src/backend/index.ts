@@ -72,7 +72,7 @@ import {
   setStreamWatcher,
 } from "./pipeline";
 import { clearBusy } from "./pipeline";
-import { buildCoverage, computeCoverageStats, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
+import { buildCoverage, computeCoverageStats, countCompressibleEligible, resyncVisibility, syncHiddenForCoveredMessages, unhideCoveredMessages } from "./coverage";
 import {
   dryRunCodex,
   getCodexRevision,
@@ -654,11 +654,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         // included, or the click silently no-ops without the toast below.
         const chapterCoverage = await buildCoverage(msg.chatId, userId, undefined, extraContextActive(profile));
         const chapterStats = computeCoverageStats(chapterMessages, chapterCoverage, profile);
-        if (!chapterStats.lagSatisfied || !chapterStats.windowAvailable) {
+        // A hand-pressed button files whatever sits behind the lag. Only the
+        // lag reserve blocks it: the window is an automation cadence.
+        if (!chapterStats.lagSatisfied || countCompressibleEligible(chapterMessages, chapterCoverage, profile) === 0) {
           await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
           break;
         }
-        await createChapterAuto(msg.chatId, profile, cur, userId);
+        await createChapterAuto(msg.chatId, profile, cur, userId, false, false, true);
         await maybeRunArcCheck(msg.chatId, profile, cur, userId);
         await pushState(userId, msg.chatId);
         break;

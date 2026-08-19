@@ -5008,7 +5008,7 @@ function renderActions(host, state, send) {
   row.append(lessonMark(makeButton("File chapter", () => send({ type: "create_chapter", chatId }), {
     primary: true,
     disabled,
-    title: "Compress the oldest uncovered window into a new chapter using the current profile"
+    title: "Compress the oldest uncovered messages into a new chapter now, even if they do not fill a whole window yet"
   }), "home.actions.file"));
   if (state.backlogChapters > 1) {
     row.append(makeButton(`File all (${state.backlogChapters})`, () => send({ type: "create_all_chapters", chatId }), {
