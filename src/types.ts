@@ -153,6 +153,8 @@ export interface FrontendState {
   codexUndoAt: number | null;
   /** What the snapshot was taken before ("tidy", "wipe", ...). */
   codexUndoReason: string | null;
+  /** Other chats holding a codex this one could continue from. */
+  codexSources: RootSourceOption[];
   /** Approx tokens of the constant codex entries (timeline + threads); the
    * keyword-retrieved records cost extra only when a scene activates them. */
   codexInjectedTokens: number;
@@ -223,6 +225,7 @@ export type FrontendToBackend =
   | { type: "codex_backup"; chatId: string }
   | { type: "codex_restore"; chatId: string; raw: unknown }
   | { type: "codex_undo"; chatId: string }
+  | { type: "codex_adopt"; chatId: string; sourceChatId: string }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
   | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean }

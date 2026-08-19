@@ -675,6 +675,10 @@ function renderOverview(
     ));
   }
 
+  if (!state.codexExists && state.codexSources.length > 0) {
+    sec.body.appendChild(renderContinuity(state, chatId, ctx, send, busy));
+  }
+
   const row = document.createElement("div");
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
@@ -728,6 +732,34 @@ function renderOverview(
   );
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
+}
+
+/** Continuing a story in a fresh chat: carry the previous chat's codex over
+ * instead of re-reading a story the archivist already encoded. */
+function renderContinuity(
+  state: FrontendState,
+  chatId: string,
+  ctx: SpindleFrontendContext,
+  send: (msg: FrontendToBackend) => void,
+  busy: boolean,
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "lmb-actions";
+  let sourceId = state.codexSources[0]!.chatId;
+  wrap.append(
+    textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"),
+    select({
+      value: sourceId,
+      options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
+      onChange: (v) => { sourceId = v; },
+    }),
+    makeButton("Carry codex over", async () => {
+      const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
+      const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
+      if (ok) send({ type: "codex_adopt", chatId, sourceChatId: sourceId });
+    }, { disabled: busy, title: "Copy another chat's codex into this one" }),
+  );
+  return wrap;
 }
 
 function restoreBackup(

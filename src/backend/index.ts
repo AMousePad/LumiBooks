@@ -87,11 +87,11 @@ import {
   runCodexTidy,
   setCodexFileState,
 } from "./codex/index";
-import { deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
+import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
-import { checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
+import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
@@ -1287,6 +1287,45 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_adopt": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const outcome = await adoptCodexFrom(msg.sourceChatId, msg.chatId, userId).catch((err) => {
+          warn(`codex adopt failed: ${describeError(err)}`);
+          return err instanceof Error ? err : new Error(String(err));
+        });
+        if (outcome instanceof Error) {
+          await notify(userId, "error", `Memoria couldn't carry that codex over: ${shortErrorText(outcome)}`);
+          break;
+        }
+        if (outcome !== "ok") {
+          const text = outcome === "has_own"
+            ? "This chat already has a codex, wipe it first"
+            : outcome === "no_source"
+              ? "That chat has no codex to carry over"
+              : "Memoria can't carry a codex onto itself";
+          await notify(userId, "warn", text);
+          break;
+        }
+        invalidateCodexInjectionCache(msg.chatId);
+        const adoptSettings = await loadSettings(userId);
+        const adoptProfile = adoptSettings.profiles.find((p) => p.id === adoptSettings.activeProfileId);
+        if (adoptProfile) await publishCodexPool(msg.chatId, userId, adoptProfile, [...CODEX_FILE_KEYS], "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, adoptProfile?.codexRelationsTable);
+        } catch (err) {
+          warn(`codex_adopt entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", "Memoria carried the codex over, she will index this chat from message one");
+        const adopted = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: adopted, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }

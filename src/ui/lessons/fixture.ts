@@ -412,6 +412,7 @@ export function buildFixture(variant: string): FrontendState {
     codexLastRunAt: spec.codex ? Date.now() - 11 * 60_000 : null,
     codexUndoAt: null,
     codexUndoReason: null,
+    codexSources: [],
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],

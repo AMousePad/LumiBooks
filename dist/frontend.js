@@ -7427,6 +7427,9 @@ function renderOverview2(host, state, ctx, send, parsed) {
     sec.body.appendChild(textNode("Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.", "lmb-help"));
     sec.body.appendChild(textNode("Shorter and simpler chats often run better with fewer records. Switching off Relations, Locations, or Things spares the agent upkeep the story may not need yet.", "lmb-help"));
   }
+  if (!state.codexExists && state.codexSources.length > 0) {
+    sec.body.appendChild(renderContinuity2(state, chatId, ctx, send, busy));
+  }
   const row = document.createElement("div");
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
@@ -7468,6 +7471,24 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }, { danger: true, disabled: busy || !state.codexExists }));
   sec.body.appendChild(row);
   host.appendChild(sec.wrap);
+}
+function renderContinuity2(state, chatId, ctx, send, busy) {
+  const wrap = document.createElement("div");
+  wrap.className = "lmb-actions";
+  let sourceId = state.codexSources[0].chatId;
+  wrap.append(textNode("Continuing an earlier chat? Carry its codex over instead of starting blank.", "lmb-help"), select({
+    value: sourceId,
+    options: state.codexSources.map((s) => ({ value: s.chatId, label: s.chatName })),
+    onChange: (v) => {
+      sourceId = v;
+    }
+  }), makeButton("Carry codex over", async () => {
+    const name = state.codexSources.find((s) => s.chatId === sourceId)?.chatName ?? "that chat";
+    const ok = await confirmDelete(ctx, "Carry the codex over?", `Memoria will copy the story bible from ${name} into this chat, then index this chat's own messages from the start.`);
+    if (ok)
+      send({ type: "codex_adopt", chatId, sourceChatId: sourceId });
+  }, { disabled: busy, title: "Copy another chat's codex into this one" }));
+  return wrap;
 }
 function restoreBackup(ctx, chatId, send) {
   ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20000000 }).then((files) => {
@@ -12719,6 +12740,7 @@ function buildFixture(variant) {
     codexLastRunAt: spec.codex ? Date.now() - 11 * 60000 : null,
     codexUndoAt: null,
     codexUndoReason: null,
+    codexSources: [],
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],

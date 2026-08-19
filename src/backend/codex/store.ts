@@ -386,6 +386,58 @@ export async function inheritCodex(
   });
 }
 
+export type AdoptCodexResult = "ok" | "same_chat" | "no_source" | "has_own";
+
+/**
+ * Seed this chat's codex from another chat's, for a story continued in a fresh
+ * chat. Unlike a fork there is no message lineage, so the files carry over
+ * whole while consumption resets to zero: the new chat's own turns have never
+ * been read. File switches and the relations-table mode ride along.
+ */
+export async function adoptCodexFrom(
+  fromChatId: string,
+  toChatId: string,
+  userId: string,
+): Promise<AdoptCodexResult> {
+  if (fromChatId === toChatId) return "same_chat";
+  if ((await codexPresence(fromChatId, userId)) !== "present") return "no_source";
+  return withCursorLock(toChatId, userId, async () => {
+    if (await codexHasAnyDataFile(toChatId, userId)) return "has_own";
+    const source = await loadCursor(fromChatId, userId);
+    let copied = false;
+    for (const key of CODEX_FILE_KEYS) {
+      const read = await readCodexFileRaw(fromChatId, key, userId);
+      if (read.state === "unreadable") {
+        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+      }
+      if (read.state === "absent") continue;
+      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
+      copied = true;
+    }
+    if (!copied) return "no_source";
+    const next: CodexCursor = {
+      ...emptyCursor(),
+      fileStates: { ...source.fileStates },
+      relationsTableMode: source.relationsTableMode,
+      updatedAt: Date.now(),
+    };
+    await saveCursor(toChatId, next, userId);
+    return "ok";
+  });
+}
+
+/** Chats that have a codex on disk, for the continuity picker. */
+export async function listCodexChatIds(userId: string): Promise<string[]> {
+  const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => [] as string[]);
+  const ids = new Set<string>();
+  for (const p of paths) {
+    const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
+    const chatId = rest.split("/")[0];
+    if (chatId) ids.add(chatId);
+  }
+  return [...ids];
+}
+
 /** Raw file contents for the UI viewer: pretty JSON, empty scaffold when
  * absent. An unreadable file renders as a non-JSON marker so Save (which
  * validates) can't accidentally bury the on-disk content under a scaffold. */

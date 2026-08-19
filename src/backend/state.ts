@@ -12,12 +12,27 @@ import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
 import { getCodexFileTokens, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
 import { codexUndoInfo } from "./codex/backup";
+import { listCodexChatIds } from "./codex/store";
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { ensureForkAdoption } from "./fork";
 import { describeError, warn } from "./runtime";
 import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
 
 type ChatMessageDTO = ChatMessage;
+
+/** Chats holding a codex this one could continue from, newest name first. */
+async function listCodexSources(chatId: string, userId: string): Promise<RootSourceOption[]> {
+  const ids = await listCodexChatIds(userId);
+  const out: RootSourceOption[] = [];
+  for (const id of ids) {
+    if (id === chatId) continue;
+    const chat = await spindle.chats.get(id, userId).catch(() => null);
+    if (!chat) continue;
+    out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
+  }
+  out.sort((a, b) => a.chatName.localeCompare(b.chatName));
+  return out;
+}
 
 export async function buildState(userId: string, requestedChatId?: string | null): Promise<FrontendState> {
   const settings = await loadSettings(userId);
@@ -100,6 +115,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexLastRunAt: null,
     codexUndoAt: null,
     codexUndoReason: null,
+    codexSources: [],
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -212,6 +228,9 @@ export async function buildState(userId: string, requestedChatId?: string | null
   });
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
+  const codexSources: RootSourceOption[] = codexStatus.exists
+    ? []
+    : await listCodexSources(chat.id, userId).catch(() => []);
   const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   // Constant entries only (timeline + threads), keyworded records cost per scene.
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
@@ -255,6 +274,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexLastRunAt: codexStatus.lastRunAt,
     codexUndoAt: undo?.savedAt ?? null,
     codexUndoReason: undo?.reason ?? null,
+    codexSources,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,

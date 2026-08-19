@@ -3435,6 +3435,49 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
     return true;
   });
 }
+async function adoptCodexFrom(fromChatId, toChatId, userId) {
+  if (fromChatId === toChatId)
+    return "same_chat";
+  if (await codexPresence(fromChatId, userId) !== "present")
+    return "no_source";
+  return withCursorLock(toChatId, userId, async () => {
+    if (await codexHasAnyDataFile(toChatId, userId))
+      return "has_own";
+    const source = await loadCursor(fromChatId, userId);
+    let copied = false;
+    for (const key of CODEX_FILE_KEYS) {
+      const read = await readCodexFileRaw(fromChatId, key, userId);
+      if (read.state === "unreadable") {
+        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+      }
+      if (read.state === "absent")
+        continue;
+      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
+      copied = true;
+    }
+    if (!copied)
+      return "no_source";
+    const next = {
+      ...emptyCursor(),
+      fileStates: { ...source.fileStates },
+      relationsTableMode: source.relationsTableMode,
+      updatedAt: Date.now()
+    };
+    await saveCursor(toChatId, next, userId);
+    return "ok";
+  });
+}
+async function listCodexChatIds(userId) {
+  const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => []);
+  const ids = new Set;
+  for (const p of paths) {
+    const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
+    const chatId = rest.split("/")[0];
+    if (chatId)
+      ids.add(chatId);
+  }
+  return [...ids];
+}
 async function readCodexFilesRaw(chatId, userId) {
   const out = {};
   await Promise.all(CODEX_FILE_KEYS.map(async (key) => {
@@ -9674,6 +9717,20 @@ async function detachRoot(targetChatId, userId) {
 }
 
 // src/backend/state.ts
+async function listCodexSources(chatId, userId) {
+  const ids = await listCodexChatIds(userId);
+  const out = [];
+  for (const id of ids) {
+    if (id === chatId)
+      continue;
+    const chat = await spindle.chats.get(id, userId).catch(() => null);
+    if (!chat)
+      continue;
+    out.push({ chatId: id, chatName: chat.name?.trim() || id.slice(0, 8), entryCount: 0 });
+  }
+  out.sort((a, b) => a.chatName.localeCompare(b.chatName));
+  return out;
+}
 async function buildState(userId, requestedChatId) {
   const settings = await loadSettings(userId);
   const activeProfile = settings.profiles.find((p) => p.id === settings.activeProfileId) ?? settings.profiles[0];
@@ -9749,6 +9806,7 @@ async function buildState(userId, requestedChatId) {
     codexLastRunAt: null,
     codexUndoAt: null,
     codexUndoReason: null,
+    codexSources: [],
     codexInjectedTokens: 0,
     codexFileStates: {},
     codexStaleFiles: [],
@@ -9847,6 +9905,7 @@ async function buildState(userId, requestedChatId) {
   });
   const codexPanel = await getCodexPanelState(chat.id, userId).catch(() => ({ fileStates: {}, staleFiles: [], refreshPending: [] }));
   const undo = await codexUndoInfo(chat.id, userId).catch(() => null);
+  const codexSources = codexStatus.exists ? [] : await listCodexSources(chat.id, userId).catch(() => []);
   const codexFileTokens = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? ["timeline", "threads"].reduce((acc, k) => {
     const st = codexPanel.fileStates[k];
@@ -9884,6 +9943,7 @@ async function buildState(userId, requestedChatId) {
     codexLastRunAt: codexStatus.lastRunAt,
     codexUndoAt: undo?.savedAt ?? null,
     codexUndoReason: undo?.reason ?? null,
+    codexSources,
     codexInjectedTokens,
     codexFileStates: codexPanel.fileStates,
     codexStaleFiles: codexPanel.staleFiles,
@@ -11004,6 +11064,41 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_adopt": {
+        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          break;
+        }
+        const outcome = await adoptCodexFrom(msg.sourceChatId, msg.chatId, userId).catch((err) => {
+          warn(`codex adopt failed: ${describeError(err)}`);
+          return err instanceof Error ? err : new Error(String(err));
+        });
+        if (outcome instanceof Error) {
+          await notify(userId, "error", `Memoria couldn't carry that codex over: ${shortErrorText(outcome)}`);
+          break;
+        }
+        if (outcome !== "ok") {
+          const text = outcome === "has_own" ? "This chat already has a codex, wipe it first" : outcome === "no_source" ? "That chat has no codex to carry over" : "Memoria can't carry a codex onto itself";
+          await notify(userId, "warn", text);
+          break;
+        }
+        invalidateCodexInjectionCache(msg.chatId);
+        const adoptSettings = await loadSettings(userId);
+        const adoptProfile = adoptSettings.profiles.find((p) => p.id === adoptSettings.activeProfileId);
+        if (adoptProfile)
+          await publishCodexPool(msg.chatId, userId, adoptProfile, [...CODEX_FILE_KEYS], "edit");
+        try {
+          await syncCodexEntries(msg.chatId, userId, adoptProfile?.codexRelationsTable);
+        } catch (err) {
+          warn(`codex_adopt entry sync failed: ${describeError(err)}`);
+          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+        }
+        await notify(userId, "success", "Memoria carried the codex over, she will index this chat from message one");
+        const adopted = await readCodexFilesRaw(msg.chatId, userId);
+        send({ type: "codex_files", chatId: msg.chatId, files: adopted, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
       }
