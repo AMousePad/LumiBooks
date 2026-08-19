@@ -33,7 +33,9 @@ Snapshot rules (absolute):
 - Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.
 - Record only what is durable. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.
 - One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.
-- Omit empty optional fields entirely if you are not adding to them.`;
+- Omit empty optional fields entirely if you are not adding to them.
+
+IMPORTANT absolute requirement: Avoid adding any new entities, relations, lore, secrets, and timeline segments unless absolutely required, (usually it isn't required as most additions are not significant enough to record permanently), instead prioritize rewriting existing entries slightly to remove stale content. Try and keep deletions and additions similar in volume so the codex does not grow in size unless absolutely required.`;
 
 // src/prompts/codex/schema/entities-table.txt
 var entities_table_default = `{{ENTITY_FILES}}
