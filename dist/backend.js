@@ -2355,7 +2355,7 @@ function orderEntries(coverage, msgIdToIdx) {
   ordered.sort((a, b) => a.firstIdx - b.firstIdx);
   return ordered;
 }
-var LEGACY_ACTIVATION_WAIT_MS = 2000;
+var LEGACY_ACTIVATION_WAIT_MS = 240000;
 var legacyActivationInflight = new Map;
 async function getLegacyActivated(chatId, userId) {
   const key = `${userId}:${chatId}`;
@@ -2363,7 +2363,12 @@ async function getLegacyActivated(chatId, userId) {
   if (!pending) {
     const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
     pending = new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(null), LEGACY_ACTIVATION_WAIT_MS);
+      const timer = setTimeout(() => {
+        if (legacyActivationInflight.get(key) === pending) {
+          legacyActivationInflight.delete(key);
+        }
+        resolve(null);
+      }, LEGACY_ACTIVATION_WAIT_MS);
       raw.then((value) => {
         clearTimeout(timer);
         resolve(value);
@@ -5506,6 +5511,26 @@ function sameKeys(a, b) {
       return false;
   return true;
 }
+var DELETE_ATTEMPTS = 6;
+var DELETE_RETRY_BASE_MS = 1000;
+var DELETE_RETRY_BUDGET_MS = 300000;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function deleteSyncedEntry(entryId, userId, deadline) {
+  for (let attempt = 1;; attempt++) {
+    try {
+      await spindle.world_books.entries.delete(entryId, userId);
+      return;
+    } catch (err) {
+      const backoff = DELETE_RETRY_BASE_MS * 2 ** (attempt - 1);
+      if (attempt >= DELETE_ATTEMPTS || Date.now() + backoff >= deadline)
+        throw err;
+      warn(`codex sync: delete of ${entryId} failed (attempt ${attempt}), retrying: ${describeError(err)}`);
+      await sleep(backoff);
+    }
+  }
+}
 async function listSyncedEntries(bookId, chatId, userId) {
   const all = await listAllEntries(bookId, userId);
   const out = [];
@@ -5549,6 +5574,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
   }
   const existing = await listSyncedEntries(bookId, chatId, userId);
   const byRecord = new Map;
+  const deleteDeadline = Date.now() + DELETE_RETRY_BUDGET_MS;
   let failedDeletes = 0;
   for (const e of existing) {
     const dup = byRecord.get(e.meta.record);
@@ -5556,7 +5582,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
       byRecord.set(e.meta.record, e);
       continue;
     }
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+    await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failedDeletes++;
       warn(`codex sync: failed to delete duplicate entry ${e.raw.id}: ${describeError(err)}`);
     });
@@ -5606,13 +5632,13 @@ async function doSync(chatId, userId, relationsTableFallback) {
   for (const [record, e] of byRecord) {
     if (seen.has(record))
       continue;
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+    await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failedDeletes++;
       warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`);
     });
   }
   if (failedDeletes > 0) {
-    throw new Error(`failed to delete ${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"}`);
+    throw new Error(`${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"} could not be removed and may still inject`);
   }
 }
 function wipeCodexEntries(chatId, userId) {
@@ -5623,9 +5649,10 @@ async function doWipe(chatId, userId) {
   if (!bookId)
     return;
   const existing = await listSyncedEntries(bookId, chatId, userId);
+  const deleteDeadline = Date.now() + DELETE_RETRY_BUDGET_MS;
   let failed = 0;
   for (const e of existing) {
-    await spindle.world_books.entries.delete(e.raw.id, userId).catch((err) => {
+    await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failed++;
       warn(`codex wipe: failed to delete entry ${e.raw.id}: ${describeError(err)}`);
     });
@@ -9865,6 +9892,7 @@ registerCodexCallbacks({
     })();
   }
 });
+var CODEX_GATE_TIMEOUT_MS = 9000;
 spindle.registerWorldInfoInterceptor(async (ctx) => {
   const lmbIds = [];
   const disabledIds = [];
@@ -9891,7 +9919,7 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
       })();
       gate.catch(() => {});
       const deadline = new Promise((resolve) => {
-        gateTimer = setTimeout(() => resolve("timeout"), 1500);
+        gateTimer = setTimeout(() => resolve("timeout"), CODEX_GATE_TIMEOUT_MS);
       });
       try {
         const off = await Promise.race([gate, deadline]);

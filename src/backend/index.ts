@@ -199,6 +199,9 @@ registerCodexCallbacks({
   },
 });
 
+/** Host kills the world-info handler at 10s and discards the whole vote. */
+const CODEX_GATE_TIMEOUT_MS = 9000;
+
 spindle.registerWorldInfoInterceptor(async (ctx) => {
   const lmbIds: string[] = [];
   const disabledIds: string[] = [];
@@ -212,8 +215,6 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
     }
     else if (ext[CODEX_ENTRY_EXTENSION_KEY]) codexIds.push(entry.id);
   }
-  // The codex gate is evaluated per activation and timeboxed: the host drops
-  // every vote on handler timeout, summary disables included.
   if (codexIds.length > 0) {
     const userId = ctx.userId ?? resolveUserId(ctx.chatId);
     if (userId) {
@@ -226,7 +227,7 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
       })();
       gate.catch(() => {});
       const deadline = new Promise<"timeout">((resolve) => {
-        gateTimer = setTimeout(() => resolve("timeout"), 1500);
+        gateTimer = setTimeout(() => resolve("timeout"), CODEX_GATE_TIMEOUT_MS);
       });
       try {
         const off = await Promise.race([gate, deadline]);

@@ -203,7 +203,7 @@ test("waits for lorebook reads beyond three seconds", async () => {
   }
 });
 
-test("bounds and coalesces legacy activation reads", async () => {
+test("coalesces legacy activation reads and retries after a hung one", async () => {
   rememberChatUser(chatId, userId);
   getActivatedCalls = 0;
   const messages: TestMessage[] = [{
@@ -221,7 +221,9 @@ test("bounds and coalesces legacy activation reads", async () => {
     const second = registeredInterceptor!(messages, { chatId });
     await activationStarted.promise;
     expect(getActivatedCalls).toBe(1);
-    jest.advanceTimersByTime(2000);
+    jest.advanceTimersByTime(239_000);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    jest.advanceTimersByTime(1000);
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(firstResult).toEqual({
@@ -229,9 +231,13 @@ test("bounds and coalesces legacy activation reads", async () => {
       breakdown: [{ messageIndex: 0, name: "Chapter" }],
     });
     expect(secondResult).toEqual(firstResult);
+
     for (let i = 0; i < 5; i++) await Promise.resolve();
-    expect(await registeredInterceptor!(messages, { chatId })).toEqual(firstResult);
-    expect(getActivatedCalls).toBe(1);
+    const third = registeredInterceptor!(messages, { chatId });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(getActivatedCalls).toBe(2);
+    jest.advanceTimersByTime(240_000);
+    expect(await third).toEqual(firstResult);
   } finally {
     jest.useRealTimers();
   }

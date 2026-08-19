@@ -79,7 +79,8 @@ function orderEntries(coverage: CoverageMap, msgIdToIdx: Map<string, number>): O
   return ordered;
 }
 
-const LEGACY_ACTIVATION_WAIT_MS = 2000;
+/** Headroom under the manifest's 300s interceptor budget. */
+const LEGACY_ACTIVATION_WAIT_MS = 240_000;
 type ActivatedEntries = Awaited<ReturnType<typeof spindle.world_books.getActivated>>;
 const legacyActivationInflight = new Map<string, Promise<ActivatedEntries | null>>();
 
@@ -93,7 +94,13 @@ async function getLegacyActivated(
     const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
     pending = new Promise((resolve) => {
       const timer = setTimeout(
-        () => resolve(null),
+        () => {
+          // Drop the cached promise too, or a hung call pins this chat to null.
+          if (legacyActivationInflight.get(key) === pending) {
+            legacyActivationInflight.delete(key);
+          }
+          resolve(null);
+        },
         LEGACY_ACTIVATION_WAIT_MS,
       );
       void raw.then((value) => {
