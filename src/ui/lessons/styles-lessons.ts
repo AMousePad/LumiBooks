@@ -422,6 +422,15 @@ export const LESSON_STYLES = `
   transition: top 150ms var(--lmb-ease), left 150ms var(--lmb-ease),
     width 150ms var(--lmb-ease), height 150ms var(--lmb-ease);
 }
+/* Read this, do not click it: dashed, so it never reads as the action. */
+.lmb-spot-hint {
+  position: absolute;
+  z-index: 6;
+  border: 1px dashed var(--lmb-gold);
+  border-radius: 5px;
+  box-shadow: 0 0 8px var(--lmb-frame-faint);
+  pointer-events: none;
+}
 .lmb-demo-funnel .lmb-spot-ring { animation: lmb-nav-pulse 1.5s var(--lmb-ease) infinite; }
 @keyframes lmb-nav-pulse {
   0%, 100% { box-shadow: 0 0 8px var(--lmb-frame-strong), inset 0 0 8px var(--lmb-frame-faint); }

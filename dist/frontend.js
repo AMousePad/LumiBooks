@@ -421,6 +421,15 @@ var LESSON_STYLES = `
   transition: top 150ms var(--lmb-ease), left 150ms var(--lmb-ease),
     width 150ms var(--lmb-ease), height 150ms var(--lmb-ease);
 }
+/* Read this, do not click it: dashed, so it never reads as the action. */
+.lmb-spot-hint {
+  position: absolute;
+  z-index: 6;
+  border: 1px dashed var(--lmb-gold);
+  border-radius: 5px;
+  box-shadow: 0 0 8px var(--lmb-frame-faint);
+  pointer-events: none;
+}
 .lmb-demo-funnel .lmb-spot-ring { animation: lmb-nav-pulse 1.5s var(--lmb-ease) infinite; }
 @keyframes lmb-nav-pulse {
   0%, 100% { box-shadow: 0 0 8px var(--lmb-frame-strong), inset 0 0 8px var(--lmb-frame-faint); }
@@ -5769,7 +5778,7 @@ function renderArcPicker(host, state, send, redraw) {
 function renderVolumePicker(host, state, send, redraw) {
   const sec = section("Press arcs into a volume");
   lessonMark(sec.wrap, "books.compose.volumes");
-  const activeArcs = state.arcs.filter((a) => a.active && !a.isRoot);
+  const activeArcs = state.arcs.filter((a) => a.active);
   if (activeArcs.length === 0) {
     sec.body.appendChild(textNode("Memoria has no unbound arcs to press yet", "lmb-empty"));
     host.appendChild(sec.wrap);
@@ -7670,8 +7679,25 @@ function cycleTileState(def, st, state, send) {
 var ENTITY_TEXT_FIELDS = ["kind", "role", "significance"];
 var ENTITY_LONG_FIELDS = ["appearance", "description", "notes"];
 var ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"];
-var ENTITY_KNOWN = new Set(["id", "name", "status", "locked", "lockedFields", "lockedfields", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+var ENTITY_KNOWN = new Set(["id", "name", "status", "locked", "lockedFields", "lockedfields", "noInject", "noinject", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 var LOCKABLE_FIELDS = new Set([...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+function entityNoInject(e) {
+  return e["noInject"] === true || e["noinject"] === true;
+}
+function entitySheetState(e) {
+  if (entityNoInject(e))
+    return "held";
+  return e["locked"] === true ? "locked" : "open";
+}
+var SHEET_STATE_TITLE = {
+  open: "Memoria maintains this sheet, click to lock it.",
+  locked: "Frozen and still injected, click to hold it out of the prompt.",
+  held: "Frozen and held out of the prompt, click to hand it back to Memoria."
+};
+function sheetStateLabel(e) {
+  const locked = e["locked"] === true;
+  return `${locked ? "\uD83D\uDD12" : "\uD83D\uDD13"} ${entityNoInject(e) ? "not injected" : "injected"} · ${locked ? "frozen" : "updated"}`;
+}
 function entitySearchText(e) {
   const bits = [];
   for (const v of Object.values(e)) {
@@ -7802,7 +7828,9 @@ function makeDraft(group, e) {
 function renderEntityCard(group, e, parsed, state, ctx, send) {
   const card = document.createElement("div");
   card.className = "lmb-entity-card";
+  lessonMark(card, "codex.entities.card");
   const locked = e["locked"] === true;
+  const sheetState = entitySheetState(e);
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
   name.textContent = str(e["name"]) || "?";
@@ -7813,8 +7841,10 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
     idEl.textContent = id;
     name.appendChild(idEl);
   }
-  if (locked)
-    name.appendChild(pill("locked", "warn"));
+  if (sheetState === "held")
+    name.appendChild(lessonMark(pill("not injected", "warn"), "codex.entities.statepill"));
+  else if (locked)
+    name.appendChild(lessonMark(pill("locked", "warn"), "codex.entities.statepill"));
   card.appendChild(name);
   const kv = document.createElement("div");
   kv.className = "lmb-kv";
@@ -7855,23 +7885,28 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
   actions.append(makeButton("Edit sheet", () => {
     local.entityDraft = makeDraft(group, e);
     rerender();
-  }, { primary: true, small: true }), makeButton(locked ? "Unlock" : "Lock", () => {
+  }, { primary: true, small: true }), lessonMark(makeButton(sheetStateLabel(e), () => {
     const list = (cache.parsed ?? parsed)[group];
     const next = list.map((x3) => {
       if (str(x3["id"]) !== id)
         return x3;
       const row = { ...x3 };
-      if (locked)
-        delete row["locked"];
-      else
+      delete row["locked"];
+      delete row["noInject"];
+      delete row["noinject"];
+      if (sheetState === "open")
         row["locked"] = true;
+      else if (sheetState === "locked") {
+        row["locked"] = true;
+        row["noInject"] = true;
+      }
       return row;
     });
     sendCodexWrite(group, { entities: next }, state, send);
   }, {
     small: true,
-    title: locked ? "Let Memoria update this entry again" : "Memoria will never touch a locked entry. Trim it first if the character card already covers it, then lock it to keep it lean."
-  }), makeButton("Delete", async () => {
+    title: SHEET_STATE_TITLE[sheetState]
+  }), "codex.entities.lock"), makeButton("Delete", async () => {
     const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
     if (!ok)
       return;
@@ -8008,6 +8043,8 @@ function buildEntityFromDraft(draft, parsed) {
     }
     if (orig["locked"] === true)
       out["locked"] = true;
+    if (entityNoInject(orig))
+      out["noInject"] = true;
   }
   out["id"] = draft.id;
   out["name"] = name;
@@ -11510,7 +11547,7 @@ var COURSE_CODEX = {
         {
           kind: "say",
           diagram: "fade",
-          text: "My chapters remember the plot. But if you compress a story hard enough you'll start losing information, like who loves whom, or who still keeps which secret. This means that somehow, we must separately track the important parts of the story as we compress it."
+          text: "Summary chapters are a good outline. But if you compress a story enough you'll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it."
         },
         {
           kind: "nav",
@@ -11519,7 +11556,7 @@ var COURSE_CODEX = {
           prep: () => setCodexSubtab("overview"),
           path: ["tab.codex"],
           arrive: "codex.tiles",
-          text: "The Knowledge Codex does this. Let's walk though a practice one for a little murder mystery, let me show you. Tap the Codex tab up top.",
+          text: "BEHOLD the Knowledge Codex \uD83D\uDE0E. Let's walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
           done: "There it is."
         },
         {
@@ -11529,7 +11566,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Eight records make the bible: characters, locations, things, relations, a timeline, story threads, world rules, and who knows what. A small agent reads your new messages on a schedule and keeps all of it current. Each record becomes an entry in a lorebook I manage for you. The timeline and threads will always be on, and the others activate by keyword."
+          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all \uD83D\uDCAA. Each record becomes an entry in a lorebook I manage for you. The timeline and threads are constant entries, and the others activate by keyword."
         },
         {
           kind: "quiz",
@@ -11571,7 +11608,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.actions",
-          text: "These are the everyday actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Undo rolls back my last change. Rebuild and Wipe live in the Manage tab, along with import and export."
+          text: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export."
         },
         {
           kind: "do",
@@ -11581,8 +11618,8 @@ var COURSE_CODEX = {
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
           expect: "codex_set_file_state",
-          text: "Every tile is one record, its count, and what it costs your prompt. The tiles are also switches. Click the Relations tile once.",
-          done: "Dashed means not injected but still updated, I keep the record current while it costs you zero tokens. A second click freezes it completely, a third turns it back on. Try the full cycle if you like, then we move on."
+          text: "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
+          done: "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.\uD83D\uDDB1️\uD83D\uDDB1️\uD83D\uDDB1️\uD83D\uDDB1️"
         },
         {
           kind: "quiz",
@@ -11595,12 +11632,12 @@ var COURSE_CODEX = {
           anchor: "codex.tile.relations",
           text: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
           options: [
-            { text: "It's marked as needing a catch-up, and one refresh pass rebuilds just that record from the summaries and recent messages", correct: true },
+            { text: "It's marked as needing a catch-up. A refresh does that from the summaries and recent messages", correct: true },
             { text: "The gap fills in automatically on the next normal update" },
             { text: "Nothing can recover the missed events except a full rebuild" },
             { text: "Tidy it, tidying re-reads the missed messages" }
           ],
-          why: "My reading position is already past those messages, so normal updates never go back. The Overview offers a one-pass catch-up for every re-enabled record at once, and Rebuild stays the from-scratch option."
+          why: "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records."
         },
         {
           kind: "quiz",
@@ -11613,10 +11650,10 @@ var COURSE_CODEX = {
           anchor: "codex.manage.startover",
           text: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
           options: [
-            { text: "Rebuild re-reads the whole chat right away and keeps your tile settings. Wipe waits, and the next update starts from message one anyway", correct: true },
-            { text: "After Wipe, only new messages ever get read" },
+            { text: "Wipe helps LumiAgent wipe her ass." },
             { text: "Rebuild keeps your entries and only rewrites the stale ones" },
-            { text: "Wipe also deletes your chapters and arcs" }
+            { text: "Wipe also deletes your chapters and arcs" },
+            { text: "Rebuild keeps your tile settings and remakes the codex from scratch, whereas wipe destroys it all.", correct: true }
           ],
           why: "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive."
         }
@@ -11633,8 +11670,8 @@ var COURSE_CODEX = {
           prep: () => setCodexSubtab("overview"),
           path: ["subtab.entities"],
           arrive: "codex.entities",
-          text: "Time to meet the cast. Tap Entities.",
-          done: "The cast list."
+          text: "Tap Entities and behold...",
+          done: "The people, places, and things! \uD83C\uDF0E"
         },
         {
           kind: "say",
@@ -11643,7 +11680,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("entities"),
           anchor: "codex.entities",
-          text: "Every chip is an entity. Click a name and its sheet opens. A sheet describes only that one entity, and connections between entities live in the Relations record. Poke around as much as you like."
+          text: 'Every "chip" is an entity. Click one to open its sheet. Poke around as much as you like.'
         },
         {
           kind: "do",
@@ -11654,8 +11691,9 @@ var COURSE_CODEX = {
           anchor: "codex.entities.add",
           path: ["codex.entities.add", "codex.entities.addform", "codex.entities.editor"],
           expect: "codex_write_file",
-          text: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it's a good way to learn the interface now. Try it: click the + character chip, type a name, the pawnbroker maybe, then press Save on the sheet.",
-          done: "Saved. Your edits are canon now, I read them as truth and build on them."
+          text: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it's a good way to learn the interface now. Try it: click the + character chip, type a name, Mousepad maybe, then press Save on the sheet.",
+          done: "Saved. Your edits are canon now, I read them as truth and build on them.",
+          doneAnchor: "codex.entities.card"
         },
         {
           kind: "quiz",
@@ -11671,12 +11709,27 @@ var COURSE_CODEX = {
           anchor: "codex.entities",
           text: `The story has moved on, Elias isn't hiding anymore, but his sheet still says "hiding in the tannery loft". What's happening?`,
           options: [
-            { text: "The agent hasn't read that far yet. It catches up on its own, and you can also just edit the line right now", correct: true },
-            { text: "The codex is broken, wipe it" },
+            { text: "The agent hasn't read that far yet. It catches up on its own.", correct: true },
+            { text: "The codex is broken, delete the extension" },
             { text: "Sheets never change once written" },
             { text: "You have to delete Elias and re-add him" }
           ],
-          why: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are always safe, I treat them as canon."
+          why: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them."
+        },
+        {
+          kind: "do",
+          tab: "codex",
+          subtab: "entities",
+          fixture: { variant: "codex" },
+          prep: () => {
+            setCodexSubtab("entities");
+            setCodexExpandedEntity("char:captain");
+          },
+          anchor: "codex.entities.lock",
+          hintAnchor: "codex.entities.statepill",
+          expect: "codex_write_file",
+          text: "Consider the Captain. Let's say that his character card describes him well. This means I don't need him in the codex as well. See here how it says locked after 1 click? That's bad! I won't write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
+          done: "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!"
         },
         {
           kind: "nav",
@@ -11685,8 +11738,8 @@ var COURSE_CODEX = {
           prep: () => setCodexRelationsView("list"),
           path: ["subtab.relations"],
           arrive: "codex.rel.view",
-          text: "Now the web between everyone. Tap Relations.",
-          done: "The web, as a list."
+          text: "Let's explore the world wide web. Tap Relations.",
+          done: "This is the list view."
         },
         {
           kind: "do",
@@ -11701,7 +11754,8 @@ var COURSE_CODEX = {
           path: ["codex.rel.add", "codex.rel.form"],
           expect: "codex_write_file",
           text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
-          done: "Recorded. Let's see it drawn."
+          done: "Recorded!",
+          doneAnchor: "codex.rel.view"
         },
         {
           kind: "quiz",
@@ -11735,7 +11789,7 @@ var COURSE_CODEX = {
           path: ["codex.rel.graphbtn"],
           arrive: "codex.rel.graph",
           text: "Tap Graph.",
-          done: "There's your web."
+          done: "There's your web. A real story will look much more complex."
         },
         {
           kind: "say",
@@ -11764,7 +11818,7 @@ var COURSE_CODEX = {
           },
           path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Last stop, my dials. Open the Tuning tab, its Settings pane, then the Codex side.",
+          text: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           done: "My dials."
         },
         {
@@ -11774,7 +11828,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 20 per pass. If a chat falls far behind, Update catches me up in increments."
+          text: "My codex settings live here. By default, I lag by 6 messages, then read 20 per update."
         },
         {
           kind: "quiz",
@@ -11807,7 +11861,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them."
+          text: "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools."
         },
         {
           kind: "say",
@@ -11815,7 +11869,7 @@ var COURSE_CODEX = {
           subtab: "codex",
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
-          text: "One more thing! Edit any record whenever you like, and if you edit or delete an old message I already read, my next pass notices, rewinds, and re-checks everything the codex claimed about that stretch."
+          text: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was codex-recorded, my next run notices, rewinds, and corrects the codex."
         },
         {
           kind: "quiz",
@@ -11838,12 +11892,12 @@ var COURSE_CODEX = {
           scored: true,
           text: "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn't in the prompt. Is something wrong?",
           options: [
-            { text: "No. It's a chapter written early to feed the codex, it shelves itself once its span passes the chapter lag, and deleting it is safe", correct: true },
+            { text: "No. It's a chapter written early to feed the codex, but isn't used before summary lag!", correct: true },
+            { text: "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD" },
             { text: "Yes, it's corrupted, delete it and resync" },
-            { text: "Yes, it leaked in from another chat" },
             { text: "It's a draft waiting for your approval" }
           ],
-          why: "Ghosts give the codex story-so-far context without touching your prompt. If you delete one I just write it again, and turning the mode off cleans them all up."
+          why: "Ghosts give the codex context early, and are eventually turned into real summaries later down the line. "
         }
       ]
     },
@@ -11898,7 +11952,7 @@ var COURSE_CODEX = {
         },
         {
           kind: "say",
-          text: "And that's the whole archive. Your diploma is ready, signed by the proudest librarian you know."
+          text: "That's all, go forth and make some awesome stories!✨"
         }
       ]
     }
@@ -12607,7 +12661,8 @@ function codexFixtureFiles() {
           kind: "human",
           role: "leads the city watch",
           description: "publicly backs the bandit theory",
-          goals: ["reopen the staff interviews quietly"]
+          goals: ["reopen the staff interviews quietly"],
+          locked: true
         }
       ]
     },
@@ -13276,6 +13331,7 @@ function createLessonEngine(deps) {
   let demoInner = null;
   let overlay = [];
   let ring = null;
+  let hintRing = null;
   let spotTag = null;
   let sheetBody = null;
   let railEl = null;
@@ -13472,6 +13528,7 @@ function createLessonEngine(deps) {
     headLabel = null;
     overlay = [];
     ring = null;
+    hintRing = null;
     resetHomeTabLocal();
     resetBooksTabLocal();
     resetCodexTabLocal();
@@ -13545,6 +13602,10 @@ function createLessonEngine(deps) {
     ring.className = "lmb-spot-ring";
     ring.style.display = "none";
     demoWrap.appendChild(ring);
+    hintRing = document.createElement("div");
+    hintRing.className = "lmb-spot-hint";
+    hintRing.style.display = "none";
+    demoWrap.appendChild(hintRing);
     spotTag = document.createElement("div");
     spotTag.className = "lmb-spot-tag";
     spotTag.style.display = "none";
@@ -13906,6 +13967,8 @@ function createLessonEngine(deps) {
       p.style.display = "none";
     if (ring)
       ring.style.display = "none";
+    if (hintRing)
+      hintRing.style.display = "none";
     if (spotTag)
       spotTag.style.display = "none";
   }
@@ -13952,6 +14015,26 @@ function createLessonEngine(deps) {
         width: `${right - left}px`,
         height: `${bottom - top}px`
       });
+    }
+    if (hintRing) {
+      const hint = currentStep()?.hintAnchor;
+      const hintEl = hint ? demoWrap.querySelector(`[data-lesson="${hint}"]`) : null;
+      if (!hintEl) {
+        hintRing.style.display = "none";
+      } else {
+        const h = hintEl.getBoundingClientRect();
+        const hT = Math.max(0, h.top - c2.top - 3);
+        const hL = Math.max(0, h.left - c2.left - 3);
+        const hR = Math.min(c2.width, h.right - c2.left + 3);
+        const hB = Math.min(c2.height, h.bottom - c2.top + 3);
+        Object.assign(hintRing.style, {
+          display: "",
+          top: `${hT}px`,
+          left: `${hL}px`,
+          width: `${hR - hL}px`,
+          height: `${hB - hT}px`
+        });
+      }
     }
     if (spotTag) {
       const step = currentStep();

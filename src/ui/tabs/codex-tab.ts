@@ -941,13 +941,37 @@ function cycleTileState(
 const ENTITY_TEXT_FIELDS = ["kind", "role", "significance"] as const;
 const ENTITY_LONG_FIELDS = ["appearance", "description", "notes"] as const;
 const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"] as const;
-// "status" is deprecated, "locked"/"lockedFields" user-owned, "rid" plumbing:
-// never shown as extras.
-const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "lockedFields", "lockedfields", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+// "status" is deprecated, "locked"/"lockedFields"/"noInject" user-owned, "rid"
+// plumbing: never shown as extras.
+const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "lockedFields", "lockedfields", "noInject", "noinject", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
 
 /** Fields a per-field lock can hold. Name stays writable, it identifies the
  * sheet to the agent. */
 const LOCKABLE_FIELDS = new Set<string>([...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
+
+/** Where the Lock button sits in its cycle: open, then locked, then held back. */
+type EntitySheetState = "open" | "locked" | "held";
+
+function entityNoInject(e: Record<string, unknown>): boolean {
+  return e["noInject"] === true || e["noinject"] === true;
+}
+
+function entitySheetState(e: Record<string, unknown>): EntitySheetState {
+  if (entityNoInject(e)) return "held";
+  return e["locked"] === true ? "locked" : "open";
+}
+
+const SHEET_STATE_TITLE: Record<EntitySheetState, string> = {
+  open: "Memoria maintains this sheet, click to lock it.",
+  locked: "Frozen and still injected, click to hold it out of the prompt.",
+  held: "Frozen and held out of the prompt, click to hand it back to Memoria.",
+};
+
+// Both axes, so a hand-authored noInject without a lock still reads true.
+function sheetStateLabel(e: Record<string, unknown>): string {
+  const locked = e["locked"] === true;
+  return `${locked ? "🔒" : "🔓"} ${entityNoInject(e) ? "not injected" : "injected"} · ${locked ? "frozen" : "updated"}`;
+}
 
 function entitySearchText(e: Record<string, unknown>): string[] {
   const bits: string[] = [];
@@ -1103,7 +1127,10 @@ function renderEntityCard(
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "lmb-entity-card";
+  // Where a do-step's spotlight lands once the sheet editor closes.
+  lessonMark(card, "codex.entities.card");
   const locked = e["locked"] === true;
+  const sheetState = entitySheetState(e);
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
   name.textContent = str(e["name"]) || "?";
@@ -1114,7 +1141,8 @@ function renderEntityCard(
     idEl.textContent = id;
     name.appendChild(idEl);
   }
-  if (locked) name.appendChild(pill("locked", "warn"));
+  if (sheetState === "held") name.appendChild(lessonMark(pill("not injected", "warn"), "codex.entities.statepill"));
+  else if (locked) name.appendChild(lessonMark(pill("locked", "warn"), "codex.entities.statepill"));
   card.appendChild(name);
 
   const kv = document.createElement("div");
@@ -1151,22 +1179,26 @@ function renderEntityCard(
       local.entityDraft = makeDraft(group, e);
       rerender();
     }, { primary: true, small: true }),
-    makeButton(locked ? "Unlock" : "Lock", () => {
+    lessonMark(makeButton(sheetStateLabel(e), () => {
       const list = (cache.parsed ?? parsed)[group];
       const next = list.map((x) => {
         if (str(x["id"]) !== id) return x;
         const row = { ...x };
-        if (locked) delete row["locked"];
-        else row["locked"] = true;
+        delete row["locked"];
+        delete row["noInject"];
+        delete row["noinject"];
+        if (sheetState === "open") row["locked"] = true;
+        else if (sheetState === "locked") {
+          row["locked"] = true;
+          row["noInject"] = true;
+        }
         return row;
       });
       sendCodexWrite(group, { entities: next }, state, send);
     }, {
       small: true,
-      title: locked
-        ? "Let Memoria update this entry again"
-        : "Memoria will never touch a locked entry. Trim it first if the character card already covers it, then lock it to keep it lean.",
-    }),
+      title: SHEET_STATE_TITLE[sheetState],
+    }), "codex.entities.lock"),
     makeButton("Delete", async () => {
       const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
       if (!ok) return;
@@ -1317,6 +1349,7 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
       if (!ENTITY_KNOWN.has(k)) out[k] = v;
     }
     if (orig["locked"] === true) out["locked"] = true;
+    if (entityNoInject(orig)) out["noInject"] = true;
   }
   out["id"] = draft.id;
   out["name"] = name;

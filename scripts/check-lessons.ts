@@ -81,6 +81,7 @@ for (const course of courses) {
   for (const section of course.sections) {
     for (const step of section.steps) {
       if (step.anchor) usedAnchors.add(step.anchor);
+      if (step.hintAnchor) usedAnchors.add(step.hintAnchor);
       if (step.kind === "do") {
         if (step.doneAnchor) usedAnchors.add(step.doneAnchor);
         for (const p of step.path ?? []) usedAnchors.add(p);

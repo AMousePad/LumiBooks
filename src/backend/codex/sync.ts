@@ -150,7 +150,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const seen = new Set<string>();
   for (const rec of desired) {
     seen.add(rec.record);
-    const disabled = disabledFor(rec.file);
+    const disabled = disabledFor(rec.file) || rec.disabled;
     const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file };
     const cur = byRecord.get(rec.record);
     if (!cur) {

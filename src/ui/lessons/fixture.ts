@@ -190,6 +190,7 @@ export function codexFixtureFiles(): Record<string, string> {
         {
           id: "char:captain", name: "The Captain", kind: "human", role: "leads the city watch",
           description: "publicly backs the bandit theory", goals: ["reopen the staff interviews quietly"],
+          locked: true,
         },
       ],
     },

@@ -1,6 +1,6 @@
 {
   "identifier": "lumi_books",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "name": "LumiBooks",
   "author": "AMousePad",
   "github": "https://github.com/AMousePad/LumiBooks",
@@ -19,5 +19,5 @@
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",
   "interceptorTimeoutMs": 300000,
-  "minimum_lumiverse_version": "1.1.0"
+  "minimum_lumiverse_version": "1.1.6"
 }

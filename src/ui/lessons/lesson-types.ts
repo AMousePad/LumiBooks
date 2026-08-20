@@ -21,6 +21,9 @@ interface StepBase {
   fixture?: FixtureSpec;
   /** data-lesson id to spotlight after render. */
   anchor?: string;
+  /** Second id outlined alongside the spotlight, for prose that points at a
+   * control the user is meant to read rather than click. */
+  hintAnchor?: string;
   /** Render against the real app state and real send (finale steps). */
   real?: boolean;
   /** Runs before the demo render (pre-expand an entry, pick a view mode). */

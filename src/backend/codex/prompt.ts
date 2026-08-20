@@ -472,6 +472,8 @@ export interface CodexRecordRender {
   /** Activation keywords; empty for constant records. */
   keys: string[];
   constant: boolean;
+  /** The record's own opt-out: synced disabled so it never injects. */
+  disabled: boolean;
 }
 
 export interface RenderRecordsOptions {
@@ -561,6 +563,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
         content: `[Story Bible - ${label}: ${e.name}]\n${lines.join("\n")}`,
         keys: uniqKeys([e.name, ...(e.aliases ?? []), ...(e.keywords ?? [])]),
         constant: false,
+        disabled: e.noInject === true,
       });
     }
   }
@@ -579,6 +582,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
         content: `[Story Bible - Relations]\n${orphans.map((r) => relationLine(r, names)).join("\n")}`,
         keys: uniqKeys(endpointNames),
         constant: false,
+        disabled: false,
       });
       taken.add("rel:unlinked");
     }
@@ -592,6 +596,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       content: `[Story Bible - World rules: ${w.topic}]\n- ${w.topic}: ${w.facts.join(" | ")}`,
       keys: uniqKeys([w.topic, ...(w.keywords ?? [])]),
       constant: false,
+      disabled: false,
     });
   }
 
@@ -616,6 +621,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       content: `[Story Bible - Who knows what]\n- ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
       keys: uniqKeys([...participants, ...(k.keywords ?? [])]),
       constant: false,
+      disabled: false,
     });
   }
 
@@ -628,6 +634,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       content: `[Story Bible - current story state]\n${sections.timeline}`,
       keys: [],
       constant: true,
+      disabled: false,
     });
   }
   if (sections.threads) {
@@ -638,6 +645,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       content: `[Story Bible - current story state]\n${sections.threads}`,
       keys: [],
       constant: true,
+      disabled: false,
     });
   }
   return out;

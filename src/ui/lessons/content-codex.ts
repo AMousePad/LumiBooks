@@ -16,7 +16,7 @@ export const COURSE_CODEX: LessonCourseDef = {
         {
           kind: "say",
           diagram: "fade",
-          text: "My chapters remember the plot. But if you compress a story hard enough you'll start losing information, like who loves whom, or who still keeps which secret. This means that somehow, we must separately track the important parts of the story as we compress it.",
+          text: "Summary chapters are a good outline. But if you compress a story enough you'll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
         },
         {
           kind: "nav",
@@ -25,7 +25,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           path: ["tab.codex"],
           arrive: "codex.tiles",
-          text: "The Knowledge Codex does this. Let's walk though a practice one for a little murder mystery, let me show you. Tap the Codex tab up top.",
+          text: "BEHOLD the Knowledge Codex 😎. Let's walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
           done: "There it is.",
         },
         {
@@ -35,7 +35,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Eight records make the bible: characters, locations, things, relations, a timeline, story threads, world rules, and who knows what. A small agent reads your new messages on a schedule and keeps all of it current. Each record becomes an entry in a lorebook I manage for you. The timeline and threads will always be on, and the others activate by keyword.",
+          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes an entry in a lorebook I manage for you. The timeline and threads are constant entries, and the others activate by keyword.",
         },
         {
           kind: "quiz",
@@ -77,7 +77,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.actions",
-          text: "These are the everyday actions. Update now makes me read everything up to your newest message right away. Tidy rewrites the records leaner without reading anything new. Undo rolls back my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
+          text: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
         },
         {
           kind: "do",
@@ -87,8 +87,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
           expect: "codex_set_file_state",
-          text: "Every tile is one record, its count, and what it costs your prompt. The tiles are also switches. Click the Relations tile once.",
-          done: "Dashed means not injected but still updated, I keep the record current while it costs you zero tokens. A second click freezes it completely, a third turns it back on. Try the full cycle if you like, then we move on.",
+          text: "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
+          done: "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.🖱️🖱️🖱️🖱️",
         },
         {
           kind: "quiz",
@@ -101,12 +101,12 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.tile.relations",
           text: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
           options: [
-            { text: "It's marked as needing a catch-up, and one refresh pass rebuilds just that record from the summaries and recent messages", correct: true },
+            { text: "It's marked as needing a catch-up. A refresh does that from the summaries and recent messages", correct: true },
             { text: "The gap fills in automatically on the next normal update" },
             { text: "Nothing can recover the missed events except a full rebuild" },
             { text: "Tidy it, tidying re-reads the missed messages" },
           ],
-          why: "My reading position is already past those messages, so normal updates never go back. The Overview offers a one-pass catch-up for every re-enabled record at once, and Rebuild stays the from-scratch option.",
+          why: "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records.",
         },
         {
           kind: "quiz",
@@ -119,10 +119,10 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.manage.startover",
           text: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
           options: [
-            { text: "Rebuild re-reads the whole chat right away and keeps your tile settings. Wipe waits, and the next update starts from message one anyway", correct: true },
-            { text: "After Wipe, only new messages ever get read" },
+            { text: "Wipe helps LumiAgent wipe her ass." },
             { text: "Rebuild keeps your entries and only rewrites the stale ones" },
             { text: "Wipe also deletes your chapters and arcs" },
+            { text: "Rebuild keeps your tile settings and remakes the codex from scratch, whereas wipe destroys it all.", correct: true },
           ],
           why: "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive.",
         },
@@ -139,8 +139,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           path: ["subtab.entities"],
           arrive: "codex.entities",
-          text: "Time to meet the cast. Tap Entities.",
-          done: "The cast list.",
+          text: "Tap Entities and behold...",
+          done: "The people, places, and things! 🌎",
         },
         {
           kind: "say",
@@ -149,7 +149,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("entities"),
           anchor: "codex.entities",
-          text: "Every chip is an entity. Click a name and its sheet opens. A sheet describes only that one entity, and connections between entities live in the Relations record. Poke around as much as you like.",
+          text: "Every \"chip\" is an entity. Click one to open its sheet. Poke around as much as you like.",
         },
         {
           kind: "do",
@@ -160,8 +160,9 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.entities.add",
           path: ["codex.entities.add", "codex.entities.addform", "codex.entities.editor"],
           expect: "codex_write_file",
-          text: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it's a good way to learn the interface now. Try it: click the + character chip, type a name, the pawnbroker maybe, then press Save on the sheet.",
+          text: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it's a good way to learn the interface now. Try it: click the + character chip, type a name, Mousepad maybe, then press Save on the sheet.",
           done: "Saved. Your edits are canon now, I read them as truth and build on them.",
+          doneAnchor: "codex.entities.card",
         },
         {
           kind: "quiz",
@@ -177,12 +178,27 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.entities",
           text: "The story has moved on, Elias isn't hiding anymore, but his sheet still says \"hiding in the tannery loft\". What's happening?",
           options: [
-            { text: "The agent hasn't read that far yet. It catches up on its own, and you can also just edit the line right now", correct: true },
-            { text: "The codex is broken, wipe it" },
+            { text: "The agent hasn't read that far yet. It catches up on its own.", correct: true },
+            { text: "The codex is broken, delete the extension" },
             { text: "Sheets never change once written" },
             { text: "You have to delete Elias and re-add him" },
           ],
-          why: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are always safe, I treat them as canon.",
+          why: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
+        },
+        {
+          kind: "do",
+          tab: "codex",
+          subtab: "entities",
+          fixture: { variant: "codex" },
+          prep: () => {
+            setCodexSubtab("entities");
+            setCodexExpandedEntity("char:captain");
+          },
+          anchor: "codex.entities.lock",
+          hintAnchor: "codex.entities.statepill",
+          expect: "codex_write_file",
+          text: "Consider the Captain. Let's say that his character card describes him well. This means I don't need him in the codex as well. See here how it says locked after 1 click? That's bad! I won't write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
+          done: "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!"
         },
         {
           kind: "nav",
@@ -191,8 +207,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexRelationsView("list"),
           path: ["subtab.relations"],
           arrive: "codex.rel.view",
-          text: "Now the web between everyone. Tap Relations.",
-          done: "The web, as a list.",
+          text: "Let's explore the world wide web. Tap Relations.",
+          done: "This is the list view.",
         },
         {
           kind: "do",
@@ -207,7 +223,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           path: ["codex.rel.add", "codex.rel.form"],
           expect: "codex_write_file",
           text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
-          done: "Recorded. Let's see it drawn.",
+          done: "Recorded!",
+          doneAnchor: "codex.rel.view",
         },
         {
           kind: "quiz",
@@ -241,7 +258,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           path: ["codex.rel.graphbtn"],
           arrive: "codex.rel.graph",
           text: "Tap Graph.",
-          done: "There's your web.",
+          done: "There's your web. A real story will look much more complex.",
         },
         {
           kind: "say",
@@ -270,7 +287,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           },
           path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Last stop, my dials. Open the Tuning tab, its Settings pane, then the Codex side.",
+          text: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           done: "My dials.",
         },
         {
@@ -280,7 +297,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          text: "My reading rhythm lives here. By default, I hang back only 6 messages, then read about 20 per pass. If a chat falls far behind, Update catches me up in increments.",
+          text: "My codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
         },
         {
           kind: "quiz",
@@ -313,7 +330,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Two switches worth knowing here. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts, so I always know the story so far. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support them.",
+          text: "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
         },
         {
           kind: "say",
@@ -321,7 +338,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           subtab: "codex",
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
-          text: "One more thing! Edit any record whenever you like, and if you edit or delete an old message I already read, my next pass notices, rewinds, and re-checks everything the codex claimed about that stretch.",
+          text: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was codex-recorded, my next run notices, rewinds, and corrects the codex.",
         },
         {
           kind: "quiz",
@@ -344,12 +361,12 @@ export const COURSE_CODEX: LessonCourseDef = {
           scored: true,
           text: "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn't in the prompt. Is something wrong?",
           options: [
-            { text: "No. It's a chapter written early to feed the codex, it shelves itself once its span passes the chapter lag, and deleting it is safe", correct: true },
+            { text: "No. It's a chapter written early to feed the codex, but isn't used before summary lag!", correct: true },
+            { text: "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD" },
             { text: "Yes, it's corrupted, delete it and resync" },
-            { text: "Yes, it leaked in from another chat" },
             { text: "It's a draft waiting for your approval" },
           ],
-          why: "Ghosts give the codex story-so-far context without touching your prompt. If you delete one I just write it again, and turning the mode off cleans them all up.",
+          why: "Ghosts give the codex context early, and are eventually turned into real summaries later down the line. ",
         },
       ],
     },
@@ -404,7 +421,7 @@ export const COURSE_CODEX: LessonCourseDef = {
         },
         {
           kind: "say",
-          text: "And that's the whole archive. Your diploma is ready, signed by the proudest librarian you know.",
+          text: "That's all, go forth and make some awesome stories!✨",
         },
       ],
     },

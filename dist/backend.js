@@ -2670,7 +2670,7 @@ function asRecord(ctx, raw, path) {
   }
   return raw;
 }
-var CANONICAL_MIXED_CASE = new Set(["lockedFields"]);
+var CANONICAL_MIXED_CASE = new Set(["lockedFields", "noInject"]);
 function keepExtras(ctx, target, source, known, path, strict) {
   for (const [k, v] of Object.entries(source)) {
     const lower = k.toLowerCase();
@@ -2714,6 +2714,7 @@ var ENTITY_KNOWN_FIELDS = [
   "keywords",
   "locked",
   "lockedfields",
+  "noinject",
   "rid"
 ];
 function ridOf(ctx, v, path) {
@@ -2763,6 +2764,9 @@ function validateEntityFile(key, raw, opts) {
     }
     if (e["locked"] === true || e["locked"] === "true")
       out.locked = true;
+    const noInject = e["noInject"] ?? e["noinject"];
+    if (noInject === true || noInject === "true")
+      out.noInject = true;
     const lockedFields = strArray(ctx, e["lockedFields"] ?? e["lockedfields"], `${path}.lockedFields`);
     if (lockedFields) {
       const cleaned = [...new Set(lockedFields.filter((f) => f !== "id" && f !== "name"))];
@@ -5337,7 +5341,8 @@ function renderCodexRecords(bundle, opts) {
 ${lines.join(`
 `)}`,
         keys: uniqKeys([e.name, ...e.aliases ?? [], ...e.keywords ?? []]),
-        constant: false
+        constant: false,
+        disabled: e.noInject === true
       });
     }
   }
@@ -5353,7 +5358,8 @@ ${lines.join(`
 ${orphans.map((r) => relationLine(r, names)).join(`
 `)}`,
         keys: uniqKeys(endpointNames),
-        constant: false
+        constant: false,
+        disabled: false
       });
       taken.add("rel:unlinked");
     }
@@ -5366,7 +5372,8 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       content: `[Story Bible - World rules: ${w.topic}]
 - ${w.topic}: ${w.facts.join(" | ")}`,
       keys: uniqKeys([w.topic, ...w.keywords ?? []]),
-      constant: false
+      constant: false,
+      disabled: false
     });
   }
   for (const k of bundle.knowledge.items) {
@@ -5392,7 +5399,8 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       content: `[Story Bible - Who knows what]
 - ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
       keys: uniqKeys([...participants, ...k.keywords ?? []]),
-      constant: false
+      constant: false,
+      disabled: false
     });
   }
   const sections = renderCodexFileSections(bundle);
@@ -5404,7 +5412,8 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       content: `[Story Bible - current story state]
 ${sections.timeline}`,
       keys: [],
-      constant: true
+      constant: true,
+      disabled: false
     });
   }
   if (sections.threads) {
@@ -5415,7 +5424,8 @@ ${sections.timeline}`,
       content: `[Story Bible - current story state]
 ${sections.threads}`,
       keys: [],
-      constant: true
+      constant: true,
+      disabled: false
     });
   }
   return out;
@@ -5641,7 +5651,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
   const seen = new Set;
   for (const rec of desired) {
     seen.add(rec.record);
-    const disabled = disabledFor(rec.file);
+    const disabled = disabledFor(rec.file) || rec.disabled;
     const meta = { chatId, record: rec.record, file: rec.file };
     const cur = byRecord.get(rec.record);
     if (!cur) {
@@ -7669,6 +7679,22 @@ function restoreLockedFields(file, value, current) {
   }
   return touched;
 }
+function restoreNoInject(file, value, current) {
+  if (file !== "characters" && file !== "locations" && file !== "things")
+    return;
+  const curById = new Map;
+  for (const row of fileRows(current, file)) {
+    if (typeof row["id"] === "string")
+      curById.set(row["id"], row);
+  }
+  for (const row of fileRows(value, file)) {
+    const orig = curById.get(typeof row["id"] === "string" ? row["id"] : "");
+    if (orig?.["noInject"] === true)
+      row["noInject"] = true;
+    else
+      delete row["noInject"];
+  }
+}
 function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   const errors = [];
   const lockedKept = [];
@@ -7740,6 +7766,7 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
       t.threads.push(...hiddenResolved.map((h) => clone(h)));
     }
     lockedFieldsKept.push(...restoreLockedFields(file, value2, current));
+    restoreNoInject(file, value2, current);
     assignMissingRids(file, value2);
     return { value: value2, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result2.notes };
   }
@@ -7865,6 +7892,7 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
     value.threads.push(...hiddenResolved.map((h) => clone(h)));
   }
   lockedFieldsKept.push(...restoreLockedFields(file, value, current));
+  restoreNoInject(file, value, current);
   assignMissingRids(file, value);
   return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
 }

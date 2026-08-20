@@ -395,6 +395,20 @@ function restoreLockedFields(file: CodexFileKey, value: CodexFileValue, current:
   return touched;
 }
 
+/** noInject is the user's alone, so a write can neither drop nor invent it. */
+function restoreNoInject(file: CodexFileKey, value: CodexFileValue, current: CodexFileValue): void {
+  if (file !== "characters" && file !== "locations" && file !== "things") return;
+  const curById = new Map<string, Record<string, unknown>>();
+  for (const row of fileRows(current, file)) {
+    if (typeof row["id"] === "string") curById.set(row["id"], row);
+  }
+  for (const row of fileRows(value, file)) {
+    const orig = curById.get(typeof row["id"] === "string" ? row["id"] : "");
+    if (orig?.["noInject"] === true) row["noInject"] = true;
+    else delete row["noInject"];
+  }
+}
+
 /** Merge one codex_write (patch or full content) into a complete validated
  * file value, preserving locked entities and hidden resolved threads. */
 function stageWrite(
@@ -477,6 +491,7 @@ function stageWrite(
       t.threads.push(...hiddenResolved.map((h) => clone(h)));
     }
     lockedFieldsKept.push(...restoreLockedFields(file, value, current));
+    restoreNoInject(file, value, current);
     assignMissingRids(file, value);
     return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
   }
@@ -595,6 +610,7 @@ function stageWrite(
     (value as { threads: CodexThread[] }).threads.push(...hiddenResolved.map((h) => clone(h)));
   }
   lockedFieldsKept.push(...restoreLockedFields(file, value, current));
+  restoreNoInject(file, value, current);
   assignMissingRids(file, value);
   return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
 }

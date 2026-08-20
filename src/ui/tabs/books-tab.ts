@@ -767,7 +767,7 @@ function renderVolumePicker(
 ): void {
   const sec = section("Press arcs into a volume");
   lessonMark(sec.wrap, "books.compose.volumes");
-  const activeArcs = state.arcs.filter((a) => a.active && !a.isRoot);
+  const activeArcs = state.arcs.filter((a) => a.active);
   if (activeArcs.length === 0) {
     sec.body.appendChild(textNode("Memoria has no unbound arcs to press yet", "lmb-empty"));
     host.appendChild(sec.wrap);

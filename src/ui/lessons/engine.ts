@@ -94,6 +94,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
   let demoInner: HTMLElement | null = null;
   let overlay: HTMLElement[] = [];
   let ring: HTMLElement | null = null;
+  let hintRing: HTMLElement | null = null;
   let spotTag: HTMLElement | null = null;
   let sheetBody: HTMLElement | null = null;
   let railEl: HTMLElement | null = null;
@@ -313,6 +314,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     headLabel = null;
     overlay = [];
     ring = null;
+    hintRing = null;
     // The demo polluted per-tab module state (chat keyed caches, expansion
     // sets). Reset so the real chat re-reads clean.
     resetHomeTabLocal();
@@ -397,6 +399,10 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     ring.className = "lmb-spot-ring";
     ring.style.display = "none";
     demoWrap.appendChild(ring);
+    hintRing = document.createElement("div");
+    hintRing.className = "lmb-spot-hint";
+    hintRing.style.display = "none";
+    demoWrap.appendChild(hintRing);
     spotTag = document.createElement("div");
     spotTag.className = "lmb-spot-tag";
     spotTag.style.display = "none";
@@ -772,6 +778,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
   function hideSpotlight(): void {
     for (const p of overlay) p.style.display = "none";
     if (ring) ring.style.display = "none";
+    if (hintRing) hintRing.style.display = "none";
     if (spotTag) spotTag.style.display = "none";
   }
 
@@ -821,6 +828,26 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         width: `${right - left}px`,
         height: `${bottom - top}px`,
       });
+    }
+    if (hintRing) {
+      const hint = currentStep()?.hintAnchor;
+      const hintEl = hint ? demoWrap.querySelector<HTMLElement>(`[data-lesson="${hint}"]`) : null;
+      if (!hintEl) {
+        hintRing.style.display = "none";
+      } else {
+        const h = hintEl.getBoundingClientRect();
+        const hT = Math.max(0, h.top - c.top - 3);
+        const hL = Math.max(0, h.left - c.left - 3);
+        const hR = Math.min(c.width, h.right - c.left + 3);
+        const hB = Math.min(c.height, h.bottom - c.top + 3);
+        Object.assign(hintRing.style, {
+          display: "",
+          top: `${hT}px`,
+          left: `${hL}px`,
+          width: `${hR - hL}px`,
+          height: `${hB - hT}px`,
+        });
+      }
     }
     if (spotTag) {
       const step = currentStep();
