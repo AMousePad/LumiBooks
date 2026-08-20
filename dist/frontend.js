@@ -10804,17 +10804,17 @@ var COURSE_BOOKS = {
         {
           kind: "say",
           diagram: "rot",
-          text: "Why do I exist? As you roleplay, you'll notice that chats that are very large can't fit in model's context. Old messages get clipped out, and your model will soon forget important information. How do we fix that?"
+          text: "GOOD MORNING!! Why do I exist? As you roleplay, you'll notice that chats that are very large can't fit in model's context. Old messages get clipped out, and your model will soon forget important information. How do we fix that?"
         },
         {
           kind: "say",
           diagram: "fold",
-          text: "That's what I do! I take your older messages, and compact, or file, chunks of them into summaries called chapters. When there are too many summaries, I compact them into arcs, and then volumes. Each summary is injected in place of the messages it replaces, so your chat history timeline is preserved!"
+          text: "BEHOLD, ME. I take your older messages, and compact chunks of them them into summaries called chapters. When there are too many summaries, I compact them into arcs, and then volumes. Each summary is injected in place of the messages it replaces, so your chat history timeline is preserved!"
         },
         {
           kind: "say",
           diagram: "unfold",
-          text: "Compacted messages are hidden so your writer reads my compact summary instead. If you delete a chapter, the messages that it once covered unhide."
+          text: "Compacted messages are hidden so your LLM reads my compact summary instead. And if you delete a chapter, the messages that it once hid unhide again."
         },
         {
           kind: "quiz",
@@ -10825,10 +10825,10 @@ var COURSE_BOOKS = {
           options: [
             { text: "Both the summary and the original messages" },
             { text: "Nothing, it's forgotten!" },
-            { text: "The chapter summary, at the same spot in the history", correct: true },
+            { text: "The chapter summaries there instead", correct: true },
             { text: "A lorebook entry in the world-info section of the prompt" }
           ],
-          why: "The summary replaces the messages in place. I also keep my entries out of the normal lore section to prevent double injections."
+          why: "The summaries replace the messages in place :)"
         }
       ]
     },
@@ -10841,7 +10841,7 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "filing" },
           anchor: "home.actions",
-          text: "This is a practice chat I made just for teaching, so nothing you do here touches your real stories. These highlighted buttons are my quick actions."
+          text: "This is a practice chat I made just for teaching you \uD83D\uDE3E. These highlighted buttons are my quick actions."
         },
         {
           kind: "do",
@@ -10849,8 +10849,8 @@ var COURSE_BOOKS = {
           fixture: { variant: "filing" },
           anchor: "home.actions.file",
           expect: "create_chapter",
-          text: "This practice story has plenty of old messages ready to compact. Press the File chapter button and watch what happens.",
-          done: "Filed! The new chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
+          text: "This practice story has plenty of old messages ready to compact into summaries. Press the File chapter button and watch what happens.",
+          done: "BOOM\uD83D\uDCA3. The story is now more compact, the new summary chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
           doneAnchor: "home.spine"
         },
         {
@@ -10858,21 +10858,21 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "filing-after" },
           anchor: "home.pills",
-          text: "There's automation too! When do I file on my own? There's two numbers that decide. The first is the lag: the newest messages that I won't begin to compact, 65 by default. Uncompressed messages are large, but always hold more information, so we let the model have the most recent ones when we can."
+          text: `IMPORTANT. There's automation too! Now you may ask the very important question of: when do I summarize on my own?? And I'll graciously answer that very important question! That depends on exactly about TWO 2️⃣ settings. Consider: Uncompressed messages are large, but hold detailed info so we don't want to compress them right away right? Therefore, first setting is what I call the "lag", 65 by default. This represents the number of most recent messages we leave uncompressed always! \uD83D\uDDFF`
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "filing-after" },
           anchor: "home.pills",
-          text: 'The second is the window: how many messages get bundled into one chapter, 18 by default. Once 18 old messages have piled up behind the 65 protected ones, these two "pills" both say "ready", I begin compressing them.'
+          text: `The second setting is the "window" \uD83E\uDE9F. We don't want to summarize every single message individually, instead we probably want toi summarize like, 18, into one chapter! Turns out 18 is the default, what a coincidence! Once 18 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "filing-after" },
           anchor: "home.pills",
-          text: "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size!"
+          text: "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size. But I do reccomend keeping context at 200k. Unless you're living in 2028 when LLMs are long context GODS (presumably)."
         },
         {
           kind: "say",
@@ -10893,7 +10893,7 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "filing-after" },
           anchor: "home.actions",
-          text: "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I'm busy or the extension is switched off."
+          text: "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I'm busy or you switched me off >:("
         },
         {
           kind: "quiz",
@@ -10923,14 +10923,14 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.spine",
-          text: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt space it costs right now. The pale block at the front is the codex, that's my second course."
+          text: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the codex, that's my second course (it's really cool)."
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.spine",
-          text: "Click any colored block and I'll jump you straight to that chapter or arc on my shelf. Handy when you want to check what I wrote about a scene."
+          text: "Click any colored block and I'll jump you straight to that chapter or arc on my shelf \uD83D\uDC30. Handy when you want to check what I wrote about a scene."
         },
         {
           kind: "say",
@@ -10944,28 +10944,28 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.tiles",
-          text: "These tiles are the quick summary. Filed is how much of the chat I've compacted. Tail is the recent part I haven't. Shelf counts everything I've made. The Codex tile belongs to my second course."
+          text: "These tiles are the quick summary. Filed is how much of the chat I've compacted. Tail is the recent part I haven't. Shelf counts everything I've made. The Codex tile belongs to my second course \uD83E\uDD77."
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.prompt",
-          text: "The Prompt panel shows the actual prompt your last generation sent, split into groups. Simulate builds the next prompt without generating anything. And if the prompt goes past 90% of the model's limit, I warn you here."
+          text: "The Prompt panel shows the prompt breakdown your last generation sent, split into groups. Simulate... simulates your next prompt (what a surprise). And if the prompt goes past 90% of the model's limit, I warn you here. Bad things happen if you go past 100%... trust me \uD83E\uDD1E"
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.busy",
-          text: "While I write, a busy row like this appears. Watch lets you read my raw output live as it streams, thoughts included. Abort cancels me mid-write."
+          text: "I wrote too much the previous step, so I'm continuing here. If you're approaching 100%, turn down the lag! Anyways. While I write, a row like this appears. If you're a creep \uD83D\uDC7E, watch lets you read my raw output live, thoughts included."
         },
         {
           kind: "say",
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.failure",
-          text: "If I fail even after retrying, this red box keeps the error and gives you a Retry button."
+          text: "If I fail even after retrying, this red box shows an error. Please read it."
         },
         {
           kind: "quiz",
@@ -10977,12 +10977,12 @@ var COURSE_BOOKS = {
           chip: "ARC 1 · 54 msgs → 0.8k tokens",
           text: "Look at the spine. The arc block at the far left covers 54 messages but is drawn as a thin sliver, while the uncompressed tail at the end takes most of the bar. Why?",
           options: [
-            { text: "Blocks are sized by what they cost the prompt now, and the arc squeezed its 54 messages into a few hundred tokens", correct: true },
+            { text: "WITNESS THE POWER OF LUMIBOOKS", correct: true },
             { text: "Newer story is always drawn bigger" },
             { text: "The arc lost most of its messages" },
             { text: "The bar shows time passing, not size" }
           ],
-          why: "The spine is a cost map. Thin blocks mean compression is working, the fat block is the raw tail still riding at full price."
+          why: "The spine is a cost map. Thin blocks mean my awesome compression technology is working, the fat block are the uncompressed messages."
         },
         {
           kind: "quiz",
@@ -10991,12 +10991,12 @@ var COURSE_BOOKS = {
           tab: "home",
           fixture: { variant: "desk" },
           anchor: "home.tiles",
-          text: "Compression is running and plenty is filed, yet your prompt is still huge. Which number on this desk explains it?",
+          text: "Compression is running, yet your prompt is still huge. Which number here explains it?",
           options: [
-            { text: "The Tail tile, recent messages ride at full size until they pass the lag", correct: true },
+            { text: "The Tail, recent messages are uncompressed until they pass the lag+window", correct: true },
             { text: "The Filed tile, filing grows the prompt" },
             { text: "The Shelf tile, too many chapters" },
-            { text: "The Codex tile, the bible got too big" }
+            { text: "The Codex tile, even though you don't know what it is yet \uD83E\uDD25" }
           ],
           why: "The uncompressed tail is usually the fat part of the prompt. If it doesn't fit your context, lower the lag so I file closer to the present."
         }
@@ -11022,7 +11022,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "shelf" },
           prep: () => setBooksSubtab("shelf"),
           anchor: "books.shelf.list",
-          text: "Welcome to my Shelf. Everything I've filed for this chat lives here, sorted into volumes, arcs, and chapters. The search box digs through titles and the full summary text."
+          text: "Witness my Shelf \uD83D\uDE08. Everything I've filed for this chat lives here, sorted into volumes, arcs, and chapters."
         },
         {
           kind: "nav",
@@ -11040,7 +11040,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "shelf" },
           prep: () => focusShelfEntry("c4"),
           anchor: "books.entry.actions",
-          text: "You'll see its size before and after compacting, my little note, and four buttons. Edit rewrites the text. Regenerate throws the summary away and writes it again from the same messages. Release turns it into a normal lorebook entry that I stop managing. Delete removes it."
+          text: "You'll see its size before and after compacting, my little note, and four buttons. Edit rewrites the text. Regenerate throws the summary away and writes it again from the same messages. Release turns it into a normal lorebook entry that I stop managing. Delete removes it. Boring stuff \uD83D\uDCA4"
         },
         {
           kind: "say",
@@ -11049,7 +11049,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "shelf" },
           prep: () => setBooksSubtab("shelf"),
           anchor: "books.shelf.list",
-          text: "Faded entries are marked superseded. That means an arc or volume replaced them, so they stay stored but no longer go into the prompt. Delete the arc and its chapters wake up and take over again."
+          text: "Faded entries means an arc or volume replaced them, like how chapters replace messages. Delete the arc and its chapters unhide again."
         },
         {
           kind: "say",
@@ -11058,7 +11058,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "shelf" },
           prep: () => setBooksSubtab("shelf"),
           anchor: "books.shelf.list",
-          text: "Hidden messages only return to the prompt when nothing covers them at all, no chapter, arc, or volume. Oh, and a GHOST tag marks a chapter I prepared early but haven't shelved yet. My codex course explains those."
+          text: "\uD83D\uDEA9IMPORTANT\uD83D\uDEA9 The GHOST tag marks a chapter I prepared early for codex, but I don't actually inject it or use it in the summaries yet until it passes the lag. My codex course explains those. If you ask about this on Discord I will kill you."
         },
         {
           kind: "quiz",
@@ -11071,10 +11071,10 @@ var COURSE_BOOKS = {
           anchor: "books.shelf.list",
           text: "You delete an arc that was made from 3 chapters. What happens?",
           options: [
-            { text: "The 3 chapters wake up and inject again, and the messages stay hidden", correct: true },
+            { text: "The 3 chapters unhide and inject again, and the messages stay hidden", correct: true },
             { text: "The chapters and all their messages return to the prompt" },
             { text: "The 3 chapters are deleted along with the arc" },
-            { text: "Nothing happens until you resync" }
+            { text: "Prolix takes a shit" }
           ],
           why: "Deleting a tier hands the job back down to the one below. The messages themselves only return when nothing covers them at all."
         },
@@ -11112,7 +11112,7 @@ var COURSE_BOOKS = {
             { text: "Release" },
             { text: "Exclude" }
           ],
-          why: "Delete, release, and exclude are just bookkeeping. Regenerate asks the model to write the summary again, which costs a call."
+          why: "\uD83D\uDC0C"
         }
       ]
     },
@@ -11125,8 +11125,8 @@ var COURSE_BOOKS = {
           fixture: { variant: "compose" },
           path: ["subtab.compose"],
           arrive: "books.compose.list",
-          text: "Next door is manual mode. Tap Compose.",
-          done: "Manual controls."
+          text: "Anyway. Manual controls next!",
+          done: "Ready?"
         },
         {
           kind: "say",
@@ -11135,7 +11135,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "compose" },
           prep: () => setBooksSubtab("compose"),
           anchor: "books.compose.list",
-          text: "The Compose tab is manual mode, every message in the chat listed for you. Filter or search them, tick the boxes, and shift-click (or long-press on a phone) to grab a whole range. A ✓ means already filed, a ⊘ means excluded."
+          text: "The Compose tab is manual mode. Filter or search these messages, tick the boxes, and shift-click (or long-press on a phone) to grab a whole range. A ✓ means already filed, a ⊘ means excluded."
         },
         {
           kind: "say",
@@ -11144,7 +11144,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "compose" },
           prep: () => setBooksSubtab("compose"),
           anchor: "books.compose.compress",
-          text: "Compress takes exactly what you selected and files it as one chapter. Here your selection is the boss, my 18-message window setting only applies to automatic filing."
+          text: "Compress files what you selected into a chapter. Wow no way!"
         },
         {
           kind: "say",
@@ -11153,7 +11153,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "compose" },
           prep: () => setBooksSubtab("compose"),
           anchor: "books.compose.exclude",
-          text: "Exclude protects messages from me completely. Perfect for OOC notes or instructions that must stay word-for-word. I also never bundle across an excluded message."
+          text: "Exclude protects messages from me completely. Perfect for OOC notes or instructions that must stay word-for-word."
         },
         {
           kind: "say",
@@ -11162,7 +11162,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "compose" },
           prep: () => setBooksSubtab("compose"),
           anchor: "books.compose.arcs",
-          text: "Further down you can pick chapters to bind into an arc, and arcs to press into a volume. Volumes are the strongest compression, and they are only ever made by hand, right here."
+          text: "Further down you can pick chapters to bind into an arc, and arcs to press into a volume. Volumes are the strongest compression. If you need more, you probably don't."
         },
         {
           kind: "quiz",
@@ -11178,9 +11178,9 @@ var COURSE_BOOKS = {
             { text: "When a message must stay in the prompt word-for-word and never be summarized", correct: true },
             { text: "When you want a message gone from the chat" },
             { text: "When a chapter came out badly" },
-            { text: "When you want to hide spoilers from yourself" }
+            { text: "When you wish to deceive your enemy, and therefore, must deceive yourself \uD83D\uDC09" }
           ],
-          why: "Exclude keeps the message and protects it from me. Delete removes it from the chat entirely."
+          why: "Exclude keeps the message from compression. Delete removes it from the chat."
         }
       ]
     },
@@ -11193,7 +11193,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "continuity" },
           path: ["subtab.continuity"],
           arrive: "books.cont.root",
-          text: "One pane left here. Tap Advanced.",
+          text: "ONE MORE I PROMISE. Tap Advanced.",
           done: "The continuity desk."
         },
         {
@@ -11203,7 +11203,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "continuity" },
           prep: () => setBooksSubtab("continuity"),
           anchor: "books.cont.root",
-          text: "Continuity lets a new chat inherit an old chat's memories. Rebase copies another chat's chapters and arcs in as a frozen prologue, marked [Root], injected before your very first message."
+          text: "Continuity lets a new chat inherit an old chat's memories. Rebase copies another chat's chapters and arcs in as a frozen prologue, marked [Root], injected before your first message."
         },
         {
           kind: "say",
@@ -11212,7 +11212,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "continuity" },
           prep: () => setBooksSubtab("continuity"),
           anchor: "books.cont.root",
-          text: `"Rebuild from"  deletes this chat's own memories first, then starts over on top of the inherited ones. Detach removes inherited memories again. And if you branch a chat, the new branch inherits my shelf automatically.`
+          text: `"Rebuild from"  deletes this chat's own memories first, then starts over on top of the inherited ones. Detach removes inherited memories again. And if you branch a chat, the new branch inherits this.`
         },
         {
           kind: "say",
@@ -11230,7 +11230,7 @@ var COURSE_BOOKS = {
           fixture: { variant: "continuity" },
           prep: () => setBooksSubtab("continuity"),
           anchor: "books.maint",
-          text: "Some repairs I handle myself. Delete one of my entries in the Lorebook drawer and I notice, unhide its messages, and toast you about it. If a chat's lorebook link ever breaks, I re-link it and tell you."
+          text: "Some repairs I handle myself. Delete one of my entries in the Lorebook drawer and I notice, unhide its messages, and toast you about it. If a chat's lorebook link ever breaks, I try and re-link it. So don't fuck with me >:)"
         },
         {
           kind: "quiz",
@@ -11243,9 +11243,9 @@ var COURSE_BOOKS = {
           anchor: "books.cont.root",
           text: "You start a sequel chat. Its shelf is empty, and you pick the old chat as a source. Rebase or Rebuild?",
           options: [
-            { text: "Rebase, there is nothing to delete and the old memories arrive as a prologue", correct: true },
+            { text: "Rebase, duh?", correct: true },
             { text: "Rebuild, it is always the safer option" },
-            { text: "Neither, copy the entries over by hand" },
+            { text: "Neither, copy the entries over by hand like force of nature" },
             { text: "Detach first, then Rebuild" }
           ],
           why: "Rebase is for fresh chats. Rebuild is for chats that already have their own memories that need replacing."
@@ -11262,7 +11262,7 @@ var COURSE_BOOKS = {
           prep: () => setTuningSubtab("profile"),
           path: ["tab.tuning"],
           arrive: "tuning.profile.select",
-          text: "Last room, where all my dials live. Tap the Tuning tab.",
+          text: "Ok this is ACTUALLY the last part. Tap the Tuning tab.",
           done: "My dials."
         },
         {
@@ -11305,7 +11305,7 @@ var COURSE_BOOKS = {
             setSettingsView("books");
           },
           anchor: "tuning.window",
-          text: "Compression targets shape my chapters. The window is how much story goes in, 18 messages by default. The ratio is how much text comes out, either a percent of the input or a fixed token amount."
+          text: "This is that window thing I told you about earlier! Change it here."
         },
         {
           kind: "say",
@@ -11317,7 +11317,7 @@ var COURSE_BOOKS = {
             setSettingsView("books");
           },
           anchor: "tuning.arc",
-          text: "Arcs can build automatically after enough chapters pile up, after enough tokens, or only by hand. The arc lag holds back your newest chapters so recent scenes keep their chapter-level detail."
+          text: "Arcs can build automatically after enough chapters pile up, just like how chapters build after enough messages pile up."
         },
         {
           kind: "say",
@@ -11329,7 +11329,7 @@ var COURSE_BOOKS = {
             setSettingsView("books");
           },
           anchor: "tuning.auto",
-          text: "The Automation section is my hands-free mode. The master toggle covers chapters, arcs, and branch adoption. The codex has its own switch on this pane's Codex side."
+          text: "And this is the automation setting I talked about earlier too! Codex has its own, but do my second, shorter course for that one."
         },
         {
           kind: "say",
@@ -11341,19 +11341,7 @@ var COURSE_BOOKS = {
             setSettingsView("books");
           },
           anchor: "tuning.ctx",
-          text: "Context: how many of my previous chapters I re-read for continuity when writing a new one (7 by default), how many times I retry after a failure, and how long I wait for a slow provider before giving up."
-        },
-        {
-          kind: "say",
-          tab: "tuning",
-          subtab: "settings",
-          fixture: { variant: "tuning" },
-          prep: () => {
-            setTuningSubtab("settings");
-            setSettingsView("books");
-          },
-          anchor: "tuning.behavior.preview",
-          text: "Behavior: Hide messages once filed greys out covered messages in your chat. Preview before saving makes me show you drafts in Home → Pending previews instead of saving directly. Regex scripts can rewrite what I read and what I write. Below that, Everywhere holds switches for your whole account, like Force constant."
+          text: "Context is just how many previous chapters I read each time for, well, context. Some other boring stuff..."
         },
         {
           kind: "quiz",
@@ -11377,11 +11365,11 @@ var COURSE_BOOKS = {
           text: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
           options: [
             { text: "Chapters of about 18 messages, same as before" },
-            { text: "Nothing changes until the lag unit is also switched" },
+            { text: "Idk" },
             { text: "You asked me to convert 18 messages into tokens" },
             { text: "Chapters will automatically file after only ~18 tokens of story, about one sentence each. Uh oh. ", correct: true }
           ],
-          why: "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands."
+          why: "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands"
         },
         {
           kind: "quiz",
@@ -11408,7 +11396,7 @@ var COURSE_BOOKS = {
             { text: "Nothing until the window also changes" },
             { text: "I go back and re-summarize old chapters" }
           ],
-          why: "A small lag saves more space but summarizes your recent scenes sooner. Keep it big enough that your current scene survives in full."
+          why: "A small lag saves more space but summarizes your recent scenes sooner. Keep it just big enough for quality writing without hallucination."
         },
         {
           kind: "quiz",
@@ -11436,7 +11424,7 @@ var COURSE_BOOKS = {
             { text: "The same, the ratio only affects arcs" },
             { text: "Unchanged until the lag changes too" }
           ],
-          why: "The window is what goes in, the ratio is what comes out. At 4%, a whole scene keeps barely a sentence."
+          why: "The window is what goes in, the ratio is what comes out. 4% is wayy to aggresive compression, but it's up to you in the end!"
         },
         {
           kind: "nav",
@@ -11444,7 +11432,7 @@ var COURSE_BOOKS = {
           prep: () => setPromptsCategory("chapter"),
           path: ["subtab.prompts"],
           arrive: "tuning.prompts",
-          text: "And the last one. Tap Prompts.",
+          text: "And the last part of the settings, tap Prompts.",
           done: "My instructions."
         },
         {
@@ -11478,13 +11466,13 @@ var COURSE_BOOKS = {
     },
     {
       id: "finale",
-      title: "The first real filing",
+      title: "Final Fucking Lee",
       steps: [
         {
           kind: "say",
           real: true,
           tab: "home",
-          text: "Practice is over. This is your real desk, live and yours."
+          text: "Practice is over. This is your REAL ui."
         },
         {
           kind: "do",
@@ -11507,7 +11495,7 @@ var COURSE_BOOKS = {
           },
           path: ["tab.tuning", "subtab.settings"],
           arrive: "tuning.auto",
-          text: "One more walk. My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
+          text: "My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
           done: "There's the switch."
         },
         {
@@ -11523,12 +11511,12 @@ var COURSE_BOOKS = {
           },
           anchor: "tuning.auto",
           expect: "save_profile",
-          text: "One last act. Turn Run automation on, and I'll handle the filing myself after every message from now on.",
+          text: "Turn Run automation on, and I'll handle the filing myself after every message from now on.",
           done: "Automation is on. I'll take it from here!"
         },
         {
           kind: "say",
-          text: "That's the whole Primer. Sign my register and take your diploma. The Codex course is waiting whenever you're curious."
+          text: "Well done! Mousepad has let me know, that they want to tell me to tell you that they are very proud of you for getting through this \uD83C\uDFC6. Sign and take your diploma! The shorter Codex course is waiting whenever you're curious :)"
         }
       ]
     }
