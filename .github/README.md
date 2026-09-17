@@ -1,7 +1,7 @@
 <img src="image/README/lumibooks_logo.png" alt="LumiBooks" width="320"/>
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENCE)
-[![Lumiverse](https://img.shields.io/badge/Lumiverse-0.9.0%2B-blueviolet)](https://github.com/prolix-oc/Lumiverse)
+[![Lumiverse](https://img.shields.io/badge/Lumiverse-1.1.6%2B-blueviolet)](https://github.com/prolix-oc/Lumiverse)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-bundle-fbf0df?logo=bun)](https://bun.sh)
 
