@@ -1,4 +1,5 @@
-import { measureCodexTokens, type CodexTokenCounts } from "./tokens";
+import { resolveTidyTarget, type CodexTidyTarget } from "../../codex-tidy";
+import { countCodexText, measureCodexTokens, type CodexTokenCounts } from "./tokens";
 import { frozenCodexFiles } from "./prompt";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -1349,13 +1350,13 @@ export async function rebuildCodex(
   await runCodexNow(chatId, profile, userId, mode, settings);
 }
 
-/** One LLM pass that compresses the chosen files in place without reading
- * any new story turns. */
+/** Tidy to a measured size with a hard shared cap of six model calls. */
 export async function runCodexTidy(
   chatId: string,
   profile: LMBProfile,
   userId: string,
-  only?: CodexFileKey[],
+  only: CodexFileKey[] | undefined,
+  target: CodexTidyTarget,
 ): Promise<void> {
   if (!setBusy(userId, chatId, "codex", "Memoria is tidying the codex")) {
     cb?.onToast(userId, "warn", "Memoria is already working on the codex");
@@ -1363,62 +1364,93 @@ export async function runCodexTidy(
   }
   const controller = new AbortController();
   registerAborter(userId, chatId, "codex", controller);
+  const callBudget = { remaining: 6, used: 0 };
+  let started = false;
   try {
     const cursor = await loadCursor(chatId, userId);
-    // A pending relations-format migration belongs to the next chunk run, not tidy.
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
       cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate the codex before tidying");
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
-    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
+    let { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const frozenFiles = frozenCodexFiles(cursor.fileStates);
     const broken = new Set(problems.map((p) => p.file));
-    const targets = (only ?? [...CODEX_FILE_KEYS]).filter(
+    const targets = [...new Set(only ?? CODEX_FILE_KEYS)].filter(
       (k) => !frozenFiles.has(k) && !broken.has(k) && !fileIsEmpty(bundle, k),
     );
-    if (targets.length === 0) {
+    if (!targets.length) {
       cb?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
       return;
     }
-    const tidySettings = await loadSettings(userId);
-    const promptCtx = makeCodexPromptCtx(profile, tidySettings.customPresets, frozenFiles);
-    const result = await runCodexAgent({
-      chatId,
-      userId,
-      profile,
-      promptCtx,
-      bundle,
-      chunk: [],
-      chunkLabel: "",
-      chunkFirstIndex: 0,
-      notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
-      lore: null,
-      storySoFar: null,
-      userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets),
-      coverageFiles: targets,
-      skipVerify: true,
-      externalSignal: controller.signal,
-      onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
-      onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
-    });
-    invalidateCodexInjectionCache(chatId);
-    if (result.changedFiles.length > 0) {
-      await publishCodexPool(chatId, userId, profile, result.changedFiles, "tidy");
-      await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-      cb?.onToast(userId, "success", `Memoria tidied ${result.changedFiles.length} codex file${result.changedFiles.length === 1 ? "" : "s"}`);
-    } else {
-      cb?.onToast(userId, "info", "Memoria found nothing worth tightening");
+    const measure = async (): Promise<{ tokens: number; approximate: boolean }> => {
+      const sections = renderCodexFileSections(bundle);
+      let tokens = 0;
+      let approximate = false;
+      for (const key of targets) {
+        const count = await countCodexText(sections[key], userId);
+        tokens += count.tokens;
+        approximate ||= count.approximate;
+      }
+      return { tokens, approximate };
+    };
+    let current = await measure();
+    // Resolve percentages once against the starting size, never the shrinking size.
+    const { limit, modelTarget } = resolveTidyTarget(current.tokens, target);
+    if (current.tokens <= limit) {
+      cb?.onToast(userId, "info", `The selected records already fit: ${current.tokens} tokens, limit ${limit}`);
+      return;
     }
-    cb?.onStateChange(userId, chatId);
+    await snapshotCodexForUndo(chatId, userId, "tidy");
+    started = true;
+    const tidySettings = await loadSettings(userId);
+    // A single batched reply leaves the six-call budget available for compaction.
+    const promptCtx = { ...makeCodexPromptCtx(profile, tidySettings.customPresets, frozenFiles), sequential: false };
+    const progressBase = { chars: 0, thinking: 0 };
+    while (current.tokens > limit && callBudget.remaining > 0) {
+      if (controller.signal.aborted) throw new AbortedSummarizerError();
+      appendStreamText(userId, chatId, "codex", "text", `\nTidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${callBudget.remaining} calls left.\n`);
+      const result = await runCodexAgent({
+        chatId, userId, profile, promptCtx, bundle,
+        chunk: [], chunkLabel: "", chunkFirstIndex: 0,
+        notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
+        lore: null, storySoFar: null,
+        userTextOverride: buildCodexTidyMessage(promptCtx, bundle, targets, { current: current.tokens, modelTarget, limit, callsLeft: callBudget.remaining }),
+        coverageFiles: targets, writableFiles: targets, skipVerify: true, callBudget, progressBase,
+        externalSignal: controller.signal,
+        onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "codex", chars, thinking),
+        onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
+      });
+      const reloaded = await loadCodex(chatId, userId, { relationsTable: diskMode });
+      if (reloaded.problems.some((p) => targets.includes(p.file))) throw new Error("A codex file could not be read after tidying; stopped before retrying.");
+      bundle = reloaded.bundle;
+      current = await measure();
+      invalidateCodexInjectionCache(chatId);
+      if (result.changedFiles.length) {
+        await publishCodexPool(chatId, userId, profile, result.changedFiles, "tidy");
+        await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
+      }
+      cb?.onStateChange(userId, chatId);
+    }
+    const size = `${current.approximate ? "~" : ""}${current.tokens}`;
+    cb?.onToast(userId, current.tokens <= limit ? "success" : "warn",
+      current.tokens <= limit
+        ? `Codex tidied to ${size} tokens (limit ${limit}) in ${callBudget.used} model call${callBudget.used === 1 ? "" : "s"}`
+        : `Stopped after ${callBudget.used} model calls: ${size} tokens, still above the ${limit}-token limit. Kept the completed edits; Undo restores the original.`);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the tidying aside");
+      cb?.onToast(userId, "info", "Tidying stopped. Completed edits are kept; Undo restores the original.");
       return;
     }
     warn(`codex tidy failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "tidy", err);
   } finally {
+    // Validation failures can keep clean files; cancellation can follow a completed pass.
+    if (started) {
+      invalidateCodexInjectionCache(chatId);
+      await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable).catch((err) => warn(`tidy sync: ${describeError(err)}`));
+      cb?.onStateChange(userId, chatId);
+    }
     clearBusy(userId, chatId, "codex");
   }
 }

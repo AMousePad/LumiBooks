@@ -1550,8 +1550,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
-        await snapshotCodexForUndo(msg.chatId, userId, "tidy");
-        await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined);
+        await runCodexTidy(msg.chatId, profile, userId, files && files.length ? files : undefined, msg.target);
         await pushState(userId, msg.chatId);
         break;
       }

@@ -28,7 +28,7 @@ import {
   textInput,
   textNode,
 } from "../components";
-import { confirmDelete, requestCodexRebuild, requestCodexUpdate } from "../modals";
+import { confirmDelete, requestCodexRebuild, requestCodexTidy, requestCodexUpdate } from "../modals";
 import { renderContinuitySection } from "../continuity";
 import { renderCodexTabLock } from "../lessons/seal";
 
@@ -690,9 +690,9 @@ function renderOverview(
           danger: true,
           title: "Abort the codex task in flight",
         })
-      : makeButton("Tidy up", () => send({ type: "codex_tidy", chatId }), {
+      : makeButton("Tidy up", () => requestCodexTidy(state, chatId, send), {
           disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
-          title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information",
+          title: "Choose a target size, then compact up to six model calls without losing plot-relevant information",
         }),
     makeButton(
       state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo",
@@ -883,11 +883,11 @@ function renderBibleTile(
   tools.className = "lmb-tile-tools";
   const tidyBtn = makeButton(busy ? "Cancel" : "Tidy", () => {
     if (busy) send({ type: "abort_busy", chatId, kind: "codex" });
-    else send({ type: "codex_tidy", chatId, files: def.files });
+    else requestCodexTidy(state, chatId, send, def.files);
   }, {
     small: true,
     disabled: !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists),
-    title: busy ? "Abort the codex task in flight" : "Compress just this record with one LLM pass",
+    title: busy ? "Abort the codex task in flight" : "Choose a target size for this record",
   });
   tidyBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(tidyBtn);

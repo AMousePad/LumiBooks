@@ -170,6 +170,10 @@ export interface CodexAgentOptions {
   userTextOverride?: string;
   /** Suppress the thorough-mode verification round (tidy passes). */
   skipVerify?: boolean;
+  /** Shared hard budget across tidy passes, including repair rounds. */
+  callBudget?: { remaining: number; used: number };
+  /** Restrict writes without hiding reference records from the prompt. */
+  writableFiles?: readonly CodexFileKey[];
   /** Reject timeline drops: history only shrinks in reconcile/tidy/refresh. */
   timelineAppendOnly?: boolean;
   /** Files that must be accounted for before done. Defaults to every active
@@ -633,8 +637,9 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   );
   // Headroom for one round per file plus the nudges a stalling model needs.
   // A model that batches never reaches any of them.
-  const maxRounds = coverage.size + COVERAGE_NUDGES + (profile.codexThorough ? 4 : 3);
-  const tools = useTools ? codexTools([...promptCtx.activeFiles], sequential) : null;
+  const maxRounds = Math.min(coverage.size + COVERAGE_NUDGES + (profile.codexThorough ? 4 : 3), opts.callBudget?.remaining ?? Infinity);
+  const writable = new Set(opts.writableFiles ?? promptCtx.activeFiles);
+  const tools = useTools ? codexTools([...promptCtx.activeFiles].filter((k) => writable.has(k)), sequential) : null;
 
   // Host macros resolve on the system prompt only, mirroring the summarizer:
   // the user message carries codex JSON and raw story text that must never be
@@ -646,7 +651,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   const maxInput = codexMaxInputTokens(profile);
   const promptTokens = approximateTokensFromChars(system.length + userText.length);
   if (promptTokens > maxInput) throw new CodexContextError(promptTokens, maxInput);
-  const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k)));
+  const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k) || !writable.has(k)));
   const conv: LlmMessageDTO[] = [
     { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] },
@@ -705,6 +710,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     if (opts.externalSignal.aborted) throw new AbortedSummarizerError();
     rounds++;
     if (rounds > 1) opts.onDelta?.("text", `\n\n═══ round ${rounds} ═══\n`);
+    if (opts.callBudget) { opts.callBudget.remaining--; opts.callBudget.used++; }
     const round = await runQuietRound(conn, conv, profile, userId, tools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
     usageCompletion += round.usageCompletion;

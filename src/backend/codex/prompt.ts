@@ -385,9 +385,11 @@ export function buildCodexTidyMessage(
   ctx: CodexPromptCtx,
   bundle: CodexBundle,
   targets: readonly CodexFileKey[],
+  budget?: { current: number; modelTarget: number; limit: number; callsLeft: number },
 ): string {
   const parts: string[] = [];
   parts.push(tpl(ctx, "pass_tidy"));
+  if (budget) parts.push(`COMPACTION BUDGET: The target files currently render to ${budget.current} tokens. Rewrite them to a combined size of at most ${budget.modelTarget} tokens of rendered story-bible prose (not JSON syntax or thinking). This includes a 10% margin below the user's ${budget.limit}-token limit. ${budget.callsLeft} model calls remain. If a previous attempt is still too large, compress further now; do not skip merely because you already tidied it. Preserve locked content and plot-relevant facts. Return all target files together and finish in this response.`);
   const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
     parts.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));

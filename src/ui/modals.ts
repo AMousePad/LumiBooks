@@ -1,3 +1,5 @@
+import { CODEX_FILE_KEYS } from "../shared";
+import { resolveTidyTarget, type CodexTidyTarget } from "../codex-tidy";
 import { TIER_NAMES, TIER_KINDS, type SummaryKind } from "../shared";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { DryRunDiagnostic, DryRunMessage, FrontendState, FrontendToBackend } from "../types";
@@ -65,6 +67,116 @@ let catchupClose: (() => void) | null = null;
 /** Chat switches close the picker so a pick can't start a run on the old chat. */
 export function closeCodexCatchupModal(): void {
   catchupClose?.();
+  tidyClose?.();
+}
+
+let tidyClose: (() => void) | null = null;
+
+/** Preview the target before starting a bounded sequence of compaction calls. */
+export function requestCodexTidy(
+  state: FrontendState, chatId: string, send: (msg: FrontendToBackend) => void, files?: string[],
+): void {
+  tidyClose?.();
+  const targets = (files ?? [...CODEX_FILE_KEYS]).filter((f) => state.codexFileStates[f] !== "frozen");
+  const current = targets.reduce((n, f) => n + (state.codexFileTokens[f] ?? 0), 0);
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-tidy";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(540px, 100%)";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Tidy Codex to a target size");
+  const previousFocus = document.activeElement as HTMLElement | null;
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey);
+    if (tidyClose === close) tidyClose = null;
+    overlay.remove();
+    if (previousFocus?.isConnected) previousFocus.focus();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") close();
+    if (e.key === "Tab") {
+      const focusable = [...modal.querySelectorAll<HTMLElement>("input, select, button:not(:disabled)")];
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+  };
+  tidyClose = close;
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = "Tidy Codex to a target size";
+  header.append(title);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const lead = document.createElement("p");
+  lead.textContent = `Current selected content: ${state.codexTokensApproximate ? "~" : ""}${current.toLocaleString()} tokens. Frozen files are excluded; locked content is preserved.`;
+  const unitLabel = document.createElement("label");
+  unitLabel.textContent = "Target unit";
+  const unit = document.createElement("select");
+  unit.className = "lmb-input";
+  for (const [value, text] of [["percent", "Percentage to keep"], ["tokens", "Tokens"]]) {
+    const option = document.createElement("option");
+    option.value = value!; option.textContent = text!; unit.append(option);
+  }
+  unitLabel.append(unit);
+  const valueLabel = document.createElement("label");
+  const valueText = document.createElement("span");
+  const value = document.createElement("input");
+  value.type = "number";
+  value.className = "lmb-input";
+  value.value = "75";
+  valueLabel.append(valueText, value);
+  const preview = document.createElement("p");
+  preview.setAttribute("aria-live", "polite");
+  const help = document.createElement("p");
+  help.className = "lmb-help";
+  help.textContent = "Memoria aims 10% below your limit, checks the saved text, and tries again if it is still too large, up to six model calls total (including repairs). Percentage means the size to keep: 50% asks the model for 45%. Undo restores the entire original Codex. Locked content or the model may prevent reaching the limit.";
+  if (state.codexTokensApproximate) help.textContent += " The tokenizer is unavailable for this model, so these sizes are estimates.";
+  const readTarget = (): CodexTidyTarget => ({ unit: unit.value as CodexTidyTarget["unit"], value: Number(value.value) });
+  const start = makeButton("Start tidy", () => {
+    try {
+      resolveTidyTarget(current, readTarget());
+      const target = readTarget();
+      close();
+      send({ type: "codex_tidy", chatId, files: targets, target });
+    } catch { refresh(); }
+  }, { primary: true });
+  const refresh = (): void => {
+    const percent = unit.value === "percent";
+    valueText.textContent = percent ? "Keep this percentage" : "Maximum tokens";
+    value.min = percent ? "0.01" : "1";
+    value.step = percent ? "0.01" : "1";
+    value.max = percent ? "99.99" : String(Math.max(1, current - 1));
+    try {
+      const { limit, modelTarget } = resolveTidyTarget(current, readTarget());
+      start.disabled = current === 0 || limit >= current;
+      preview.textContent = limit >= current ? "Choose a target below the current size." : `Your limit: ${limit.toLocaleString()} tokens. Model target with margin: ${modelTarget.toLocaleString()} tokens.`;
+    } catch (err) {
+      start.disabled = true;
+      preview.textContent = err instanceof Error ? err.message : "Enter a valid target.";
+    }
+  };
+  unit.addEventListener("change", () => {
+    const old = Number(value.value);
+    value.value = unit.value === "tokens" ? String(Math.max(1, Math.floor(current * old / 100))) : String(Math.min(99.99, Math.max(0.01, Math.round(old / Math.max(1, current) * 10000) / 100)));
+    refresh();
+  });
+  value.addEventListener("input", refresh);
+  body.append(lead, unitLabel, valueLabel, preview, help);
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Cancel", close), start);
+  modal.append(header, body, footer);
+  overlay.append(modal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.body.append(overlay);
+  refresh();
+  value.focus();
+  value.select();
 }
 
 /** Mode picker for a codex that is several passes behind. */
