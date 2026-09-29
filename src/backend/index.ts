@@ -83,6 +83,7 @@ import {
   dryRunCodex,
   getCodexRevision,
   invalidateCodexInjectionCache,
+  invalidateCodexTokenCounts,
   maybeRunCodex,
   publishCodexPool,
   rebuildCodex,
@@ -388,10 +389,16 @@ spindle.on("REGEX_SCRIPT_DELETED", (_payload: unknown, hostUserId?: string) => {
   if (hostUserId) invalidateRegexCache(hostUserId);
 });
 spindle.on("CONNECTION_PROFILE_LOADED", (_payload: unknown, hostUserId?: string) => {
-  if (hostUserId) invalidateConnectionsCache(hostUserId);
+  if (hostUserId) {
+    invalidateConnectionsCache(hostUserId);
+    invalidateCodexTokenCounts(hostUserId);
+  }
 });
 spindle.on("MAIN_API_CHANGED", (_payload: unknown, hostUserId?: string) => {
-  if (hostUserId) invalidateConnectionsCache(hostUserId);
+  if (hostUserId) {
+    invalidateConnectionsCache(hostUserId);
+    invalidateCodexTokenCounts(hostUserId);
+  }
 });
 
 async function handleExternalEntryDeletion(userId: string, bookId: string, isBookDeletion: boolean): Promise<void> {

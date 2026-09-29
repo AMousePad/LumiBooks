@@ -1105,6 +1105,15 @@ const INJECTION_CACHE_TTL_MS = 60_000;
 const INJECTION_CACHE_CAP = 200;
 const injectionTextCache = new Map<string, { at: number; text: string | null }>();
 const fileTokensCache = new Map<string, { at: number; userId: string; forceConstant: boolean; counts: CodexTokenCounts }>();
+const tokenCountEpochs = new Map<string, number>();
+
+/** Model changes do not change Codex prose, but they do change its token cost. */
+export function invalidateCodexTokenCounts(userId: string): void {
+  tokenCountEpochs.set(userId, (tokenCountEpochs.get(userId) ?? 0) + 1);
+  for (const [chatId, cached] of fileTokensCache) {
+    if (cached.userId === userId) fileTokensCache.delete(chatId);
+  }
+}
 
 /** Bumped on every codex mutation. The frontend compares it against the
  * revision its cached file contents came from and refetches on a mismatch,
@@ -1133,6 +1142,7 @@ export function invalidateCodexInjectionCache(chatId?: string): void {
 
 /** Saved content and actual constant lorebook cost, using the story tokenizer. */
 export async function getCodexTokenCounts(chatId: string, userId: string, profile: LMBProfile): Promise<CodexTokenCounts> {
+  const epoch = tokenCountEpochs.get(userId) ?? 0;
   const cached = fileTokensCache.get(chatId);
   if (cached && cached.userId === userId && cached.forceConstant === profile.codexForceConstant && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
   let counts: CodexTokenCounts = { files: {}, constant: 0, approximate: false };
@@ -1142,7 +1152,10 @@ export async function getCodexTokenCounts(chatId: string, userId: string, profil
     counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexForceConstant);
     counts.approximate ||= problems.length > 0;
   }
-  fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+  // An in-flight count from the previous model must not repopulate the cache.
+  if (epoch === (tokenCountEpochs.get(userId) ?? 0)) {
+    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+  }
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value as string | undefined;
     if (oldest === undefined) break;
