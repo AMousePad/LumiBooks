@@ -42,9 +42,9 @@ export type CompressionUnit = "messages" | "tokens";
 export type CompressionTargetUnit = "percent" | "tokens";
 export type SummaryTier = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type HigherTier = 3 | 4 | 5 | 6 | 7;
-export type SummaryKind = "chapter" | "arc" | "volume" | "series" | "chronicle" | "epic" | "library";
-export const TIER_KINDS = ["chapter", "arc", "volume", "series", "chronicle", "epic", "library"] as const;
-export const TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Chronicle", "Epic", "Library"] as const;
+export type SummaryKind = "chapter" | "arc" | "volume" | "series" | "saga" | "library" | "universe";
+export const TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"] as const;
+export const TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"] as const;
 export const HIGHER_TIERS = [3, 4, 5, 6, 7] as const;
 export interface HigherTierSettings {
   enabled: boolean;
@@ -76,7 +76,10 @@ function normalizeHigherTiers(raw: unknown): Record<HigherTier, HigherTierSettin
   return out;
 }
 export function tierHeader(tier: SummaryTier, number: number, sources: number, turns: number): string {
-  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${TIER_NAMES[tier - 2]?.toLowerCase() ?? "message"}${sources === 1 || tier === 5 ? "" : "s"}, ${turns} turns)`;
+  const sourceName = TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
+  const sourceLabel = sources === 1 || sourceName === "series" ? sourceName
+    : sourceName === "library" ? "libraries" : `${sourceName}s`;
+  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
 }
 
 export type ArcTriggerMode = "chapters" | "tokens" | "manual";
@@ -198,7 +201,7 @@ export interface LMBSettings {
 }
 
 export interface LMBEntryMeta {
-  /** Chapter, Arc, Volume, Series, Chronicle, Epic, Library (1 through 7). */
+  /** Chapter, Arc, Volume, Series, Saga, Library, Universe (1 through 7). */
   tier: SummaryTier;
   chatId: string;
   msgIds: string[];

@@ -58,7 +58,7 @@ for (const tier of HIGHER_TIERS) test(`${TIER_NAMES[tier - 1]} binds the exact b
  expect(bound.meta.tokenCountInput).toBeLessThan(100);
 });
 
-test("automation cascades through Library with arc automation off and preserves all coverage", async () => {
+test("automation cascades through Universe with arc automation off and preserves all coverage", async () => {
  entries = Array.from({ length: 32 }, (_, i) => source(2, i));
  for (const tier of HIGHER_TIERS) profile.higherTiers[tier] = { ...profile.higherTiers[tier], enabled: true, batch: 2, lag: 0 };
  await saveSettings(userId, settings());
@@ -86,7 +86,7 @@ test("higher-tier previews accept at their original tier and regeneration keeps 
  profile.showMemoryPreviews = true;
  await createHigherFromEntries(6, chatId, entries.map((e) => e.id), profile, settings(), userId);
  const preview = getPendingPreviews(userId, chatId)[0]!;
- expect(preview.kind).toBe("epic");
+ expect(preview.kind).toBe("library");
  const id = await acceptPreview(chatId, preview.draftId, profile, userId);
  expect(id).toBeTruthy();
  expect((await buildCoverage(chatId, userId)).activeEntries[0]!.meta.tier).toBe(6);
@@ -120,11 +120,11 @@ test("failed Series preview acceptance must retain its tier for retry", async ()
 });
 
 
-test("Library generation must not instruct the model to produce a Volume from Arcs", async () => {
+test("Universe generation must not instruct the model to produce a Volume from Arcs", async () => {
  let system = "";
  (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
    system = req.messages[0].content;
-   yield { type: "done", content: JSON.stringify({ title: "Library", content: "Summary.", keywords: ["story"] }) };
+   yield { type: "done", content: JSON.stringify({ title: "Universe", content: "Summary.", keywords: ["story"] }) };
  };
  entries = [source(6, 0), source(6, 1)];
  expect(await createHigherFromEntries(7, chatId, entries.map((e) => e.id), profile, settings(), userId)).toBeTruthy();

@@ -611,7 +611,7 @@ interface SpineSeg {
 const SPINE_LABEL: Record<SpineKind, string> = {
   codex: "Knowledge Codex",
   volume: "in a volume",
-  series: "in a series", chronicle: "in a chronicle", epic: "in an epic", library: "in a library",
+  series: "in a series", saga: "in a saga", library: "in a library", universe: "in a universe",
   arc: "in an arc",
   chapter: "in a chapter",
   ghost: "staged as ghost",

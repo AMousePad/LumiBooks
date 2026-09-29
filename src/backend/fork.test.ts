@@ -75,7 +75,7 @@ function summary(id: string, tier: number, indexes: number[], sources: string[] 
   entries.push({ id, world_book_id: chats.get(parent).metadata.lumibooks_book_id, content: id, comment: id, disabled: !!extra.ghost, constant: true, extensions: { lumibooks: meta } });
 }
 
-test("forks and forks of forks own independent shelves through Library and Codex books", async () => {
+test("forks and forks of forks own independent shelves through Universe and Codex books", async () => {
   summary("chapter", 1, [0, 1, 2, 3]);
   for (let tier = 2; tier <= 7; tier++) summary(`tier-${tier}`, tier, [0, 1, 2, 3], [tier === 2 ? "chapter" : `tier-${tier - 1}`]);
   summary("root", 1, [], [], { isRoot: true });

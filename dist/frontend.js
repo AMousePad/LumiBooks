@@ -2481,9 +2481,9 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 .lmb-has-higher:hover > .lmb-higher-peek,
 .lmb-has-higher:focus-within > .lmb-higher-peek { display: block; }
 .lmb-spine-seg.series, .lmb-spine-swatch.series { background: #8e73cf; }
-.lmb-spine-seg.chronicle, .lmb-spine-swatch.chronicle { background: #ab72c9; }
-.lmb-spine-seg.epic, .lmb-spine-swatch.epic { background: #cb77ab; }
-.lmb-spine-seg.library, .lmb-spine-swatch.library { background: #d19472; }
+.lmb-spine-seg.saga, .lmb-spine-swatch.saga { background: #ab72c9; }
+.lmb-spine-seg.library, .lmb-spine-swatch.library { background: #cb77ab; }
+.lmb-spine-seg.universe, .lmb-spine-swatch.universe { background: #d19472; }
 ` + LESSON_STYLES;
 var ICON_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3500,8 +3500,8 @@ var CODEX_FILE_KEYS = [
   "knowledge"
 ];
 var STORAGE_VERSION = 7;
-var TIER_KINDS = ["chapter", "arc", "volume", "series", "chronicle", "epic", "library"];
-var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Chronicle", "Epic", "Library"];
+var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
+var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
 var HIGHER_TIERS = [3, 4, 5, 6, 7];
 function defaultHigherTiers() {
   return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
@@ -4853,9 +4853,9 @@ var SPINE_LABEL = {
   codex: "Knowledge Codex",
   volume: "in a volume",
   series: "in a series",
-  chronicle: "in a chronicle",
-  epic: "in an epic",
+  saga: "in a saga",
   library: "in a library",
+  universe: "in a universe",
   arc: "in an arc",
   chapter: "in a chapter",
   ghost: "staged as ghost",

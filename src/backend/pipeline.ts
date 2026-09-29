@@ -209,9 +209,9 @@ const BUSY_PHRASES: Record<BusyKind, { idle: string; writing: string }> = {
   arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
   volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
   series: { idle: "Memoria is binding a series", writing: "Memoria is binding a series" },
-  chronicle: { idle: "Memoria is binding a chronicle", writing: "Memoria is binding a chronicle" },
-  epic: { idle: "Memoria is binding a epic", writing: "Memoria is binding a epic" },
+  saga: { idle: "Memoria is binding a saga", writing: "Memoria is binding a saga" },
   library: { idle: "Memoria is binding a library", writing: "Memoria is binding a library" },
+  universe: { idle: "Memoria is binding a universe", writing: "Memoria is binding a universe" },
   codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" },
 };
 

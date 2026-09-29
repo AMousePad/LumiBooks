@@ -632,8 +632,8 @@ var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
 var STORAGE_VERSION = 7;
 var SETTINGS_PATH = "settings.json";
 var CHAT_STATE_DIR = "chats";
-var TIER_KINDS = ["chapter", "arc", "volume", "series", "chronicle", "epic", "library"];
-var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Chronicle", "Epic", "Library"];
+var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
+var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
 var HIGHER_TIERS = [3, 4, 5, 6, 7];
 function defaultHigherTiers() {
   return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
@@ -666,7 +666,9 @@ function normalizeHigherTiers(raw) {
   return out;
 }
 function tierHeader(tier, number, sources, turns) {
-  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${TIER_NAMES[tier - 2]?.toLowerCase() ?? "message"}${sources === 1 || tier === 5 ? "" : "s"}, ${turns} turns)`;
+  const sourceName = TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
+  const sourceLabel = sources === 1 || sourceName === "series" ? sourceName : sourceName === "library" ? "libraries" : `${sourceName}s`;
+  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
 }
 var DEFAULT_SAMPLERS = {
   temperature: null,
@@ -6078,9 +6080,9 @@ var BUSY_PHRASES = {
   arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
   volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
   series: { idle: "Memoria is binding a series", writing: "Memoria is binding a series" },
-  chronicle: { idle: "Memoria is binding a chronicle", writing: "Memoria is binding a chronicle" },
-  epic: { idle: "Memoria is binding a epic", writing: "Memoria is binding a epic" },
+  saga: { idle: "Memoria is binding a saga", writing: "Memoria is binding a saga" },
   library: { idle: "Memoria is binding a library", writing: "Memoria is binding a library" },
+  universe: { idle: "Memoria is binding a universe", writing: "Memoria is binding a universe" },
   codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" }
 };
 function formatBusyLabel(state, elapsedMs) {
