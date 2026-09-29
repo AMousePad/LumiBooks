@@ -1342,12 +1342,15 @@ export async function acceptPreview(
             preview.firstMsgIdx ?? 0, preview.lastMsgIdx ?? 0, preview.replacesEntryId,
           );
       dropPendingPreview(userId, chatId, draftId);
+      clearLastFailure(userId, chatId);
       nyaaToast(userId, isVolume ? "volume_success" : "arc_success", false);
       cb?.onStateChange(userId, chatId);
       return entryId;
     } catch (err) {
-      recordFailure(userId, chatId, isVolume ? "volume" : "arc", 0, err);
-      failToast(userId, isVolume ? "volume" : "arc", err);
+      recordFailure(userId, chatId, preview.kind, 0, err, {
+        sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId: preview.replacesEntryId,
+      });
+      failToast(userId, preview.kind, err);
       cb?.onStateChange(userId, chatId);
       return null;
     }

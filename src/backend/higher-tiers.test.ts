@@ -102,3 +102,21 @@ test("profile loading preserves independent settings and old profiles opt out", 
  expect(normalizeProfile(profile)!.higherTiers[4].batch).toBe(9);
  expect(normalizeProfile({ id: "old", name: "old" })!.higherTiers[3].enabled).toBe(false);
 });
+test("failed Series preview acceptance must retain its tier for retry", async () => {
+ profile.showMemoryPreviews = true;
+ entries = [source(3, 0), source(3, 1)];
+ await createHigherFromEntries(4, chatId, entries.map((e) => e.id), profile, settings(), userId);
+ const draft = getPendingPreviews(userId, chatId).find((p) => p.kind === "series")!;
+ const create = (globalThis as any).spindle.world_books.entries.create;
+ (globalThis as any).spindle.world_books.entries.create = async () => { throw new Error("temporary storage fault"); };
+ expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+ const { getLastFailure, dropPendingPreview } = await import("./pipeline");
+ const failure = getLastFailure(userId, chatId);
+ expect(failure?.kind).toBe("series");
+ expect(failure?.sourceEntryIds).toEqual(["source-3-0", "source-3-1"]);
+ (globalThis as any).spindle.world_books.entries.create = create;
+ expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeTruthy();
+ expect(getLastFailure(userId, chatId)).toBeNull();
+});
+
+
