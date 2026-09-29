@@ -31,7 +31,7 @@ globalWithSpindle.spindle = {
 };
 
 const { applyCodexBackup, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } = await import("./backup");
-const { emptyCursor, loadCursor, saveCursor } = await import("./store");
+const { clearCodexStaleFlags, emptyCursor, loadCursor, saveCursor } = await import("./store");
 
 afterAll(() => {
   if (previousSpindle === undefined) delete globalWithSpindle.spindle;
@@ -102,3 +102,16 @@ for (const mode of ["foreign", "legacy"] as const) {
     expect((await loadCursor(CHAT, U)).lastMsgId).toBe("m80");
   });
 }
+
+test("clearing stale flags preserves text and indexing and re-arms frozen tracking", async () => {
+  await seedAndAdvance();
+  await saveCursor(CHAT, { ...(await loadCursor(CHAT, U)), fileStates: { timeline: "frozen" },
+    frozenAtRuns: { timeline: 1 }, refreshPending: ["world"] }, U);
+  const before = JSON.stringify(store.get(`codex/${CHAT}/world.json`));
+  await clearCodexStaleFlags(CHAT, U);
+  const after = await loadCursor(CHAT, U);
+  expect(after.refreshPending).toEqual([]);
+  expect(after.frozenAtRuns.timeline).toBe(after.runs);
+  expect(after.lastMsgId).toBe("m80");
+  expect(JSON.stringify(store.get(`codex/${CHAT}/world.json`))).toBe(before);
+});

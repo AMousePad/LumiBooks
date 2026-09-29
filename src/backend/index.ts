@@ -1,3 +1,4 @@
+import { clearCodexStaleFlags } from "./codex/store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
@@ -1238,6 +1239,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         await snapshotCodexForUndo(msg.chatId, userId, "update");
         await runCodexNow(msg.chatId, profile, userId, msg.mode ?? "slow", cur);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_clear_stale": {
+        if (!setBusy(userId, msg.chatId, "codex", "Accepting current codex records")) break;
+        try {
+          await snapshotCodexForUndo(msg.chatId, userId, "clear stale tags");
+          await clearCodexStaleFlags(msg.chatId, userId);
+        } finally {
+          clearBusy(userId, msg.chatId, "codex");
+        }
         await pushState(userId, msg.chatId);
         break;
       }

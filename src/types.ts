@@ -223,6 +223,7 @@ export type FrontendToBackend =
   | { type: "codex_rebuild"; chatId: string; mode?: "slow" | "fast" | "ultra" }
   | { type: "codex_tidy"; chatId: string; files?: string[] }
   | { type: "codex_rebuild_files"; chatId: string; files: string[] }
+  | { type: "codex_clear_stale"; chatId: string }
   | { type: "codex_refresh"; chatId: string }
   | { type: "codex_set_file_state"; chatId: string; file: string; state: "on" | "noInject" | "frozen" }
   | { type: "codex_backup"; chatId: string }

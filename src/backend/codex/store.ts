@@ -467,3 +467,16 @@ export async function readCodexFilesRaw(chatId: string, userId: string): Promise
   );
   return out;
 }
+
+/** Accept the current records as up to date without rewriting content or coverage. */
+export async function clearCodexStaleFlags(chatId: string, userId: string): Promise<void> {
+  await withCursorLock(chatId, userId, async () => {
+    const cursor = await loadCursor(chatId, userId);
+    cursor.refreshPending = [];
+    for (const file of CODEX_FILE_KEYS) {
+      if (cursor.fileStates[file] === "frozen") cursor.frozenAtRuns[file] = cursor.runs;
+      else delete cursor.frozenAtRuns[file];
+    }
+    await saveCursor(chatId, cursor, userId);
+  });
+}

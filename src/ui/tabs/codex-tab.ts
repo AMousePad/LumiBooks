@@ -634,6 +634,12 @@ function renderOverview(
         "lmb-help",
       ));
     }
+    if ((state.codexRefreshPending?.length ?? 0) + (state.codexStaleFiles?.length ?? 0) > 0) {
+      sec.body.appendChild(makeButton("Clear stale tags", () => send({ type: "codex_clear_stale", chatId }), {
+        small: true, disabled: busy,
+        title: "Accept the current records as up to date. Keeps all text and indexing; makes no model request. Future missed updates can mark frozen records stale again.",
+      }));
+    }
     const pending = state.codexRefreshPending ?? [];
     if (pending.length > 0) {
       const banner = document.createElement("div");
