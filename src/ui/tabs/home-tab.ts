@@ -791,9 +791,9 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
   tiles.appendChild(statTile(`~${formatTokens(cov.approxUncoveredTokens)}`, "Tail", `${cov.uncoveredMessages} msgs uncompressed`,
     "Recent messages still in the prompt at full size, waiting to pass the lag"));
   const own = {
-    vol: state.volumes.filter((v) => !v.isRoot).length,
-    arc: state.arcs.filter((a) => !a.isRoot).length,
-    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost).length,
+    vol: state.volumes.filter((v) => !v.isRoot && v.active).length,
+    arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
+    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length,
   };
   tiles.appendChild(statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap",
     "Volumes, arcs, and chapters Memoria has filed for this chat"));

@@ -1,3 +1,4 @@
+import { arcBindingRule, selectBindingBatch } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBProfile, LMBSettings, LMBEntryMeta } from "../shared";
@@ -787,33 +788,8 @@ export async function createArcAuto(
       .filter((e) => e.meta.tier === 1 && !e.meta.isRoot)
       .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (chapters.length === 0) return null;
-    let selected: LMBEntry[] = [];
-    if (profile.arcTrigger === "chapters") {
-      const compressible = Math.max(0, chapters.length - profile.arcLagChapters);
-      if (compressible < profile.arcAfterChapters) return null;
-      selected = chapters.slice(0, compressible).slice(0, profile.arcAfterChapters);
-    } else if (profile.arcTrigger === "tokens") {
-      const reservedFromTail: LMBEntry[] = [];
-      let reservedTokens = 0;
-      for (let i = chapters.length - 1; i >= 0 && reservedTokens < profile.arcLagTokens; i--) {
-        reservedFromTail.unshift(chapters[i]!);
-        reservedTokens += chapters[i]!.meta.tokenCountOutput;
-      }
-      const reservedSet = new Set(reservedFromTail.map((c) => c.raw.id));
-      const compressible = chapters.filter((c) => !reservedSet.has(c.raw.id));
-      const compressibleTokens = compressible.reduce((a, c) => a + c.meta.tokenCountOutput, 0);
-      if (compressibleTokens < profile.arcAfterTokens) return null;
-      const take: LMBEntry[] = [];
-      let acc = 0;
-      for (const ch of compressible) {
-        take.push(ch);
-        acc += ch.meta.tokenCountOutput;
-        if (acc >= profile.arcAfterTokens) break;
-      }
-      selected = take;
-    } else {
-      return null;
-    }
+    if (getPendingPreviews(userId, chatId).some((p) => p.kind === "arc")) return null;
+    const selected = selectBindingBatch(chapters, arcBindingRule(profile));
     if (selected.length === 0) return null;
     return await runArc(chatId, profile, settings, userId, selected, { automation });
   } finally {

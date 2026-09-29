@@ -1,3 +1,4 @@
+import { arcBindingRule, countBindingBacklog } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ChapterView, ArcView, FrontendState, ConnectionOption, MessageStub, RegexScriptOption, RootSourceOption } from "../types";
@@ -310,30 +311,5 @@ export async function buildState(userId: string, requestedChatId?: string | null
 }
 
 function countArcBacklog(activeChapters: LMBEntry[], profile: LMBProfile): number {
-  if (profile.arcTrigger === "manual") return 0;
-  const chapters = activeChapters
-    .slice()
-    .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-  if (profile.arcTrigger === "chapters") {
-    const compressible = Math.max(0, chapters.length - profile.arcLagChapters);
-    const denom = Math.max(1, profile.arcAfterChapters);
-    return Math.floor(compressible / denom);
-  }
-  let reservedTokens = 0;
-  let cutoff = chapters.length;
-  for (let i = chapters.length - 1; i >= 0 && reservedTokens < profile.arcLagTokens; i--) {
-    reservedTokens += chapters[i]!.meta.tokenCountOutput;
-    cutoff = i;
-  }
-  const compressible = chapters.slice(0, cutoff);
-  let arcs = 0;
-  let acc = 0;
-  for (const ch of compressible) {
-    acc += ch.meta.tokenCountOutput;
-    if (acc >= profile.arcAfterTokens) {
-      arcs++;
-      acc = 0;
-    }
-  }
-  return arcs;
+  return countBindingBacklog(activeChapters, arcBindingRule(profile));
 }

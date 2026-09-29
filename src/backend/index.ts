@@ -1101,7 +1101,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
-        await acceptPreview(msg.chatId, msg.draftId, profile, userId);
+        const accepted = await acceptPreview(msg.chatId, msg.draftId, profile, userId);
+        if (accepted && cur.enabled) await maybeRunArcCheck(msg.chatId, profile, cur, userId);
         await pushState(userId, msg.chatId);
         break;
       }
