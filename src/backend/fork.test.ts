@@ -5,6 +5,8 @@ import { buildCoverage } from "./coverage";
 import { listLmbEntries, invalidateBookCache } from "./world-book";
 import { emptyCursor, loadCursor } from "./codex/store";
 import { saveSettings } from "./storage";
+import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
+import { syncCodexProfiles } from "./codex/sync";
 
 const original = (globalThis as any).spindle;
 const user = "fork-user";
@@ -134,4 +136,100 @@ test("forking an empty shelf detaches the parent's book", async () => {
   await ensureForkAdoption(child, user);
   expect(chats.get(child).metadata.chat_world_book_ids).not.toContain(chats.get(parent).metadata.lumibooks_book_id);
   expect(chats.get(child).metadata.lumibooks_fork_adopted).toBe(child);
+});
+
+test("higher-tier root adoption, rebuilding and detaching preserve the source", async () => {
+  summary("chapter", 1, [0, 1, 2, 3]);
+  for (let tier = 2; tier <= 7; tier++) summary(`tier-${tier}`, tier, [0, 1, 2, 3], [tier === 2 ? "chapter" : `tier-${tier - 1}`]);
+  const sourceEntries = structuredClone(entries);
+  chats.set(child, { id: child, name: "New story", metadata: {} });
+  messages.set(child, []);
+  expect(await rebaseRoot(child, parent, user)).toEqual({ ok: true, count: 7 });
+  let copied = await listLmbEntries(child, user);
+  expect(copied.every((e) => e.meta.isRoot && e.meta.rootOrigin === parent)).toBe(true);
+  expect((await buildCoverage(child, user)).activeEntries.map((e) => e.meta.tier)).toEqual([7]);
+  expect(await rebuildRoot(child, parent, user)).toEqual({ ok: true, count: 7 });
+  copied = await listLmbEntries(child, user);
+  expect(copied).toHaveLength(7);
+  expect(await detachRoot(child, user)).toBe(7);
+  expect(await listLmbEntries(child, user)).toEqual([]);
+  expect(entries).toEqual(sourceEntries);
+});
+
+test("profile changes resync parent and fork books without merging their ownership", async () => {
+  await ensureForkAdoption(child, user);
+  const childBook = chats.get(child).metadata.lumibooks_codex_book_id;
+  const next = { ...profile, codexForceConstant: false, codexInjectionPosition: "after_history" as const };
+  await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [next], activeProfileId: next.id });
+  expect(await syncCodexProfiles(user)).toEqual([]);
+  for (const id of [parent, child]) {
+    const book = chats.get(id).metadata.lumibooks_codex_book_id;
+    const records = entries.filter((e) => e.world_book_id === book);
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every((e) => !e.constant && e.position === 4 && e.depth === 0 && e.extensions.lumibooks_codex.chatId === id)).toBe(true);
+  }
+  expect(chats.get(child).metadata.lumibooks_codex_book_id).toBe(childBook);
+});
+
+test("a failed shelf copy rolls back and a later fork adoption retries it", async () => {
+  summary("early", 1, [0]);
+  const create = (globalThis as any).spindle.world_books.entries.create;
+  let fail = true;
+  (globalThis as any).spindle.world_books.entries.create = async (bookId: string, value: any) => {
+    if (fail && value.extensions?.lumibooks) throw new Error("temporary write fault");
+    return create(bookId, value);
+  };
+  await ensureForkAdoption(child, user);
+  expect(await forkShelfPending(child, user)).toBe(true);
+  expect([...books.values()].some((b) => b.metadata.lumibooks_chat_id === child)).toBe(false);
+  fail = false;
+  const now = Date.now;
+  const later = now() + 31_000;
+  Date.now = () => later;
+  try { await ensureForkAdoption(child, user); } finally { Date.now = now; }
+  expect(await forkShelfPending(child, user)).toBe(false);
+  expect((await listLmbEntries(child, user)).map((e) => e.raw.content)).toEqual(["early"]);
+});
+
+test("a failed Codex mirror retries after inheritance without overwriting copied files", async () => {
+  const create = (globalThis as any).spindle.world_books.entries.create;
+  let fail = true;
+  (globalThis as any).spindle.world_books.entries.create = async (bookId: string, value: any) => {
+    if (fail && value.extensions?.lumibooks_codex) throw new Error("temporary mirror fault");
+    return create(bookId, value);
+  };
+  await ensureForkAdoption(child, user);
+  expect(await forkCodexPending(child, user)).toBe(true);
+  const copied = structuredClone(disk.get(`codex/${child}/world.json`));
+  fail = false;
+  const now = Date.now;
+  const later = now() + 31_000;
+  Date.now = () => later;
+  try { await ensureForkAdoption(child, user); } finally { Date.now = now; }
+  expect(await forkCodexPending(child, user)).toBe(false);
+  expect(disk.get(`codex/${child}/world.json`)).toEqual(copied);
+  expect(entries.filter((e) => e.extensions?.lumibooks_codex?.chatId === child)).toHaveLength(1);
+});
+
+test("an interrupted Codex inheritance retries with preconfigured file switches", async () => {
+  disk.set(`codex/${parent}/characters.json`, { entities: [{ id: "char:alice", name: "Alice" }] });
+  disk.set(`codex/${child}/cursor.json`, { ...emptyCursor(), fileStates: { timeline: "frozen" } });
+  const write = (globalThis as any).spindle.userStorage.setJson;
+  let fail = true;
+  (globalThis as any).spindle.userStorage.setJson = async (path: string, value: any) => {
+    if (fail && path === `codex/${child}/world.json`) throw new Error("temporary disk fault");
+    return write(path, value);
+  };
+  await ensureForkAdoption(child, user);
+  expect(await forkCodexPending(child, user)).toBe(true);
+  fail = false;
+  const now = Date.now;
+  const later = now() + 31_000;
+  Date.now = () => later;
+  try { await ensureForkAdoption(child, user); } finally { Date.now = now; }
+  expect(disk.get(`codex/${child}/world.json`)).toEqual(disk.get(`codex/${parent}/world.json`));
+  const cursor = await loadCursor(child, user);
+  expect(cursor.fileStates.timeline).toBe("frozen");
+  expect(cursor.fileStates.knowledge).toBe("noInject");
+  expect(cursor.lastMsgId).toBe(`${child}-m3`);
 });

@@ -329,14 +329,37 @@ export async function deleteCodex(chatId: string, userId: string): Promise<Codex
   return failed;
 }
 
-/**
- * Fork adoption: copy the parent chat's codex to the fork. Data files are
- * chat-agnostic and copy verbatim; the cursor's message ids are remapped onto
- * the fork's ids by chat position. Consumption past the fork point (ids with
- * no fork counterpart) is dropped, and everything up to the fork tip is
- * flagged for reconciliation since the codex may describe events the fork
- * abandoned. No-op when the parent has no codex or the fork already has one.
- */
+/** Both callers hold the destination cursor lock and require no data files.
+ * Stage reads first, then roll back newly copied files if a write fails, so a
+ * retry cannot mistake a partial copy for the destination's own Codex. */
+async function copyCodexToEmptyChat(
+  fromChatId: string, toChatId: string, userId: string, commitCursor: () => Promise<void>,
+): Promise<boolean> {
+  const files: Array<{ key: CodexFileKey; value: unknown }> = [];
+  for (const key of CODEX_FILE_KEYS) {
+    const read = await readCodexFileRaw(fromChatId, key, userId);
+    if (read.state === "unreadable") throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+    if (read.state === "ok") files.push({ key, value: read.value });
+  }
+  if (!files.length) return false;
+  const attempted: CodexFileKey[] = [];
+  try {
+    for (const { key, value } of files) {
+      attempted.push(key);
+      await spindle.userStorage.setJson(filePath(toChatId, key), value, { indent: 1, userId });
+    }
+    await commitCursor();
+    return true;
+  } catch (err) {
+    for (const key of attempted.reverse()) {
+      try { await spindle.userStorage.delete(filePath(toChatId, key), userId); }
+      catch (rollbackError) { warn(`Codex copy rollback failed for ${toChatId}/${key}: ${describeError(rollbackError)}`); }
+    }
+    throw err;
+  }
+}
+
+/** Copy fork records, remap their cursor, and reconcile the abandoned branch. */
 export async function inheritCodex(
   fromChatId: string,
   toChatId: string,
@@ -346,6 +369,7 @@ export async function inheritCodex(
 ): Promise<boolean> {
   if ((await codexPresence(fromChatId, userId)) !== "present") return false;
   return withCursorLock(toChatId, userId, async () => {
+    if (await codexHasAnyDataFile(toChatId, userId)) return false;
     // A cursor holding only pre-run file switches (the user froze categories
     // before the first pass) is not a codex: inheriting must still happen,
     // with the user's switches kept on top of the inherited cursor.
@@ -353,18 +377,10 @@ export async function inheritCodex(
     if ((await codexPresence(toChatId, userId)) === "present") {
       const target = await loadCursor(toChatId, userId);
       const untouched = target.runs === 0 && target.consumedSigs.length === 0 && target.lastMsgId === null;
-      if (!untouched || (await codexHasAnyDataFile(toChatId, userId))) return false;
+      if (!untouched) return false;
       preFreeze = target;
     }
     const cursor = await loadCursor(fromChatId, userId);
-    for (const key of CODEX_FILE_KEYS) {
-      const read = await readCodexFileRaw(fromChatId, key, userId);
-      if (read.state === "unreadable") {
-        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
-      }
-      if (read.state === "absent") continue;
-      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
-    }
     // Only the contiguous mapped prefix survives: a gap would let divergence
     // detection anchor consumption past messages it never verified.
     const sigs: ConsumedSig[] = [];
@@ -389,8 +405,7 @@ export async function inheritCodex(
           }
         : {}),
     };
-    await saveCursor(toChatId, next, userId);
-    return true;
+    return copyCodexToEmptyChat(fromChatId, toChatId, userId, () => saveCursor(toChatId, next, userId));
   });
 }
 
@@ -412,17 +427,6 @@ export async function adoptCodexFrom(
   return withCursorLock(toChatId, userId, async () => {
     if (await codexHasAnyDataFile(toChatId, userId)) return "has_own";
     const source = await loadCursor(fromChatId, userId);
-    let copied = false;
-    for (const key of CODEX_FILE_KEYS) {
-      const read = await readCodexFileRaw(fromChatId, key, userId);
-      if (read.state === "unreadable") {
-        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
-      }
-      if (read.state === "absent") continue;
-      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
-      copied = true;
-    }
-    if (!copied) return "no_source";
     const next: CodexCursor = {
       ...emptyCursor(),
       fileStates: { ...source.fileStates },
@@ -430,8 +434,8 @@ export async function adoptCodexFrom(
       rootOrigin: fromChatId,
       updatedAt: Date.now(),
     };
-    await saveCursor(toChatId, next, userId);
-    return "ok";
+    const copied = await copyCodexToEmptyChat(fromChatId, toChatId, userId, () => saveCursor(toChatId, next, userId));
+    return copied ? "ok" : "no_source";
   });
 }
 

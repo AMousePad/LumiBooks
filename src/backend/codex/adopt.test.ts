@@ -98,6 +98,23 @@ test("refuses a source with no codex and a chat onto itself", async () => {
   expect(await adoptCodexFrom(SRC, SRC, userId)).toBe("same_chat");
 });
 
+test("interrupted adoption rolls back copied files and remains retryable", async () => {
+  seedSource();
+  store.set(`codex/${SRC}/characters.json`, { entities: [{ id: "char:alice", name: "Alice" }] });
+  const storage = (globalWithSpindle.spindle as any).userStorage;
+  const write = storage.setJson;
+  storage.setJson = async (path: string, value: unknown) => {
+    if (path === `codex/${DST}/world.json`) throw new Error("temporary disk fault");
+    return write(path, value);
+  };
+  try { await expect(adoptCodexFrom(SRC, DST, userId)).rejects.toThrow("temporary disk fault"); }
+  finally { storage.setJson = write; }
+  expect([...store.keys()].filter((p) => p.startsWith(`codex/${DST}/`))).toEqual([]);
+  expect(await adoptCodexFrom(SRC, DST, userId)).toBe("ok");
+  expect(store.get(`codex/${DST}/characters.json`)).toEqual(store.get(`codex/${SRC}/characters.json`));
+  expect(store.get(`codex/${DST}/world.json`)).toEqual(store.get(`codex/${SRC}/world.json`));
+});
+
 test("lists chats holding a codex", async () => {
   seedSource();
   store.set(`codex/${DST}/cursor.json`, { version: 1 });
