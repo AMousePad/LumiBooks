@@ -759,3 +759,8 @@ export function renderCodexFileSections(bundle: CodexBundle): Record<CodexFileKe
   }
   return out;
 }
+
+/** Injection is independent of authoring: only frozen categories stop updates. */
+export function frozenCodexFiles(states: Record<string, string>): Set<CodexFileKey> {
+  return new Set(CODEX_FILE_KEYS.filter((key) => states[key] === "frozen"));
+}

@@ -1,3 +1,4 @@
+import { frozenCodexFiles } from "./prompt";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
@@ -443,9 +444,7 @@ export async function dryRunCodex(
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-  const frozenFiles = new Set<CodexFileKey>(
-    CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"),
-  );
+  const frozenFiles = frozenCodexFiles(plan.cursor.fileStates);
   if (frozenFiles.size === CODEX_FILE_KEYS.length) {
     throw new Error("Every codex record is frozen, unfreeze one to preview a run");
   }
@@ -554,9 +553,7 @@ async function runChunk(
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-  const frozenFiles = new Set<CodexFileKey>(
-    CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"),
-  );
+  const frozenFiles = frozenCodexFiles(plan.cursor.fileStates);
   const notes: CodexRunNotes = {
     reconcile: plan.reconcile,
     migrateToTable: prevMode === false && profile.codexRelationsTable,
@@ -1035,7 +1032,7 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
     const { books, tailTranscript } = await activeStoryContext(chatId, userId, plan.messages);
     const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
-    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => plan.cursor.fileStates[k] === "frozen"));
+    const frozen = frozenCodexFiles(plan.cursor.fileStates);
     const notes: CodexRunNotes = {
       reconcile: true,
       migrateToTable: false,
@@ -1385,9 +1382,7 @@ export async function runCodexTidy(
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-    const frozenFiles = new Set<CodexFileKey>(
-      CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"),
-    );
+    const frozenFiles = frozenCodexFiles(cursor.fileStates);
     const broken = new Set(problems.map((p) => p.file));
     const targets = (only ?? [...CODEX_FILE_KEYS]).filter(
       (k) => !frozenFiles.has(k) && !broken.has(k) && !fileIsEmpty(bundle, k),
@@ -1453,7 +1448,7 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
       cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before catching records up");
       return;
     }
-    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = cursor.refreshPending.filter((f): f is CodexFileKey => isCodexFileKey(f) && !frozen.has(f));
     if (targets.length === 0) {
       cb?.onToast(userId, "info", "No re-enabled records are waiting for a catch-up");
@@ -1561,7 +1556,7 @@ export async function rebuildCodexFiles(
       cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before rebuilding records");
       return;
     }
-    const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => cursor.fileStates[k] === "frozen"));
+    const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = only.filter((k) => !frozen.has(k));
     if (targets.length === 0) {
       cb?.onToast(userId, "info", "Those records are frozen, unfreeze them first");
