@@ -317,11 +317,14 @@ The story material ends above. Update the codex now: walk the three passes in yo
 var verify_default = "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated.";
 
 // src/prompts/codex/passes/tidy.txt
-var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.
+var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files into fewer, cohesive records: consolidate related entries, strip repetition, and remove details that no longer carry plot weight. Reassess relevance against the current Codex rather than preserving every old row. Keep facts and distinctions that future scenes need: causal turning points, active goals, unresolved consequences, meaningful relationship changes, and consequential differences in who knows what. Do not invent events, dates, resolutions, or knowledge transfers to justify compaction. Keep every schema exactly as specified.
 
 A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).
 
-While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.`;
+Merging or removing rows is allowed in this pass, including timeline rows. Preserve their plot-relevant information in the consolidated records; do not just shorten every small row and leave the fragmented structure intact. Respect locked content and never rewrite files outside the target list. A category can become empty if none of its remaining records is useful.
+
+While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.
+`;
 
 // src/prompts/codex/passes/refresh.txt
 var refresh_default = 'REFRESH PASS: the user re-enabled {{TARGET_FILES}} after {{IT_THEY}} missed updates, so {{LAG_PHRASE}} the story. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
@@ -4978,6 +4981,13 @@ ${books.join(`
 
 `);
 }
+var TIDY_FILE_GUIDANCE = {
+  timeline: "Group events on the same date, or adjacent dates in the same episode, into cohesive chronological chunks. Use the existing when field for the date or date range. Connect actions to outcomes instead of retaining many tiny event rows. Keep important dates, turning points, causal order, participants, and lasting consequences explicit within each chunk; do not merge unrelated periods or invent dates.",
+  relations: "Consolidate redundant relationship rows for the same pair or group into a concise account of the current relationship and the changes that still explain it. Preserve distinct relationship kinds, direction, obligations, tensions, and unresolved consequences. Remove superseded descriptions and repeated interaction details. Do not merge unrelated relationships or erase meaningful differences between members.",
+  threads: "Reassess each thread and seed for present relevance. Merge overlapping storylines and duplicate setups into cohesive threads. Keep active goals, unresolved stakes, and planted details that still plausibly await payoff. Remove obsolete, redundant, trivial, or completed material with no remaining consequence; do not keep a thread merely because it was once marked open. Age or lack of a recent mention alone does not prove irrelevance, and compaction must not invent a resolution.",
+  knowledge: "Reassess secrets and false beliefs for plot relevance. Delete obsolete secrets, inconsequential private details, and overly specific facts that no longer affect choices, stakes, or future scenes. Consolidate related secrets only when their knownBy, hiddenFrom, and falseBeliefs distinctions remain accurate. Preserve consequential hidden information and misunderstandings. Never imply that a character learned a fact just to make merging easier.",
+  world: "Group related lore and facts by topic into cohesive entries. Merge duplicate rules, descriptions, and background details. Keep current canon, enduring constraints, and facts future scenes can use; remove superseded or inconsequential minutiae. Preserve meaningful exceptions and avoid merging unrelated topics into a single undifferentiated record."
+};
 function buildCodexTidyMessage(ctx, bundle, targets, budget) {
   const parts = [];
   parts.push(tpl(ctx, "pass_tidy"));
@@ -4992,6 +5002,11 @@ function buildCodexTidyMessage(ctx, bundle, targets, budget) {
     parts.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
+  for (const file of targets) {
+    const guidance = TIDY_FILE_GUIDANCE[file];
+    if (guidance)
+      parts.push(`COMPACTION FOR ${file}.json: ${guidance}`);
+  }
   parts.push(...currentCodexParts(bundle, ctx));
   parts.push(ctx.useTools ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}. Write only files you actually improved, skip the rest, then call codex_done.` : `Rewrite the target files now${ctx.sequential ? ", one per reply" : ""}. Put only files you actually improved in "writes", the rest in "skip", and set "done": true.`);
   return parts.join(`
@@ -9538,11 +9553,12 @@ var codexRevisions = new Map;
 function getCodexRevision(chatId) {
   return codexRevisions.get(chatId) ?? 0;
 }
-function invalidateCodexInjectionCache(chatId) {
+function invalidateCodexInjectionCache(chatId, contentChanged = true) {
   if (chatId) {
     injectionTextCache.delete(chatId);
     fileTokensCache.delete(chatId);
-    codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
+    if (contentChanged)
+      codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
     while (codexRevisions.size > INJECTION_CACHE_CAP) {
       const oldest = codexRevisions.keys().next().value;
       if (oldest === undefined || oldest === chatId)
@@ -9679,7 +9695,7 @@ async function setCodexFileState(chatId, userId, file, state, relationsTableFall
     }
     await saveCursor(chatId, cursor, userId);
   });
-  invalidateCodexInjectionCache(chatId);
+  invalidateCodexInjectionCache(chatId, false);
   await syncEntriesGuarded(chatId, userId, relationsTableFallback);
 }
 async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = null) {
@@ -11757,9 +11773,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
           send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
           break;
         }
-        const cur = await loadSettings(userId);
-        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
-        await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
+        let profile = null;
+        try {
+          const cur = await loadSettings(userId);
+          profile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? null;
+          await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
+        } catch (err) {
+          if (msg.seq !== undefined)
+            send({ type: "codex_file_state_saved", chatId: msg.chatId, file: msg.file, state: msg.state, seq: msg.seq, error: describeError(err) }, userId);
+          throw err;
+        }
+        if (msg.seq !== undefined)
+          send({ type: "codex_file_state_saved", chatId: msg.chatId, file: msg.file, state: msg.state, seq: msg.seq }, userId);
         if (profile)
           await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
         await pushState(userId, msg.chatId);

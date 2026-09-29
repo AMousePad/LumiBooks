@@ -3200,11 +3200,14 @@ The story material ends above. Update the codex now: walk the three passes in yo
 var verify_default = "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated.";
 
 // src/prompts/codex/passes/tidy.txt
-var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files to be leaner: merge redundant entries, strip filler words and verbose phrasing, drop details that carry no plot weight. You must NOT lose any plot-relevant fact, relationship, timeline event, open thread, or secret - when in doubt, keep it. Keep every schema exactly as specified.
+var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files into fewer, cohesive records: consolidate related entries, strip repetition, and remove details that no longer carry plot weight. Reassess relevance against the current Codex rather than preserving every old row. Keep facts and distinctions that future scenes need: causal turning points, active goals, unresolved consequences, meaningful relationship changes, and consequential differences in who knows what. Do not invent events, dates, resolutions, or knowledge transfers to justify compaction. Keep every schema exactly as specified.
 
 A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).
 
-While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.`;
+Merging or removing rows is allowed in this pass, including timeline rows. Preserve their plot-relevant information in the consolidated records; do not just shorten every small row and leave the fragmented structure intact. Respect locked content and never rewrite files outside the target list. A category can become empty if none of its remaining records is useful.
+
+While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.
+`;
 
 // src/prompts/codex/passes/refresh.txt
 var refresh_default = 'REFRESH PASS: the user re-enabled {{TARGET_FILES}} after {{IT_THEY}} missed updates, so {{LAG_PHRASE}} the story. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
@@ -7202,7 +7205,58 @@ function y_default2(y) {
   };
   return force;
 }
+// src/ui/codex-file-state.ts
+class CodexFileStateChanges {
+  pending = new Map;
+  sequence = 0;
+  key(chatId, file) {
+    return JSON.stringify([chatId, file]);
+  }
+  value(chatId, file, fallback) {
+    return this.pending.get(this.key(chatId, file))?.desired ?? fallback;
+  }
+  change(chatId, file, current, desired, send) {
+    const key = this.key(chatId, file);
+    const existing = this.pending.get(key);
+    if (existing) {
+      existing.desired = desired;
+      return;
+    }
+    const pending = { confirmed: current, desired, sent: desired, seq: ++this.sequence, send };
+    this.pending.set(key, pending);
+    send({ type: "codex_set_file_state", chatId, file, state: desired, seq: pending.seq });
+  }
+  acknowledge(chatId, file, seq, error = false) {
+    const key = this.key(chatId, file), pending = this.pending.get(key);
+    if (!pending || pending.seq !== seq)
+      return null;
+    if (error) {
+      this.pending.delete(key);
+      return pending.confirmed;
+    }
+    pending.confirmed = pending.sent;
+    if (pending.desired === pending.sent)
+      this.pending.delete(key);
+    else {
+      pending.sent = pending.desired;
+      pending.seq = ++this.sequence;
+      pending.send({ type: "codex_set_file_state", chatId, file, state: pending.sent, seq: pending.seq });
+    }
+    return pending.confirmed;
+  }
+  clear() {
+    this.pending.clear();
+  }
+}
+
 // src/ui/tabs/codex-tab.ts
+var fileStateChanges = new CodexFileStateChanges;
+function deliverCodexFileState(chatId, file, seq, error) {
+  const confirmed = fileStateChanges.acknowledge(chatId, file, seq, !!error);
+  if (error && confirmed !== null)
+    showToast("error", `Couldn't save this category's setting: ${error}`);
+  return confirmed;
+}
 var SUBTABS2 = [
   { key: "overview", label: "Overview" },
   { key: "entities", label: "Entities" },
@@ -7649,7 +7703,7 @@ function tileCount(parsed, id) {
 function tileState(state, files) {
   const states = files.map((f) => {
     const s = state.codexFileStates?.[f];
-    return s === "noInject" || s === "frozen" ? s : "on";
+    return fileStateChanges.value(state.activeChatId, f, s === "noInject" || s === "frozen" ? s : "on");
   });
   if (states.includes("on"))
     return "on";
@@ -7855,7 +7909,7 @@ function downloadCodexBackup(filename, content) {
 }
 function renderBibleTile(def, parsed, state, ctx, send, busy) {
   const chatId = state.activeChatId;
-  const st = tileState(state, def.files);
+  let st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
   const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
   const tokens = state.codexFileTokens ? def.files.reduce((acc, f) => acc + (state.codexFileTokens[f] ?? 0), 0) : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
@@ -7921,6 +7975,14 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   tile.appendChild(tools);
   tile.addEventListener("click", () => {
     cycleTileState(def, st, state, send);
+    st = tileState(state, def.files);
+    tile.classList.remove("on", "noInject", "frozen");
+    tile.classList.add(st);
+    tile.title = `${TILE_STATE_LABEL[st]} - click to cycle`;
+    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
+    tidyBtn.disabled = !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists);
+    rebuildBtn.disabled = busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled;
+    purgeBtn.disabled = busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0;
   });
   return tile;
 }
@@ -7928,7 +7990,7 @@ function cycleTileState(def, st, state, send) {
   const chatId = state.activeChatId;
   const next = st === "on" ? "noInject" : st === "noInject" ? "frozen" : "on";
   for (const f of def.files)
-    send({ type: "codex_set_file_state", chatId, file: f, state: next });
+    fileStateChanges.change(chatId, f, st, next, send);
 }
 var ENTITY_TEXT_FIELDS = ["kind", "role", "significance"];
 var ENTITY_LONG_FIELDS = ["appearance", "description", "notes"];
@@ -14019,6 +14081,8 @@ function createLessonEngine(deps) {
           if (m.state !== "frozen")
             fx.codexStaleFiles = fx.codexStaleFiles.filter((f) => f !== m.file);
         }
+        if (m.seq !== undefined)
+          deliverCodexFileState(m.chatId, m.file, m.seq);
         if (step.kind === "do" && step.expect === "codex_set_file_state" && active.doPhase === "idle") {
           markDoDone(step);
         }
@@ -15069,6 +15133,15 @@ function setup(ctx) {
         else if (viewMode() === "lesson")
           engine.onHostState();
         break;
+      case "codex_file_state_saved": {
+        const confirmed = deliverCodexFileState(msg.chatId, msg.file, msg.seq, msg.error);
+        if (confirmed !== null && lastState?.activeChatId === msg.chatId) {
+          lastState = { ...lastState, codexFileStates: { ...lastState.codexFileStates, [msg.file]: confirmed } };
+          if (activeTab === "codex")
+            renderActive();
+        }
+        break;
+      }
       case "stream_text":
         deliverStreamText(msg);
         break;
