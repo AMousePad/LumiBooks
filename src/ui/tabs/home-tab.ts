@@ -624,10 +624,9 @@ interface EntryInfo {
   label: string;
 }
 
-/** The real completion count from generation when we have it, else the
- * char-approximation of what actually gets injected. */
+/** Prompt cost comes from saved text. Provider usage may include reasoning. */
 function injectedTokens(v: ChapterView | ArcView): number {
-  return v.meta.tokenCountOutput > 0 ? v.meta.tokenCountOutput : v.contentTokens;
+  return v.contentTokens;
 }
 
 function collectEntryInfo(state: FrontendState): Map<string, EntryInfo> {
