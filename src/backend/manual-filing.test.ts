@@ -59,3 +59,30 @@ test("a full window is unchanged by the manual path", () => {
   expect(computeCoverageStats(msgs, noCoverage, p).windowAvailable).toBe(true);
   expect(selectNextChapterWindow(msgs, p).length).toBe(3);
 });
+
+test("three selected replies form one chapter despite unselected turns between them", async () => {
+  const { selectedChapterRuns } = await import("./coverage");
+  const msgs = messages(6);
+  expect(selectedChapterRuns(msgs, ["m2", "m4", "m6"])).toEqual([["m2", "m4", "m6"]]);
+  msgs[2].metadata = { lmb_excluded: true };
+  expect(selectedChapterRuns(msgs, ["m2", "m4", "m6"])).toEqual([["m2"], ["m4", "m6"]]);
+});
+
+test("watching observes a chapter without restarting it, even if viewer delivery fails", async () => {
+  const p = await import("./pipeline");
+  const seen: string[] = [];
+  p.registerPipelineCallbacks({
+    onBusyChange() {}, onToast() {}, onStateChange() {},
+    onStreamText(_u, _c, _k, snap) { seen.push(snap.content); throw new Error("disconnected viewer"); },
+  });
+  expect(p.setBusy("watch-user", "watch-chat", "chapter", "writing")).toBe(true);
+  p.appendStreamText("watch-user", "watch-chat", "chapter", "text", "first");
+  expect(() => p.setStreamWatcher("watch-user", "watch-chat", "chapter", true)).not.toThrow();
+  expect(() => p.appendStreamText("watch-user", "watch-chat", "chapter", "text", " second")).not.toThrow();
+  expect(p.getBusy("watch-user")).toHaveLength(1);
+  expect(p.setBusy("watch-user", "watch-chat", "chapter", "duplicate")).toBe(false);
+  expect(() => p.clearBusy("watch-user", "watch-chat", "chapter")).not.toThrow();
+  p.setStreamWatcher("watch-user", "watch-chat", "chapter", false);
+  expect(seen).toContain("first second");
+  expect(p.getBusy("watch-user")).toHaveLength(0);
+});

@@ -1,3 +1,4 @@
+import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -676,19 +677,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const rangeMessages = await spindle.chat.getMessages(msg.chatId);
-        const selectedIds = new Set(msg.messageIds);
-        const positions = rangeMessages
-          .map((m, i) => ({ m, i }))
-          .filter(({ m }) => selectedIds.has(m.id)
-            && !((m as { metadata?: Record<string, unknown> }).metadata?.["lmb_excluded"] === true))
-          .map(({ i }) => i);
-        const runs: string[][] = [];
-        let prev = -2;
-        for (const pos of positions) {
-          if (pos === prev + 1) runs[runs.length - 1]!.push(rangeMessages[pos]!.id);
-          else runs.push([rangeMessages[pos]!.id]);
-          prev = pos;
-        }
+        const runs = selectedChapterRuns(rangeMessages, msg.messageIds);
         for (const run of runs) {
           await createChapterFromRange(msg.chatId, run, profile, cur, userId);
         }

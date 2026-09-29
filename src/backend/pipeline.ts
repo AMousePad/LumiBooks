@@ -133,6 +133,12 @@ export function registerPipelineCallbacks(c: PipelineCallbacks): void {
   cb = c;
 }
 
+/** Viewer delivery must never abort generation or trigger a model retry. */
+function pushStreamText(userId: string, chatId: string, kind: BusyKind, snap: StreamSnapshot): void {
+  try { cb?.onStreamText(userId, chatId, kind, snap); }
+  catch (err) { warn(`stream viewer delivery failed: ${describeError(err)}`); }
+}
+
 export function setBusy(userId: string, chatId: string, kind: BusyKind, label: string): boolean {
   const key = busyKey(userId, chatId, kind);
   if (inflight.has(key)) return false;
@@ -164,7 +170,7 @@ export function clearBusy(userId: string, chatId: string, kind: BusyKind): void 
   // The frontend owns the watcher's lifetime; an empty buffer sends nothing.
   if (streamWatchers.has(key)) {
     const buf = streamBufs.get(key);
-    if (buf) cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: false });
+    if (buf) pushStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: false });
   }
   streamLastPush.delete(key);
   const fresh: BusyEntry[] = [];
@@ -272,7 +278,7 @@ export function appendStreamText(
   const now = Date.now();
   if (now - (streamLastPush.get(key) ?? 0) < STREAM_PUSH_INTERVAL_MS) return;
   streamLastPush.set(key, now);
-  cb?.onStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: true });
+  pushStreamText(userId, chatId, kind, { content: buf.content, thinking: buf.thinking, running: true });
 }
 
 export function setStreamWatcher(userId: string, chatId: string, kind: BusyKind, on: boolean): void {
@@ -283,7 +289,7 @@ export function setStreamWatcher(userId: string, chatId: string, kind: BusyKind,
   }
   streamWatchers.add(key);
   const buf = streamBufs.get(key);
-  cb?.onStreamText(userId, chatId, kind, {
+  pushStreamText(userId, chatId, kind, {
     content: buf?.content ?? "",
     thinking: buf?.thinking ?? "",
     running: inflight.has(key),

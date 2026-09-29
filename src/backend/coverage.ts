@@ -382,3 +382,18 @@ export async function resyncVisibility(
   }
   return { unhidden: unhiddenAfter, hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
 }
+
+/** A manual selection is one chapter, except across an explicit exclusion. */
+export function selectedChapterRuns(messages: ChatMessageDTO[], ids: readonly string[]): string[][] {
+  const selected = new Set(ids);
+  const runs: string[][] = [];
+  let current: string[] = [];
+  for (const message of messages) {
+    if (isExcluded(message)) {
+      if (current.length) runs.push(current);
+      current = [];
+    } else if (selected.has(message.id)) current.push(message.id);
+  }
+  if (current.length) runs.push(current);
+  return runs;
+}
