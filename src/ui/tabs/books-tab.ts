@@ -13,6 +13,7 @@ import {
   section,
   select,
   span,
+  showToast,
   textNode,
 } from "../components";
 import { confirmDelete, openEditModal } from "../modals";
@@ -131,6 +132,7 @@ export function renderBooksTab(
         renderVolumePicker(host, state, send, draw);
         renderHigherPickers(host, state, send);
       } else {
+        renderSummaryTransfer(host, state, ctx, send);
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
       }
@@ -891,7 +893,7 @@ function renderContinuity(
     }
   }
 
-  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
+  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "an imported lorebook";
   const wrap = renderContinuitySection(host, ctx, {
     emptyText: "No other chat has memories to inherit from yet",
     inherited: hasRoot
@@ -1013,4 +1015,19 @@ function renderHigherPickers(host: HTMLElement, state: FrontendState, send: (msg
     sec.body.append(actions, textNode(`${candidates.length} active source entries. Ready batches use this tier's threshold and lag from Tuning.`, "lmb-help"));
     host.appendChild(sec.wrap);
   }
+}
+
+function renderSummaryTransfer(host: HTMLElement, state: FrontendState, ctx: SpindleFrontendContext, send: (msg: FrontendToBackend) => void): void {
+  const sec = section("Summary export and import");
+  sec.body.appendChild(textNode("Export the active shelf as a regular lorebook. Import here adds its enabled entries as root memories before this chat, preserving the prose without a model call. Existing summaries and chat indexing stay intact.", "lmb-help"));
+  const actions = document.createElement("div"); actions.className = "lmb-actions";
+  const chatId = state.activeChatId!;
+  actions.append(makeButton("Export summaries", () => send({ type: "summary_export", chatId })),
+    makeButton("Import lorebook as root", async () => {
+      try {
+        const files = await ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20_000_000 });
+        if (files[0]) send({ type: "summary_import", chatId, raw: JSON.parse(new TextDecoder().decode(files[0].bytes)) });
+      } catch (err) { console.warn("[LumiBooks] summary import failed", err); showToast("error", "Could not read that lorebook JSON file"); }
+    }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
+  sec.body.appendChild(actions); host.appendChild(sec.wrap);
 }

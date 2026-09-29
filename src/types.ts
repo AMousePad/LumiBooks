@@ -234,6 +234,8 @@ export type FrontendToBackend =
   | { type: "codex_restore"; chatId: string; raw: unknown }
   | { type: "codex_undo"; chatId: string }
   | { type: "codex_adopt"; chatId: string; sourceChatId: string }
+  | { type: "summary_export"; chatId: string }
+  | { type: "summary_import"; chatId: string; raw: unknown }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
   | { type: "watch_stream"; chatId: string; kind: SummaryKind | "codex"; on: boolean }
@@ -278,4 +280,5 @@ export type BackendToFrontend =
   /** A codex run died because the model narrated instead of tool-calling:
    * the frontend offers the JSON fallback once (unless suppressed). */
   | { type: "codex_tools_hint"; chatId: string }
+  | { type: "summary_export_data"; chatId: string; filename: string; content: string }
   | { type: "codex_backup_data"; chatId: string; filename: string; content: string };

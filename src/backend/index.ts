@@ -1,3 +1,4 @@
+import { exportSummaryLorebook, importSummaryLorebook } from "./summary-backup";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
@@ -1040,6 +1041,25 @@ spindle.onFrontendMessage(async (raw, userId) => {
           ? "Memoria's shelf is already aligned, nya"
           : `Memoria resynced ${total} message${total === 1 ? "" : "s"} (${hidden} hidden, ${unhidden} unhidden)`;
         await notify(userId, "info", text);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "summary_export": {
+        const backup = await exportSummaryLorebook(msg.chatId, userId);
+        send({ type: "summary_export_data", chatId: msg.chatId,
+          filename: `lumibooks-summaries-${msg.chatId.slice(0, 8)}.json`, content: JSON.stringify(backup, null, 2) }, userId);
+        break;
+      }
+      case "summary_import": {
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          await notify(userId, "warn", "Wait for the current task to finish before importing summaries"); break;
+        }
+        if (!setBusy(userId, msg.chatId, "chapter", "Importing summary roots")) break;
+        try {
+          const count = await importSummaryLorebook(msg.chatId, userId, msg.raw);
+          await notify(userId, "success", `Imported ${count} summaries as root memories`);
+        } finally { clearBusy(userId, msg.chatId, "chapter"); }
         await pushState(userId, msg.chatId);
         break;
       }

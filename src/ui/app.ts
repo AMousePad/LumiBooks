@@ -293,6 +293,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
       case "stream_text":
         deliverStreamText(msg);
         break;
+      case "summary_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
         break;
