@@ -762,12 +762,13 @@ function renderBreakdown(state: FrontendState): HTMLElement {
     }
   }
 
-  if (codexTokens > 0) wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, true));
-  if (activeVolumes.length) wrap.appendChild(row("volume", `Volumes and higher (${activeVolumes.length})`, volTokens, false));
-  if (activeArcs.length) wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, false));
-  if (activeChapters.length) wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, false));
+  if (codexTokens > 0) wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, state.codexTokensApproximate));
+  if (activeVolumes.length) wrap.appendChild(row("volume", `Volumes and higher (${activeVolumes.length})`, volTokens, true));
+  if (activeArcs.length) wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, true));
+  if (activeChapters.length) wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, true));
   if (tailCount > 0) wrap.appendChild(row("free", `Uncompressed tail (${tailCount} msgs)`, tailTokens, true));
   if (excludedCount > 0) wrap.appendChild(row("excluded", `Excluded (${excludedCount} msgs)`, excludedTokens, true));
+  wrap.title = "Codex counts include enabled constant lorebook entries. Keyword-triggered entries add tokens when activated; host lorebook budgets and prompt settings can affect final inclusion.";
   const total = codexTokens + volTokens + arcTokens + chapTokens + tailTokens + excludedTokens;
   wrap.appendChild(row("total", "Story context in the prompt", total, true));
   return wrap;

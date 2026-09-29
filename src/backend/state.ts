@@ -4,14 +4,14 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { ChapterView, ArcView, FrontendState, ConnectionOption, MessageStub, RegexScriptOption, RootSourceOption } from "../types";
 import type { ChatMessage } from "./coverage";
 import type { LMBProfile } from "../shared";
-import { CODEX_FILE_KEYS, approximateTokensFromChars } from "../shared";
+import { approximateTokensFromChars } from "../shared";
 import { loadSettings } from "./storage";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
 import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding, type LMBEntry } from "./world-book";
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
-import { getCodexFileTokens, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
+import { getCodexTokenCounts, getCodexPanelState, getCodexRevision, getCodexStatus } from "./codex/index";
 import { codexUndoInfo } from "./codex/backup";
 import { listCodexChatIds, loadCursor } from "./codex/store";
 import { effectiveProfile, ensureLessons } from "./lessons";
@@ -136,6 +136,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexStaleFiles: [],
     codexRefreshPending: [],
     codexFileTokens: {},
+    codexTokensApproximate: true,
     codexRevision: 0,
     lessons,
   };
@@ -254,15 +255,9 @@ export async function buildState(userId: string, requestedChatId?: string | null
     ? ((await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim()
       || codexRootOrigin.slice(0, 8))
     : null;
-  const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
-  // Constant entries only (timeline + threads), keyworded records cost per scene.
-  const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
-    ? (codexProfile.codexForceConstant ? CODEX_FILE_KEYS : ["timeline", "threads"] as const).reduce((acc, k) => {
-        const st = (codexPanel.fileStates as Record<string, string>)[k];
-        if (st === "noInject" || st === "frozen") return acc;
-        return acc + (codexFileTokens[k] ?? 0);
-      }, 0)
-    : 0;
+  const codexCounts = await getCodexTokenCounts(chat.id, userId, codexProfile).catch(() => ({ files: {}, constant: 0, approximate: true }));
+  const codexFileTokens = codexCounts.files;
+  const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? codexCounts.constant : 0;
 
   const rootEntries = entries.filter((e) => e.meta.isRoot);
   const rootOrigin = rootEntries.find((e) => e.meta.rootOrigin)?.meta.rootOrigin ?? null;
@@ -306,6 +301,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexStaleFiles: codexPanel.staleFiles,
     codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens,
+    codexTokensApproximate: codexCounts.approximate,
     codexRevision: getCodexRevision(chat.id),
   };
 }

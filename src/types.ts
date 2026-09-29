@@ -160,7 +160,7 @@ export interface FrontendState {
   /** Chat this codex was carried over from, mirroring rootOrigin for the shelf. */
   codexRootOrigin: string | null;
   codexRootOriginName: string | null;
-  /** Approx tokens of the constant codex entries (timeline + threads); the
+  /** Tokens of enabled constant codex lorebook entries; the
    * keyword-retrieved records cost extra only when a scene activates them. */
   codexInjectedTokens: number;
   /** Per-file inject/update switches; absent key = "on". */
@@ -169,8 +169,10 @@ export interface FrontendState {
   codexStaleFiles: string[];
   /** Re-enabled files awaiting the one-pass catch-up refresh. */
   codexRefreshPending: string[];
-  /** Approx prompt tokens per codex file, priced on the rendered injection text. */
+  /** Tokenized saved prose per codex file, including non-injected files. */
   codexFileTokens: Record<string, number>;
+  /** The host could not provide an exact tokenizer, or content was unreadable. */
+  codexTokensApproximate: boolean;
   /** Bumped on every codex mutation; the Codex tab refetches file contents
    * when it moves past the revision its cache was filled from. */
   codexRevision: number;

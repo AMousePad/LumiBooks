@@ -1,3 +1,4 @@
+import { measureCodexTokens, type CodexTokenCounts } from "./tokens";
 import { frozenCodexFiles } from "./prompt";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -1102,7 +1103,7 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
 const INJECTION_CACHE_TTL_MS = 60_000;
 const INJECTION_CACHE_CAP = 200;
 const injectionTextCache = new Map<string, { at: number; text: string | null }>();
-const fileTokensCache = new Map<string, { at: number; tokens: Record<string, number> }>();
+const fileTokensCache = new Map<string, { at: number; userId: string; forceConstant: boolean; counts: CodexTokenCounts }>();
 
 /** Bumped on every codex mutation. The frontend compares it against the
  * revision its cached file contents came from and refetches on a mismatch,
@@ -1129,35 +1130,24 @@ export function invalidateCodexInjectionCache(chatId?: string): void {
   }
 }
 
-/** Approx prompt cost per file, priced on the RENDERED injection text (what
- * actually ships), not the raw JSON with its syntax overhead. */
-export async function getCodexFileTokens(chatId: string, userId: string, profile: LMBProfile): Promise<Record<string, number>> {
+/** Saved content and actual constant lorebook cost, using the story tokenizer. */
+export async function getCodexTokenCounts(chatId: string, userId: string, profile: LMBProfile): Promise<CodexTokenCounts> {
   const cached = fileTokensCache.get(chatId);
-  if (cached && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.tokens;
-  const tokens: Record<string, number> = {};
-  let exists: boolean;
-  try {
-    exists = (await codexPresence(chatId, userId)) === "present";
-  } catch (err) {
-    warn(`codex file tokens skipped, storage fault: ${describeError(err)}`);
-    return tokens;
-  }
-  if (exists) {
+  if (cached && cached.userId === userId && cached.forceConstant === profile.codexForceConstant && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
+  let counts: CodexTokenCounts = { files: {}, constant: 0, approximate: false };
+  if ((await codexPresence(chatId, userId)) === "present") {
     const cursor = await loadCursor(chatId, userId);
-    const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
-    const { bundle } = await loadCodex(chatId, userId, { relationsTable: diskMode });
-    const sections = renderCodexFileSections(bundle);
-    for (const key of CODEX_FILE_KEYS) {
-      tokens[key] = sections[key] ? approximateTokensFromChars(sections[key].length) : 0;
-    }
+    const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: cursor.relationsTableMode ?? profile.codexRelationsTable });
+    counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexForceConstant);
+    counts.approximate ||= problems.length > 0;
   }
-  fileTokensCache.set(chatId, { at: Date.now(), tokens });
+  fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value as string | undefined;
     if (oldest === undefined) break;
     fileTokensCache.delete(oldest);
   }
-  return tokens;
+  return counts;
 }
 
 /** Rendered codex block for prompt injection, or null when there is nothing to say. */

@@ -873,7 +873,7 @@ function renderBibleTile(
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = `~${formatTokens(tokens)} tokens`;
+  s.textContent = `${state.codexTokensApproximate ? "~" : ""}${formatTokens(tokens)} tokens`;
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
   stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
