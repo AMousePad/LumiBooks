@@ -31,6 +31,14 @@ import {
 import { confirmDelete, requestCodexRebuild, requestCodexTidy, requestCodexUpdate } from "../modals";
 import { renderContinuitySection } from "../continuity";
 import { renderCodexTabLock } from "../lessons/seal";
+import { CodexFileStateChanges } from "../codex-file-state";
+
+const fileStateChanges = new CodexFileStateChanges();
+export function deliverCodexFileState(chatId: string, file: string, seq: number, error?: string): "on" | "noInject" | "frozen" | null {
+  const confirmed = fileStateChanges.acknowledge(chatId, file, seq, !!error);
+  if (error && confirmed !== null) showToast("error", `Couldn't save this category's setting: ${error}`);
+  return confirmed;
+}
 
 type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore" | "secrets" | "manage";
 
@@ -566,7 +574,7 @@ function tileCount(parsed: ParsedCodex, id: string): number {
 function tileState(state: FrontendState, files: CodexFileKey[]): FileState {
   const states = files.map((f) => {
     const s = state.codexFileStates?.[f];
-    return s === "noInject" || s === "frozen" ? s : "on";
+    return fileStateChanges.value(state.activeChatId!, f, s === "noInject" || s === "frozen" ? s : "on");
   });
   if (states.includes("on")) return "on";
   if (states.includes("noInject")) return "noInject";
@@ -851,7 +859,7 @@ function renderBibleTile(
   busy: boolean,
 ): HTMLElement {
   const chatId = state.activeChatId!;
-  const st = tileState(state, def.files);
+  let st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
   const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
   // Rendered-injection pricing from the backend; raw JSON length (with its
@@ -925,6 +933,14 @@ function renderBibleTile(
 
   tile.addEventListener("click", () => {
     cycleTileState(def, st, state, send);
+    st = tileState(state, def.files);
+    tile.classList.remove("on", "noInject", "frozen");
+    tile.classList.add(st);
+    tile.title = `${TILE_STATE_LABEL[st]} - click to cycle`;
+    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
+    tidyBtn.disabled = !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists);
+    rebuildBtn.disabled = busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled;
+    purgeBtn.disabled = busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0;
   });
   return tile;
 }
@@ -939,7 +955,7 @@ function cycleTileState(
 ): void {
   const chatId = state.activeChatId!;
   const next: FileState = st === "on" ? "noInject" : st === "noInject" ? "frozen" : "on";
-  for (const f of def.files) send({ type: "codex_set_file_state", chatId, file: f, state: next });
+  for (const f of def.files) fileStateChanges.change(chatId, f, st, next, send);
 }
 
 /* ------------------------------------------------------------- entities */

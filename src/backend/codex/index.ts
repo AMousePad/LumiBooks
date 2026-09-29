@@ -1124,11 +1124,11 @@ export function getCodexRevision(chatId: string): number {
   return codexRevisions.get(chatId) ?? 0;
 }
 
-export function invalidateCodexInjectionCache(chatId?: string): void {
+export function invalidateCodexInjectionCache(chatId?: string, contentChanged = true): void {
   if (chatId) {
     injectionTextCache.delete(chatId);
     fileTokensCache.delete(chatId);
-    codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
+    if (contentChanged) codexRevisions.set(chatId, (codexRevisions.get(chatId) ?? 0) + 1);
     while (codexRevisions.size > INJECTION_CACHE_CAP) {
       const oldest = codexRevisions.keys().next().value as string | undefined;
       if (oldest === undefined || oldest === chatId) break;
@@ -1294,7 +1294,8 @@ export async function setCodexFileState(
     }
     await saveCursor(chatId, cursor, userId);
   });
-  invalidateCodexInjectionCache(chatId);
+  invalidateCodexInjectionCache(chatId, false);
+  // Only cursor policy changed; cached file contents are still current.
   // Mirror the switch onto the synced entries (disabled flag, and relations
   // folding in or out of entity entries).
   await syncEntriesGuarded(chatId, userId, relationsTableFallback);

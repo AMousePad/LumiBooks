@@ -5,7 +5,7 @@ import { preserveScroll, scrollPaneTop, showToast } from "./components";
 import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
-import { codexWantsRefresh, deliverCodexFiles, downloadCodexBackup, renderCodexTab } from "./tabs/codex-tab";
+import { codexWantsRefresh, deliverCodexFiles, deliverCodexFileState, downloadCodexBackup, renderCodexTab } from "./tabs/codex-tab";
 import { renderTuningTab } from "./tabs/tuning-tab";
 import { renderAboutTab } from "./tabs/about-tab";
 import { createLessonEngine } from "./lessons/engine";
@@ -290,6 +290,14 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         // A real-mode lesson pane showing the codex needs the fresh files too.
         else if (viewMode() === "lesson") engine.onHostState();
         break;
+      case "codex_file_state_saved": {
+        const confirmed = deliverCodexFileState(msg.chatId, msg.file, msg.seq, msg.error);
+        if (confirmed !== null && lastState?.activeChatId === msg.chatId) {
+          lastState = { ...lastState, codexFileStates: { ...lastState.codexFileStates, [msg.file]: confirmed } };
+          if (activeTab === "codex") renderActive();
+        }
+        break;
+      }
       case "stream_text":
         deliverStreamText(msg);
         break;

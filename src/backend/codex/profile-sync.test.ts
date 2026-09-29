@@ -72,3 +72,18 @@ test("a corrupt old chat must not prevent resyncing healthy chats", async () => 
   expect(failures[0]?.error).toContain("world.json");
   expect(entries.some((e) => e.constant && e.content.includes("Weather"))).toBe(true);
 });
+
+test("category switches refresh injection counts without invalidating cached file contents", async () => {
+  const { setCodexFileState, getCodexRevision, getCodexTokenCounts, invalidateCodexInjectionCache } = await import("./index");
+  profile.codexForceConstant = true;
+  await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
+  invalidateCodexInjectionCache(chat);
+  const revision = getCodexRevision(chat);
+  const content = structuredClone(data.get(`codex/${chat}/world.json`));
+  expect((await getCodexTokenCounts(chat, user, profile)).constant).toBeGreaterThan(0);
+  await setCodexFileState(chat, user, "world", "noInject");
+  expect(getCodexRevision(chat)).toBe(revision);
+  expect((await getCodexTokenCounts(chat, user, profile)).constant).toBe(0);
+  expect(data.get(`codex/${chat}/world.json`)).toEqual(content);
+  expect(entries.find((e) => e.content.includes("Weather"))?.disabled).toBe(true);
+});

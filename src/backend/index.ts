@@ -1620,9 +1620,16 @@ spindle.onFrontendMessage(async (raw, userId) => {
           send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
           break;
         }
-        const cur = await loadSettings(userId);
-        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
-        await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
+        let profile: ReturnType<typeof normalizeProfile> = null;
+        try {
+          const cur = await loadSettings(userId);
+          profile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? null;
+          await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
+        } catch (err) {
+          if (msg.seq !== undefined) send({ type: "codex_file_state_saved", chatId: msg.chatId, file: msg.file, state: msg.state, seq: msg.seq, error: describeError(err) }, userId);
+          throw err;
+        }
+        if (msg.seq !== undefined) send({ type: "codex_file_state_saved", chatId: msg.chatId, file: msg.file, state: msg.state, seq: msg.seq }, userId);
         if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "states");
         await pushState(userId, msg.chatId);
         break;

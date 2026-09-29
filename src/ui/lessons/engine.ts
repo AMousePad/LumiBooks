@@ -11,7 +11,7 @@ import { lessonMark, makeButton, showToast } from "../components";
 import { APP_TABS, type AppTabKey } from "../tab-meta";
 import { renderHomeTab, resetHomeTabLocal } from "../tabs/home-tab";
 import { renderBooksTab, resetBooksTabLocal } from "../tabs/books-tab";
-import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal } from "../tabs/codex-tab";
+import { deliverCodexFiles, deliverCodexFileState, renderCodexTab, resetCodexTabLocal } from "../tabs/codex-tab";
 import { renderTuningTab, resetTuningTabLocal } from "../tabs/tuning-tab";
 import { setSamplerView } from "../tabs/profile-tab";
 import { setPromptsCategory } from "../tabs/prompts-tab";
@@ -514,6 +514,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           fx.codexFileStates = states;
           if (m.state !== "frozen") fx.codexStaleFiles = fx.codexStaleFiles.filter((f) => f !== m.file);
         }
+        if (m.seq !== undefined) deliverCodexFileState(m.chatId, m.file, m.seq);
         if (step.kind === "do" && step.expect === "codex_set_file_state" && active.doPhase === "idle") {
           markDoDone(step);
         }
