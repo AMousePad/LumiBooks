@@ -5018,7 +5018,7 @@ function renderOverview(host, state, send) {
     arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
     chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length
   };
-  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "active vol · arc · chap", "Uncompressed summaries. Hover for existing higher tiers.");
+  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap", "Uncompressed summaries. Hover for existing higher tiers.");
   const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && !e.isRoot && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
   if (higherCounts.length) {
     shelfTile.classList.add("lmb-has-higher");
