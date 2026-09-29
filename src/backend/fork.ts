@@ -361,6 +361,9 @@ async function cloneShelfForFork(
       };
     }
     const { ids, first, last } = remap(entry.meta.msgIds);
+    // Summary prose cannot be trimmed by trimming its coverage. If any of its
+    // story belongs to the abandoned branch, let the fork summarize it anew.
+    if (ids.length !== entry.meta.msgIds.length) return null;
     if (entry.meta.tier === 1) {
       if (ids.length === 0) return null;
       return { msgIds: ids, firstMsgIdx: first, lastMsgIdx: last, extra: { chatId: forkChatId } };
@@ -368,6 +371,7 @@ async function cloneShelfForFork(
     const survived = (entry.meta.sourceChapterEntryIds ?? [])
       .map((oldId) => ctx.idMap.get(oldId))
       .filter((x): x is string => typeof x === "string");
+    if (survived.length !== (entry.meta.sourceChapterEntryIds ?? []).length) return null;
     if (ids.length === 0 && survived.length === 0) return null;
     let firstIdx = first;
     let lastIdx = last;
