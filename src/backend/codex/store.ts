@@ -131,6 +131,10 @@ export async function loadCursor(chatId: string, userId: string): Promise<CodexC
   }
   const raw = read.state === "ok" ? (read.value as Partial<CodexCursor> | null) : null;
   if (!raw || typeof raw !== "object") return emptyCursor();
+  return normalizeCursor(raw);
+}
+
+export function normalizeCursor(raw: Partial<CodexCursor>): CodexCursor {
   const base = emptyCursor();
   const fileStates: Record<string, CodexFileState> = {};
   if (raw.fileStates && typeof raw.fileStates === "object") {

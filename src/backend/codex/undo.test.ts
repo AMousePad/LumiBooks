@@ -76,7 +76,7 @@ test("undo rolls back the files and the consumed-message marks together", async 
   expect(after.runs).toBe(5);
 });
 
-test("a plain restore leaves consumption alone", async () => {
+test("a same-chat restore recovers indexing alongside the files", async () => {
   await seedAndAdvance();
   const snap = await readCodexUndo(CHAT, U);
   const parsed = parseCodexBackup(snap, false);
@@ -84,8 +84,21 @@ test("a plain restore leaves consumption alone", async () => {
 
   await applyCodexBackup(CHAT, U, parsed);
 
-  // A backup can come from another chat, so importing its marks would be wrong.
+  // Same-chat imports retain the coverage recorded with these files.
   const after = await loadCursor(CHAT, U);
-  expect(after.lastMsgId).toBe("m80");
-  expect(after.runs).toBe(6);
+  expect(after.lastMsgId).toBe("m40");
+  expect(after.runs).toBe(5);
 });
+
+for (const mode of ["foreign", "legacy"] as const) {
+  test(`${mode} backup preserves the destination indexing`, async () => {
+    await seedAndAdvance();
+    const snap = (await readCodexUndo(CHAT, U))!;
+    if (mode === "foreign") snap.chatId = "another-chat";
+    else delete snap.cursor;
+    const parsed = parseCodexBackup(snap, false);
+    if ("error" in parsed) throw new Error(parsed.error);
+    await applyCodexBackup(CHAT, U, parsed);
+    expect((await loadCursor(CHAT, U)).lastMsgId).toBe("m80");
+  });
+}

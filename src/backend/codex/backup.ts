@@ -3,7 +3,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
 import { describeError, warn } from "../runtime";
 import { isCodexFileKey, validateCodexFile, type CodexFileValue } from "./schema";
-import { loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./store";
+import { loadCursor, normalizeCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./store";
 import type { CodexCursor, CodexFileState } from "./store";
 
 export const CODEX_BACKUP_KIND = "lumibooks.codex.backup";
@@ -17,6 +17,7 @@ export interface CodexBackup {
   files: Record<string, string>;
   fileStates: Record<string, CodexFileState>;
   relationsTableMode: boolean | null;
+  cursor?: CodexCursor;
 }
 
 export async function buildCodexBackup(chatId: string, userId: string): Promise<CodexBackup> {
@@ -32,10 +33,13 @@ export async function buildCodexBackup(chatId: string, userId: string): Promise<
     files,
     fileStates: cursor.fileStates,
     relationsTableMode: cursor.relationsTableMode,
+    cursor,
   };
 }
 
 export interface ParsedBackup {
+  chatId?: string;
+  cursor?: CodexCursor;
   values: { key: CodexFileKey; value: CodexFileValue }[];
   fileStates: Record<string, CodexFileState>;
   relationsTableMode: boolean | null;
@@ -75,7 +79,10 @@ export function parseCodexBackup(raw: unknown, fallbackRelationsTable: boolean):
     if (!isCodexFileKey(key)) continue;
     if (state === "on" || state === "noInject" || state === "frozen") fileStates[key] = state;
   }
-  return { values, fileStates, relationsTableMode };
+  return { values, fileStates, relationsTableMode,
+    chatId: typeof v.chatId === "string" ? v.chatId : undefined,
+    cursor: v.cursor && typeof v.cursor === "object" ? normalizeCursor(v.cursor) : undefined,
+  };
 }
 
 const UNDO_DIR = "codex-undo" as const;
@@ -89,7 +96,7 @@ export interface CodexUndoInfo {
   reason: string;
 }
 
-/** The undo snapshot carries the whole cursor, unlike a user-facing backup.
+/** The undo snapshot carries the whole cursor alongside the files.
  * Rolling back the files without it would leave the consumed-message marks
  * advanced, so the undone turns would never be read again. */
 interface CodexUndoSnapshot extends CodexBackup, CodexUndoInfo {
@@ -137,15 +144,16 @@ export async function applyCodexBackup(
   chatId: string,
   userId: string,
   parsed: ParsedBackup,
-  /** Undo only: put consumption back exactly as it was. A user-facing restore
-   * must not, or a backup from another chat would import its message marks. */
+  /** Undo can explicitly supply its cursor; ordinary imports restore marks
+   * only when the backup belongs to this same chat. */
   restoreCursor?: CodexCursor,
 ): Promise<void> {
   for (const { key, value } of parsed.values) {
     await saveCodexFile(chatId, key, value, userId);
   }
   await withCursorLock(chatId, userId, async () => {
-    const cur = restoreCursor ? { ...restoreCursor } : await loadCursor(chatId, userId);
+    const saved = restoreCursor ?? (parsed.chatId === chatId ? parsed.cursor : undefined);
+    const cur = saved ? structuredClone(saved) : await loadCursor(chatId, userId);
     cur.fileStates = parsed.fileStates;
     if (parsed.relationsTableMode !== null) cur.relationsTableMode = parsed.relationsTableMode;
     cur.updatedAt = Date.now();
