@@ -503,6 +503,17 @@ async function retryLastFailure(
 }
 
 
+async function syncProfileSettings(userId: string): Promise<void> {
+  try {
+    const failures = await syncCodexProfiles(userId);
+    if (failures.length) await notify(userId, "warn",
+      `Profile saved, but Codex injection settings could not sync to ${failures.length} chat(s): ${failures.slice(0, 3).map((f) => f.chatId).join(", ")}. Other chats were synced. Reapply the settings after resolving the errors.`);
+  } catch (err) {
+    warn(`Codex profile sync failed: ${describeError(err)}`);
+    await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync: ${describeError(err)}`);
+  }
+}
+
 spindle.onFrontendMessage(async (raw, userId) => {
   setLastFrontendUserId(userId);
   const msg = raw as FrontendToBackend;
@@ -570,7 +581,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (id === activeBefore && ["codexForceConstant", "codexInjectionPosition", "codexInjectionDepth"].some((key) => key in incoming)) {
-          await syncCodexProfiles(userId);
+          await syncProfileSettings(userId);
         }
         // The effective-mode off transition (extra toggle OR codex disable)
         // must clean up pending ghosts here too, independent of automation.
@@ -625,7 +636,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         // Deleting the active profile falls back to another one, which may
         // lack effective extra mode: same ghost cleanup as set_active_profile.
-        await syncCodexProfiles(userId);
+        await syncProfileSettings(userId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
         }
@@ -638,7 +649,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (!cur.profiles.some((p) => p.id === msg.profileId)) return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
-        await syncCodexProfiles(userId);
+        await syncProfileSettings(userId);
         // Switching to a profile without effective extra mode strands any
         // pending ghosts: they belong to the chat, not the profile.
         if (msg.chatId) {

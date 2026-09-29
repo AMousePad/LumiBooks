@@ -258,6 +258,15 @@ export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
     role: "system" };
 }
-export async function syncCodexProfiles(userId: string): Promise<void> {
-  for (const chatId of await listCodexChatIds(userId)) await syncCodexEntries(chatId, userId);
+export async function syncCodexProfiles(userId: string): Promise<Array<{ chatId: string; error: string }>> {
+  const failures: Array<{ chatId: string; error: string }> = [];
+  for (const chatId of await listCodexChatIds(userId)) {
+    try { await syncCodexEntries(chatId, userId); }
+    catch (err) {
+      const error = describeError(err);
+      failures.push({ chatId, error });
+      warn(`Codex profile sync failed for ${chatId}: ${error}`);
+    }
+  }
+  return failures;
 }
