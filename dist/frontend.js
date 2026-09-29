@@ -2477,6 +2477,13 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   }
   .lmb-busy-dot { transform: rotate(45deg); }
 }
+.lmb-higher-peek { display: none; }
+.lmb-has-higher:hover > .lmb-higher-peek,
+.lmb-has-higher:focus-within > .lmb-higher-peek { display: block; }
+.lmb-spine-seg.series, .lmb-spine-swatch.series { background: #8e73cf; }
+.lmb-spine-seg.chronicle, .lmb-spine-swatch.chronicle { background: #ab72c9; }
+.lmb-spine-seg.epic, .lmb-spine-swatch.epic { background: #cb77ab; }
+.lmb-spine-seg.library, .lmb-spine-swatch.library { background: #d19472; }
 ` + LESSON_STYLES;
 var ICON_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2873,351 +2880,6 @@ function showToast(tone, text) {
     el.classList.add("lmb-toast-leaving");
     setTimeout(() => el.remove(), 200);
   }, duration);
-}
-
-// src/ui/modals.ts
-function codexCatchupWarnings(state) {
-  const hasBooks = state.chapters.some((c) => !c.isRoot) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot);
-  const autoBooks = state.activeProfile.autoCreate && !state.activeProfile.showMemoryPreviews;
-  const bigTailNoAuto = state.coverage.approxUncoveredTokens > 150000 && !autoBooks;
-  const booksWarning = !hasBooks ? "This chat has no filed chapters yet, so fast and ultra fast would read the raw story anyway. File chapters first (Home, File all) to get the real speedup." : bigTailNoAuto ? "The unfiled tail of this chat is very large and will not be filed first, so the final raw pass stays huge. File chapters first (Home, File all) for the full speedup." : null;
-  return { booksWarning, autoBooks };
-}
-function requestCodexUpdate(state, chatId, send) {
-  if ((state.codexBacklogPasses ?? 0) <= 1) {
-    send({ type: "codex_update_now", chatId });
-    return;
-  }
-  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
-  showCodexCatchupModal({
-    lead: `${state.codexBacklog ?? 0} message${(state.codexBacklog ?? 0) === 1 ? "" : "s"} are waiting, about ${state.codexBacklogPasses} passes at the current window. Pick how Memoria catches up.`,
-    booksWarning,
-    autoBooks,
-    onPick: (mode) => send({ type: "codex_update_now", chatId, mode })
-  });
-}
-function requestCodexRebuild(state, chatId, send) {
-  const prof = state.activeProfile;
-  const total = state.messages.length;
-  const passes = prof.codexWindowUnit === "messages" ? Math.max(1, Math.ceil(total / Math.max(1, prof.codexWindowValue))) : Math.max(1, Math.ceil(state.messages.reduce((a, m) => a + m.approxTokens, 0) / Math.max(1000, prof.codexWindowValue)));
-  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
-  showCodexCatchupModal({
-    title: "Rebuild the codex",
-    lead: `Memoria will erase the story bible and re-read all ${total} messages, about ${passes} slow passes. Pick how she rebuilds.`,
-    booksWarning,
-    autoBooks,
-    onPick: (mode) => send({ type: "codex_rebuild", chatId, mode })
-  });
-}
-var catchupClose = null;
-function closeCodexCatchupModal() {
-  catchupClose?.();
-}
-function showCodexCatchupModal(opts) {
-  if (document.querySelector(".lmb-catchup"))
-    return;
-  const overlay = document.createElement("div");
-  overlay.className = "lmb-preview-overlay lmb-catchup";
-  const modal = document.createElement("div");
-  modal.className = "lmb-preview-modal";
-  modal.style.width = "min(600px, 100%)";
-  const close = () => {
-    document.removeEventListener("keydown", onKey);
-    if (catchupClose === close)
-      catchupClose = null;
-    overlay.remove();
-  };
-  catchupClose = close;
-  const onKey = (e) => {
-    if (e.key === "Escape")
-      close();
-  };
-  document.addEventListener("keydown", onKey);
-  const header = document.createElement("div");
-  header.className = "lmb-preview-modal__header";
-  const title = document.createElement("h3");
-  title.textContent = opts.title ?? "The codex is far behind";
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close");
-  closeBtn.addEventListener("click", close);
-  header.append(title, closeBtn);
-  modal.appendChild(header);
-  const body = document.createElement("div");
-  body.className = "lmb-preview-modal__body";
-  const paragraphs = [
-    opts.lead,
-    "Ultra fast reads the story's current context in one single pass: every filed summary plus the raw newest messages. The fastest, with the least detail.",
-    "Fast replays your filed chapter summaries pass by pass and reads raw messages only for the final stretch. Around 15x faster than slow while keeping most of the detail.",
-    "Slow replays every raw message window by window. The most thorough, and on a long chat it can take hours."
-  ];
-  if (opts.autoBooks) {
-    paragraphs.push("Automation is on, so fast and ultra fast first bring this chat's chapters and arcs fully up to date.");
-  }
-  paragraphs.push("Fast and ultra fast need the codex connection's context window to be at least as large as your story model's.");
-  for (const text of paragraphs) {
-    const p = document.createElement("div");
-    p.className = "lmb-help";
-    p.style.fontSize = "14px";
-    p.textContent = text;
-    body.appendChild(p);
-  }
-  if (opts.booksWarning) {
-    const w = document.createElement("div");
-    w.className = "lmb-help";
-    w.style.fontSize = "14px";
-    w.style.fontWeight = "600";
-    w.textContent = `⚠ ${opts.booksWarning}`;
-    body.appendChild(w);
-  }
-  modal.appendChild(body);
-  const pick = (mode) => () => {
-    close();
-    opts.onPick(mode);
-  };
-  const footer = document.createElement("div");
-  footer.className = "lmb-preview-modal__footer";
-  footer.append(makeButton("Slow", pick("slow"), { danger: true, title: "Not recommended. Replays every raw message window by window and can take hours." }), makeButton("Fast", pick("fast"), { title: "Replay the filed summaries, then one raw pass for the tail" }), makeButton("Ultra fast", pick("ultra"), { primary: true, title: "One single pass over the filed summaries plus the raw tail" }));
-  modal.appendChild(footer);
-  overlay.appendChild(modal);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay)
-      close();
-  });
-  document.body.appendChild(overlay);
-}
-function showCodexToolsHintModal(profileId, send) {
-  if (document.querySelector(".lmb-tools-hint"))
-    return;
-  const overlay = document.createElement("div");
-  overlay.className = "lmb-preview-overlay lmb-tools-hint";
-  const modal = document.createElement("div");
-  modal.className = "lmb-preview-modal";
-  modal.style.width = "min(500px, 100%)";
-  let dontShowAgain = false;
-  const close = () => {
-    document.removeEventListener("keydown", onKey);
-    if (dontShowAgain) {
-      send({ type: "save_settings", patch: { suppressToolCallingPrompt: true } });
-    }
-    overlay.remove();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape")
-      close();
-  };
-  document.addEventListener("keydown", onKey);
-  const header = document.createElement("div");
-  header.className = "lmb-preview-modal__header";
-  const title = document.createElement("h3");
-  title.textContent = "Tool calls aren't getting through";
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close");
-  closeBtn.addEventListener("click", close);
-  header.append(title, closeBtn);
-  modal.appendChild(header);
-  const body = document.createElement("div");
-  body.className = "lmb-preview-modal__body";
-  const paragraphs = [
-    "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
-    "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
-    "You can change this anytime under Tuning → Connection → Codex → Use tool calls, or pick a tool-capable model under Codex connection."
-  ];
-  for (const text of paragraphs) {
-    const p = document.createElement("div");
-    p.className = "lmb-help";
-    p.style.fontSize = "12px";
-    p.textContent = text;
-    body.appendChild(p);
-  }
-  const dontShow = document.createElement("label");
-  dontShow.className = "lmb-check";
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
-  cb.addEventListener("change", () => {
-    dontShowAgain = cb.checked;
-  });
-  const cbLabel = document.createElement("span");
-  cbLabel.className = "lmb-check-hint";
-  cbLabel.textContent = "Don't show this again";
-  dontShow.append(cb, cbLabel);
-  body.appendChild(dontShow);
-  modal.appendChild(body);
-  const footer = document.createElement("div");
-  footer.className = "lmb-preview-modal__footer";
-  footer.append(makeButton("Keep tool calls", close, { small: true }), makeButton("Switch to JSON mode", () => {
-    send({ type: "save_profile", profile: { id: profileId, codexUseTools: false } });
-    close();
-  }, { small: true, primary: true }));
-  modal.appendChild(footer);
-  overlay.appendChild(modal);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay)
-      close();
-  });
-  document.body.appendChild(overlay);
-}
-function openEditModal(ctx, title, fields, onSave) {
-  const handle = ctx.ui.showModal({ title, width: 640, maxHeight: 720 });
-  const form = document.createElement("div");
-  form.className = "lmb-modal-form";
-  handle.root.appendChild(form);
-  const labelWrap = document.createElement("div");
-  labelWrap.className = "lmb-field";
-  const lbl = document.createElement("div");
-  lbl.className = "lmb-field-label";
-  lbl.textContent = "Label";
-  const labelInput = textInput({ value: fields.comment, placeholder: "Label" });
-  labelWrap.append(lbl, labelInput);
-  form.appendChild(labelWrap);
-  const contentWrap = document.createElement("div");
-  contentWrap.className = "lmb-field";
-  const cLbl = document.createElement("div");
-  cLbl.className = "lmb-field-label";
-  cLbl.textContent = "Content";
-  const contentInput = textArea({ value: fields.content, rows: 16 });
-  contentWrap.append(cLbl, contentInput);
-  form.appendChild(contentWrap);
-  const actions = document.createElement("div");
-  actions.className = "lmb-modal-actions";
-  actions.append(makeButton("Cancel", () => handle.dismiss()), makeButton("Save", () => {
-    onSave({ comment: labelInput.value, content: contentInput.value });
-    handle.dismiss();
-  }, { primary: true }));
-  form.appendChild(actions);
-}
-async function confirmDelete(ctx, title, message) {
-  try {
-    const r = await ctx.ui.showConfirm({
-      title,
-      message,
-      variant: "danger",
-      confirmLabel: "Delete",
-      cancelLabel: "Cancel"
-    });
-    return !!r.confirmed;
-  } catch {
-    return window.confirm(message);
-  }
-}
-function showDryRunModal(kind, messages, diagnostics) {
-  const overlay = document.createElement("div");
-  overlay.className = "lmb-preview-overlay";
-  const modal = document.createElement("div");
-  modal.className = "lmb-preview-modal";
-  const close = () => {
-    document.removeEventListener("keydown", onKey);
-    overlay.remove();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape")
-      close();
-  };
-  document.addEventListener("keydown", onKey);
-  const header = document.createElement("div");
-  header.className = "lmb-preview-modal__header";
-  const title = document.createElement("h3");
-  title.textContent = `Dry run: ${kind === "arc" ? "Arc" : kind === "volume" ? "Volume" : kind === "codex" ? "Codex" : "Chapter"}`;
-  header.appendChild(title);
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close dry run");
-  closeBtn.addEventListener("click", close);
-  header.appendChild(closeBtn);
-  modal.appendChild(header);
-  const body = document.createElement("div");
-  body.className = "lmb-preview-modal__body";
-  if (diagnostics.length > 0) {
-    const diag = document.createElement("div");
-    diag.className = "lmb-preview-modal__diagnostics";
-    const diagTitle = document.createElement("h4");
-    diagTitle.textContent = "Diagnostics";
-    diag.appendChild(diagTitle);
-    const ul = document.createElement("ul");
-    for (const d of diagnostics) {
-      const li = document.createElement("li");
-      li.textContent = d.message;
-      ul.appendChild(li);
-    }
-    diag.appendChild(ul);
-    body.appendChild(diag);
-  }
-  for (const m of messages) {
-    const msgCard = document.createElement("div");
-    msgCard.className = "lmb-preview-msg";
-    const roleLabel = document.createElement("div");
-    roleLabel.className = "lmb-preview-msg__role";
-    roleLabel.textContent = m.role;
-    const contentPre = document.createElement("pre");
-    contentPre.className = "lmb-preview-msg__content";
-    contentPre.textContent = m.content;
-    msgCard.appendChild(roleLabel);
-    msgCard.appendChild(contentPre);
-    body.appendChild(msgCard);
-  }
-  modal.appendChild(body);
-  const footer = document.createElement("div");
-  footer.className = "lmb-preview-modal__footer";
-  const copyBtn = document.createElement("button");
-  copyBtn.type = "button";
-  copyBtn.className = "lmb-btn small";
-  copyBtn.textContent = "Copy JSON";
-  copyBtn.addEventListener("click", async () => {
-    const json = JSON.stringify({ kind, messages, diagnostics }, null, 2);
-    try {
-      await navigator.clipboard.writeText(json);
-      copyBtn.textContent = "Copied";
-      setTimeout(() => copyBtn.textContent = "Copy JSON", 1500);
-    } catch {
-      copyBtn.textContent = "Copy failed";
-    }
-  });
-  footer.appendChild(copyBtn);
-  modal.appendChild(footer);
-  overlay.appendChild(modal);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay)
-      close();
-  });
-  document.body.appendChild(overlay);
-}
-function promptForString(ctx, title, initial) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const settle = (value) => {
-      if (settled)
-        return;
-      settled = true;
-      resolve(value);
-    };
-    const handle = ctx.ui.showModal({ title, width: 420 });
-    const form = document.createElement("div");
-    form.className = "lmb-modal-form";
-    handle.root.appendChild(form);
-    const input = textInput({ value: initial, autoFocus: true });
-    form.appendChild(input);
-    const actions = document.createElement("div");
-    actions.className = "lmb-modal-actions";
-    actions.append(makeButton("Cancel", () => {
-      settle(null);
-      handle.dismiss();
-    }), makeButton("OK", () => {
-      const v = input.value.trim();
-      settle(v || null);
-      handle.dismiss();
-    }, { primary: true }));
-    form.appendChild(actions);
-    try {
-      handle.onDismiss?.(() => settle(null));
-    } catch (_) {}
-  });
 }
 
 // src/prompts/codex/directives.txt
@@ -3824,7 +3486,31 @@ var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
 var BY_KEY = new Map(CODEX_TEMPLATES.map((t) => [t.key, t]));
 
 // src/shared.ts
+var CODEX_FILE_KEYS = [
+  "characters",
+  "locations",
+  "things",
+  "relations",
+  "timeline",
+  "threads",
+  "world",
+  "knowledge"
+];
 var STORAGE_VERSION = 7;
+var TIER_KINDS = ["chapter", "arc", "volume", "series", "chronicle", "epic", "library"];
+var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Chronicle", "Epic", "Library"];
+var HIGHER_TIERS = [3, 4, 5, 6, 7];
+function defaultHigherTiers() {
+  return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
+    enabled: false,
+    unit: "entries",
+    batch: 6,
+    lag: 2,
+    targetUnit: "percent",
+    targetPercent: 25,
+    targetTokens: 3000
+  }]));
+}
 var DEFAULT_SAMPLERS = {
   temperature: null,
   top_p: null,
@@ -3885,6 +3571,7 @@ function makeDefaultProfile(id, name) {
     autoCreate: true,
     autoCreateChapter: true,
     autoCreateArc: true,
+    higherTiers: defaultHigherTiers(),
     hideCoveredMessages: true,
     showMemoryPreviews: false,
     retryCount: 3,
@@ -3903,6 +3590,9 @@ function makeDefaultProfile(id, name) {
     codexLoreLimitTokens: 25000,
     codexStorySoFarCount: 5,
     codexRelationsTable: true,
+    codexForceConstant: false,
+    codexInjectionPosition: "lorebook",
+    codexInjectionDepth: 4,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
@@ -3962,6 +3652,483 @@ var LESSON_GRADE_LABEL = {
   bronze: "Bronze",
   apprentice: "Apprentice"
 };
+
+// src/codex-tidy.ts
+function resolveTidyTarget(currentTokens, target) {
+  if (!target || !["tokens", "percent"].includes(target.unit) || !Number.isFinite(target.value) || target.value <= 0 || target.unit === "percent" && target.value >= 100) {
+    throw new Error("Enter a positive token limit or a percentage between 0 and 100.");
+  }
+  const limit = Math.floor(target.unit === "percent" ? currentTokens * target.value / 100 : target.value);
+  if (limit < 1)
+    throw new Error("The target must be at least one token.");
+  return { limit, modelTarget: Math.max(1, Math.floor(limit * 0.9)) };
+}
+
+// src/ui/modals.ts
+function codexCatchupWarnings(state) {
+  const hasBooks = state.chapters.some((c) => !c.isRoot) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot) || state.higherBooks.some((v) => !v.isRoot);
+  const autoBooks = state.activeProfile.autoCreate && !state.activeProfile.showMemoryPreviews;
+  const bigTailNoAuto = state.coverage.approxUncoveredTokens > 150000 && !autoBooks;
+  const booksWarning = !hasBooks ? "This chat has no filed chapters yet, so fast and ultra fast would read the raw story anyway. File chapters first (Home, File all) to get the real speedup." : bigTailNoAuto ? "The unfiled tail of this chat is very large and will not be filed first, so the final raw pass stays huge. File chapters first (Home, File all) for the full speedup." : null;
+  return { booksWarning, autoBooks };
+}
+function requestCodexUpdate(state, chatId, send) {
+  if ((state.codexBacklogPasses ?? 0) <= 1) {
+    send({ type: "codex_update_now", chatId });
+    return;
+  }
+  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
+  showCodexCatchupModal({
+    lead: `${state.codexBacklog ?? 0} message${(state.codexBacklog ?? 0) === 1 ? "" : "s"} are waiting, about ${state.codexBacklogPasses} passes at the current window. Pick how Memoria catches up.`,
+    booksWarning,
+    autoBooks,
+    onPick: (mode) => send({ type: "codex_update_now", chatId, mode })
+  });
+}
+function requestCodexRebuild(state, chatId, send) {
+  const prof = state.activeProfile;
+  const total = state.messages.length;
+  const passes = prof.codexWindowUnit === "messages" ? Math.max(1, Math.ceil(total / Math.max(1, prof.codexWindowValue))) : Math.max(1, Math.ceil(state.messages.reduce((a, m) => a + m.approxTokens, 0) / Math.max(1000, prof.codexWindowValue)));
+  const { booksWarning, autoBooks } = codexCatchupWarnings(state);
+  showCodexCatchupModal({
+    title: "Rebuild the codex",
+    lead: `Memoria will erase the story bible and re-read all ${total} messages, about ${passes} slow passes. Pick how she rebuilds.`,
+    booksWarning,
+    autoBooks,
+    onPick: (mode) => send({ type: "codex_rebuild", chatId, mode })
+  });
+}
+var catchupClose = null;
+function closeCodexCatchupModal() {
+  catchupClose?.();
+  tidyClose?.();
+}
+var tidyClose = null;
+function requestCodexTidy(state, chatId, send, files) {
+  tidyClose?.();
+  const targets = (files ?? [...CODEX_FILE_KEYS]).filter((f) => state.codexFileStates[f] !== "frozen");
+  const current = targets.reduce((n, f) => n + (state.codexFileTokens[f] ?? 0), 0);
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-tidy";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(540px, 100%)";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Tidy Codex to a target size");
+  const previousFocus = document.activeElement;
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    if (tidyClose === close)
+      tidyClose = null;
+    overlay.remove();
+    if (previousFocus?.isConnected)
+      previousFocus.focus();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+    if (e.key === "Tab") {
+      const focusable = [...modal.querySelectorAll("input, select, button:not(:disabled)")];
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    }
+  };
+  tidyClose = close;
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = "Tidy Codex to a target size";
+  header.append(title);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const lead = document.createElement("p");
+  lead.textContent = `Current selected content: ${state.codexTokensApproximate ? "~" : ""}${current.toLocaleString()} tokens. Frozen files are excluded; locked content is preserved.`;
+  const unitLabel = document.createElement("label");
+  unitLabel.textContent = "Target unit";
+  const unit = document.createElement("select");
+  unit.className = "lmb-input";
+  for (const [value, text] of [["percent", "Percentage to keep"], ["tokens", "Tokens"]]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    unit.append(option);
+  }
+  unitLabel.append(unit);
+  const valueLabel = document.createElement("label");
+  const valueText = document.createElement("span");
+  const value = document.createElement("input");
+  value.type = "number";
+  value.className = "lmb-input";
+  value.value = "75";
+  valueLabel.append(valueText, value);
+  const preview = document.createElement("p");
+  preview.setAttribute("aria-live", "polite");
+  const help = document.createElement("p");
+  help.className = "lmb-help";
+  help.textContent = "Memoria aims 10% below your limit, checks the saved text, and tries again if it is still too large, up to six model calls total (including repairs). Percentage means the size to keep: 50% asks the model for 45%. Undo restores the entire original Codex. Locked content or the model may prevent reaching the limit.";
+  if (state.codexTokensApproximate)
+    help.textContent += " The tokenizer is unavailable for this model, so these sizes are estimates.";
+  const readTarget = () => ({ unit: unit.value, value: Number(value.value) });
+  const start = makeButton("Start tidy", () => {
+    try {
+      resolveTidyTarget(current, readTarget());
+      const target = readTarget();
+      close();
+      send({ type: "codex_tidy", chatId, files: targets, target });
+    } catch {
+      refresh();
+    }
+  }, { primary: true });
+  const refresh = () => {
+    const percent = unit.value === "percent";
+    valueText.textContent = percent ? "Keep this percentage" : "Maximum tokens";
+    value.min = percent ? "0.01" : "1";
+    value.step = percent ? "0.01" : "1";
+    value.max = percent ? "99.99" : String(Math.max(1, current - 1));
+    try {
+      const { limit, modelTarget } = resolveTidyTarget(current, readTarget());
+      start.disabled = current === 0 || limit >= current;
+      preview.textContent = limit >= current ? "Choose a target below the current size." : `Your limit: ${limit.toLocaleString()} tokens. Model target with margin: ${modelTarget.toLocaleString()} tokens.`;
+    } catch (err) {
+      start.disabled = true;
+      preview.textContent = err instanceof Error ? err.message : "Enter a valid target.";
+    }
+  };
+  unit.addEventListener("change", () => {
+    const old = Number(value.value);
+    value.value = unit.value === "tokens" ? String(Math.max(1, Math.floor(current * old / 100))) : String(Math.min(99.99, Math.max(0.01, Math.round(old / Math.max(1, current) * 1e4) / 100)));
+    refresh();
+  });
+  value.addEventListener("input", refresh);
+  body.append(lead, unitLabel, valueLabel, preview, help);
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Cancel", close), start);
+  modal.append(header, body, footer);
+  overlay.append(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.append(overlay);
+  refresh();
+  value.focus();
+  value.select();
+}
+function showCodexCatchupModal(opts) {
+  if (document.querySelector(".lmb-catchup"))
+    return;
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-catchup";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(600px, 100%)";
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    if (catchupClose === close)
+      catchupClose = null;
+    overlay.remove();
+  };
+  catchupClose = close;
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = opts.title ?? "The codex is far behind";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "lmb-preview-modal__close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.addEventListener("click", close);
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const paragraphs = [
+    opts.lead,
+    "Ultra fast reads the story's current context in one single pass: every filed summary plus the raw newest messages. The fastest, with the least detail.",
+    "Fast replays your filed chapter summaries pass by pass and reads raw messages only for the final stretch. Around 15x faster than slow while keeping most of the detail.",
+    "Slow replays every raw message window by window. The most thorough, and on a long chat it can take hours."
+  ];
+  if (opts.autoBooks) {
+    paragraphs.push("Automation is on, so fast and ultra fast first bring this chat's chapters and arcs fully up to date.");
+  }
+  paragraphs.push("Fast and ultra fast need the codex connection's context window to be at least as large as your story model's.");
+  for (const text of paragraphs) {
+    const p = document.createElement("div");
+    p.className = "lmb-help";
+    p.style.fontSize = "14px";
+    p.textContent = text;
+    body.appendChild(p);
+  }
+  if (opts.booksWarning) {
+    const w = document.createElement("div");
+    w.className = "lmb-help";
+    w.style.fontSize = "14px";
+    w.style.fontWeight = "600";
+    w.textContent = `⚠ ${opts.booksWarning}`;
+    body.appendChild(w);
+  }
+  modal.appendChild(body);
+  const pick = (mode) => () => {
+    close();
+    opts.onPick(mode);
+  };
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Slow", pick("slow"), { danger: true, title: "Not recommended. Replays every raw message window by window and can take hours." }), makeButton("Fast", pick("fast"), { title: "Replay the filed summaries, then one raw pass for the tail" }), makeButton("Ultra fast", pick("ultra"), { primary: true, title: "One single pass over the filed summaries plus the raw tail" }));
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.appendChild(overlay);
+}
+function showCodexToolsHintModal(profileId, send) {
+  if (document.querySelector(".lmb-tools-hint"))
+    return;
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-tools-hint";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(500px, 100%)";
+  let dontShowAgain = false;
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    if (dontShowAgain) {
+      send({ type: "save_settings", patch: { suppressToolCallingPrompt: true } });
+    }
+    overlay.remove();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = "Tool calls aren't getting through";
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "lmb-preview-modal__close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.addEventListener("click", close);
+  header.append(title, closeBtn);
+  modal.appendChild(header);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const paragraphs = [
+    "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
+    "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
+    "You can change this anytime under Tuning → Connection → Codex → Use tool calls, or pick a tool-capable model under Codex connection."
+  ];
+  for (const text of paragraphs) {
+    const p = document.createElement("div");
+    p.className = "lmb-help";
+    p.style.fontSize = "12px";
+    p.textContent = text;
+    body.appendChild(p);
+  }
+  const dontShow = document.createElement("label");
+  dontShow.className = "lmb-check";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.addEventListener("change", () => {
+    dontShowAgain = cb.checked;
+  });
+  const cbLabel = document.createElement("span");
+  cbLabel.className = "lmb-check-hint";
+  cbLabel.textContent = "Don't show this again";
+  dontShow.append(cb, cbLabel);
+  body.appendChild(dontShow);
+  modal.appendChild(body);
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton("Keep tool calls", close, { small: true }), makeButton("Switch to JSON mode", () => {
+    send({ type: "save_profile", profile: { id: profileId, codexUseTools: false } });
+    close();
+  }, { small: true, primary: true }));
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.appendChild(overlay);
+}
+function openEditModal(ctx, title, fields, onSave) {
+  const handle = ctx.ui.showModal({ title, width: 640, maxHeight: 720 });
+  const form = document.createElement("div");
+  form.className = "lmb-modal-form";
+  handle.root.appendChild(form);
+  const labelWrap = document.createElement("div");
+  labelWrap.className = "lmb-field";
+  const lbl = document.createElement("div");
+  lbl.className = "lmb-field-label";
+  lbl.textContent = "Label";
+  const labelInput = textInput({ value: fields.comment, placeholder: "Label" });
+  labelWrap.append(lbl, labelInput);
+  form.appendChild(labelWrap);
+  const contentWrap = document.createElement("div");
+  contentWrap.className = "lmb-field";
+  const cLbl = document.createElement("div");
+  cLbl.className = "lmb-field-label";
+  cLbl.textContent = "Content";
+  const contentInput = textArea({ value: fields.content, rows: 16 });
+  contentWrap.append(cLbl, contentInput);
+  form.appendChild(contentWrap);
+  const actions = document.createElement("div");
+  actions.className = "lmb-modal-actions";
+  actions.append(makeButton("Cancel", () => handle.dismiss()), makeButton("Save", () => {
+    onSave({ comment: labelInput.value, content: contentInput.value });
+    handle.dismiss();
+  }, { primary: true }));
+  form.appendChild(actions);
+}
+async function confirmDelete(ctx, title, message) {
+  try {
+    const r = await ctx.ui.showConfirm({
+      title,
+      message,
+      variant: "danger",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel"
+    });
+    return !!r.confirmed;
+  } catch {
+    return window.confirm(message);
+  }
+}
+function showDryRunModal(kind, messages, diagnostics) {
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = `Dry run: ${kind === "arc" ? "Arc" : kind === "volume" ? "Volume" : kind === "codex" ? "Codex" : "Chapter"}`;
+  header.appendChild(title);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "lmb-preview-modal__close";
+  closeBtn.textContent = "×";
+  closeBtn.setAttribute("aria-label", "Close dry run");
+  closeBtn.addEventListener("click", close);
+  header.appendChild(closeBtn);
+  modal.appendChild(header);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  if (diagnostics.length > 0) {
+    const diag = document.createElement("div");
+    diag.className = "lmb-preview-modal__diagnostics";
+    const diagTitle = document.createElement("h4");
+    diagTitle.textContent = "Diagnostics";
+    diag.appendChild(diagTitle);
+    const ul = document.createElement("ul");
+    for (const d of diagnostics) {
+      const li = document.createElement("li");
+      li.textContent = d.message;
+      ul.appendChild(li);
+    }
+    diag.appendChild(ul);
+    body.appendChild(diag);
+  }
+  for (const m of messages) {
+    const msgCard = document.createElement("div");
+    msgCard.className = "lmb-preview-msg";
+    const roleLabel = document.createElement("div");
+    roleLabel.className = "lmb-preview-msg__role";
+    roleLabel.textContent = m.role;
+    const contentPre = document.createElement("pre");
+    contentPre.className = "lmb-preview-msg__content";
+    contentPre.textContent = m.content;
+    msgCard.appendChild(roleLabel);
+    msgCard.appendChild(contentPre);
+    body.appendChild(msgCard);
+  }
+  modal.appendChild(body);
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "lmb-btn small";
+  copyBtn.textContent = "Copy JSON";
+  copyBtn.addEventListener("click", async () => {
+    const json = JSON.stringify({ kind, messages, diagnostics }, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      copyBtn.textContent = "Copied";
+      setTimeout(() => copyBtn.textContent = "Copy JSON", 1500);
+    } catch {
+      copyBtn.textContent = "Copy failed";
+    }
+  });
+  footer.appendChild(copyBtn);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.appendChild(overlay);
+}
+function promptForString(ctx, title, initial) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled)
+        return;
+      settled = true;
+      resolve(value);
+    };
+    const handle = ctx.ui.showModal({ title, width: 420 });
+    const form = document.createElement("div");
+    form.className = "lmb-modal-form";
+    handle.root.appendChild(form);
+    const input = textInput({ value: initial, autoFocus: true });
+    form.appendChild(input);
+    const actions = document.createElement("div");
+    actions.className = "lmb-modal-actions";
+    actions.append(makeButton("Cancel", () => {
+      settle(null);
+      handle.dismiss();
+    }), makeButton("OK", () => {
+      const v = input.value.trim();
+      settle(v || null);
+      handle.dismiss();
+    }, { primary: true }));
+    form.appendChild(actions);
+    try {
+      handle.onDismiss?.(() => settle(null));
+    } catch (_) {}
+  });
+}
 
 // src/ui/lessons/avatar.ts
 var MEMORIA_AVATAR = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACgCAYAAACLz2ctAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAIqJSURBVHhe7P0FdFzJtfcN5z73uUlmMpkxiZmZ1czMLTWou8VgZmZ7zPaYmWVmkGXLzGyZmZmZUcb/u6pakuWeyU1yb/J+7/pGe629TsPpllTnp021T9Uf/lArtVIrtVIrtfL/VxIQEiH28vJTur5eK7Xyb5e0guZ+PgFhD+rWdVO7vlcrtfJvFbmjpXdwdMrpuvXcPwUHB//k+n6t1Mq/TSSWdjGhcbwLdet7ok4dt3Wu79dKrfzbRGRskhGZJHlG4PupTv3PPj4BGm/vwAhf3zAf13NrpVb+ZcJms7/jaArHRTOUqFO3Af76Y13Uqev2vn59j9316rvfCAgICHT9TK3Uyr9EWDKLmK1qeDQsVYX/+u6v+P6Hnwh8+KlOA9Sp5w4PD2+b62dqxSn/ERAQoO7Tp8//cX2jVv6+MKUWAVOWvTRFUYjQFA0iAgKRxmIjNSoW3/9ALKA7vHz8+rl+rlZqiJubZwt3d++hrq//f02OHdvnc+vymbCb548yXj64wr935TTz1KE9IevWrfvR9dx/tzDFVl2yyLYmVZaLJEUjxHH0KJLJMDm/ADMbN0FcaDj+/Jc61ArWq+9x2d3de2xoaOifXL/ndy/h4eFB0dGiH+rUdXvp7u7d0fX9/19K2dSpDR7fvWJ9/uj6mJePbx57/ezOq9dP73x8/+oBvlQ8wftXD/Hyye33r57eufPi0c3Nzx7d6nvj/HG+6/f8q0QkEv3AkGYUpEgc5QxFAZjKIsRJ8pDKN6KX2YxZRQ0xKa8QUwuLkBoZjT/9xemG69Zzv+7t7S/7wx/+UOtlXMXb21/v5uY1wt3dZ3Hdeu4ICIke0H7kku9cz/t/U0g4cP3Sydavn91+ALwF8B748gqf3j3GhzeP8P71Q1S8ekCPH98+Bt4/g/O8D/hU8RRvXz4sv3XhOMv1e/+nwpZZ41jyzMEp0szrTGUhCHwp0hzEirPBEhgx0GZDcUEhxufmU53ZsDHMHC7+7/c/om5991vR0dGert9ZKzWkXn33tfXqe+DHn+qjXgMvRCVLT8osLdJcz/t/S1YuXOj99MH1L8A7vHtxD2//CSVgErl67vgE1+/dub7E68ieTd6ur/8tSc8sFDFkmctSJDmfmKqGSJXlI1mSjRRJDmLEOWAKjBhks2F6DfiIzmjYGAUyGf74Qx3Ur+9R4vq9teIisbEsj7r13c/8VMeNlg4IhHEcA9iqwrVsuVXkev6/UjaXLfW/c+1S+tkT+9k1Xv7Pk8ePPcGn578C7B/Rz59e4cSB8o3lW1Z5VH3hyUP7mlW8ffLs9fM7L148urHz3s0LrdctmeFW42dSKSub+v38WbNyC5t02s5S5oGhKESKNJeCR+Gjli8HLL4Og+12TC8o+gY+osWFjdBMqcaf/1oXdeq5TXb9GbXiIr6+wYX1G3jeoCWDum74yw8/0cGL5KSDpWqEFGnmcabU0YUlSvuX1bGunz/Fe/rg2pJXz26/JO7zzYv7Xw7t2Zm2cOGypIUrtk5csfHgx1fP7uP9q/u/Auy/03cv7+Ppw1t4cPcm3jy/+/j5w2urjh07NvzMqTPvgTf49O5Jpbt+j5fP7ty7e/V0E/L7xMcr/lI8cWLrKeMnXG7cqhe1doliJ3Su8KWwFBhis1L4xtUAb1xOPsZm52JGURHaGgz47sd6qN/Ac7Dr314rLuLu7u5Rp67bAQLgX36sBz8vXzSVy2kpIThFA6a6MQ24U8SZr1MlWZtSJZmd2UorMyM6+o+u3/X35OTB3cHPH91c+oHEbniPzxVPKDTE2p04eRqzS3Zg1Y7TmFGyG0dOnMXnd4++AezD6/uoePm3oXQCeBuvnt3Fl/dPAVTg+u0HuHT1Ov1szXPx6QWNLR/duXxg+sRJF8eOGAVHQTtEc21I+g344sQ5iEuRYIDFRGO+cTl5X+HLzsX4nFzMb9MK2wb0Q59sG/0nrlfPvZ3rGNTKbwgjklG/fgOPW3/8/iewomKwoFkLTMrLgzQpBUHJaqTISeCdS10SgTFVloMUSeYFpjxzqiWnRfsxY8YoTu9aF407h793/e4quXP9fKP3bx4/Bj7iw5uHePv8KwzE0j1+dBeL1u7H/LJ9mLNyD+aX7cHjh7fx4fWD6vMuX72GJ4/u/Aqmr3ofzx7fpUfynHx2x/6TuHL16jffU6UUfrzFu5cP0LXHAPjEaZEsyfkVfPHibETFC/CzQY9Z+XkYn1+IiYVFmJiXj/E5OShu3Aire/XAzqFDcWTsGAxv3Bh/+ksdNGhQW4D+u+Lv7x9dv4HnXpIFEwC5sfGYXtQIk/OLMC2/AHoWB0EpTgirL4w0B6nyfDCURWCrG0JhaoZGLbp+GTV87I0lc+ZsmTdz5tDpE6eY+3Tu7H24bEGDlw+uziBJBT6+IK7xVyAQ/fjmITbtPopZpbuxYPU+zFi+C1v3Hsentw+dgD68jfW7TmD7/tN4/uTuryAk59y+dQOnz1/Cm+f38OnNA/q8ZONBXLt+7TcBrNLP75/i6eNbyGvaBSGp6RS6aviEWYhKkaJXfi7mdemKqX0HoXjiDExq2RoTs7OxpEM7bBs8iMK3bfBgHBw1Cv0LCvHH739EgwZeAtfxrhUX8fX1/c7Ly4/foIHn/D/9UAeMyEhMK3IG16SuNb2wEHahCCGpaiRXZoKumiDMQgzPDo66EE1a98bMaTOxYsECTBoz7tmGLTsfvKt4g8/vHv/qwn8DwduHOHPuAoqX76QAzlu1F8XLduDqtavAh8f0uG7ncazdeRy7Dp6mbvZ9JYQkW3717B4OnziH8iNn8OLJHRJXUoAJgFevXcPHN38bQPJPgY/P8PTRTegymiGCbaXwJYgykczVYsigEVi6aBVmzy3BnAVlmFG8GNOaN8Oant2xa9hQbB8yhMJH9NDoUeiWmYX//PMP7wMDAwNcx7tW/hv50w917iaFRWBKYREmVMY3E/MKMKOwCIVSGUKSFUiSEgi/dVNVmijKQiQnA0xZNlq07o4FS9Zi0bqDWLn1MK5cv44Pbx7g3ctvL37Vc2LBnjy8jYWr91I3vKBsL2Ys34GVmw7gw9tHOHXuEtbuOI6Nu09izY7j2Hv4DIWOxITkszduXMfeQ6ex+9Bpai3PXbiE0k0HsXLzIVy8fOW/BbAaQrzE4UPlSJFkUfji+WawRHrkNmyHmTOXYM7s5Zg+Yylmjp+K1d26YNuAAdjctx+2DhxYDeDhMaPR1mrF//nTX+6kpKT8zZCkVn5D/vxDnbUxQaGYlF+ICXkF1UE2eTyzqCGaKuQISRQjQZpX7aZ+SyNYZuS1HoCFa/Zj5rIdKF66Dcs2HMC5S1fx/vUDVFRCR1wlUeIeCUQkNtyw80ilG96LWSW7MGHBFhw/dQ6XrlyjLnjL3pPYVn4Sm/acwImzF1Hx6j6F+Nip89h98BQ27j2BMxeuYNu+k1i99TAF8PS5S98ASD5Dnlf93KrXqZt+eR9aWzPEcNIQz0tHFEuLjt0GYe6cEsyZsxx79uzHlROHcHzZQhycXYzDc2Zgz7gx1RAeHj0aTfQG/Mcfv9/rOr618nfk+x/r9QjxD8KYnFxMzPu2wEp0VqNG6KDVICKej1hRFlJkX2tkNTWaY0HXQdOwZN1BzFq+AzOXOyFcuHofjp25RAvGH1+ThOEOyo+dw+nzl2lchw9PcOj4WUxdsh0LyvZg9dZD2HXgJC5fuUzBePLwLp4/uYfXz+9TffnUmUgQffzgNm7dvI4zFy7ROHDtjqPUAhIXTFwzAY7A9vH1A/qzSEJz+OQF3Lh5nQJJAPz07hFOnDoLpbkhAuJlSBKko+/g8Sgp2Yg9ew7g0f1bdEbmE5kKfPcEFW8eo+LdExyYOY1aQqcLHo1MpRr/8ecfZrmOb638Hfnux/oMT3cvDLbZaRLiCiDJ+uY0box+JiMYqQLECuxIkeX9yg3H8TPA0xZhwpy1mFe6m0JItHjJNswt3Y39x87RzJO45H1HzmHllqNYu/0YjdUIlGfPXcCjB3domYQmL3iNT28f4e3zO3j99DZePrmFF09u4/XTOxQeAgW+vKw8lyQ7z/HwwW2cPHsRm/ccx55Dp6l1I6752OmL1HqWbT2CVVuP4tCJC/Q98rtcvXoV12/extlTR6E05mDc+BkoW7UFCxavw6Yte3Hn5rfZ9KePz3H98B5s6tu32gXvHzUSGg4ff/jj911dx7dW/p5ER//xhzr1r3UxpGFaYcNv4CMx4cScHEzKzsLcli3Qo1UrxCSyEc+3IlVRiFRZHuL4diRLssDVFEKR0RJTFmygwFUBSHTG0m2YsWwHdaVvXz7E2YtXsGrLEZQfPYOHBDq8AfAKD+5cwZYtmzFp6gx06z0QLdp2RcNm7aFQp4PB5IPNEUGusSIjtyVyG7VFyzadMGDgICxeOA9njh9wQokP+PLhOZ4+vouK1/dx/PQFlG45ivU7j2PDruNYu/04rly7js8Vj/Dq+X3cuHkTFW8e4uO7J7h84TzevnyAx/euY+3arTh65ASFripmrXj9EPeun8fmkcOxtX9/Ct+OIUNoUsKOT8Qf/vN7vevw1so/IP/53Y+zScJB5jSrAczOxcQmTTFt+FhMGzoasyfNQMtWneHp6Qc3zyCExfEQnqKBQNcQv0xaimlLtmDa4s1YuKYcc0p3YVbJVwCpS162HVMXbaXx2Z3bt/Di2UNaNH72+BZKSsvQpvMAiI0NEc21IDhJg+AkJSIYKkjTCiBNK0RgFAfRLD3iRQ7ECWyIEzoQyTEjOEmNoHg54lgamOwNMW7CFFw8f4paUAI1sboXLl/Bxt0naCKzee8pvH7xAG9ePkD5sfO4e/cW3r95gLu3r+Htq4c0XiUJ0MvHN/H41gX63AnhfTx7dAcnDx3A0bWl2DZoELYNGoydv/yC9QP6IyI49PMf/vhDtOvY1so/Iv/5nVGVkvotgDkEwhxMHTISxQvKMH3mUsyfX4o+fYYhLi4Ff/7zD4iIScXk+euwfNNRWkYhOnflbqpzVuz6FYAzlm7H0VOXKHj3bl/CyLGTITUWIYJlQozAjkShFYn8NKSIbWDKc5EstiGWo0eK1A6utoi+FxyRhICQGITFcZAqyQBHUwSWKh8MRS5iBRkISdEhRWxFmy79Ub6/nEIIvMC9uzex88BpXLh0hQJ28MQF6o73Hz9PC9k0u3711dW+f/MIj26dx4Mb56jlI++/ffkI966cxc4xI7Gl0gLuHT4c87p2gbuH170/eHj8xXVoa+Ufk7/EhoQ9+FUmnJuHibl5mDZ0DKbPXILp0xdi/rxSerTZ8zFozCws33QEc0qd0NXU+av2VkNI4Cteuh3Hzt3A88e3MXLUKHAUDoSmGpEkzQZLmYvIRCF8/ELh5eUHH78ghEYzwZA6wFYXgK3KR5LQDP+gSPq+p5cPvLx84BcQhni2FhxNIZiKXDAVOfS7UuXZiGCbEMe3ol23wTh37jSNE0nGTYrfJAlZtfUY1mw/jv3HzjsTpLcPq2dTSPLz9tUDCt6tSyfw4tFN53svH+Ddi7s4t64U2wb0x9YBA2kNcEDDhvjTX+vucB3UWvknxM3Nc9oAmx1TanR7EPgmN2mMqcNGYfoMJ4BEp02dhxmzS7B4/aFfwTdv1R5MXbQJE+auxazlxOptxezSXdh+6BKWLl0OLl+GgDgpkqRZ1HqlSm0IDImFW313eHr4IDA4ChHxXMSkysCQZYKtzgdbledUZQ6ShWZEJUsQGBpDIfT09KXPOeoCCh+BsApEcoxkm8GU52DqzAX4ROaKP7/Aq+f3cOHyVZy/dBUvnt7HtevXceXa1a8WkABIMu03j0gDLG5dPIn3b57g7q3rOHPyJG7dvYOz+/dg+8gRODRyJLKUKvzHn38c6zqmtfLPyH/+SVngEgdOyMrCxKJCTBs/rRrA4uKFmDB+BuaUbKMzF66WjwA4Y9k2DJm4GKOKS+lrq7efQPNWHeHm4Y9Ipp5aLKIEJm+fIHi4eSEkIgmJPD0FLVViA1NmB1OeCY46n8IUnSpDIs9IXTFX25CeF89Swz8wEm4NPBGZwKOJEDm3ppLzUmTZCGemo6jVz7hx/TKND2kW/OoBTp27jBWbD2N7+Um8e0Us3FcAiX549wS3rpzBjq07sX37Pqwq24LlKzZh/byF2DV8GDYNGoiY8Ch8X8ct33VIa+Wfk78wo2MekDlhCmBWNia1aIlpoyZ9tX7FizBl0hxMnbEU81eX/wq+mhCOnVmGWSt2YtHqPVCqjPjrT+5I4KWBrSmkSuDz9PKHf1AUkgRptIRD4Ipja5DMNyIqSYQUkYVaNgJhIs9A4z9Sp+NoCqhl5OkIiLmIShbD0zsAEfFVEOZVW8AqCIlGcS2QpDXG3nISG77B+zcPcfTUBSzfcBDby084rR7JeMmx0hq+e/0Ab17cw/KlqzBrXhkWLlqFFYP7Y3v//jg4ciSGN2+GH+u6f/YKCIh0HdBa+SelTgP3SX2tVkxr2AhTfxmJ4llLMZ1opestLl6EyRNnYfbSjZhb9q31m7fKCR7RuSt3YenGI5ixZDOSkzn4qa4H4rl6Gs8Ry0fA8vENRkQcB1x1PrVoBLQ4lgqpYiuS+GmIZcjB1RRVw+NMQoyITpFSIKteJ58jIKaILfANiqbgusaEVUo+lyCyk64erFm/mcaF714/xI79p7B17wka89FZGwIfne57gHev7uPzh2c4sHcPZs4uwfwlazF72DCs/bkbDo0dA71Igh/quJ+uvcvwXyMJOgbzC5mCm9SuI6ZPmYviOSXU8lEIpy3A5ClzKWCuVm/m8m2YvmQzipduxdKNhzFj6RbExqWibn1vxDGV1bAwpHb4B0cjjqmg4BAoiEVLFqQjiW+klpDAV+V+q+O/ys8z5VnU6tV8vQpQEiMGR6UijqV2nlsZD1ap8zvykCzNRILQjtVrN9KM/GnlLAkB78mju7h45SpOnb9Mi+QkXvz84SmuXjyLWXNKMG9eCWaMmYAl3dpiTuf28PUPJaWp8a4DWSv/Q/H39ds2MpsUn3MwgbRo9RtMkw4C4dQpczF1xiLMX7230uJ9dblTFm6kMd/0JVsxu2Q7EpM5qFPHHVFJQic0lbFcaAwLiVw9eLpGlfDkg6XIpvBxNQVgyOxI4jnjRFfInAB9C+U375HYUpWHyAQ+koUmWp6pCV/1eSoCYRYSRQ5s2bqdWsKP7x7h1q2bdJbk0MkLOHzqAs2Q79+/TQF8cv8aFiwsxbRefTApy4F5zZrAyOejTgMfBAaG1i7F9i+T//yjPlskxqxGTTAuMwvj8vIxdfJsFM9YQgGcNnMpZpDsdtlWzF6xgwJI6n+k8Dxh7npahOYJlPjrD3UQHstCishcCVM+YhhKCpczdvsKFCm3EAhJ/EZcKUlCiAVzBewfURozkqQlRUqzaAI9Q+4s9dSMB4klTJJkgiHLxqHDB2lMSKbtyFwxgfDA8fM4df4K3pNO7o9Pcfr4YcxdtAoz+g5EcW4OvT+EJlBe/tdr7//918r/CfUPPDU2Nw+TsrIx+ef+mDF3GaYTKzh9EbWGoyfMxdApyzFy2gqMmbnSWXIp2YElGw7BYM7BX777K4LDE5HA0VSClI9UqZ3CSKwcAaQaGmUOWNRC5VMYCYAs6mZ/Ddc/qsSlM2QOxKQqIDQ2gSi9GZikpEMgrHmeOh/xQjukaY1w4/olOrd8/94tXL12HTdu3sKTx/dw8+ZN7DpwClPHTsHUYaMxs98AzC4sgCyZgXrufvDzCRrmOoC18r+V//qLwyYQYlZRI0xq1wETWrXG1NGT6GxI8bQFmFq8GKNnrMSwqcsxcvoKjJi2AvPK9qFFhz7U8vkFhCOOIQWLxHEkIZBnIYXMWpB4T5nzDYDE5RIIq56nSqz0OTnnG1D/SSXWlLjhJGE60op6g6ctBItaQhd3rM6n2XFus+549+YxPr9/QmO/g8fPY/3OY/SWgQVrD2Hd2m2Y0qgIsxo2RHuDAfU9/ODlHfAyNDTU13X4auV/L//Xy8vn9GBHJqZm5WBik2YonrkY02csRvGMxVhYthtzV+2hMd/QyUsxfek2DBw9Gx6e/nBr4I3IeA5ShCYKAbnIZGqs6sITAGkSoSbxWRYFkMRkVbClSjOqIa0+9zcA+7tKs94Cmn0L9EVQ2tuCKctyZsOu36nOo3XCkWOn0xunjpw4hzkr92LR2gNYt+MYzl+8jPcfX+Hk5tUYkJ6GsOBwWtP08Qm67B8eHlS7AsK/Q/70Fzk3LgHT8vIxrXdfTJs6G1MnFGPOkg1YuO4glqw/SOO/sbPKMGn+OiQmc1Hnx/oICo1DEldLwaHxndwZ3xEgyIUmsDkver7T+imyncARKEi8JrVVAvitpfxHlcZ6imzwNQX0H4BJEhxaZySuPwds5a8/Q5ShyEG8IAMHD5Tjy+fX2LL3BC1Sk8aFTxWP8eX9M3x48xg6uQI/1nGHt3cgfHyCyfGZv78/gbBW/tXypx/rLsvgCzCzeXOMzcvDmNZtaAlmduluWm6ZtngLZpfugSWrKX76qT5xSYhJFtFSC3G9JLZLkdroBSYuUJvbudqi0UKxLJOC57R0TqvFJJ/9h+Ej53w9jynPBl9XhKzWwyC3tISxoAeNB4n7d7p6J+S//h6nxgpssBd1RMXbJ6h4/Yi2d315/wQf35LlQR7RVq+GjZrg++/rwts7CN4+gc/9/YOsZMUx17GrlX+B/Lmul/9f6zZ4lS+RYibpmO7cHcUl22nSMWZmGSYv3IzO/cbBwzMA7m5eCA6LR7LASC8mtX4yB5jKbFoGUTjaIafdcAj0Db9axCrrV8MCfgugKyzO58SKMuUOsOVZFHKa6cqywFXnIa/DWLQfugKWJgMohOK0pjQGJZ0z5Fz6z/Eb8FVpBCsdS5aV0qz46OkLtB54//4dvH9Neg2/YMSwYfjzn38i7hcBAcFm1zGrlX+x1HfzblGngSey2CxM7T8Y05Ztpy1YpO43fs4aMPhKuDXwoi4pLkUEFnGhtDEghxaTaZ1PmQuJqRkcLQbC3nIQ1JkdaDzGVjjhcyYd5EhAclSDWRMMCo0y25kxU+vpoPPFiozWEOgKIUlvivyO49B64GK06DcfTXvPpNaQnE/+Gcj5bBJzSjK+SXpcNUHsgDGzJbWAh0+cx+K1B2jb1s6DZ/D81WsUT52K776rQwH08Qk6GhISHeo6ZrXyL5YG7t7LfvyxPjId+fTGoemLN9Fjw9a9KluofBEcHo8UgdHpUlW51OpUJx7k4iqyocnqgEbdJkCf05lmqFWWjkzHcZTZ4JLPyewUKJJBUzBJRqvKBUvmoPO4BDQhtaJZtHkhraAHHC2HoHmf2Wg1YCGa952LlgMWIKPZQPo95PfgqPKdJRh5Jv1+Gmf+NwXtSLYJZWVr8PLFYyxdfxAlmw5h2fqD2HH4Mrr17I+//lAPXl4BHz08/Y77BgSbXMerVv6F4u/vX9fd3eto3bruCI9MxMylW7B43UGMnLoUCQwJfHwCSSyEmGQhWHIHhYlaKJdaHrFExCXmdRgFnjqXNhwQKIkF02Z1oEeFpQWk5mbIaT8SpsKe4JIaocwOrjIbhtyuaNFvLqxNB8DWfBDEaU0QmyqFJK0JbC2GoKjbFLTsv4AC2GrgQqgc7ZwQK7IoyPT3UmTRGiMp9fx3bpjMF2c37IDXzx9i696TKNl4CKWbD2PjvvMwmrPxww91wWILXvfpM0DuOl618i8WDy+f/h4evnBz88JPP9ZDx55DsGb3GVhyWiAwLJ5av4DgaKTw9XR2oQo2Z3H5WwBl5uYwNfqZdrYkC9NpXS69sAe02Z1gadwPGns7GAt7orDrZLQZtAj5HcfC2qQf8juNo1C1GbwEjlZD6XOVvR2iEp1TbmmFvWBtNpBawBb9F6DZz7MgMjYCV5XjtJ7yTPBIBl7p6okF/C037LS2Tk3gm7FhwyYcPX0FZdtPYFP5BazcfBjRsclo4OaJpBQOunTssc91vGrlXyzBwcH+gYFhCd7efh0a1Pei7fjtuw9BCk8Dv8AIeHv7IyKWBZY0wznLQWEjbs81gcgDX1sIkbEx4plyMOiMRzb0uZ0ht7aEo+UvkJuawd5yCAq7TKLWrOWAhWg9cBE9Uss2YCGy2o5AYecJ0GZ3ofXGsAQhpJaW0GR2gL3VULT7ZSlszQZQa0eg42uclo+jyAZPk+8MD0j8WNns4AQul1plcn6VxvEt6NCtP85fvIpp81dj+oK1yG/cDm7u3vD2CUBEVAIGDRxWUVZW5u86ZrXybxB3d+/eJPD28PBDAlOKeIYEXj4B8AsMRzxT5ozXaFzlzG6pxalpWdSVqspFdCIPbLmDxn8ECvJaRtMBNMYjsVtBl4k0jiPQ1dQ2g5Ygp90opBf0gDCtObg8BfQCAZLENgh0ReBrC6DL6QyhrqgSKidM5OeSzJtXORND/kFILPgVvq/gVSkJI0SaLGzfvhOJSSy4e/hQL+DnHwxfvyD4+AVj4MCRmDt7UXPXsaqVf4N4evqM8/L0XRybyLnDV1gQEpEAL28/BEckIJk0GBDrR+M/p5sjF53AR45VF5VYwFSRCeHRqTS+o5kuKckosiBOb0qtlT63K7LbjkTrQYu/gY9Ywca9plNAiQVjKPMglaVheeeG4PBIu1cBhYmUZn4LKvo7qXKd55C4kMSrv3Fezd81lm3A5OlzoVLrUb+BB4WvSt29/NGp08+YM2PONtexqpV/g5BNWURKQ6hAbnnNFOrh4x8KX98ghMUwwRBbqfWpsjRVYBF3V3XRibUh2WtUohDhUcnV1ujr+znUTcrMLaC2t0F22xHVEBJrSMoqMlNzGkdSiNQFEEmMOD6yK37ONiOWb6GzH64g1VSnW65KRjLpz3c9pxpATQGSRDY0btkFBoOpGkBi/YJDoxEUyYAjtynmFs+smDp1TK0b/n9DWBL9fIkuB7HJAjrr4R8YRvv96IWlrtQZ/9ELTOKu6ik154Um013cVDbMai1S5ZWW0sUKCXWFkJubgafMQWHXSWg7ZBla9J8PtaM9uPJM8FU54BOY1AUQivQ4t2w6jk/oAxFXTl09eU9AAKrUr0AR8JylHuqG5Zm/+tlfNZ8CKNA1QgpXg9DQSPgHRcDXLxA+vgEIjUwkq8hCZS7CwtlzUDxxYu2KCP9uSRZq4ngy02e+woqQ8Dj4+PgjKCwWcSyFs45HYz0yD/vVutRU4tIimDr8nG1Cx1yyAGSlBVJmQ0CgqoSBHEmtjyd3QKwvhKPFEGizOoKryIRIQ+IypxJ3LxHpcGP/Fnw5X45fctKRKDBBrM3/5jyhJhcCjRNA8v1cRRb4aqcbrhke1FQCH1GhvhFSBOnw9PJDPEOGkIhEeHl60z5HtroQEkMhxo8eh5mTJ58Falvy/63CEmqXidSZYAr08CPu1y8QYdEpSOIbaPxHrB+dqSDNBzJH9RxvlYslrfYJDCm29muFdtmZSJBkgq/MhlCZBaEqCyJVNoTqHAjIY30BRNo8CFXZ4CkcECizvoGKKE+VC6XKgrvH9gBvH+NWyRSYJQo6u+J6bjWM2nzwFJkQqIm7zwJX6XTJfwtAgbYQfHU+AoIiKHTkbwsMiaa3DJCYU6QvwoD+Q7Bo9mxMGzdO6jpmtfIvEqZIzRbK08GXmWjx2dvHH37+IYiIZ4MhsVZnt3SqS2pzFqSrwKu8qMmybJilUtxbMAJ9unZDIt9cCV82VZHaCQ6FUJ0FEdVvYRJXaw5NYvTGLDw+fxh4dgd4dBUlP7dFKkcDqSYPYnUOPdcVQgGFOpP+HK7CUWkZq/RbAJ1WsDEi4ljwD45yunAaQ5J/LKeb7tdnMJbOm4fxo8fMdR23WvkXCYOrmCuS6g4KFVaExzBoHYzERNEpIrCJu62EjWanpPG0MtivtiqaAsTxzehv1wNndmDihPGI56ZRaydQOKj1I7BJiBJQlJkQKW2QqjIhVedAqs6GTJ1Nj1WPBXIHzNZCvLp+BnhyE3h+Fx8vHEBrixlMoRViha36M+R7CbRVEHLlDgogW2alFq4mcK5KAExgKREcFotUYRp9TsIJ8h5Lnotu3ftjwYwZmDhm3PPhw4e7u45drfwvJZkpUDK4kjEsoWa4UGmjcZ+PbyACQ6LonW1V5RTigpkyGxhiM81oa7o02pfH02J9/3ZAxQMsmj0TCRwjRKosCBV2yNQ5FJZqVWVDrLJT/fp6jhNIVSZ9zJPaUJDfEp8fXcP7u5dRcfcyXaLt3p61MChN4EmdEMo1X7/bCXge+MTyKTPBFpvAV+f8CroqrbKMpGhOMvckttLplivfJwu3N2nZDcUTJ2Hu9GJMHD3O7jp+tfK/lESOdBRXIongydIPcSRpNPP19QtGUGgMErka6n5pMkEAFJvAkpgrrV4+TRzIPC5DmQ+dWIXb6+bTVQn2b14DpiAdUmL5qKX6FkA5gUVFrGAGZCo7FCoH5CoHpARIpQ0KdSYkcivUKhOK8vJgM1mQabWhSVFD/NK/D+x6A9jEFcvSINc44a35/RJVFngKG5h8PXXHFDbNry0hLdlUNkmQWZfYFBGNG6ssIFnyw1HQHuNGjcP0CROfzy8uFs6dO7d2gaJ/lXBF2sQUtrSpSmXy4snNn5I5Cgofif+IS2KI0r8CqM4FQ2isBpBcILbUSrPZJLEdPQtygKdX8OL+NZQumAWOQAepwgGxIoMCRSBTUNiI2uhRRgBUEtBsVJXksdIMg9YOqViPopxCHNu5ERcO7MT58h04tHUd1i2dh3nFk2BPN4PFkkAg1EGidFrNKhCJVeTLM5DMloMry4BIm08z5apsuSaAJKMnMyuxKVLEJAnAEJnoknT071PmQW9rjmFDRmDi2Amf5xUXK2dMnpzgOo618j+UVKG8bXQ0ux5bqMkSaxyITxHSQiwBMCQy0dmpUpmA0A4Xno66NaHaWfpgSy0QKDLBEFnRIS8bPbt0htlkRZYjGzKJFiKxHmKJAQqlFUqVDSqVDRq1U3UaGwyaDKiVJnpM19lhUFuhU5pg0tmhkBjRs1N34M19Zwz4+Abw9Bbwgiw8/gont66GWKCEVa2FSqqFTG52Aq3OoQCKFHb693CkFoh1ztINiQvJ7/4rAPWNkMwzIC5FjCS2mj6vet+ZCf+CkcPHYPHcWY4hvfunDBs2rHazwv+tCJRpfgyuvDF5zOCrikVqB6IT2NUWMDwmxVlLI+32lbFeAlsFpigdIlUOhGRmQ2oFX5YBBkeBrh07YPXyhbhz9gjw+h56duwMgSgNMokBMokOaToH0rQ2pNdUnR16tYVCSN4zajKgUaQjTWeHXGxAzy49vuDpTXy8cwkfaih5jlf3MWXoIKQrtGhvt0AiTYdCYYZUkQG5JpfGktFxqWCL0yHWFUCszXOWfEhYQK2hEzCyjByZZ+YoMpHCNyA+VQJhpQWscsPdegzAoIEjMHrEqBFdu3b9aciAIWLX8ayVf1JYPLk5KUkYRR4zBepTPFk6ImJS4Fs5F0oBpLMJlaULdR5tUGCJ0ioBzAabrwGLq4HR6MCne5cBsoTuo+vA6wdYOmMaRHwtdCoTRDwp0isBNLoogVCjTIdWZaHPhXwFBVFBAOzcnVq/j3cvfwMg0c8Pr+HD3Ytoll+Ejg4rmprSIZBaIZWZIFfaoNRkITaOAZbQAEkVgHJ7NYBCTT6dUXGWagpp8kEsPYkDa2bOTjfcggLYq3vfnWS8evToZ+jTp88/va1ZrVRKSpMm/8UXKTLIY7ZIGcoS6z6SeCk0Ip5aP1oDjE0FR57pnMWgLjcfsSlCup+uWJMHBk8DRgoHPIkNLZq1Bx5ew6dKUPD4Jq4e2gG9Kh16dQYsCgX0ynRYdDZYtVaqGVQtsGstsGktMKnNSNdYoRWIkKE2Il2qR/c27anr/fTgOj7ev4oPNUG8fYnWB68d3A6rLg0TW+TBrNRBrLBCLE2DWuNAXDyLFtarAVTYIVQTACtrhqRFixSutU7YBNoiagHp3/1NNpyNgiZd0K1Tr+ft27f/rmPHbilduvSKcR3XWvkHRWmwhkqUaVzymMGT2zgSI+JTRXQK7iuADHDlNupqqdXQFSAmiYdUno7GUnyeHE2MOiRxjOjT42fg+e1qOD7duwI8uoYuzZtBJEpDiwwLmhoNyFCbkKU1f6OZlerQmpEm02FooQ0tTekwSvTo1KQpPt2/gnfnD+LVwY14d+EwPty5iA+3LzphvHuFWt3dKxcjT6PC3LYFkIo0EMvMkMrNiI1ngFUJIAGOTwH8Wi8kfxexgCSeJTMvJPZLZKvAkliqExFnLEgaMfLRpkMfNGraOrtJkyb/1bxVh3TXca2Vf1AMJhs7PT23PnnMFKgG8qRGxCZxERQSDb+AEPgFhDoBJBkkdbdZ9CLGJPKQxFKALc+GQ63GvA6NEJuswMjBQ4GXd79ap7uX8enKUZQN6w2RQIcCsx1Tm+fAJNNS0Kqgq6kWTRr0YhXW92iG6a0KoRKo0SwzF4+2l+BlWTGeb1qI18d34vXJ3Xh7chc+nysHbp7C51tncevAViweNxw/O0yY1jIXfJ4SArEBEZEJ4Aj0kFIAcyBQ2GvMmuTRQjmJC8l8MiknCXWNkCowIFVg/AbAKlecltkGjZt3PELGLa+opbF58251Xce2Vv6OiESi/6tPz6zetJrBV67iSgyIimcjKCQKvv4htAgdGc+iGS8FUJkFibaAdsnEJHARzzWgf54Vh4d3ASNFjHHDR1EAP9+/io/3ruLjg2v4eO0knmxZjJZWC9RiHcp+bo0eWRkwyoklNCBLa6mGjzzOUKfBLJXj4OieOD+qMwp1RhhkepyYPwEfz+zBmzPleHtkM21MeHFqL06vX4bV08agrT0dbRxm3Dm8HVP7dMfCzo3RUqdAcGQKQsPjwBMZoNDm0dogKYpXTd8Rl0yK1UTJc2IBSTLCklhp/2PNRKQmhFkNO6FR07aZJlMjX0duk9RvR7dW/q4YDA4PpS4jpfLpfzAFqgssoRZhkUm0D44kIaQGSGtiQqNzPleZBbEmn1o/MlkfGcdCSdfGuDG1L6wKDX4ZMITuiPTm+lngwWXg+km8v3AEuH4COycNgZwrx+hWjXFkWEdkyLUwKQ2wqY3IrAGhVZmGRlYLXpw/jKfLJ2J1pwLI2ULMGTcSn8/sxqudy3Fz91pM6d0ZeUI25EG+4Pv7IMGtPmLcGiAlwB9mHhuRQcHoZFKhXboS7n5h4InTKgHMhETpgLRqyo4CSLJiZyMEccdC0vNIs2H9ryyg0xXnQ2RohLTMFo/tuc2jzFlFQpfhrZW/J2p1eohK5dwpnceT+3Mkhg8JDBECAiMQEhZLXTABMT5FhFS+Hny53Qkg6ffjaeHhEwROQhKOjuiKOwvGYGTH1mjRtCUe3TyLCf16Yky3djizbRWen9qNzxfK8W7zfAzJtiBdZaAdLfNa5UIv1SFDoUa21gCH1koBzFCmoaHVgefXzuDT3Uu4v3A05jTLQJFeiYcHNuHk6kUoiAkB46e/INXHGyEhkQiMTUFYTBJi/QMQ4+6GgL98j5AGDaCMj8HCNrkoUAjBFKRBXgmgVJVVY8ru25hQQGZmKhMT2gHu0rRQpaRJQZzWjGw/saGoWRsHgNpVE/4Z4YoUiSkpogbkMVOgaSlU2xAWmUgTj9CIODoVFxgciYRKALlSEgeSZoJcsEVpaODpj4YaOa5M/Bkfj23DqlmTkBwcDF1cFIT+3khpUBeykADkiHkY/3MXXD+8Ay8PrENHgxxD+/TE5/IyjMozwyjVoINFg1y1FhZlOs2GDSI1JgweQOd8vzy4hhfblmPPiG6Y3qkpWvnVRUFcFCK4CnhmtETxlr3oMnclfizohnoEIpUZjTKsiHRrgOA6dRDt6wdlSjJEcivkunzqgr+Zj1Zngy+3VceEDIGBNkwQ10ziQKbU+k0mXKUkUyZHkaExdBlNL7iOb638HeGI1TI22/pdaKj6TyyR7jpPZqLL0AYEhtH7ggOCwqnGJfHAILdiSi00DiTtTwKZDR4+wRiYa8G1KX1xrGwhzEo5wuvVRVydH8Hz94EsJhqMoGCw/P0R9d0fIfGshw0j++HVse0Y1bohVi6cg+dbF2N4oQMWuRwWGRcFGhVytUYYpDrIWGLMHTsSr+5cBF49xKOjO7DYwsWy7u3QtNcI/FFXiKCGPfHw4WNs2nMAP2a1R/1GPeClzUPJsjLMHDsOosgwJLs3QJyXF9gRkRBwpJAqHZDVaFwg1tCZlORR6Egvo0CZSWdNmBKTc0rOBUBiFVPFJEMmEBbSjmq+OquJ6xjXyn8jSalCut4Jk6/qwleYweCrQe4LJlYvMiaVHokVjI5ngSPUQ6TIoNaDWEHSOEoyy+mNLGhvlCHAy4dam4j69ZBnSsecqcXgGnPwoyYPdc1NoW/WGY2z86D665+xtUtD4Nl1XCjfirePrmPb7PHQ8VIwqlUeTg1rj0MDWmFhx0YY2qk92jYuxKq5U/H5+R3c3rIc5xaNw4MHDyBt3gN/yWgJzybdEZhWCC+FHV5NusOjUXf8lyYPvUZMwNN797Fk6GD0DK6PNpG+UHBFkMlNkKkc3zYskOSDzFUT96wrQHQCFxyJmT4mU4wM8VcAadcMKdPoGiI8hokkrh4iQxMKIplH5isddEapVv4BiUtiGVNZEiNbpH/NlaUhkSlGg/ruNAOOjmNWAhhOrSGLp4ZCaYNEboJc7exwFrOFODuwOboYpPCrVx/BdX5CpyZNcOXkacyYuRA/CUxwy+uM/2tojJV7j+LWoyeoK7aiESsGd5dPBCqeouL+VUzp1wU7JgzAzcUTcGXeaNye9QtuTeiJR0vH4+PlI/jy6CY+3LuCNxeP4sPjm3j+/DmYRZ3g1WMkEmaUoK7KgZ8EaYifvAiRo+fgj+mN0XnkFLrA0NF1K7GA54P+JjkkpFtGZaOzI9XdOJVzxSQpIbGgRF9I27FSOGpIDUW0/MQQp1cXqInlY4jMEBmbICqOAy9PP6SKLBAaGlMoiTvmqbPHspXKeq7jTcRqtX5Xu8JWpbDZ0mSWSPuWIzGAI01DTCIXdevUpwDGJnLokbSok2MqUwI5mVmQpdOGArHSgQy5Gp3UfER4eIDhVg+FGiX279iNm+fOofuQMfiz1A73zHbwbNYLzPYDkJrRGPVtzRBgyMPB0kV0qu7NjbN4c/kEcO8Snh/dgbfXztDi8utzB/Hy2A68vXDYOf12+yJNSN4/vIlXz55C0XM4wuesRcry7WigzUE9WQaSFm4Ea/0B/KVxD/wyYxGInFk+A7uaKDGoWzdwhGm0KK1U2SFXf40DSZtYVVIi0xUgJCwOMQk8yAwN6ZQd6fqhtw2QDhpVLpK4GogNTRCbIoF7A0+6fFsCRwe+rhEFU5LenDTu3uapszoZDDlkPcH/yMho8pMtvyFPbTCxawGsFKZQM4snN4El0oErTaPzv3Xq1KdxX3wyD0Gh0dQKkuexCWwIxQbIFRaIpelQazKRnMhGK2Y4BrEi0De4Hlb80h8XL1zC508f0WXUZPxfeSZC+09E0vId8On0C/4YJ4Z/y96o37ofps1ZSOuFBK5PlVNrnx5ex8d7pMHgAj7du4RP9y/j492L+HDrHD7cOosPNwmc54F3r9FtcRn8ppYgeflOJI6fB+bk+eCs3oPEkh1gDZqIQyfP4cP7Cpwc0w3Pd5SgeZPW4PD1kCksFMAqCEkXtbNP0QkjKdOEhMYiODQWUn0heHIb2BIzdc9VJZpEpgwSQyPEpUjh4e4DL09/urNoeAyLlG5O89S5dwiM4vQWtPeQIbWXC5SWoWmWbHFKSsp/uV6H350kceXeTKF2NUk6CHxEiRUMCY+nFtA/IBQJKTx6EYKCoyiExA1zuAooFWaIJAZotFn07rGMhDAc75KNmRxvbBvVB28+f6GWZ9ycpfhrVhskLt6KhEVbETlqDn5kqODf8md4j1mAYcXzgWc38OE2gasGYERvnK7W91RPOfX6KXy4egJfntzC4SuXETG9BClr9iLr2BlkHjsD5c7D8J5VhkGbd1D3++LqabzZVYp7B7ZCozbTfyCl2kbbwZzqdL1iBYHRmZQotLkUQLIyBJn14Uot4MqsTgC1eTQ5iUngUPdcBSBZrs7bOwDeXv7w8fKZpMjJ+QtHbWOwZdYsrjLTwlc74n93S/sajca/atMyEmu+RuIPnlTflCXW3+NXWj6ibLEeiSwp7XyuW6cBbcNKTOEjNDyeul8yLUeULM0rleghkxqpJSENoPXqeaKkuQWXfmmFzW0sePX6FT68f4ujJ87As3F3RMxZh4R5G5C8fAcih0xF3OQl8JlcgjlrNwD3z1OonHrSeSTAkeO1k069esKpV47j/eVjeH/pKN5fPAzcvYTlu3aj88ZNGLpvL8YdOYpWG7ej0ZJVuHD6MF4f3Y6X21cAV49i25ypSGXJqPVWqYn1cwKoUtkhVVghpUlJZROrJpv+07m7e4MtMIArMYNLWv61+TQrJjFhaHgCtY6xycIaAJJlfIMIiK+9vH6gpa3fu/wHX6JL0eotbZRay0i2WFvKEmmfijR2au3YIu2bmgBGxqZS2OrWdQKYxBBSq1cFH9nZMjI6CSy2BHKpAQKhBlKJEXU8AqEND8DLkom4tWA0bh/Yhufv3qHi9QuMKlmHyGnLEL90O3irdyPv+Fno9p9A3MyVOHtkL3CtEiqiFLDjeHfuACoIZNWwHflWzx9ExZl9eH9sB3BiB7B/Hd7vWY23O0vxestSYO9qfN6xDG+3LkFF+Trg3F4M7doRSQzZN/BVqZS6ZKcLruodDAgMp2vDJCQLwSX3kkgs1QlKMkcFP/8wZ7Ycz/4VgL6+wfDxCejuejF+t0IKzSyBooAlUC9kCTVrOBJDP75Yy2KLtOdJ5wtLrAdLpK/OeOvVc6MAJjOEFLiQ0JhqCEPDY5GczAOPI4NYqIZQqEZwaAzq1XVDSXMrcP0Y3hzdhmdXz+Dl61d4+/Y18peVwX9WGdSbyzHw8FFM2LsXm3duwZdz+ylM7y8cpqBVXDiEFztL8WL9XDzbXoJ35w7i/cVvAawgcJ7Zh4oTu1BxZBsqDm7E+/J1+LC3DB92llB9v2M5KnaUoGJXKT6Vr8Wr3WVI16ZBLCXJhw1KtZ12Y5PHcmUGBZA8J7cFkL5B0sTq7xcCd3cfhIbFg8XXQiQjja05tIgdEZ1KN60hd96FRybB08O3Er7AOz4+gZd8fUPg5eV/qjbR+G+EyVflcmXp1PIxhVoks2V08UmyH2/9+h70TrhkphBRMckUuioAybQcaWtiM8XgsWUQClSIikrAX918YIoPR8XmBfh0YjdebpiPp3tWo+LyCTw9dwSr1yzD0W1r8HTPOuDgRmq5Ko7vRMXpvU5rduEQ3p7cjedrZuHF6hl4vm05KgiANSxgxbn9TvhO70HF0e2oOLwFFXvXoGJPGd5uW4a325bi7fZleLVlMd5sW4qK7cuB45swd9DP4PAVUKsznMmH2g6+QEOhk5KSUuUtAtQlqx20iZVYMbK7J7FocYlcWvusso7E+vn6hUKgsNEpS5KAkPO8vPxvBQQEZ/r4BH2qtIYk7qsVVxGJRH9mCjXXuFIjzXwjYxmIiE6mS5A1qO9BlcCYwhIhOtbZRVIFH9HIqERwWBJwGCJqCZkMAbx8g+BW1w3bejcDTu9Cxe5VeLdlEd5tXYxPO5YBe0qB3aX4tHc13pevRcXBTU6Iju2ohrDibDne7F+PlztLKZCu7rfa+p3c7fzsoc2o2Lsa73aV4u22JRQ+At7rLUvwbttS4NhG7J0xDgqZFkplGgVQq81EaqoQXK6SNqlKZOnfuGPymlhirAQqgBblw8LjaWKi1OWDxdPC3c0bQSEx1DISSGu634CAgEgfn8AJzqXtfLu4jn2tkNqfQJ1NSi9O66eha+GFRSXBLyCMWj8CIFmGtwrAsIh46oZDwpxKIExJ5oLHklII+WwZEuKZ+K6uJ1qJUoHyMnzYuxoVO1fg3fbl9Ph2+3L6mD4nlrF8HSqObHWCdGpPNYAEsjen9+EDif/+RuxHgT26AxWHtzq/Z08Z3u0swcfdK/F5dyn9+Ti8DqvHD4NMrIVMZoBea4FWY0VSMg/R0YlQq+00iSI3L32NC+0UQJHYQIGqAjAyOoXCp9AVIDI6lY5PdCwTMTT+c7pfosRq+noFqry8vBp40PUFvUtdx75WnLW/DcT9Eo2OZ76r81PdT6T8Qlqr6td3R4MGBMAApLDEiKIWMBZh4XEUvCoAwyPiqBvmEkvIFIPPkSE8OgVx3l54uGAUcGo7UL4aFTuWV7pHp3UibvLd7lWo2L++EsAaFpC63GP48FuJR7UVrISQxIBVbpjEgAc24Obq+biycjZOLSlGn1YtweaqIJDoIZIZIBZrEBOTTKcV+XwVNJpMOiWnUBG3XBkPKiz0daFQS9wpLauQBCMhiQ+NsSGEEhOFkrjcJIYIfnTB9oBvAfQPakjG2M3N85y7u9d517H/3YtIpPZlCbUVxPWyRbr7oRFxWfXrub33C4igPYD167mhQQNPeHn5UQAJfCTJIJ0xNa0gyZYjKIROC0gg5LGliItJxYgmOTi5rBjLf/kZZxdNwcfdxAIuw7sdy/GOJAf71qJi/4avLvjMXmr9voGtqvRSpdUW8ajTFRNoT+x0fseRrfh4dBvub1+Jkd07QynXgclWQaMwIt9kxuS2TWDiseHm4Yf4eEZlLOi87/grfFbwhVpqGbkceTVYpLjM4amgMxYgKiqZQhmfyEVYeAI8Pfyq4asC0N8/NIeMs4eH30R3d68nv7va398TlkjTmLhfonyJsfC//usPiaTeRVwNWQfGzc2TAkhcSDJDQAvSZBaExIEhlTEghZAs2hgQiqCgcCTFM8FJFYDLEELMVyCVIQSLycfwTu3wevtyvN+1Au92rnAmDEQJfCSDreF+acxHACOgVdX/fkM/3TzrjA2JOyYum8SDJJk5tgOfT+7Cx/3rcb10Jo5M6I9Dg9vjyuR+eDyxKzRxEfAJjIRMpoNWY4FcYaq8P9npdgVCLYSkGM+RITGR47R0Xv7w8wuhLpon0MDD0w9BwZH0H9LT82vs9zUGJFt5+RnIOHt4+HRzd/d+Rfbhc70Gv2th8tXThaoMsASac+S5e32vdFJuIK43OCyOJiIkDnTWwLg0FiRKLGGV+yXwhQRHIDQ4Av5+ZA9dP8QJdUgU6REnSqM3KJWP7gnsX+0EjyQdJFY7sMGZOBD4iOUj8Jwpx/vzlQkHqQNWwVZVkK4sSn+87SxY31wxDe8uHnaCeuGw0xoSEE/vxfsz+/B6/3o8WzUNTxaMwKPFY/Fm+TjMK9TDzzcIDAYfBr0VKpUJErEeSrkJSlqYtoHJkkAiMSAiPB7x8SwKGBkXcicdsZD+/mH0NQJmTficheeqx3Q2hBb+3eq5dXd397rpOv6/e0nlKjaI1Blg89WtyXMPD28DsYDE6pGFGcl/N4kBCYSk3OLtG0SzvtCq+C8kCiFBEQgJCkNIUDhCAkJpTSzBUIRES0vEmlsgQZOPbQPaASecdTqa8ZKEocrlkviNuNCz+7/WAK8cw8dbZ/HxznnnlFyV3j5HX3t76QhuLp+Mm8sm4eOtc05ICbBV8SL5HnKX3OXKGPLKCeD2GZT/0h58lR1+IbGQSTTQ6yyQSsnN8QYoZGlQytIojGy2DGy2HAEBYUhIYMHdzYe4UxoPhobGUg/havG8vALe+/gFzvD2DvxSWYZ5QfZZIePq7u4z0dPTZ5br+P/uJYUj28ER6SAQKOiOj15efnwCILF4BDwfX7IlVSAtRpPsl8wIkMdBgWHOMkxIFEJDoxAaHImQwDCqpGidoCtAkrk5ks3NEZnWCk1tDnzcuxIfz+53AkeUuFsCHilAV5VZrhync7+vz+zD9UXj8OLodud8b9X88M0zeHVyD54d2oy3Fw/jy+Pr1XPG30zZ1Ziu+3DjDPDwMk5N6A1tWjaiDU0QE5UIjdIMhdwIsUgDpTydAqhSmMDlkHqmGuHh8QgNiUZMdDK1dHFxTISERP8mfKTY7OMbWBYQEO3p5RXw2Vl8DthMxjQ4OPgnb2//lT4+wWGu4/+7F2IBU3mKJ4CzSu/vHxbs5ub1kQDoVM/qYjTpig4Li0GdOg3I1BJ1udTqBUcgJjrR+TgojLq3eE0ekiwtwLK1BcPWHin6Qmz7pRNw6xQqzh/A+3MHvsZ5Ve6WAEMaDio7XEj71fOjO/Hu8nHn/b70nt8LeH/zPD7dv4aP96447wG+faFSazQx3HICSTpp8PgKTk7uC73ejqScHkhSZYGRzIVGZYZIoIJcaqTwVSmHLYFQrEdEkhAxZOYnJNqZ0ZJi9N+I9Xx8gp75+4cHubsHeZDEhADo7RdoI2PKYDBiIgIjIlzHvlYIgBzJZLZQXV0eyMjI+E83N+/TVVawJogkEYmMSED9Bp50Yt4JXDiCA8MQGR5LM8qgwFD4+wQiTm5Hqq0NOI72FML4jA5IT8vE7SXjgUdXvrrMGvEdBY+62fMUNrLaAV314O4Vl6U3fr0Ux7fqhBVPbwP3zmHLsO6Q67OQmNkFwvweSCS3EfAUkEn0dJWtausnN1HLx2YIwFLYkGooQnw8s7oIXbPE8o3l8wm8HxgYSO+A8/L1VTnnfgMPkVtcvxnsWvm1JHNEeq5QVV7zNU9Pn6Ek4K6E752Xl98D8phYweDgSAQGhqNuXTeacFRZQZIBx8YkIyGBCT8vP8QI08HJ7gJuZgew7e3AtrVFjKUdcix2XJo/Cnh4EV/I+i01YjsKHoXPFah/Tsm9x3h5H69P7Mb49s3A0hcgObMLuGSx85wuYEhMkAhUEAs1FDzSSEE6eiRiLZ3FYbGlYGW0Bs/aAuFhJN77trzy1fIFffALCJ5KdpOqGjsPL58d3t4BD0JDQ0Nqjmmt/A0h/6XJDOGUlJSU6nahqjiwUncHBoYJv1pEb4SRueDgCOpqq91wJYQJ8QwkxiYjhq0EL78HeLldwc3uBG52Z3CyOiIuowMUxhws/LkD3h7aADy/RS1VtYv9DaD+Yb17GV+e3MaXh1dxYclENLbbEWNsDlZ2F/CyOoKf04keWQINRHwFZFIDJGINhAIl2DwlmGwJbahlKR30d2Zpc+kuoFXNBd/AR11y0JmqMePz+XV9fQO7uHt6bw0ICKC3tdbKPyhxcanBiYmpcpFI30CtVv+JuOEGDTxPkGDb3d2LLr7t4eE9j7hgkh0TCEnpJSoq8WxIcMRVVwgT4xlgMARIFaeBnd4YXHtbsE1NkaLNp1YoNasL4tNbIMeWg9JfeuAZaZF6dJWu7ffl4fXfBOtXr/0KvFtUnx7ejotT+mGESYwEU0twcrqCaWuDFGsLCPJ7gEt+H67cCR5fCR5HCg5bCjaxekwhrVlytNnganPAs7ZEeDwXnt+0VzlLLc42q6BbVWPI4Sjcg4ODY78Z2Fr5x4XJZP4okahDMjIyfiDP3X182AQ4d3evReR5RAT3r56evuVVrpkco6MTo0NDE92Cg8If0yy4RkxIOmIS41KQHJ+KxEQWEpgSME3NqCUkEHKyOiHJ0RkJac1gsuRhZI8uOLJiLiouHASekUXH7+Dzg2tf4727pBXfBcRKi4cnt/Hi+E5cmD0C+wa0xpF+TdElOwPJjk7g5XRBvL4IzPQmEFhbgCvUQiJU01kaNkNE567JrA2bI0VKChfxiWzwdHkQZnWEOLcLgiOTPnvS+V3aWPoxIDhY4+MTsMXXL4QmJV5eAf2jo6P/2KdPn/9TexP6v1i8vHyauLl5PfX29qYZXHR0dD13d9/99esTK+gFv8CQPPJ6QFBo1rcAhiKE3LSkyqTK1OUj1dIKDHt76gJpLFal2Z2QktkZ8aZWYBsKkJvXFFOHDMDZ9Uvx6epx54qnz+/R9WQ+3LtMM1+SnJDXyPJrTw5uxpmpA7CvT1Ps6tcKe4Z1w+HBrdHSloHYjI5IzWiDOIkdbIEWfGLx+ErauUPhY4orpwxlSE4isx2+iOGoIGvcD6LsjjtkBrve1zfotTPZoInFSPL3kns4iLv19g044e7h+8bd3XtNYGCIncvl/tV1DGvlfymenj5aHx//NuS/vOq14ICAZQ3qe3z54x+/I02WfyavBQSEzAsLqYIwDMEBIWClN4agsDdYWZ2hLOoOVWE3MGztvgGQZf/6nJyXZOuAOGMz8NIKUZjXCKsGdsTDzUvw8fZF4PVD4PUjfHp4Dfe3r8CJkR2xq2sudvZpgT1Du1LdO7wbDvRvjn4N85HeehBEjjboP3QcbI06g5XWBBJDLpgp/G/g47DE8PcPofW9RIH2tCy7Ay3Ku9erJ3e6WmLtAlfXHAMixOIFBwe7+/r6+tTO8f77hbiX/1i8etew8uOXDyxdsfqLwWjGn/743S7iwb///ofG5F6QwIBQmpgE+QYiSaCHuLAXInVNMGfpKmzavps+rgkgx94GqRltwSOJShWIjvZItrUHv1F/tLTZUaIMwdbmepwa2x2nxvXErk4ObGluxK7eTbBveDfsGUbg6+LU4d2wv38LjG2Sg85d+2HOvFLMXbYBTHNrdB85E81adER8HJPCRzp32CzJu7jE1BZubt43iKVrULeuhvyxAQEBUd4+ATd8fIIeevsGDq4tqfx/QGYsWTdg3cEbWLL1NEp2nMXqPefQY+B4MLlSKBXqzwP79IafXzDdyJAkI+Fk/T1bW9jb9MfLZ2Tx8Ddo2Wc0wrROCBNNrTBk0lwUdR2CaENz8LI7gp3ZAaLcLug9bAb6DxmP3u06Ya4hGfPTkrBIE4U1eRLs7NUE+0b2oO62GryhXbBvaGfsG9EdB/s1x0C7Fl17D8GKsu3oNnAi5pVuwKFDh2iZhZEioB07fJEOPKGShhE+Pv4ZpIDs6en7C3keGhop8vcP0oeHh/9DNxNNnzA99MGdK/xP7540OXXiRN/5s+fXroz1r5RJMxYEz1tT/n7R5uOYt/Yg5q45iLlrD2HZ9jNYtOk4zl+7TW+9nD9vAeq7eVP19vIDX5uNnftP4tXz+3j98gGePrmH5j+PRoS2CSJ0TdFv3Gw8engXmoZdqXUkmWvLfpOxeNkGNC5qgZZFTVGcKceWdhnY2b8Vykf2wN7h3b8Bj8I3rAvKh3bC3v6tseXnVpg/dgKWr9mNpSu3Y9WabXj++D7stixEx6SCz1WQ5OMIX2tbIbUW9SEd4eRv9PEJ0Hh5+62Pjo4z9unT5+9avMmTZ0SvKNs8aPfO8pO3rl9/D1Tgy8cK7N57EvPmr3g0b+zYH10/Uyv/QylesmHwqr2XKXyuOmfNQSzbcgwPnz6jEG7ZvBWx8Sn47vsf6Van586cxvu3L/Du5SPgyyt8qniG6QtLwc1sj2hdE5w9fx4P7t9Fp8ETaMlm+PQSrN64H8NGTUPj/EaYmavBkVHdsHdEj98Aryv2DemA3f1aYcuADlg1bgxKl61F2YZyLFiyFvMWrcbgoRPAYgsRGhaLlFTe7RSGsGtVPMdkqgkkNeO3/4iKigpwjfeqpHjKnNTZc0uGrFq7df++gyc+Pn/xEgQ8fHmNLx9fYdPmPZi7aB3K1uzEnOkzta6fr5X/gWRk/OE/Z5VsO0OsnSt8VTqrbD8WbzyM2w8eUwi37jmCrILW8PUPB58nxPGjB3Dy2AHcunaeLq8GvMWd29cwfvZiDBhbjPt3bgD4iNUbd2POsq1YWrYTpevLMWnyHMxvmoH9A1pRK7f3l87YS1zt0M7YO7ANtvZtjY1DemL1pIkoXb4Opev3YsWaXShbswtzF5ShQ+e+sFhzkF/QDFk5RX2qkqZ/VkoWL05YtGz9suWrd+Hi1bt4+vQpBQ4fnuHj28fAxxe4ef06/ZmLlm3A2g17MXf24iGu31Mr/wOZMGF66JyVez4u3Hj0V+C5Qjh79X5cvnkPR85cxdxV+1G8eDNadR2Chi26YOniJXj17C4+vn2C968f0YtHQMSH58CnF7h76waWle3E4rLdWLpqB5av2oEV6/djRelmrJk8Adv6t6Pg7R/UFtsGdcbGyeOwcu5CrFy1GaXr9mDl6h0oXbUNpWXbUVq2DSvX7MSqdXupNdy66wQ2bik/BIDWOf9RmdpE//2CRWUjlpTt+lCy5Rg2l59C+cGTuHnjBj5XPKV/CwHwy4eX2L1rP+YuWIPFyzZi9drdmD9v2XrX76uV/4GMmb5Yu2Tzccxfd+hX0NVU8v7s1Qcwu2w/Lly/gxUbD2DW8p1YvO4g5q4qx9by0/hc8QxfKp7gy3sC3xvquvD5Fe7euo7lq3diwapdWLLaCeCyVTucx3XlmFWyHcsmTsKen5the782WDhlBuYvW4/VG/ZiJYGtCrqyrZUAOpUkIaVlO+hxy64TmDFzUXn37t15rn/jb8mMsZOjFy3feLxs+wnMX7Mfxct2oGxTOW7eJPA9r4TvCQXx9fOHWFG6CQuXrKfxK/nZC+cvu9Sntjzzv5d+45eYFm85hXlr/zaAc9ccwJyyfdUQlu08ia37TqJ4yTbMWLoN05dsQemWg7h97x7uPXiIY2cvYdKMRdi3bz9WlpZh/PSlWEgs35o9TiXgrdyO0nX7MHvJBnTuNRRjpi7CyiF9sXzUSIyZPB99+o3EsuXrsWrNzhrQVVnArwASLVm1HRu2Hkbf/iMRF5uMdq3bHRjUd8DE/MKm05ev2jxhcdnmFstWb2q8atV626I5c6IWzF2evrBk0+PSbScxZ9VezFy+Azv2HsXbl4+BDy/w4c3jagCp+712BfMXrsbipeuxeOk6rFi1DQvnl9wc21r9J9fxrJV/QhaPH5p8/uienfuOnMPC9YcwY+V+zCo7gLnfWL7DmFW6G2NmrMKkBRsxZ+UezFu9H/NWl2Pm8u2YtngzZq/YiWUbD2LR2nIs2XAErbsPh1qfhUaNWkMk1mB88TKUbNjvtH5r9mBZFYgrt6Jbh27oP2wShk5cgOJ5KzFp7mpMmlWKEeNnYdSI8Vi7fvevwPst3bz9MKy2fHz/l5/g7klaq4IgkmiwZsdJlG47gdKtx1G65SimL1j7eeGqnViy4RDmlO7CwlW7cebcRRoqfKp4ig9vHv0KwGNHjjvd7/JN1AIS6BcuXHF7ap8m37uOaa38g3Jkxyrz3UuHXr+9ewp3Tu/CtTMHcez4SazbeYyWYYoJjKudMM5fewCTF2zEqOKVGDuzjFq82St2YeqiTZi1fDsWrinH/LK9WLrxCMbNWEFvY0xKZtMW/7CoRMxbvgXL1u7D4jLigp1uuGz7cYzq3ReWBt+jnd2OMWMmY/zYqZhSvAQTx09DS6kQ+VHBWLaoFGXr9/wKuJq6et0ezJizAvXd/eHm4QupRI5unTti5/oSnDlyACvW7sHs0t2YV7aX/sPMXbkbs1bswsI1e7Bl7zGapVPLVxm/EgCdED7Gl/fPsX3rbsxbtK4SwI0UwAXzl91o0qR26bV/SJQzJ/qxZs0clTx2bHGvefNyXl85vgIvruL1nZN4dO0oHl09igcX9+Phhb14cPkQrp4/joNHT2L19qOYu/oAZqwsx+xV5Zg4bz1Gz1hFddL89ShesoWCt2BNORas3ocVW49Db8pBgwbedO1pctNTXAILc5duxLK1eymARJevK8filduQnxSDwvrfI9+rDtrGhaF1hC+6MGLQPD4cefW/R+5P/4W+TZpg0/ZD9KLTeHDVNuoCl5duxdKSLfS4fuM+TJwwBX17dMaerWV4evM0Pr+4hg9PLuHT86t4fOcSVqzdhfkr92DOkq1YsaYcW/Ycw5Z9x7Fi00EsWbMP+4+cQcXrJ9QCEgirQPz07ik2bNiO+YvXVwNYtnY3FsxbfMh1nGvlb0iwrdHwiEGjEDGtGIwF89F2w1psOnkIbx5dAR5fxOtbJ/Dm4QW8fXwJz26dxJNrh/Hs+hE8vXECNy6dxpHjp7Bx9zEK2aiZazBsWimmLNyEOSt2UutHXl+++RhGTFpQueh5OF38iKy+QG5ynzZnBUrW768GcMOuk8grbAGPOvWhD/RBhyB3/BzugTGMAPQMdUNLn7qw+3uC7+2JML8ATJ4yl170pSWbsbx0C1av2YZtW/bgUPl+nD9+GDfOHsazmyeBVzfx+eUNfHh2HRVPr+HNgwt4c+cU8OwS3ty9gqXrdqHVjEXovmo19p+5gOXr9mPxugMo2XgQ2/adwKvnj/DpLYHOmXx8fPOIArhx407MX1xlATdQ4OfPnD/adZxr5W+IX6I43y1RCQ9BGnzyW8Kjz0D4jB0H1fx5mLZ7O26TVUhf3gLe3Mbnlzfx/sVNvH1yFS/vncfLO6fw+u4pvLx7Fg9uXsCpU6ewfls55pfuxOxS4tr2YMHqvVi1/RTM9kK4uftQ+JwrrUbQ5s5ho6dj5eZDWLxqJ9btOIFBI6airrsvfvQOBMvPFz3CPLFQEYESXSQmsIPQ2a8+OPXr4D//2gB//K4ObLYcHNh7ECcOH8bVcyfw4PoZvLhzFm/uncWb+2fx7tEFvH96Fe+eXMXbBxfx7s4pfLh7Gm/unMXli8exdN8OtF61ArxZMxA8cTw8+w1E9tBJ2H/oDM5duIxHD+7i7asnePH0AZ4/fYDHD+7gwZ0bNCYkLnjXrgOYt2A1tX5Llm/A8hWbPi6cN8/4/NHNLLy7V9ug+veELNnmmap86Z6swE/RYtRNVsM7LQ+e7bvBfehwJBUXo/Xqldhw/CBePLwGvL0LvL6FD89voOL5Dbx7eg2vH17EmwfnUfHoAt49voQnty/gwtlT2Ln3MMo2H8LY4hL4BzmtXhWARElM1qp9T6zdfhxrth/H+BnL4BMUiXAPT2SHBaB1iDdaBLpjPNMXk5Ld0Mm/DvqmRKJftgUjhg3Bjs2rcffqSbx/dh0fnl9FxZNLePfkMiqeXqFH8jsRECvunsaX++fw+u4FnLl4ErP27UJRaQkYxcXwHTkKnr37w6dJO/gYcvBf0UIUtO2BL5/f0hLL8yf3KXhvXjzE+zfPsHXrXixbvgEvnz2gZaSyVesqAdxAIVy8ZM2r5w+ul5Oi/O5t2/e5jnet/IZ4MjQbw7lqKAQcBKeK8WOMBD/GyuAuTIdXXnO49eoH39FjIZk3F/03rcOhCyfwkTSPEhhf3kQFcWuV+u7pVbx/dhWfXlzDx+dX8erxDZQsW4rIqDj8VNcLfgHhdDkPAiBpXhCKVSjbchiDJ8xHfFQsjD4NMCA2EINj/NHU46+w//hH9GbGYnnHpjhcMgfPbpwC3j8A8Az4+BCfXt1CxbNreP/8Bv2nePv4Mt7dO4tP98/hy4OLeHb7PPadPoJxO7Ygc9kyJE2bDt+hI+DZuRe881rAU2lHvWQ16kaL4B4nxh9DWBg4direvn6JF0/v4/3rx/hEMt4Pz3H35jUsWLwWcxauw6ULFwB8QsOiRuj18zBaDJ+7YDX27jtMZ4QOHz6FWTNrY8F/SPzZ6tZe3DTYpalopkyAVsRCJFOEevEy/BAtQb0kJTw1mfBq2Qnug35ByOTJSF+0AJN2bsW1G+eB13eAN3fw8TkB8No3+uH5NeD9Xdy+cAjdO3eEp3cQ1WoI/cPBEamgigpHhwhvjEwMRo/ABmjh/gOGKnjYMW0UHlw8jA+vbgPv7+PDq1t4R0G/hoqn16n1e/f4Mj48uogvDy7g/b0LuH3tNNYfO4heG9dDvWABwiZMhMeAIfBq3QXeGQ3hLjThp3g5fowSwztehCSWAHoxG8lsAf4UKcSW7dvpPC/JdEmy4Zy9eYEjh47Sksvchetw+OBR4PM78LgCMFhClKzcgoWL16Js9VZs27YHpatoOWax61jXym9IGEse1YCh/SwQCJAmZqKFKh4NFYmwSBhgcAXwSZHirzFS/BgtgRvXAF97Y3h36wOPkaMRP306mq9agQ3HD+DlI+Ki7wGVVolYxJf3zuHx9eP48uomjSPXlixAZHQC6rv7wTs4CrFBIcgP8cIvcQEYHO2HHv71MVzJw+6Z42jy8OGF06o5lbjYqxS+j8+uAc+vA0+v4e39y9S1ztu3E63WlIE/Zw6CRo2DR4++8GzYBp76HDTgGPBjjAx1okXwjBchKlUAGY+NdDETBhELhfIkJDK5cGfqcPbcOXz5+NJZcqnMeslMzo4d+zBvEWl0WIsDB0/gxpWLCAwMQ70G3ug3YBSdlSFF6XkLyrB23W4sW7Ssh+tY18pvCP6A/3BLUZ5J4knB4/HB4fIpfGohB0WKJGQqmNCKOYjliNEgQYa/RIlRJ14OL3kGfBu1gceAwfAbPx6SOXMwePMGnLp8Cnh5m7roT8+v48mNE7h1eg9e3TuLL8+v4vCudUhMYoLh4YGf44IwPCEYvYPd0S8mEJuG/YxHlw/jPQHvyWVnTPf4CiqeXsUXYk1f36YW98Wj69hz9hhG79gKx/LliJ8yFV6Dh8K9Qw94ZTeDh9yGukkqGte6xYoQmSoEhy+ARsxBjjwFzZSJMAqZ8E2WIowhh0XMREgSFwm6XBw/fRG3bt6kpZePtO73CB/fPsXGTbuxYPE6zF+0FseOn8OI4cPx408N4ObhA4XKSMtAi5asxcLFa7CqbBsWz11scR3rWvkb4pWqmBTI0UIp4ILLE6KhIgk2KQPpIgbCmVJ68SxyNuxKNqRiPoKZUvwUK8UPUWI0YGrgaymET+eecBs+AhFTpiBn2RKUHNqL5yRxef8QHx6ex5Ujm/Hs5gm8vnsGp/esx2BGFAaEe6FnYAOMVnBxfssKvHp0Ec9uncK98/vx6OIh4Mll4O0d4OUd3Lx9CSuPH0SXDesgnzsPYeMmwLPPIHg06wAPUz4a8NPwU5ycWjnfRDGSuWKopTzYFCz6e2ukfKSLWciRJUPOYYLN5iOCI4eEz0e6iIn6MVyYm3bCs2dPadmFFJ+ris4f3jzBunXbsbRkE1av243Jk2YjLDyGFtTJXspkU8cx42agpHQzlizfiEWLVn6ZNWtqpOs418rfkACmMt2TpYeAz4dWyIFCwIZWxEauNBl+DCXqpWjgkaJCFFsGhVQAh5qDdAUHqXwRvJJl1D3XjZPBW2qBb8M2tJzjNWYsRHNm45etm3Dp1kW8v3MKZ/eswqOrR/DkxnGcLpuHbn71MNEgwe0Tu/D09mncPV+Ouyd34OO983j75AaOXz6D4n27ULCiBClTp8J70C9w79QTnvmt4KnJQr1ULf3ZDWJECEsVgycQIV0hQJZaAItSALFYhDiOBL7kb2DoEMuWwiRmQ8LnIUuaQqEk1jFNysWfQ9noO2IigM+03ken3Cqn3r58eIGioiZgskXQaEyIjEqAl3cgXbKOLHZZ380LeQXNsWrNDmr95s9ZeLB2cfJ/QiKTBV71U1RvU/lSFCgZ0IjZCGAoEM+RwpuhqlaPVDUapKjhw1AimS+BQc6DQ82FWiZAFFtCXfRfoySon6KCtyEXPu26wW3wUIRNmoQhG9bh3PYSXCpfiyfXj+LprRM4vqwYV/aswck9K3F8yxI8OLMbZ66cQe91a6FdMB/ho8fCrWdfNGjSDp7pefAQpKNuohJ1YqTwSpIigSuFWi5GhkYEh0YIvUIMhkCKYKYc7ilK1E/Vwp2lgxdbB2+OHj5sLeJ4SoQy5TT2s8sYkPK50Er5+FMYF0tWlAF4T7NfYvWqul6Ad7BaM/Dd93Vo+YjM5AQGRVD4SD3T0zsASckcLFi8BuvWbsOCWcUO1zGulb8jnqnK8gieGnYZE3mKVMRxpHBnaOHDUH1VplO9GCq4parhlqJCMEsBnkgEk4IHk4IDvkiIIIYUdWOlqBuvgDs3Db6tOsNr4iSMnDMDR8vm4cTaJShfVIxzW1bh1NpFOLRsOk6smYtjOzaBP24K3IaPhFtWE3jIMuDG1FLrSpTEbPF8ORQKGaxqAcxqMcQyOWJ4cvpPUT9VgwYMLTwZangz1fBlquHH1sCPrYUfRwtfjh4ebD1CWEpkKZmwSZnIlDPBEwpRJ0mJ7XvK8fTxQxoD3rl1E/fu3MajB3fw+VMF2rZpi5/quFHo6Pa1geEIDYkEI5WHwKBwWmgfOXIySpevPkKaeV3Ht1b+jvgzlIP8uQZY5FwweFIEs1XwY6nhz1LTI1VyQZnEAn61ip6VVtEjVYU4ngxSiQgGOR9qmRCJPCm8E2XwEJoQ1LMfwoaNBm/gUCh79UV67/5wdOuNor6DkTtoGOwjR4M1bBTCJkxGeJvuqBcjRv14GXxSFYjjSiGXiZGulUOtkIItViCU67TIbgwNPFlaeLG0FDhvlgY+5Peugo+Cp4MvVw8/DrGEOkTyVMhUcRDNlkEp4SOOLUS4zIaTZ87izq1buH7tOq5fu0b12tVrePniBQb0H4gfKwEMCgxHgH8wOCw+Mh0F4PGkqFPPAw5bzofdO3YoXMe2Vv4B8YoXqLzZegpPEl8KT6aGwvdbSiAkF7smiNRFM7SI4SoQyJRDIBahnTEJGVImfFPkaJCogIfMCndrQ3jktIBP4/bwbdEV/h16wa9Tb/i06Q6fhm3gpXKgQYoKbslKKGVCNDJw0EjPRpaGjzCOEmEcFfzZGidwbC18CFzUwuno60QJdOQ5Ba8SPh+unrph53ta+HN0FNA0OR++ySLIs1vg7p07uHH9+q/0xfNnGDRwMOrUdafwkdtQI8KiodebYbXmwGrNRmxcCvz8gx7VLsf7P5Sipm0LgoVmCIRiKMQi+FQCWGUF/5aS9wmMvkwVvJkapPClSJPxYJIwwRMIoZcSSyNGfYYWbkkK6prrx0rhFidBgzgp3OJlqJ+oRN14uTORSVHAn6OFZ6oKNjUPepkAdrUAeToeMnUCFKWLEclTw4ujp2BVa03gKpXEfj5sHfy4OgRyNIjka+DHM8CXp4cXz4hIvhrpSgF+ihejWY9B+Pj+Ne7evkWtHrF+NQFs27Y96tT1gF9AKIKDwiDgSyl4ZnMmhdBgsCIyMh7mtDS769jWyt+R8u3rAyeMHPMwnK1GHEcOq0yIYI4GoVwNPQay1Qj4DfhclYAYylbCouDAIWdSN66X85HKF+OvqXqIxQJopDzE82QIZ8sQyJTBj6lECFOKFJ4YDK4Q/kwlfDlaeDDUMKlECOaokCxSwqEVgCFUIEWohA+xflynZasJILFsxMqRWI+8JpApIVEoEcAzQKFUQa9WwIdnhB/fCG9+GpgiBXRKMb6LlWBs8dzKGZCneP7kAW7dvEFBvHHjBh7cvw+lSot69T0RFxkNtVKD9PRMmM1Z1ZqRkQuxWIXWzVpdB/A/ugnqdylLly79z5VLFu/r17sPfMKSQOaFHQohonkqCmA4V4MwrgahHA1CCIyu4BG3V+OxH0sDL6YGQRw1taYGKZcmJj+kGsAViqGT8SEQiWiMaFCKkKYUQyMXQycXwKAQUUvqwdDQ2M6sESOerwBbIke6RkpnKryYWupOieulR/pYDz+uAf48PRhiFaJEOgTz9WhklkMsVyGQZ6TwyZVK+ArTESBKh6/ABLlcRgH9MUmJzTvI1q5vnb1+b5+g4vVjPH10D69ePsO+Pbvh4emPuNAwWLQ6avFMpm8BJKrVmtGray8smjOnp+s418rfkPkziwduXrcWel06/EPiEMRWwywTgyOUI4ijpRASAGsqBZFd5YK/xl3E8pDYi2SdxP1JRCJoxVyIRELUY2hpnOjG0KJOqg7uqWq4pypp8kKsXBSfZK5aGnsSbZCqQbpKDL1CgjSlCCRD/xrH6REmMCBYoEcwT4dEsQ4SpRqhfB0ytSJEifVIlupg0cnBFSvAkWqhVKsRJk5DoNSMYKkZ/mIzDBo5GBIVAiVWXL16Efj8skbn8yN8fveE7jfconlL1KvngXSlGjZLNoXPZHLAZP4KocWSBUNaBlo2b4UZk6e8GDt2rJvrWNeKi8wrLlZuKFuJKRMmIiqGbMeVgMBUORRSObRiCUJZGkRxKi1gDQBrWkUC6a/cYSUoUVwl8lQcaGW8auhI7S6RJ4dMLIJELAFHKIFRJkSmio8EjhQeTA2t3ZGSSrpaikZGIawasfM7eUZEi/QwapQQytWIJduMyXSQqNRIlWqQKNLAppNSC8dW6JEkNyBUnIZ4mRGh4nQESi0UPqKBEhNMehWixDqkmotw+dp1vH/9FF8qnlEL+J4sioRP2LNzG9w9/Gj2q9WaqPUjcV9amg3pafZqAAmQRUXNUZBfhDnTizF94sRhruNdKzXk4tGjbssXLbgzsN9AsDgSuim1n384vCMZiOUqYRILEMVUI56tRixbjSiOGhG/ASO1iFwt/CrdYU0IPTlGSKUSpCl48GKSUo2aulS1VASHkgergo8iPR9aER8aiQBskQIexM1SANVI18jQ0CwDQ6qGj4C4zTQKXVa6EkyJCrESA9INGkhUGkSK0yFU6MFR6BAkMSNYYkKQ1IwgmQWBMgs9hsotCJFbEaTIQITcDFu6Bv5CHYzNu+HYqUs4fPwsrly9ivdviOUDnj25Dy5PhPruvnRzGjILYrXmUsun1Zjo3nNVAKanO+Bw5KNTh05fpo6fgFnTpr+aPHIkWUGrVn5LJo8bNzIvtyH8A6MQHBpHj63bdcSGhTMxtHkBulrViGHKEZCsQDRLjTiSoLDViCEWkPctgMQiBlMIv7WE3iQu42ihkovA5QshF3BRn2VEPZaRuk5flgaRAg18WWq4M8mshR6kKYItlNKs2aiVgyHTwoOfjgBhGvyFaQiTpCHDoESUSI8wcTqUOgNi5cS1WhAsMVPYgqtUYUUIUWUG1VDyWGVDkMqOZLUJdrMWdVka/DxmCt68foXyI6ex+9Bp7Np7CAvmL4Ren0a7XUjrWGhYDIxGG7WARkMG1CojdFozzJaqGDAbaWl2WKzZGNx/EEoXL8HUCRMmu457rfzhD38QSKXJDJbgeVBILCKikujuSDyBDI9O78fzxWNwf2IPXB3bHat7tURLmxWJHAVCmSrE8HWIFegQK9QjWqhDOE/7DYhBfD3NMEmpg5Y7+Ab4c3XQqmRgCaVoqkiATsIFUyxDBE8F0gBBanEBbDWCOCoIxGK01KdAI+GjPtMAvU4FllxLrV+gKB3+YhMSFWnQ6rTUpRKrFiC1IEhuRTCxbAQ0hRO2auiqVJWBcHUGwtQ2BKkdEOrSkG4x4i8sHRauXEOXCCGt91eu30HD5h3xxz/9CA+vQASFRtMNvCOjE52wWbKgUZugVqU5gbOQUszXRIS8Rtzx0IG/YMHMme8mjRoV7Dr+v2shS+xGxSTfjYxJQWR0MlXf4Fg4TBbcnzcCl4Z3wKUx3XB5bHfcndQLDyd0xa5eTdDCbESqQIUEkR4xIj1iK9UJYqUr5uuppaqpBEStRolUsQJNVQlobUhCa2MymhkYKNKxUahlokDLQkM9C63SUtHOmEjnZt3YaTDoVeAotPATOeM2qjKixLp9CxoBMExhRajWgTCNHaFqGyLUGYhUZyBK81UjtHYEazKhNurBU2sQpc3EySOki/4NbULAl/fo0b0n6jXwoYuyE+tHbqhisgSw2/OoFVQpjXS3JdcsuCaE5LyxI8ZgbvHMha7X4HcrcXH8umER8ZcIdGGRCXQXJLIBoW9wNMSpDJz+pS2ujO2Oy2N74ObEXrg5vgeuj+qIR2M74fG4juidZUICR0n3g6sJIdEogRahPO2vAPTlp0GjVSNBpEG6hIUWuiS0MqbAohbDoJTCphGghTEVrY1JaJ2WgqY6BvhiKZ1DNhg04KqM8JdYEEzjNxe3qrIhRG1HoNIOqTEdRks6QjQOhGocFLRorR2RWjsidA4ngDo7QnWZ8JRnwJyux+i2DVE+YSCuFg/CwwOb8OG9cwElck+Lf0A4VXIDFYFQpzcjIyOHWj+iv1WG+QbCdAeNC4cO+gWbVq1iu16L36UEh0QtJ5lu1c7nIWHOvd8CQqMRHR6F7V3ycGZgM5wa1BIbezTB3oHtcHtMJzyb0AVvJ3dD38w0BMXzwCFlDpHuVxASaxgkNNJYrQpAH34alBoN4iR6OlUXL1DCquajQMdGvp6HQgMXzYxMNNIzYVYLEcVR0myXfC7NqIFAmwZ/+bfWjoAXrLJT+II1DjAMVrTL1aBjrhpiUwY4RitkZiskJivC9dmIMeYgUudAoNqOUKUVTQsLUT6qF+7PGoKb0/rj4rieuDh1AN4+Iqt1AbNnzkQDd18EEOsXEIbkFA7smXk081Ur0yhYrsD9lhJLmJ1dhP4/993mei1+dxISEm0k1o5sROgEsGrf31h4+IaAw+Ti6OA2ON4jFxf6FaFAwYd7NAcqsRyNDRo4lAqExDIRx5DQXdbZIh2SXACMo4lBGi2DVAMoSIdErUOKXE/re+4cA3yFJkSKDUiUaJAs1SJFqkOUhCQZ6fAgU2d8A3xFxMroIdEb4a+wfRvXaRxI0WWAa8xAjNYBtcWMTnlqtM9VU/jMNhOyMk3QZ1hgsJqQYnQgQGWHwZSBlb1b437xANwtHoCLk/vh8pT+VE+N7IKKy8dw7MQJhIZFU7dLLJ9/YARUGiMybLnU7aYZbb+K+/47JbASCDu2b//7btEKColaGBIWR+GrApAoGWDfwEhs37kNH68cwbnxvXB2UAssaJODPg1zMaFlAVpY0hCdwIZvDBsJPA2YIh1YZF9dkQ7JNdwxATBKbESI1IQgUgYRm+AnNoOv0oGt1MOT7Zy1IID6SSwIEJsg1hoRLjVRNxsoNtFuFX+BkRaKTWY9xPo0J4CV7pYkEMn6DKRb0sA32hCvz4TCbEGrHC1aZmnAM1qRZHRAac1Aw2wj9FYTdb/t8jJxfWRHPBnfBXcm98at4oG4P/sXXJzYB+fH9cK1SX2wbvjPiIpLockH+eckd/HFJzJhzcihpZd/1PK5qsWSA4cj52mHDs39XK/L70aCQqIWVQFYveN5aDQ8fYIxfuDPeHtsCy4tmojzs0bgxPi+uDBlAK5PH4i7U/rg4ZTeOD60Iya1LIDDkIZ4jhKxXA2FkMBI4KuCMFpkQLDUVJ00ELBYSgMkWj08uUY6heYE0wKNRgWtRuWM8UjNTmKiMyj+gjT6mslihNhghL/KgVBtJtUATRbkFgvsGUakGBxIs1lQlGVA53wN2uVokG5Jh8piBc9kgykjHdx0G2KUJqzr3gyfi3vixfQ+eDp7EPaP7IlBjfOwqksjXB7fE7enDcCsZg56w1RgSHSl9QuHUmmg87yuUP1NtRDgfm0hMzMLYbI46AZAv0sJDotuGhIe+3W387AYunu4kMHCxWmDcHJUdxwf3QMnxvbGyfF9qJ4Y3wfnx/bA5TFdcX18DzyY0htXx3ZDSZcmKDCZEM9VIZ6nRaIoDXEiA7WAkWIjLQBXzzhIzUhQkHqdjsZ2xMIRSxcgsYCtMkBr1COQFI5lZgRJTfAmAJKanywDJrMRknQLhS5cl4UwXSai9JlgGzNgc5ggsdiRZsuAMcOErvlqdMrToGmOAWZHBiTWTLTO1VFAYwzZMKTbMLp5AQY3KUCGVoeIJD7qh6ViYlEG7kz5GefG98aJIW3BCA+Hp38YvZE+PoFBEw9XmH5LCXTkXHJ0TVDoezYK8QezOev3WZZJSGD7REYlvCO7nldB6B8SjcSoGOwd0Brnpwyk0J2a2B+nJvbDqQl9qSU8T0oyo7vi8rgeuDS2B66M64EHE7rj/piO1HqYtWmI4qYjRWRFgsSMSJWVFnxJWYRkqyRrjVBaITekObtQ2ATAdApcoMyKaIXZOUNR+RnyPo0fFRnQmdPBS7chRJ+NKGMOwg05YKQ5kJ+VBps9HWxTJhjpmcjJTKMAdszToEeBGuZMG0wOCzrka8E2ZyE6LQf+igx4JYrAYAqQbbYgM6cQKrEMQzVsXBzRERcm9sGTldMxvVcH1K1PbqIPg0JpgM2W9w1IpBDtauGIiyZHiUSDuHgmQkJjIJVpYbPnVVtPUrTWai2QiJSFrtfmdyMpTOHsZAYfUTHJzp3PQ6Ph7heG9loRrk7uS61fed/mODiwNY4O64TjI7rg1ND2ON2vMc4MbI7zQ9vi0shOuDayA26ObI+n47vg3piOaJhuQjjHiFiVDZFaZ72NFH1rJg5iownBojR6XwZxtbRgrHBOi1XX8hRW6qJJjEhmK2TpZqSaMhFhzKUARhpzEGHIgdVhQZPcNMgsGWicY0C7PB1NQogFbJ+nhTojA01zjRCbzQhT2aC0ZKJH04bY0L89teSfj28FXtzBu5tn8eT0frw4XY53V0/QPevw6j4a5uYgKDT2G9dLoDMYMqCiBWhbDSCzoVKmIT6BSV22p08gQsOiYEzLoOcJBArExaVSKEnCFxISnut6XX43ksIRRaawRJ9T2WIkpvDonh6+wVGIDovA7gGtcW5yfxwd3gXHRnbFibG9cHLczzg5oS8ujumGC8M74NwvbXDhlza4PqIDrgxri8tDWuHWiLZon5FO+/hidXZE1iz6EgjJ1JfaAa0pHVGydKcFlJgQSpKKGmUVqsoMZ5IiNiFIkwmdxQyWyYFwQy6FLyotF7GmPMSn5yAn2wRthpUmGt3zVdT6ESvoyLRAa02HzaKFPSsbc3q0weVJffBq9kC8mDUA9yb3xKuTu4Dnd/Hl0XV8eXoTnx/fxKeHN/Dx/hXg9QPcPrkf6fo0mC1Oa0esHpkHTkrhIjaBCblcD5stF+lpDnDYYgQFR9HbM0nmTDZ01BvN1BqGR8RTS+pcFycKAQGhT4I9PNxdr8vvSpKZwsVMrgzJDAFSmEKERCQgKSaOLgR+dnJ/nJpA3G8/Ct7J8U43fIHEgeO64/K4nrRIfW1kR1wf0R73RrXDstZZ8I5lI5KnQbLBgegaABIN0zoQqMmCwZqOBBVJMvQ0BqQAqmwIJbU5kmBoHDTLJXPIBMBgbRYMGRawTJmINOYiLt2p8aY8xJjyoLHZkJNthtCaiaIcE3W9rXK10Fgt6NkkF+v6tsa9af0oeI+L++LetL64O7UPbo3vhsdbluLjkxt0+69PD6/j85Nb+PzkNn1MNtY+vmAyxGw+pDI97XjJsOaAzZFQ+IgHIa/pdBa6sTWBy3mTUhhdcoS4XiZT6CxkVy5HR5RYwICg0AGu1+N3J2y2KDSFJXqdwhIhKZWPqEQuMiRCXJrsjPuqEpCT43+mLvnEmF44P7orLo3oQGMlcrw6rA2uD29HSxrLOhQhKEWMBJWVZqXxWlu1FSSzESGVmavWagJDZ6alGAIYBY/MWlRmt1UQOgFMR6guG0arFVxzJuLS85BkykWiiUCYB7PdWXax2M1wZFmhsjngyExH81wTNg1ojweTeuFpcT88mNaXJhg3J/bE9fHdcW1cN9wY3x1PNi/Gq8tH8fLCIbw6dxBPd6/Bo/Xz6E7uHw5vQjtSA/UOohYsJZkDpcIIuUyHlFQ+lHIDFHJjpXULpTMlREm3DJcrpa6YroVYYyUwAmZ4ZMIrkdrk63o9fpeSlMLvyeLJqRWMTeZCyGRjV9/muDh1EE5O6IejI7pgf6+GODiwFY4N74xzo7ri4rC2NAY8N7QdLgxpiUej2mJQtgmBiTzEEfiMmUjW25GssyHakIUoYzYiDdl0JiJEn0uLxRyDGZ4cA43xwnRZ38JXqaSli1hIknCYbFaIrFnU6hH4iCaZ86CxZ8GSaYciw468LBNa5xuRlWnGz0VW3BreFjdGd8StCT1wd2pf3JrUiwJ4e3Jv3JnUE/fnDsPH+5fx8dE1vL99AW+vnsTT/RvwZNcqfCYbIu5ejZSQEPgEhCMwyFmKIQV8ApdKkQaBQEnhI7dlVsFHIEtK4tDY2nUZOqIk1OEJlUWu1+F3KwqF4i8pTOF1BleGhCQ2AsITkClk4/Twjjg9qT+N/ZzlmL44MaEfzo7vjSvjuuPa+J60iPt0el/s6tsaCakC+KXKkKInxWE71QRDJk0YamqYIRdyqw38NOt/CyAps/jyDDRGDDfmIt2eAZHVaQGd8OWCmZEPRkYBUqyFUNsdaJ5rpHXAJjlpaOtQYnfPRng1oy/uT+9H3W5NvTu5N+7PG073IP70+CbdApZsCfvp6S18eXobX57fwcc756HjcWl9lBTqq+qBJGEjkAWHRDl3jw/5Chh5jcR+/pUw1lTyHZHRid1dr8HvXthsMS+FKXhOygbhUUnwCYpGcZMMXJk+2OmCJ/Sl5ZiTkwbgxpQ+uDm+O84M74T1PVvg5/xMxDFE8E8SIUFppq6XwJekdyDaBb4qAIUWO4SmDHhxnXPFrgCS5xH6bDoNR1x0RFoeTHZiAZ0AJptzwcrI/0aZ1nwo7VmwZlrRMMeI/CwDmmU7sKVnc1wf3Qk3xnfDrYnkn+Zn6npvjO2KG+N74PG2Ery5fAwfbl/Ap0c3aBLy8cFVuhfx+8ObYOYy4eYTSov2NWHyJ7Fe8Fer999rFG32iIxOGOs69rVSKUmpnEICIGnHr+8Tge5mFW5PI3XA/jgx/mfqfg/1b47euRkoSNNBLpIiicGHVxwPwQwZEtWWatebZHAgLu3X8NH6XVoBeNZMiCw2ePMqG0srASRWjzwmWS6t1wmM1AVHmgpgyfxqARmWPLBdACTKycgHn5RLMu0wZmUhWm8Hk8HDldGd8WpmP9yb8jNNPogLvj2xB25O7YsXh7bgzaUjeHlyNx6smYNne9bgy7M7qDi4HsuamhHkFwT/ytjt12B9q78FY1WzR2xi6jTXMf/dC9klMjGe2ZDB4q9JSuFcIK1Z/kFR0KfZsL6kBGu7N8OJUd1wYEh7lPdpisO9CiCXaxHFlUKnUcGskdEbgGLVdjrJT+EzZiLRlIfYdGe9rlrT8hBlKkC4uQhsSzakGQ7aZEAKzeH6LKrE6kUavn7GT2BEsNiEaHMBtWwEQBIDuoJHVGDLg8iWR498Wz5EtnxIMwuQIDciX6/F3l864fHMgXgzbzBezhmER1N64WHpNHx59QBfXtzBp8c38Pb8Qbw+vx+fn9/CleLBkESFwt0vlCYVrpB9BTKKumWidEqzxrnEHQcGhb8MDg79/Rac/5Z4eoa6hYbFnCBxXypTgMRkLu2IDgqOxtat2zF3+SZ0yLRjewc7Dg5pj/2D2+HMyE7o1ygPwVw1cmwGqExmtMtSQmdKQ4LOQS1fVYIQm+YsFpN6XVR6HqLMhVQjzEVgWnIgz3DQOV4SA9aE7iuwuRRA0v0cVQmgJCMLKZZfw0esodCW942KK4/SzEIE8tTwj2YiXa5Ev8IslPRshTMju+D5otHA1SPAy7v48uIuLcF8enITePcQ6wZ2RN0f6sA/+FvLR2aPwiPjKWzkOclywyLioFAYIFcYaBmmCtDgkIhNQUFB4a5jXyt0b1yfsCoXQTI7kp15eAVDqdTh+OnLGDRqOvpkqLCxkQrlfZtRK3jsl/ZY0b05ggRp0KfpYbWbkW03wGIx0GmyuMoMlcBHoTMVVINXpZHmQiRZ8iGxZdPpN2IBfwvA6LRcZy8hAdRcCGumDTJ7Nk06von9MvLBc4Gvpkod+ZBnFSJWloYG0RzUD0mGR0QqUlJ4yNOoMKGRHWenDsTzw1vw8fF1fHlxD28vH8WxOWOQlmam61kTF0qUgEbGisBFLCHJcpOTOUg3OZCVXQixRE3XCawCMDQ0em1GRsZvbvtaK3/4wx8auPvuJxmej18o/c8WCmQoW1mGHYcuYsyoyZiWzsLeHoXY+3MT7OvbDId+aY+Dg9uBq7MhSWVEh2wV0m1m6nbF5gxEpuUhlli83wCvJoCx5gLwMnIRLM9AgNCISDK/Sz5H3DQBNy0X0el58K/sJYw0F8CSlQmpPQepLgCSuM8Vumr47PlQOJyqzC4C0+BAKl8OPpeH2BQe3KO5YKewsbuVEUe65eDM9MG4vGg8TozsgpeXj6Hi/Xu0bt0eHp4BdOqsCjyixOWy2CJamK6aEyYtWskpXGdNsNIlBwSETncd91qplKaNm60pKmiE5k1aYNzIsbhy5jTuPXiM+av3Yc6U2SjNEVPoDgztiJ1dc7G3d2OcHtYBXRsWwE1iQaTBAYnVDqPNjHybFlqLGSFGZ5znCt5XF+wEkG/NpPdy+PONdE6XxHkUXGo58xFtLqQZMLGC5HVLlgMKe/avkg8S87mCR1Rsz4PMkf8VQns+0rKz0ThbjwytDJlGJXhaCzrmZOL8yE44PKAljgxug0O9G2JJz3a4dvUKPr9/g65dutFbMZ3Nu854j1hDNlsMqyUbdns+bVIgADq7YHKhkOsRERlPLaF/QOhO13H/3Uu7lu2SWzZrWZKTXfiFxxOjV/c+2Lx2C91uas3WQ1hQthuLlm/Chq5FOEwAHNyO7tG7p19LHBjUlj6f0akZMq1WROhzEKrPhMhkRY5dD6PdCqYlF+GmQoSZiqjFq4IvzFxE4TPYLBBkZCFI6XABsJBmvOTcaEsRbc0indEEQFOmnU6zkfndmgC6glcTQJKUSOz5kNgLkOHIQKNMHdpkq5FnVqFhhhZiSx6KO7fC6VFdcHh4Zxwb3gm7O2ejjSMLEyfNwKf3r6FSatDAw99pzYIi6K5OPJ6i8tZLG3g8CXh8KXXDZGPsqqaEmNhk+PoHfwryD5K7jv/vWgKDI0dERid9Ji7lx7qeEIuVWLpoBTSadPToNworNh6kW2UtWn8QpZMnobx3QxwY0gH7B7VDOT22xaGhHXG6byPMyDegoHFbZLfpiShzEcLT8qhlS3dYYc10QhZpKkSoqYgmH8mWPChsmchypEFqz0a4JhP+fANtMIiyFCKGFpnznQBai2j/ICnFkPnejCwrGuemI82eAWZGQbUl/FsWkGbF9gKI7IXUcuY59ChykE5pNVrmpsGcmQmBKQsrerXFyRGdcXhYZxzo1xyH+jbFzGZ5aJLfFA/v3cKuHdtQr54n7YyOiEqAgK+kN6ELyHIlIZHw8gmgq6KGR8TRVbGISyYWkNQJAwPD1rmO/+9eAoLCN5BuaNJ+n5DEwtBfRkMoUsDNww8Tpi/Gig0HsHQ12SxwH90udeOgLjjYrxnNggl85HhwcFusaaRG54aN0ap5ByydvwyqtEyECXR0qs1Pm4VkUxbSMm3IzLJAYbMj2ZwDo82CvKx0aOx2OLKtSNDZ6XosyaZshJgaUlhjKzPlCEsj+EqtdDaEgJmRaUXzvDTYsyzIy7UiPcsBVkYB+C7QkRIMz1YAsT0fGlsm7FY9iqxKNHRo4XCYYXBkQ2rNh9iUg9YFBdj/S0ccHd4Z+we2xq7uhfSf63D/5hhr1+Lw3p30xqT5c+eCweAhLDQeqcl8JCSy4OcfSjPgqum2xEQ2nSfWqs10mi4+kU1iwS2u4/+7l6CgiB4kkyMDp9GZwBfI6V1f0bEpmLlwLd0wcMXavZi7eD2Wr92LFUvKsLV7QxwY0IrCd+CXjtjdzoJp2Wo0adwWvbr+jLmzFiGVwUdkVCJMeW3Qesg0xDtawEOTjRhTNgyODDR06JDhMCEr2wp9pgMyWxY4xgzEy/QocOihsWUgxZxDrR3pdOFaMpFu0oOv1CHKWEAtoMHhQG6OFW3y9HBkmWkmLbHngWsjSU0+xLZcaO2ZsNvS4LBo4UhXIt+iordo8tMdENkKITDY0aMwG+v6dcDBoZ1xZFgnHBjYBrt7FOLAwNY4ONQJ5I52Ntw8TAB8R9eFefbkAebNnYecrEIIRUraAaPRmmhPoF5npc9FIjXUKhN0GjPUShNYTNGn+Ph4lus1+F1LUFCY3HkXnDOrI0E1gZF0w8xfsQ2rNh9CUdMOCI9MwrARk7Bm60GsnDkL2zpm4tDgdtjVvQCb8gXo7zCgTduuWFmyFt2796ffR8DOadIFpZuPYFbJVrTsPx6JmS1QT5uL0PQ8yO0O6kaJRSRJhsjsQH2RBTyjBdlZZjTJMaJFjg6tcvVok6dDnsOABKkBUYZC2LKtkNuyYMnOBteaDXuWlTaaNstNg9Fhhy3LitwsE7IzTTBnmOitmPx0OyQZebA3bode/Ydj/oJS2ByFaCJKxukBTWijxcFfOtCY9uCQdjg0rBO1gAeHdMDhga3w9u5FfK7cHZ1sSk1Wx6qoeInRI8dUrg3jzICrlmgjrpk0qpJ2fOKK09MyIVMYbygU2loIqyQgINozKCTyFSm7VN0P4h8QBgZbTPfonTSrBCGhsXDz8Ef3HgOwcfNerFi/B2WTxmNdYzU25QtRamdjROeOWF6yHmtXb4VIooWvXxhWLFuCOQtL0XfUHMxbuZPusztjyWY07TsW0Zmt8KMmDwHpBTT+I7GcLiMDfqTfT5dD3S9x0yKrA7IMBxjWPIRos+DDN9I6IWmtzyYQWm1gmrNhd1jQKMeEpjlG2DPNtCeQ1CLZaQ7IHIXIbdEJPfoOw6yZi7B21WZs2bADu7eXIye7IewWB8q6NsPBfk1xmEA4tFM1fET392+Bc7OG40PFc7x+SfYIqdyq4e1j4MtrVLx+hqLCZtAbMr7pkibd0AkJLNqGJZVr6U1JmZlFBM6XFnuW3vVa/G4lMCRyDymqVgFIsjsyI7J05Q5MmUV2tIyiMczc+SUoW7MNJSs3YeX63SibOBarWtuxcvhArF27A2vXbseCecsRFZOKtm070HjpxtVL6DFoEoZNWYrZK7Zh4eo9mF+6AzMWb0SLARMQm9kKdbV5SLDkQmezI1CSjhBtNiIsDWnsRzLnCFMhoixFCNHlwpdvRKgxD1nZZrTJM9Bslrjx9KxMOjOSlOZASpoDEkch8tt0weBh47F4wXKsKlmHFcvWYcv6bVhXthGrVqzDqtINyM4sxLChozGq72Asb2rB0aHtcYgASCwfPXZCeZ8muL9/I+49eoyrV6/j2ZOHlQA6lawdM2HcRMjlhm/uByG3a5Lu59g4Brx8guiMiUikpGUamyPnY25ubpLrtfhdSlBI5FrSnVEFIKlrEVc8esJsrNtyGMOGT8LkqfOweu12rFi5iWrpyk1Ys3Yn1qzdgTXrd2NFyTqUrVyPxQtWICaWiTGjx1AAXzy5i1FTFqPPyFkYOmkJpi7ahGmLN2FOyTas2XyIuvl2Q6YgMbs1TVb8JCaIDGY6P0yyZQJglTKNdrryVaghDyp7FkyZNvCt2Ygnza5pOZBkNULD9j0xYuxULF+yElvXbcPOTTuxZd1WzJm9FPPnlWDtqg0oXb4Gc2Yvw8wZi9C8eXvMnDoLP/ccgEEtWmJreweOjehSbf1IHHhyfC88uncLFy5dx6VLV3Dt2nXnRtWVm9aQ/UPWri77FYBkNSxSTVCr0uleIZ7egYiMSoLFnAW7owAqrXGS67X43Ym3d2T9oJCohyReqwKQKJlCSjdnYf3m/Vi/aQ/WrNuBFSs3fgPg6lWbsaZsK0pL1qFkaRnWlm1CybK1iE/ioGmT5jRYP378OH6ZtIRCN23xRkxbtAHT6eNNKF6yCbOXbcWiVbswed5aNOk9GkEqBxKUBpodm+xm6n5JcTvDYUau3YBIoQ4BKgfCtHmIMWZBmtMUzbr0wbAxUzF5yjysWr4O2zfucNYxyzZi45pNWL5kFaZNW4jFC0uxYtlqzJixCFOnLsD0aQswcOBwzJ4+D7069UTPbv0xsWk+DvZuiCMju1IA9/Zuglu71+LGvQe4ePEqLl26So+379zGu9dPnIsW4R327tpBE5CaAFapWKKhSQmZHyZKErTwyEQEBIV1dL0evzsJD4/m14z/alpB4ja6duuPTVvLq8H7xgKWbUbZyo0UPuLitm3ajSGDR9FNqHNyCuiFOXf2FIZOWoTipVswbdFGzFi6GbNLtmFe6Q4sWLmT6vzS7fS4csNB9B0zGx5KBwIMOZBm2GF2WGB2WKG22xFlyMKPSXLIc1ui64DRGDZyEubMXIjSpWtQumwNFs5fQSFbtqQMJUtXY/WKddi4ehOWLl6FuXOWY8miVVi8cAXmzVmGeXOXY+7cEkycOBMzp89F78498XO3PujVuTcWNbPj2JA2Tus3ZQAePriHC5euUfiqALx69RoePbqHj++cuyWV79kJuUz/K/hILKjXZ0Aq1kIsVtNxJUmef1D4u+DgYH/X6/G7k4QERiIpqNLbAivBq1J6P0NINP6f8q72p60qjMf/wZhsiJO2DBkF1tKh7cCXJio6Rc3MxiJjGv2gzsyo2eYUhAGbRDODSJG3UaDtHaWj7W17721vWygMZHPbB9QPjq0KsxkL2RPi4ktilJ85p4CK8MFvJpzkl+fcm3uSk3t+9zzPc859nmP7vBfhyDi8vr9mQP8SAX1DEldp0XAC/b1u3G9+GBqdHnv2VvKTw2eSV3CyxZFWu95hOLwj6HZH+SzIHBJBHMOQMokh+Qsu5fhlNNoEFOw7iLue3M/Pfcso24fNT7wAXfkBVL1Tzx2dseg5xMMJyCFm06lQAhGEg2nJbDwGVl9GwCdjyBPixDwjiHA4vHA6fGiz2dHX40JDdT0+OFyNmmP1OPnGISivP4cLNa/g5tfnMZO6ienp5AoBGZLJ75FK/YDbCyxd72+Iq2Hs2PHgCumY18u24ZYj51jatvRWXDYPQsrKyo6sHouNWu7Q5xcF2aZ5fmEx9Pkm5OYZ+N8wTC1nZGphtlg5+f5uA4piFEFR5YZ8LDIGR98gSh96HPdtS7etqnoZ+OMnXJ9Nov6TXrQLYa5+3aFxeJVJnJUn4JHWRjB2CS7fKBpsAt480YaDx1tQ02xHtyBDVSegSlFOsBDvA6unibceJH8YZwcDGGAz4EAQghCAw+mH0+lDZ4cT9m4nPjvVivfeehe1R2tRc6wBpyrK8U1PE+jH2/j2yj/Jtwx2TMPcXIo7IQNnBOTkGjnZysqe5YvTFssjKH+aZU5Nb8exP27YgrWG5eDJ0lWuHogNW0ym0kxDkXmhqLgURtNOGE0lXLJY10IW66DTY2/FS1Ai5yApo5yIipyAIo1gdPg8ujr6YN5p5YE3rB1L61tX17iUS3keTS396HLH0OWOosczDG/kAvzqRfjVL/8F3xICsUsIJ6agjn2F6NgU1NEpSPHLkJRx7smq8gjCcmIF7N56iEhxKKEY5FCcE9Y9EITL6YPL6YfgEtHZ3g/voIiPjjehjhHwSC1aTzThZ7qB1I15zMykMDu7Nq7PMgICnza3oCD/AVTsOQBTcQk23a3hqjZ3mwGPPfoM93xZ9iz2cWZu0f6yddPWO1ePw4YuBQbzfqOphLYbzbTdYE5LDguHNltPr772NoWkEfL5oxQQo6RII9T0YTPl5ZsoJ8/Anys0mClLqydBEGhxcZFuzc9R48cdZOsPUbtLpjaHRKfdUfJIE+QJjf9neAMJkgIqhUSVgmK6H0zKgcjaENMywtr4FXL0D5G9x019vR4Odm1rtdPpzj6KRWJUffh9OnroCF2cnKDF33+la9e+o6tXk+tiejpJC3SLqqpepM0ZWnpq124yFFkoc4uO7tXkcKnR5ZHVuoue311JFouVMu7R+Fe///9D+ROlepZDuQCKzgAAAABJRU5ErkJggg==";
@@ -4682,6 +4849,10 @@ function drawPromptContent(body, state, load) {
 var SPINE_LABEL = {
   codex: "Knowledge Codex",
   volume: "in a volume",
+  series: "in a series",
+  chronicle: "in a chronicle",
+  epic: "in an epic",
+  library: "in a library",
   arc: "in an arc",
   chapter: "in a chapter",
   ghost: "staged as ghost",
@@ -4689,7 +4860,7 @@ var SPINE_LABEL = {
   free: "uncompressed"
 };
 function injectedTokens(v) {
-  return v.meta.tokenCountOutput > 0 ? v.meta.tokenCountOutput : v.contentTokens;
+  return v.contentTokens;
 }
 function collectEntryInfo(state) {
   const info = new Map;
@@ -4701,6 +4872,8 @@ function collectEntryInfo(state) {
       label: v.comment || v.meta.title || ""
     });
   };
+  for (const v of state.higherBooks)
+    put(v, TIER_KINDS[v.meta.tier - 1]);
   for (const v of state.volumes)
     put(v, "volume");
   for (const a of state.arcs)
@@ -4784,7 +4957,7 @@ function renderBreakdown(state) {
     r.append(swatch, l, t);
     return r;
   };
-  const activeVolumes = state.volumes.filter((v) => v.active);
+  const activeVolumes = [...state.volumes, ...state.higherBooks].filter((v) => v.active);
   const activeArcs = state.arcs.filter((a) => a.active);
   const activeChapters = state.chapters.filter((c) => c.active && !c.isGhost);
   const sum = (list) => list.reduce((acc, v) => acc + injectedTokens(v), 0);
@@ -4805,17 +4978,18 @@ function renderBreakdown(state) {
     }
   }
   if (codexTokens > 0)
-    wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, true));
+    wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, state.codexTokensApproximate));
   if (activeVolumes.length)
-    wrap.appendChild(row("volume", `Volumes (${activeVolumes.length})`, volTokens, false));
+    wrap.appendChild(row("volume", `Volumes and higher (${activeVolumes.length})`, volTokens, true));
   if (activeArcs.length)
-    wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, false));
+    wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, true));
   if (activeChapters.length)
-    wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, false));
+    wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, true));
   if (tailCount > 0)
     wrap.appendChild(row("free", `Uncompressed tail (${tailCount} msgs)`, tailTokens, true));
   if (excludedCount > 0)
     wrap.appendChild(row("excluded", `Excluded (${excludedCount} msgs)`, excludedTokens, true));
+  wrap.title = "Codex counts include enabled constant lorebook entries. Keyword-triggered entries add tokens when activated; host lorebook budgets and prompt settings can affect final inclusion.";
   const total = codexTokens + volTokens + arcTokens + chapTokens + tailTokens + excludedTokens;
   wrap.appendChild(row("total", "Story context in the prompt", total, true));
   return wrap;
@@ -4837,11 +5011,21 @@ function renderOverview(host, state, send) {
   tiles.appendChild(statTile(`${pct}%`, "Filed", `${cov.coveredMessages} of ${cov.totalMessages} msgs`, "Share of this chat's messages already compressed into the shelf"));
   tiles.appendChild(statTile(`~${formatTokens(cov.approxUncoveredTokens)}`, "Tail", `${cov.uncoveredMessages} msgs uncompressed`, "Recent messages still in the prompt at full size, waiting to pass the lag"));
   const own = {
-    vol: state.volumes.filter((v) => !v.isRoot).length,
-    arc: state.arcs.filter((a) => !a.isRoot).length,
-    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost).length
+    vol: state.volumes.filter((v) => !v.isRoot && v.active).length,
+    arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
+    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length
   };
-  tiles.appendChild(statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap", "Volumes, arcs, and chapters Memoria has filed for this chat"));
+  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "active vol · arc · chap", "Uncompressed summaries. Hover for existing higher tiers.");
+  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && !e.isRoot && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
+  if (higherCounts.length) {
+    shelfTile.classList.add("lmb-has-higher");
+    shelfTile.tabIndex = 0;
+    const more = document.createElement("div");
+    more.className = "lmb-higher-peek";
+    more.textContent = higherCounts.map((e) => `${e.count} ${e.kind}`).join(" · ");
+    shelfTile.appendChild(more);
+  }
+  tiles.appendChild(shelfTile);
   if (codexLessonGated(state.lessons)) {
     const locked = statTile("\uD83D\uDD12", "Codex", "take a lesson", "The Knowledge Codex unlocks after Memoria's codex lesson");
     locked.classList.add("lmb-bible-tile");
@@ -4916,7 +5100,7 @@ function renderFailure(host, state, send) {
   lessonMark(sec, "home.failure");
   const head = document.createElement("div");
   head.style.fontWeight = "600";
-  head.textContent = f.kind === "arc" ? "Last arc attempt failed" : f.kind === "volume" ? "Last volume attempt failed" : "Last chapter attempt failed";
+  head.textContent = f.kind === "arc" ? "Last arc attempt failed" : f.kind !== "chapter" ? `Last ${f.kind} attempt failed` : "Last chapter attempt failed";
   const detail = document.createElement("div");
   detail.style.opacity = "0.85";
   detail.textContent = `${f.message} (tried ${f.retriedTimes}x)`;
@@ -5242,7 +5426,9 @@ function renderBooksTab(host, state, ctx, send) {
         renderChapterPicker(host, state, send, draw);
         renderArcPicker(host, state, send, draw);
         renderVolumePicker(host, state, send, draw);
+        renderHigherPickers(host, state, send);
       } else {
+        renderSummaryTransfer(host, state, ctx, send);
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
       }
@@ -5252,10 +5438,10 @@ function renderBooksTab(host, state, ctx, send) {
 }
 function renderShelf(host, state, ctx, send, redraw) {
   const sec = section("The Shelf");
-  const chapters = state.chapters.filter((c) => !c.isRoot);
-  const arcs = state.arcs.filter((a) => !a.isRoot);
-  const volumes = state.volumes.filter((v) => !v.isRoot);
-  if (chapters.length + arcs.length + volumes.length === 0) {
+  const chapters = state.chapters.filter((c) => !c.isRoot && (c.active || c.isGhost));
+  const arcs = state.arcs.filter((a) => !a.isRoot && a.active);
+  const volumes = state.volumes.filter((v) => !v.isRoot && v.active);
+  if (chapters.length + arcs.length + volumes.length + state.higherBooks.filter((v) => v.active && !v.isRoot).length === 0) {
     sec.body.appendChild(textNode("Empty shelf for now. Memoria will start filing once the lag fills.", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
@@ -5272,8 +5458,11 @@ function renderShelf(host, state, ctx, send, redraw) {
   const listHost = document.createElement("div");
   listHost.className = "lmb-pane";
   lessonMark(listHost, "books.shelf.list");
+  listHost.classList.add("lmb-has-higher");
+  listHost.tabIndex = 0;
   sec.body.appendChild(listHost);
   const groups = [
+    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1], title: TIER_NAMES[t - 1], kind: TIER_KINDS[t - 1], items: state.higherBooks.filter((e) => e.meta.tier === t && !e.isRoot && e.active) })),
     { key: "volumes", title: "Volumes", kind: "volume", items: volumes },
     { key: "arcs", title: "Arcs", kind: "arc", items: arcs },
     { key: "chapters", title: "Chapters", kind: "chapter", items: chapters }
@@ -5295,12 +5484,16 @@ function renderShelf(host, state, ctx, send, redraw) {
       const recent = filtered.slice(-SHELF_RECENT);
       const pinned = filtered.filter((v) => localState.expandedEntries.has(v.entryId) && !recent.includes(v));
       const items = showAll ? filtered : [...pinned, ...recent];
+      const groupHost = document.createElement("div");
+      if (TIER_KINDS.indexOf(g.kind) > 2)
+        groupHost.className = "lmb-higher-peek";
+      listHost.appendChild(groupHost);
       const sub = document.createElement("div");
       sub.className = "lmb-section-title";
       sub.textContent = searching ? `${g.title} (${filtered.length} of ${g.items.length})` : `${g.title} (${g.items.length})`;
-      listHost.appendChild(sub);
+      groupHost.appendChild(sub);
       if (searching && filtered.length === 0) {
-        listHost.appendChild(textNode("No match", "lmb-empty"));
+        groupHost.appendChild(textNode("No match", "lmb-empty"));
         continue;
       }
       if (!searching && g.items.length > SHELF_RECENT) {
@@ -5315,14 +5508,14 @@ function renderShelf(host, state, ctx, send, redraw) {
         const row = document.createElement("div");
         row.className = "lmb-actions";
         row.appendChild(toggle);
-        listHost.appendChild(row);
+        groupHost.appendChild(row);
       }
       const list = document.createElement("ul");
       list.className = "lmb-entry-list";
       for (const view of items) {
         list.appendChild(renderEntryRow(view, g.kind, state, ctx, send, redraw));
       }
-      listHost.appendChild(list);
+      groupHost.appendChild(list);
     }
   };
   buildGroups();
@@ -5392,7 +5585,7 @@ function renderEntryDetail(view, kind, state, ctx, send) {
   actions.className = "lmb-entry-actions";
   lessonMark(actions, "books.entry.actions");
   actions.append(makeButton("Edit", () => {
-    openEditModal(ctx, kind === "arc" ? "Edit arc" : kind === "volume" ? "Edit volume" : "Edit chapter", {
+    openEditModal(ctx, `Edit ${kind}`, {
       comment: view.comment,
       content: view.content
     }, (next) => {
@@ -5417,7 +5610,7 @@ function renderEntryDetail(view, kind, state, ctx, send) {
         return;
       send({ type: "regenerate_entry", chatId, entryId: view.entryId });
     }, { small: true, title: "Delete and resummarize the same range" }), makeButton("Release", async () => {
-      const freed = kind === "chapter" ? "Its messages return to the prompt unless a higher tier still covers them." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its arcs revive and keep covering those messages.";
+      const freed = kind === "chapter" ? "Its messages return to the prompt unless a higher tier still covers them." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.";
       const ok = await confirmDelete(ctx, "Release to lorebook?", `Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. ${freed}`);
       if (!ok || !chatId)
         return;
@@ -5425,7 +5618,7 @@ function renderEntryDetail(view, kind, state, ctx, send) {
     }, { small: true, title: "Strip the LumiBooks marker so the entry becomes a regular lorebook entry" }));
   }
   actions.append(makeButton("Delete", async () => {
-    const ok = await confirmDelete(ctx, "Delete?", view.isGhost ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass." : kind === "chapter" ? "Memoria will let those messages back into the prompt." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its arcs revive and keep covering those messages.");
+    const ok = await confirmDelete(ctx, "Delete?", view.isGhost ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass." : kind === "chapter" ? "Memoria will let those messages back into the prompt." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.");
     if (!ok || !chatId)
       return;
     send({ type: "delete_entry", chatId, entryId: view.entryId });
@@ -5786,7 +5979,7 @@ function renderVolumePicker(host, state, send, redraw) {
   }
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "A volume replaces its source arcs in the prompt, the highest compression tier. Volumes are manual only.";
+  help.textContent = "A volume replaces its source arcs in the prompt. Automatic binding is available in Tuning, with a separate threshold and lag for each higher tier.";
   sec.body.appendChild(help);
   const list = document.createElement("div");
   list.className = "lmb-multiselect";
@@ -5846,13 +6039,14 @@ function renderVolumePicker(host, state, send, redraw) {
 }
 function renderContinuity(host, state, ctx, send) {
   const chatId = state.activeChatId;
-  const hasOwn = state.chapters.some((ch) => !ch.isRoot && !ch.isGhost) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot);
+  const hasOwn = state.chapters.some((ch) => !ch.isRoot && !ch.isGhost) || state.arcs.some((a) => !a.isRoot) || state.volumes.some((v) => !v.isRoot) || state.higherBooks.some((v) => !v.isRoot);
   const hasRoot = state.rootEntryCount > 0;
   const candidates = state.availableRoots;
   let detail = null;
   if (hasRoot) {
     const rootEntries = [
       ...state.volumes.filter((v) => v.isRoot),
+      ...state.higherBooks.filter((v) => v.isRoot),
       ...state.arcs.filter((a) => a.isRoot),
       ...state.chapters.filter((ch) => ch.isRoot)
     ];
@@ -5863,13 +6057,13 @@ function renderContinuity(host, state, ctx, send) {
         const rowEl = document.createElement("div");
         rowEl.className = "lmb-multiselect-row";
         rowEl.style.opacity = "0.75";
-        const tag = e.meta.tier === 3 ? "VOL" : e.meta.tier === 2 ? "ARC" : "CH";
+        const tag = TIER_NAMES[e.meta.tier - 1];
         rowEl.textContent = `[${tag}] ${e.comment || e.meta.title || e.entryId.slice(0, 6)} (${formatTokens(e.contentTokens)}t)`;
         detail.appendChild(rowEl);
       }
     }
   }
-  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "another chat";
+  const originName = state.rootOriginName || state.rootOrigin?.slice(0, 8) || "an imported lorebook";
   const wrap = renderContinuitySection(host, ctx, {
     emptyText: "No other chat has memories to inherit from yet",
     inherited: hasRoot ? {
@@ -5950,6 +6144,59 @@ function renderMaintenance(host, state, ctx, send) {
   sec.body.appendChild(dangerRow);
   host.appendChild(sec.wrap);
 }
+function renderHigherPickers(host, state, send) {
+  for (const tier of HIGHER_TIERS) {
+    const kind = TIER_KINDS[tier - 1];
+    const sec = section(`Bind ${TIER_NAMES[tier - 1]}`);
+    const candidates = [...state.arcs, ...state.volumes, ...state.higherBooks].filter((e) => e.active && e.meta.tier === tier - 1);
+    const selected = new Set;
+    const busy = state.busy.some((b) => b.chatId === state.activeChatId && b.kind === kind);
+    if (tier > 3)
+      for (const entry of candidates) {
+        const row = document.createElement("label");
+        row.className = "lmb-multiselect-row";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.onchange = () => {
+          if (cb.checked)
+            selected.add(entry.entryId);
+          else
+            selected.delete(entry.entryId);
+        };
+        row.append(cb, document.createTextNode(entry.comment || entry.meta.title || entry.entryId));
+        sec.body.appendChild(row);
+      }
+    const actions = document.createElement("div");
+    actions.className = "lmb-actions";
+    if (tier > 3)
+      actions.appendChild(makeButton("Bind selected", () => {
+        if (selected.size)
+          send({ type: "create_higher_from", chatId: state.activeChatId, tier, entryIds: [...selected] });
+      }, { disabled: busy || !candidates.length }));
+    actions.appendChild(makeButton("Bind ready batches", () => send({ type: "create_higher_auto", chatId: state.activeChatId, tier }), { disabled: busy || !candidates.length }));
+    sec.body.append(actions, textNode(`${candidates.length} active source entries. Ready batches use this tier's threshold and lag from Tuning.`, "lmb-help"));
+    host.appendChild(sec.wrap);
+  }
+}
+function renderSummaryTransfer(host, state, ctx, send) {
+  const sec = section("Summary export and import");
+  sec.body.appendChild(textNode("Export the active shelf as a regular lorebook. Import here adds its enabled entries as root memories before this chat, preserving the prose without a model call. Existing summaries and chat indexing stay intact.", "lmb-help"));
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  const chatId = state.activeChatId;
+  actions.append(makeButton("Export summaries", () => send({ type: "summary_export", chatId })), makeButton("Import lorebook as root", async () => {
+    try {
+      const files = await ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20000000 });
+      if (files[0])
+        send({ type: "summary_import", chatId, raw: JSON.parse(new TextDecoder().decode(files[0].bytes)) });
+    } catch (err) {
+      console.warn("[LumiBooks] summary import failed", err);
+      showToast("error", "Could not read that lorebook JSON file");
+    }
+  }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
+  sec.body.appendChild(actions);
+  host.appendChild(sec.wrap);
+}
 // node_modules/d3-quadtree/src/add.js
 function add_default(d) {
   const x = +this._x.call(null, d), y = +this._y.call(null, d);
@@ -5958,7 +6205,7 @@ function add_default(d) {
 function add(tree, x, y, d) {
   if (isNaN(x) || isNaN(y))
     return tree;
-  var parent, node = tree._root, leaf = { data: d }, x0 = tree._x0, y0 = tree._y0, x1 = tree._x1, y1 = tree._y1, xm, ym, xp, yp, right, bottom, i, j;
+  var parent, node = tree._root, leaf = { data: d }, { _x0: x0, _y0: y0, _x1: x1, _y1: y1 } = tree, xm, ym, xp, yp, right, bottom, i, j;
   if (!node)
     return tree._root = leaf, tree;
   while (node.length) {
@@ -6336,17 +6583,17 @@ function collide_default(radius) {
       var { data, r: rj } = quad, r = ri + rj;
       if (data) {
         if (data.index > node.index) {
-          var x2 = xi - data.x - data.vx, y2 = yi - data.y - data.vy, l = x2 * x2 + y2 * y2;
+          var x = xi - data.x - data.vx, y = yi - data.y - data.vy, l = x * x + y * y;
           if (l < r * r) {
-            if (x2 === 0)
-              x2 = jiggle_default(random), l += x2 * x2;
-            if (y2 === 0)
-              y2 = jiggle_default(random), l += y2 * y2;
+            if (x === 0)
+              x = jiggle_default(random), l += x * x;
+            if (y === 0)
+              y = jiggle_default(random), l += y * y;
             l = (r - (l = Math.sqrt(l))) / l * strength;
-            node.vx += (x2 *= l) * (r = (rj *= rj) / (ri2 + rj));
-            node.vy += (y2 *= l) * r;
-            data.vx -= x2 * (r = 1 - r);
-            data.vy -= y2 * r;
+            node.vx += (x *= l) * (r = (rj *= rj) / (ri2 + rj));
+            node.vy += (y *= l) * r;
+            data.vx -= x * (r = 1 - r);
+            data.vy -= y * r;
           }
         }
         return;
@@ -6406,24 +6653,24 @@ function link_default(links) {
   }
   function force(alpha) {
     for (var k = 0, n = links.length;k < iterations; ++k) {
-      for (var i = 0, link, source, target, x2, y2, l, b;i < n; ++i) {
+      for (var i = 0, link, source, target, x, y, l, b;i < n; ++i) {
         link = links[i], source = link.source, target = link.target;
-        x2 = target.x + target.vx - source.x - source.vx || jiggle_default(random);
-        y2 = target.y + target.vy - source.y - source.vy || jiggle_default(random);
-        l = Math.sqrt(x2 * x2 + y2 * y2);
+        x = target.x + target.vx - source.x - source.vx || jiggle_default(random);
+        y = target.y + target.vy - source.y - source.vy || jiggle_default(random);
+        l = Math.sqrt(x * x + y * y);
         l = (l - distances[i]) / l * alpha * strengths[i];
-        x2 *= l, y2 *= l;
-        target.vx -= x2 * (b = bias[i]);
-        target.vy -= y2 * b;
-        source.vx += x2 * (b = 1 - b);
-        source.vy += y2 * b;
+        x *= l, y *= l;
+        target.vx -= x * (b = bias[i]);
+        target.vy -= y * b;
+        source.vx += x * (b = 1 - b);
+        source.vy += y * b;
       }
     }
   }
   function initialize() {
     if (!nodes)
       return;
-    var i, n = nodes.length, m = links.length, nodeById = new Map(nodes.map((d, i2) => [id(d, i2, nodes), d])), link;
+    var i, n = nodes.length, m = links.length, nodeById = new Map(nodes.map((d, i) => [id(d, i, nodes), d])), link;
     for (i = 0, count = new Array(n);i < m; ++i) {
       link = links[i], link.index = i;
       if (typeof link.source !== "object")
@@ -6636,9 +6883,9 @@ function wake() {
   }
 }
 function poke() {
-  var now2 = clock.now(), delay = now2 - clockLast;
+  var now = clock.now(), delay = now - clockLast;
   if (delay > pokeDelay)
-    clockSkew -= delay, clockLast = now2;
+    clockSkew -= delay, clockLast = now;
 }
 function nap() {
   var t0, t1 = taskHead, t2, time = Infinity;
@@ -6780,7 +7027,7 @@ function simulation_default(nodes) {
     force: function(name, _) {
       return arguments.length > 1 ? (_ == null ? forces.delete(name) : forces.set(name, initializeForce(_)), simulation) : forces.get(name);
     },
-    find: function(x3, y3, radius) {
+    find: function(x, y, radius) {
       var i = 0, n = nodes.length, dx, dy, d2, node, closest;
       if (radius == null)
         radius = Infinity;
@@ -6788,8 +7035,8 @@ function simulation_default(nodes) {
         radius *= radius;
       for (i = 0;i < n; ++i) {
         node = nodes[i];
-        dx = x3 - node.x;
-        dy = y3 - node.y;
+        dx = x - node.x;
+        dy = y - node.y;
         d2 = dx * dx + dy * dy;
         if (d2 < radius)
           closest = node, radius = d2;
@@ -6813,62 +7060,62 @@ function manyBody_default() {
   function initialize() {
     if (!nodes)
       return;
-    var i, n = nodes.length, node2;
+    var i, n = nodes.length, node;
     strengths = new Array(n);
     for (i = 0;i < n; ++i)
-      node2 = nodes[i], strengths[node2.index] = +strength(node2, i, nodes);
+      node = nodes[i], strengths[node.index] = +strength(node, i, nodes);
   }
   function accumulate(quad) {
-    var strength2 = 0, q, c2, weight = 0, x3, y3, i;
+    var strength = 0, q, c, weight = 0, x, y, i;
     if (quad.length) {
-      for (x3 = y3 = i = 0;i < 4; ++i) {
-        if ((q = quad[i]) && (c2 = Math.abs(q.value))) {
-          strength2 += q.value, weight += c2, x3 += c2 * q.x, y3 += c2 * q.y;
+      for (x = y = i = 0;i < 4; ++i) {
+        if ((q = quad[i]) && (c = Math.abs(q.value))) {
+          strength += q.value, weight += c, x += c * q.x, y += c * q.y;
         }
       }
-      quad.x = x3 / weight;
-      quad.y = y3 / weight;
+      quad.x = x / weight;
+      quad.y = y / weight;
     } else {
       q = quad;
       q.x = q.data.x;
       q.y = q.data.y;
       do
-        strength2 += strengths[q.data.index];
+        strength += strengths[q.data.index];
       while (q = q.next);
     }
-    quad.value = strength2;
+    quad.value = strength;
   }
-  function apply(quad, x1, _, x22) {
+  function apply(quad, x1, _, x2) {
     if (!quad.value)
       return true;
-    var x3 = quad.x - node.x, y3 = quad.y - node.y, w = x22 - x1, l = x3 * x3 + y3 * y3;
+    var x = quad.x - node.x, y = quad.y - node.y, w = x2 - x1, l = x * x + y * y;
     if (w * w / theta2 < l) {
       if (l < distanceMax2) {
-        if (x3 === 0)
-          x3 = jiggle_default(random), l += x3 * x3;
-        if (y3 === 0)
-          y3 = jiggle_default(random), l += y3 * y3;
+        if (x === 0)
+          x = jiggle_default(random), l += x * x;
+        if (y === 0)
+          y = jiggle_default(random), l += y * y;
         if (l < distanceMin2)
           l = Math.sqrt(distanceMin2 * l);
-        node.vx += x3 * quad.value * alpha / l;
-        node.vy += y3 * quad.value * alpha / l;
+        node.vx += x * quad.value * alpha / l;
+        node.vy += y * quad.value * alpha / l;
       }
       return true;
     } else if (quad.length || l >= distanceMax2)
       return;
     if (quad.data !== node || quad.next) {
-      if (x3 === 0)
-        x3 = jiggle_default(random), l += x3 * x3;
-      if (y3 === 0)
-        y3 = jiggle_default(random), l += y3 * y3;
+      if (x === 0)
+        x = jiggle_default(random), l += x * x;
+      if (y === 0)
+        y = jiggle_default(random), l += y * y;
       if (l < distanceMin2)
         l = Math.sqrt(distanceMin2 * l);
     }
     do
       if (quad.data !== node) {
         w = strengths[quad.data.index] * alpha / l;
-        node.vx += x3 * w;
-        node.vy += y3 * w;
+        node.vx += x * w;
+        node.vy += y * w;
       }
     while (quad = quad.next);
   }
@@ -6892,10 +7139,10 @@ function manyBody_default() {
   return force;
 }
 // node_modules/d3-force/src/x.js
-function x_default2(x3) {
+function x_default2(x) {
   var strength = constant_default(0.1), nodes, strengths, xz;
-  if (typeof x3 !== "function")
-    x3 = constant_default(x3 == null ? 0 : +x3);
+  if (typeof x !== "function")
+    x = constant_default(x == null ? 0 : +x);
   function force(alpha) {
     for (var i = 0, n = nodes.length, node;i < n; ++i) {
       node = nodes[i], node.vx += (xz[i] - node.x) * strengths[i] * alpha;
@@ -6908,7 +7155,7 @@ function x_default2(x3) {
     strengths = new Array(n);
     xz = new Array(n);
     for (i = 0;i < n; ++i) {
-      strengths[i] = isNaN(xz[i] = +x3(nodes[i], i, nodes)) ? 0 : +strength(nodes[i], i, nodes);
+      strengths[i] = isNaN(xz[i] = +x(nodes[i], i, nodes)) ? 0 : +strength(nodes[i], i, nodes);
     }
   }
   force.initialize = function(_) {
@@ -6919,15 +7166,15 @@ function x_default2(x3) {
     return arguments.length ? (strength = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : strength;
   };
   force.x = function(_) {
-    return arguments.length ? (x3 = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : x3;
+    return arguments.length ? (x = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : x;
   };
   return force;
 }
 // node_modules/d3-force/src/y.js
-function y_default2(y3) {
+function y_default2(y) {
   var strength = constant_default(0.1), nodes, strengths, yz;
-  if (typeof y3 !== "function")
-    y3 = constant_default(y3 == null ? 0 : +y3);
+  if (typeof y !== "function")
+    y = constant_default(y == null ? 0 : +y);
   function force(alpha) {
     for (var i = 0, n = nodes.length, node;i < n; ++i) {
       node = nodes[i], node.vy += (yz[i] - node.y) * strengths[i] * alpha;
@@ -6940,7 +7187,7 @@ function y_default2(y3) {
     strengths = new Array(n);
     yz = new Array(n);
     for (i = 0;i < n; ++i) {
-      strengths[i] = isNaN(yz[i] = +y3(nodes[i], i, nodes)) ? 0 : +strength(nodes[i], i, nodes);
+      strengths[i] = isNaN(yz[i] = +y(nodes[i], i, nodes)) ? 0 : +strength(nodes[i], i, nodes);
     }
   }
   force.initialize = function(_) {
@@ -6951,7 +7198,7 @@ function y_default2(y3) {
     return arguments.length ? (strength = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : strength;
   };
   force.y = function(_) {
-    return arguments.length ? (y3 = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : y3;
+    return arguments.length ? (y = typeof _ === "function" ? _ : constant_default(+_), initialize(), force) : y;
   };
   return force;
 }
@@ -6974,12 +7221,12 @@ var ENTITY_GROUPS = [
 function objArray(v) {
   if (!Array.isArray(v))
     return [];
-  return v.filter((x3) => !!x3 && typeof x3 === "object" && !Array.isArray(x3));
+  return v.filter((x) => !!x && typeof x === "object" && !Array.isArray(x));
 }
 function strArray(v) {
   if (!Array.isArray(v))
     return [];
-  return v.filter((x3) => typeof x3 === "string");
+  return v.filter((x) => typeof x === "string");
 }
 function str(v) {
   return typeof v === "string" ? v : "";
@@ -7047,8 +7294,8 @@ function makeNameResolver(parsed) {
     const hit = names.get(ref);
     if (hit)
       return hit;
-    const m2 = /^(?:char|loc|thing):(.+)$/.exec(ref);
-    return m2 ? m2[1].replace(/_/g, " ") : ref;
+    const m = /^(?:char|loc|thing):(.+)$/.exec(ref);
+    return m ? m[1].replace(/_/g, " ") : ref;
   };
 }
 var cache = { chatId: null, files: null, parsed: null, pending: false, revision: -1 };
@@ -7058,7 +7305,7 @@ function resolveDraftIndex(list, draft) {
   if (draft.orig !== undefined) {
     if (draft.index < list.length && JSON.stringify(list[draft.index]) === draft.orig)
       return draft.index;
-    return list.findIndex((x3) => JSON.stringify(x3) === draft.orig);
+    return list.findIndex((x) => JSON.stringify(x) === draft.orig);
   }
   return draft.index < list.length ? draft.index : -1;
 }
@@ -7067,12 +7314,12 @@ function staleDraftAbort() {
   showToast("warn", "Memoria rewrote that record while you were working, redo the change on the new version");
   rerender();
 }
-function spliceOutIfCurrent(list, index2, expected) {
+function spliceOutIfCurrent(list, index, expected) {
   const expectedJson = JSON.stringify(expected);
-  if (index2 < list.length && JSON.stringify(list[index2]) === expectedJson) {
-    return list.filter((_, j) => j !== index2);
+  if (index < list.length && JSON.stringify(list[index]) === expectedJson) {
+    return list.filter((_, j) => j !== index);
   }
-  const found = list.findIndex((x3) => JSON.stringify(x3) === expectedJson);
+  const found = list.findIndex((x) => JSON.stringify(x) === expectedJson);
   if (found >= 0)
     return list.filter((_, j) => j !== found);
   return null;
@@ -7161,10 +7408,10 @@ function resetCodexTabLocal() {
 }
 var lastArgs = null;
 function rerender() {
-  const a2 = lastArgs;
-  if (!a2 || !a2.host.isConnected)
+  const a = lastArgs;
+  if (!a || !a.host.isConnected)
     return;
-  preserveScroll(a2.host, () => renderCodexTab(a2.host, a2.state, a2.ctx, a2.send));
+  preserveScroll(a.host, () => renderCodexTab(a.host, a.state, a.ctx, a.send));
 }
 function deliverCodexFiles(chatId, files, revision, savedFile, savedSeq) {
   if (cache.chatId === chatId) {
@@ -7327,7 +7574,7 @@ function matches(q, ...bits) {
     if (typeof b === "string") {
       if (b.toLowerCase().includes(q))
         return true;
-    } else if (b.some((x3) => x3.toLowerCase().includes(q))) {
+    } else if (b.some((x) => x.toLowerCase().includes(q))) {
       return true;
     }
   }
@@ -7430,12 +7677,12 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }
   const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
   if (busy) {
-    const row2 = document.createElement("div");
-    row2.className = "lmb-busy";
+    const row = document.createElement("div");
+    row.className = "lmb-busy";
     const dot = document.createElement("div");
     dot.className = "lmb-busy-dot";
-    row2.append(dot, document.createTextNode("Memoria is working on the codex, watch Home for progress"));
-    sec.body.appendChild(row2);
+    row.append(dot, document.createTextNode("Memoria is working on the codex, watch Home for progress"));
+    sec.body.appendChild(row);
   }
   const shownParsed = parsed ?? (!state.codexExists ? emptyParsedCodex() : null);
   if (shownParsed) {
@@ -7451,6 +7698,13 @@ function renderOverview2(host, state, ctx, send, parsed) {
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
       sec.body.appendChild(textNode("No codex yet.", "lmb-help"));
+    }
+    if ((state.codexRefreshPending?.length ?? 0) + (state.codexStaleFiles?.length ?? 0) > 0) {
+      sec.body.appendChild(makeButton("Clear stale tags", () => send({ type: "codex_clear_stale", chatId }), {
+        small: true,
+        disabled: busy,
+        title: "Accept the current records as up to date. Keeps all text and indexing; makes no model request. Future missed updates can mark frozen records stale again."
+      }));
     }
     const pending = state.codexRefreshPending ?? [];
     if (pending.length > 0) {
@@ -7485,9 +7739,9 @@ function renderOverview2(host, state, ctx, send, parsed) {
   }), "codex.actions.update"), busy ? makeButton("Cancel", () => send({ type: "abort_busy", chatId, kind: "codex" }), {
     danger: true,
     title: "Abort the codex task in flight"
-  }) : makeButton("Tidy up", () => send({ type: "codex_tidy", chatId }), {
+  }) : makeButton("Tidy up", () => requestCodexTidy(state, chatId, send), {
     disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
-    title: "One LLM pass that rewrites every record to be leaner without losing plot-relevant information"
+    title: "Choose a target size, then compact up to six model calls without losing plot-relevant information"
   }), makeButton(state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo", async () => {
     const ok = await confirmDelete(ctx, "Undo the last codex change?", `Memoria will roll the codex back to the snapshot she took before the ${state.codexUndoReason ?? "update"} ${relativeTime(state.codexUndoAt)}. Anything written since is lost.`);
     if (ok)
@@ -7593,10 +7847,10 @@ function restoreBackup(ctx, chatId, send) {
 }
 function downloadCodexBackup(filename, content) {
   const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
-  const a2 = document.createElement("a");
-  a2.href = url;
-  a2.download = filename;
-  a2.click();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderBibleTile(def, parsed, state, ctx, send, busy) {
@@ -7617,7 +7871,7 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = `~${formatTokens(tokens)} tokens`;
+  s.textContent = `${state.codexTokensApproximate ? "~" : ""}${formatTokens(tokens)} tokens`;
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
   stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
@@ -7628,11 +7882,11 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
     if (busy)
       send({ type: "abort_busy", chatId, kind: "codex" });
     else
-      send({ type: "codex_tidy", chatId, files: def.files });
+      requestCodexTidy(state, chatId, send, def.files);
   }, {
     small: true,
     disabled: !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists),
-    title: busy ? "Abort the codex task in flight" : "Compress just this record with one LLM pass"
+    title: busy ? "Abort the codex task in flight" : "Choose a target size for this record"
   });
   tidyBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(tidyBtn);
@@ -7887,10 +8141,10 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
     rerender();
   }, { primary: true, small: true }), lessonMark(makeButton(sheetStateLabel(e), () => {
     const list = (cache.parsed ?? parsed)[group];
-    const next = list.map((x3) => {
-      if (str(x3["id"]) !== id)
-        return x3;
-      const row = { ...x3 };
+    const next = list.map((x) => {
+      if (str(x["id"]) !== id)
+        return x;
+      const row = { ...x };
       delete row["locked"];
       delete row["noInject"];
       delete row["noinject"];
@@ -7910,7 +8164,7 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
     const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
     if (!ok)
       return;
-    const next = (cache.parsed ?? parsed)[group].filter((x3) => str(x3["id"]) !== id);
+    const next = (cache.parsed ?? parsed)[group].filter((x) => str(x["id"]) !== id);
     sendCodexWrite(group, { entities: next }, state, send);
   }, { danger: true, small: true }));
   card.appendChild(actions);
@@ -8008,7 +8262,7 @@ function renderEntityForm(draft, state, send) {
       return;
     }
     const list = parsed[draft.group];
-    const idx = list.findIndex((x3) => str(x3["id"]) === draft.id);
+    const idx = list.findIndex((x) => str(x["id"]) === draft.id);
     const next = idx >= 0 ? [...list.slice(0, idx), entity, ...list.slice(idx + 1)] : [...list, entity];
     draft.saving = true;
     sendCodexWrite(draft.group, { entities: next }, state, send);
@@ -8034,7 +8288,7 @@ function buildEntityFromDraft(draft, parsed) {
   const name = (draft.fields["name"] ?? "").trim();
   if (!name)
     return null;
-  const orig = parsed[draft.group].find((x3) => str(x3["id"]) === draft.id);
+  const orig = parsed[draft.group].find((x) => str(x["id"]) === draft.id);
   const out = {};
   if (orig) {
     for (const [k, v] of Object.entries(orig)) {
@@ -8054,7 +8308,7 @@ function buildEntityFromDraft(draft, parsed) {
       out[f] = v;
   }
   for (const f of ENTITY_LIST_FIELDS) {
-    const items = (draft.fields[f] ?? "").split(/[,\n]/).map((x3) => x3.trim()).filter(Boolean);
+    const items = (draft.fields[f] ?? "").split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
     if (items.length)
       out[f] = items;
   }
@@ -8064,10 +8318,10 @@ function buildEntityFromDraft(draft, parsed) {
   return out;
 }
 function splitLines(v) {
-  return v.split(/\n/).map((x3) => x3.trim()).filter(Boolean);
+  return v.split(/\n/).map((x) => x.trim()).filter(Boolean);
 }
 function splitComma(v) {
-  return v.split(/[,\n]/).map((x3) => x3.trim()).filter(Boolean);
+  return v.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 }
 function ensureRefDatalist(parsed) {
   const ID = "lmb-entity-refs";
@@ -8155,10 +8409,10 @@ function relationSearchText(r, nameOf) {
     bits.push(nameOf(str(r["a"])), nameOf(str(r["b"])));
   return bits;
 }
-function relationDraftFrom(r, index2) {
+function relationDraftFrom(r, index) {
   return {
     kind: "relation",
-    index: index2,
+    index,
     ...r ? { orig: JSON.stringify(r) } : {},
     saving: false,
     fields: {
@@ -8185,11 +8439,11 @@ function buildRelationFromDraft(d) {
       return null;
     return { type: "group", kind, members, state: stateText, ...history.length ? { history } : {} };
   }
-  const a2 = (d.fields["a"] ?? "").trim();
+  const a = (d.fields["a"] ?? "").trim();
   const b = (d.fields["b"] ?? "").trim();
-  if (!a2 || !b)
+  if (!a || !b)
     return null;
-  return { type: "pair", a: a2, b, kind, state: stateText, ...history.length ? { history } : {} };
+  return { type: "pair", a, b, kind, state: stateText, ...history.length ? { history } : {} };
 }
 function saveRelationDraft(d, state, send) {
   const parsed = cache.parsed;
@@ -8402,19 +8656,19 @@ function buildGraph(parsed, nameOf) {
           raw.push({ a: members[i], b: members[j], kind, state: stateText, directed: false, group: true });
         }
       }
-      members.forEach((m2) => nodeIds.add(m2));
+      members.forEach((m) => nodeIds.add(m));
     } else {
-      const a2 = str(r["a"]);
+      const a = str(r["a"]);
       const b = str(r["b"]);
-      if (!a2 || !b)
+      if (!a || !b)
         continue;
-      raw.push({ a: a2, b, kind, state: stateText, directed: true, group: false });
-      nodeIds.add(a2);
+      raw.push({ a, b, kind, state: stateText, directed: true, group: false });
+      nodeIds.add(a);
       nodeIds.add(b);
     }
   }
   const laneCounts = new Map;
-  const pairKey = (a2, b) => a2 < b ? `${a2}\x00${b}` : `${b}\x00${a2}`;
+  const pairKey = (a, b) => a < b ? `${a}\x00${b}` : `${b}\x00${a}`;
   for (const e of raw)
     laneCounts.set(pairKey(e.a, e.b), (laneCounts.get(pairKey(e.a, e.b)) ?? 0) + 1);
   const laneUsed = new Map;
@@ -8441,17 +8695,17 @@ function layoutGraph(nodes, edges) {
   const sim = simulation_default(nodes).force("link", link_default(links).id((d) => d.id).distance(85).strength(0.55)).force("charge", manyBody_default().strength(-220)).force("collide", collide_default(34)).force("x", x_default2(GRAPH_W / 2).strength(0.05)).force("y", y_default2(GRAPH_H / 2).strength(0.09)).stop();
   sim.tick(300);
 }
-function edgePath(a2, b, e) {
-  const ddx = b.x - a2.x;
-  const ddy = b.y - a2.y;
+function edgePath(a, b, e) {
+  const ddx = b.x - a.x;
+  const ddy = b.y - a.y;
   const d = Math.max(0.15, Math.hypot(ddx, ddy));
   const ux = ddx / d;
   const uy = ddy / d;
   const off = (e.lane - (e.lanes - 1) / 2) * 18;
-  const mx = (a2.x + b.x) / 2 - uy * off;
-  const my = (a2.y + b.y) / 2 + ux * off;
-  const ax = a2.x + ux * NODE_CLEAR;
-  const ay = a2.y + uy * NODE_CLEAR;
+  const mx = (a.x + b.x) / 2 - uy * off;
+  const my = (a.y + b.y) / 2 + ux * off;
+  const ax = a.x + ux * NODE_CLEAR;
+  const ay = a.y + uy * NODE_CLEAR;
   const bx = b.x - ux * (e.directed ? NODE_CLEAR + 3 : NODE_CLEAR);
   const by = b.y - uy * (e.directed ? NODE_CLEAR + 3 : NODE_CLEAR);
   return off === 0 ? `M ${ax.toFixed(1)} ${ay.toFixed(1)} L ${bx.toFixed(1)} ${by.toFixed(1)}` : `M ${ax.toFixed(1)} ${ay.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}`;
@@ -8559,20 +8813,20 @@ function renderRelationGraph(host, parsed, nameOf) {
   let selectedEdge = null;
   const edgePaths = [];
   for (const e of edges) {
-    const a2 = byId.get(e.a);
+    const a = byId.get(e.a);
     const b = byId.get(e.b);
-    if (!a2 || !b)
+    if (!a || !b)
       continue;
     const g = svgEl("g");
     g.setAttribute("class", "lmb-graph-edgeg");
     const path = svgEl("path");
     path.setAttribute("class", `lmb-graph-edge${e.group ? " group" : ""}`);
-    path.setAttribute("d", edgePath(a2, b, e));
+    path.setAttribute("d", edgePath(a, b, e));
     if (e.directed)
       path.setAttribute("marker-end", "url(#lmb-arrow)");
     const hit = svgEl("path");
     hit.setAttribute("class", "lmb-graph-hit");
-    hit.setAttribute("d", edgePath(a2, b, e));
+    hit.setAttribute("d", edgePath(a, b, e));
     const story = e.group ? `${nameOf(e.a)} · ${nameOf(e.b)}${e.kind ? ` [${e.kind}]` : ""}: ${e.state}` : `${nameOf(e.a)} → ${nameOf(e.b)}${e.kind ? ` [${e.kind}]` : ""}: ${e.state}`;
     const tip = svgEl("title");
     tip.textContent = story;
@@ -8594,11 +8848,11 @@ function renderRelationGraph(host, parsed, nameOf) {
     for (const { visible, hit, edge } of edgePaths) {
       if (edge.a !== id && edge.b !== id)
         continue;
-      const a2 = byId.get(edge.a);
+      const a = byId.get(edge.a);
       const b = byId.get(edge.b);
-      if (!a2 || !b)
+      if (!a || !b)
         continue;
-      const d = edgePath(a2, b, edge);
+      const d = edgePath(a, b, edge);
       visible.setAttribute("d", d);
       hit.setAttribute("d", d);
     }
@@ -8669,8 +8923,8 @@ function renderRelationGraph(host, parsed, nameOf) {
       return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 2) {
-      const [a2, b] = [...pointers.values()];
-      pinch = { dist: Math.max(8, Math.hypot(a2.x - b.x, a2.y - b.y)), w: cam.w };
+      const [a, b] = [...pointers.values()];
+      pinch = { dist: Math.max(8, Math.hypot(a.x - b.x, a.y - b.y)), w: cam.w };
     }
   });
   svg.addEventListener("pointermove", (e) => {
@@ -8686,9 +8940,9 @@ function renderRelationGraph(host, parsed, nameOf) {
       captured.add(e.pointerId);
     }
     if (pinch && pointers.size === 2) {
-      const [a2, b] = [...pointers.values()];
-      const dist = Math.max(8, Math.hypot(a2.x - b.x, a2.y - b.y));
-      const mid = { x: (a2.x + b.x) / 2, y: (a2.y + b.y) / 2 };
+      const [a, b] = [...pointers.values()];
+      const dist = Math.max(8, Math.hypot(a.x - b.x, a.y - b.y));
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const targetW = clampNum(pinch.w * (pinch.dist / dist), GRAPH_MIN_W, maxW());
       zoomAt(mid.x, mid.y, cam.w / targetW);
       return;
@@ -8719,11 +8973,11 @@ function renderRelationGraph(host, parsed, nameOf) {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   };
   tools.append(makeButton("−", () => {
-    const c2 = viewCenter();
-    zoomAt(c2.x, c2.y, 1 / 1.4);
+    const c = viewCenter();
+    zoomAt(c.x, c.y, 1 / 1.4);
   }, { small: true, title: "Zoom out" }), makeButton("+", () => {
-    const c2 = viewCenter();
-    zoomAt(c2.x, c2.y, 1.4);
+    const c = viewCenter();
+    zoomAt(c.x, c.y, 1.4);
   }, { small: true, title: "Zoom in" }), makeButton("Fit", fitCamera, { small: true, title: "Frame the whole web" }));
   const wrap = document.createElement("div");
   wrap.className = "lmb-graph-wrap";
@@ -8753,10 +9007,10 @@ function renderRelationGraph(host, parsed, nameOf) {
   host.appendChild(legend);
   host.appendChild(textNode("Tap an edge for the story, tap a diamond to open its sheet, drag diamonds to rearrange. Drag the background to pan, and pinch or scroll to zoom.", "lmb-help"));
 }
-function eventDraftFrom(e, index2) {
+function eventDraftFrom(e, index) {
   return {
     kind: "event",
-    index: index2,
+    index,
     ...e ? { orig: JSON.stringify(e) } : {},
     saving: false,
     fields: {
@@ -8917,10 +9171,10 @@ var THREAD_TONE = {
   abandoned: "danger",
   resolved: undefined
 };
-function threadDraftFrom(t, index2) {
+function threadDraftFrom(t, index) {
   return {
     kind: "thread",
-    index: index2,
+    index,
     ...t ? { orig: JSON.stringify(t) } : {},
     saving: false,
     fields: {
@@ -9082,10 +9336,10 @@ function renderThreads(host, parsed, state, ctx, send) {
   }
   host.appendChild(sec.wrap);
 }
-function worldDraftFrom(w, index2) {
+function worldDraftFrom(w, index) {
   return {
     kind: "world",
-    index: index2,
+    index,
     ...w ? { orig: JSON.stringify(w) } : {},
     saving: false,
     fields: {
@@ -9096,12 +9350,12 @@ function worldDraftFrom(w, index2) {
     }
   };
 }
-function knowledgeDraftFrom(k, index2) {
+function knowledgeDraftFrom(k, index) {
   const beliefs = objArray(k?.["falseBeliefs"]).map((b) => `${str(b["who"])} => ${str(b["believes"])}`).join(`
 `);
   return {
     kind: "knowledge",
-    index: index2,
+    index,
     ...k ? { orig: JSON.stringify(k) } : {},
     saving: false,
     fields: {
@@ -9166,7 +9420,7 @@ function saveKnowledgeDraft(d, state, send) {
     const who = line.slice(0, at).trim();
     const believes = line.slice(at + 2).trim();
     return who && believes ? { who, believes } : null;
-  }).filter((x3) => !!x3);
+  }).filter((x) => !!x);
   if (falseBeliefs.length)
     item["falseBeliefs"] = falseBeliefs;
   const note = (d.fields["note"] ?? "").trim();
@@ -9459,6 +9713,28 @@ function renderCodexSettings(host, state, profile, patch) {
   loreHint.className = "lmb-field-hint";
   loreHint.textContent = "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
   fields.appendChild(loreHint);
+  fields.appendChild(checkbox({
+    checked: profile.codexForceConstant,
+    label: "Always inject codex records",
+    hint: "Inject every enabled record each turn. Otherwise timeline and threads are constant; other records activate by keywords.",
+    onChange: (v) => patch({ codexForceConstant: v })
+  }));
+  fields.appendChild(labelled("Codex placement", select({
+    value: profile.codexInjectionPosition,
+    options: [{ value: "lorebook", label: "Lorebook (before)" }, { value: "depth", label: "At history depth" }, { value: "after_history", label: "After chat history" }],
+    onChange: (v) => patch({ codexInjectionPosition: v })
+  })));
+  if (profile.codexInjectionPosition === "depth")
+    fields.appendChild(labelled("Depth from newest turn", numberInput({
+      value: profile.codexInjectionDepth,
+      min: 0,
+      max: 1e4,
+      onBlur: (v) => patch({ codexInjectionDepth: v ?? 4 })
+    })));
+  const placementHint = document.createElement("div");
+  placementHint.className = "lmb-help";
+  placementHint.textContent = "Summaries replace their source history in place. Codex records are normal lorebook entries: the default follows your preset's Lorebook Before block; depth 0 follows history. Constant activation does not freeze text: codex updates can still break the prompt cache. A larger update window changes it less often; placing it after history preserves the earlier prefix.";
+  fields.appendChild(placementHint);
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: "Relations table",
@@ -9501,9 +9777,9 @@ function renderCodexConnection(host, state, profile, patch) {
   const sec = section("Codex connection");
   const connOpts = [
     { value: "", label: "Same as Summary Connection" },
-    ...state.connections.map((c2) => ({
-      value: c2.id,
-      label: `${c2.name} - ${c2.provider}${c2.model ? "/" + c2.model : ""}${c2.isDefault ? " (default)" : ""}`
+    ...state.connections.map((c) => ({
+      value: c.id,
+      label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`
     }))
   ];
   sec.body.appendChild(lessonMark(select({
@@ -9542,12 +9818,12 @@ function renderResetSettings(host, state, send) {
   const CONFIRM = "Click again to confirm";
   let btn;
   let armed = false;
-  let timer2;
+  let timer;
   const disarm = () => {
     armed = false;
-    if (timer2) {
-      clearTimeout(timer2);
-      timer2 = undefined;
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
     }
     btn.textContent = IDLE;
   };
@@ -9555,7 +9831,7 @@ function renderResetSettings(host, state, send) {
     if (!armed) {
       armed = true;
       btn.textContent = CONFIRM;
-      timer2 = setTimeout(disarm, 3000);
+      timer = setTimeout(disarm, 3000);
       return;
     }
     disarm();
@@ -9704,6 +9980,47 @@ function renderAutomation(host, profile, patch) {
   arcHint.className = "lmb-field-hint";
   arcHint.textContent = "Arc lag reserves the most-recent chapters and never binds them, so you keep some chapter-level detail.";
   arcFields.appendChild(arcHint);
+  for (const tier of HIGHER_TIERS) {
+    const config = profile.higherTiers[tier];
+    const change = (v) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
+    const block = section(`Auto-bind ${TIER_NAMES[tier - 1]}`);
+    block.body.appendChild(checkbox({ checked: config.enabled, label: "Enabled", onChange: (enabled) => change({ enabled }) }));
+    block.body.appendChild(labelled("Trigger unit", select({
+      value: config.unit,
+      options: [{ value: "entries", label: `${TIER_NAMES[tier - 2]} entries` }, { value: "tokens", label: "Summary tokens" }],
+      onChange: (v) => change({ unit: v === "tokens" ? "tokens" : "entries", batch: v === "tokens" ? 8000 : 6, lag: v === "tokens" ? 2000 : 2 })
+    })));
+    block.body.appendChild(labelled("Amount to bind", numberInput({
+      value: config.batch,
+      min: config.unit === "tokens" ? 100 : 2,
+      max: config.unit === "tokens" ? 1e6 : 100,
+      onBlur: (v) => change({ batch: v ?? config.batch })
+    })));
+    block.body.appendChild(labelled("Recent amount to keep", numberInput({
+      value: config.lag,
+      min: 0,
+      max: config.unit === "tokens" ? 1e6 : 100,
+      onBlur: (v) => change({ lag: v ?? config.lag })
+    })));
+    const hint = document.createElement("div");
+    hint.className = "lmb-help";
+    hint.textContent = `Binds the oldest active ${TIER_NAMES[tier - 2]} summaries; roots and archived sources do not count. ${config.unit === "entries" ? `First binding needs ${config.batch + config.lag} entries (${config.batch} to bind + ${config.lag} kept).` : "Thresholds measure saved summary text."}`;
+    block.body.appendChild(hint);
+    if (tier > 3) {
+      block.body.appendChild(labelled("Compression target", select({
+        value: config.targetUnit,
+        options: [{ value: "percent", label: "Percent of input" }, { value: "tokens", label: "Fixed tokens" }],
+        onChange: (v) => change({ targetUnit: v === "tokens" ? "tokens" : "percent" })
+      })));
+      block.body.appendChild(labelled(config.targetUnit === "tokens" ? "Target tokens" : "Target percent", numberInput({
+        value: config.targetUnit === "tokens" ? config.targetTokens : config.targetPercent,
+        min: config.targetUnit === "tokens" ? 50 : 5,
+        max: config.targetUnit === "tokens" ? 1e6 : 95,
+        onBlur: (v) => change(config.targetUnit === "tokens" ? { targetTokens: v ?? 3000 } : { targetPercent: v ?? 25 })
+      })));
+    }
+    subsWrap.appendChild(block.wrap);
+  }
   host.appendChild(sec.wrap);
 }
 function renderCompressionTargets(host, profile, patch) {
@@ -9817,7 +10134,7 @@ function renderCompressionTargets(host, profile, patch) {
   sec.body.appendChild(volumeTitle);
   const volumeHint = document.createElement("div");
   volumeHint.className = "lmb-field-hint";
-  volumeHint.textContent = "Volumes are manual only. Press arcs into a volume from Books → Compose.";
+  volumeHint.textContent = "Bind volumes manually in Books → Compose, or enable volume automation above.";
   sec.body.appendChild(volumeHint);
   const volumeRatioGrid = document.createElement("div");
   volumeRatioGrid.className = "lmb-grid-2";
@@ -9851,9 +10168,9 @@ function renderConnection(host, state, profile, patch) {
   lessonMark(sec.wrap, "tuning.model.connection");
   const opts = [
     { value: "", label: state.connections.length ? "Default connection" : "No connections available" },
-    ...state.connections.map((c2) => ({
-      value: c2.id,
-      label: `${c2.name} - ${c2.provider}${c2.model ? "/" + c2.model : ""}${c2.isDefault ? " (default)" : ""}`
+    ...state.connections.map((c) => ({
+      value: c.id,
+      label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`
     }))
   ];
   sec.body.appendChild(select({
@@ -9862,7 +10179,7 @@ function renderConnection(host, state, profile, patch) {
     onChange: (v) => patch({ connectionId: v || null })
   }));
   if (state.resolvedSidecarConnectionId) {
-    const resolved = state.connections.find((c2) => c2.id === state.resolvedSidecarConnectionId);
+    const resolved = state.connections.find((c) => c.id === state.resolvedSidecarConnectionId);
     if (resolved) {
       const hint = document.createElement("div");
       hint.className = "lmb-field-hint";
@@ -10147,7 +10464,7 @@ function renderBehavior(host, profile, patch) {
 
 // src/prompts/fill.ts
 function fillPrompt(template, vars) {
-  return template.replace(/\{\{(\w+)\}\}/g, (m2, k) => (k in vars) ? String(vars[k]) : m2);
+  return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
 }
 
 // src/prompts/books/blank-template.txt
@@ -10190,7 +10507,7 @@ function renderPromptsPane(host, state, ctx, send) {
     const p = category === "arc" ? { arcPresetKey: key } : category === "volume" ? { volumePresetKey: key } : category === "codex" ? { codexPresetKey: key } : { chapterPresetKey: key };
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   };
-  const selectedKeyFor = (c2) => c2 === "arc" ? profile.arcPresetKey : c2 === "volume" ? profile.volumePresetKey : c2 === "codex" ? profile.codexPresetKey : profile.chapterPresetKey;
+  const selectedKeyFor = (c) => c === "arc" ? profile.arcPresetKey : c === "volume" ? profile.volumePresetKey : c === "codex" ? profile.codexPresetKey : profile.chapterPresetKey;
   const pane = document.createElement("div");
   pane.className = "lmb-pane";
   host.appendChild(pane);
@@ -10441,7 +10758,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   const customs = state.customPresets.filter((p) => p.category === category);
   const opts = [
     ...builtIns.map((b) => ({ value: b.key, label: `Built-in: ${b.displayName}` })),
-    ...customs.map((c2) => ({ value: c2.key, label: `Custom: ${c2.displayName}` }))
+    ...customs.map((c) => ({ value: c.key, label: `Custom: ${c.displayName}` }))
   ];
   const pickerRow = document.createElement("div");
   pickerRow.className = "lmb-field-row";
@@ -10454,7 +10771,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   }));
   pickerRow.append(grow);
   sec.body.appendChild(pickerRow);
-  const isUserPreset = customs.some((c2) => c2.key === selectedKey);
+  const isUserPreset = customs.some((c) => c.key === selectedKey);
   const selectedText = findPresetText(state, category, selectedKey);
   const buttonsRow = document.createElement("div");
   buttonsRow.className = "lmb-actions";
@@ -10476,7 +10793,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
     });
     setKey(category, key);
   }, { small: true }), makeButton(isUserPreset ? "Duplicate to new" : "Duplicate to edit", async () => {
-    const sourceName = customs.find((c2) => c2.key === selectedKey)?.displayName ?? builtIns.find((b) => b.key === selectedKey)?.displayName ?? "Untitled";
+    const sourceName = customs.find((c) => c.key === selectedKey)?.displayName ?? builtIns.find((b) => b.key === selectedKey)?.displayName ?? "Untitled";
     const name = await promptForString(ctx, `Name for duplicate`, `${sourceName} copy`);
     if (!name)
       return;
@@ -10513,7 +10830,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   }, { small: true, danger: true, disabled: !isUserPreset }));
   sec.body.appendChild(buttonsRow);
   if (isUserPreset) {
-    const custom = customs.find((c2) => c2.key === selectedKey);
+    const custom = customs.find((c) => c.key === selectedKey);
     const draft = { ...custom };
     const flush = () => send({
       type: "save_custom_preset",
@@ -10558,9 +10875,9 @@ function blankPromptTemplate(category) {
   return fillPrompt(blank_template_default, { NOUN: noun });
 }
 function findPresetText(state, category, key) {
-  const c2 = state.customPresets.find((p) => p.key === key && p.category === category);
-  if (c2)
-    return c2.prompt;
+  const c = state.customPresets.find((p) => p.key === key && p.category === category);
+  if (c)
+    return c.prompt;
   const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : category === "codex" ? state.codexPresets : state.chapterPresets;
   const b = builtIns.find((p) => p.key === key);
   return b?.prompt ?? "";
@@ -12012,10 +12329,10 @@ function renderAboutTab(host, state, send) {
   }
   host.appendChild(where.wrap);
   const ack = section("Acknowledgements");
-  const a2 = document.createElement("div");
-  a2.className = "lmb-about-line";
-  a2.textContent = "Built on Lumiverse Spindle, with prompts and UX inspired by SillyTavern Memory Books. " + "Memoria thanks the original Memory Books authors for the inspiration.";
-  ack.body.appendChild(a2);
+  const a = document.createElement("div");
+  a.className = "lmb-about-line";
+  a.textContent = "Built on Lumiverse Spindle, with prompts and UX inspired by SillyTavern Memory Books. " + "Memoria thanks the original Memory Books authors for the inspiration.";
+  ack.body.appendChild(a);
   host.appendChild(ack.wrap);
 }
 var GRADE_CLASS = {
@@ -12361,60 +12678,60 @@ JSON-only:
 - No markdown fences, no commentary, no system prompts, no extra text.`;
 
 // src/prompts/books/volume-default.txt
-var volume_default_default = `You are an expert narrative analyst and memory-engine assistant.
-Your task is to take multiple story ARC summaries (each already a condensed span of the story), normalize them, reconstruct the full chronology, and output a single consolidated VOLUME entry in JSON.
-
-A volume is the highest compression tier: it replaces all of its source arcs in a long-running RP memory system, so it must preserve everything future scenes may depend on while being far more compact than the arcs combined.
-
-{{TARGET_DIRECTIVE}}
-
-Strict output format (JSON only; no markdown, no prose outside JSON):
-{
-  "title": "Short descriptive volume title (3-6 words)",
-  "opener": "{{memoria_opener}}",
-  "content": "Structured volume summary as a single string (see Summary Content Structure below).",
-  "keywords": ["keyword1", "keyword2"],
-  "short_comment": "{{memoria_short_comment_rules}}"
-}
-
-The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.
-
-Notes:
-- Respect chronology of the source arcs (oldest first).
-- Merge overlapping or repeated information across arcs into single beats.
-- Prefer whole-story trajectory over scene detail: what changed permanently matters more than how each scene played out.
-
-Summary Content Structure (follow inside the content string; use headings and bullets as plain text):
-
-# [Volume Title]
-Time period: What timeframe the volume covers.
-
-Volume Premise: One or two sentences describing the overall movement of the story across these arcs.
-
-## Major Beats
-- 5-10 bullets capturing the major plot movements across all arcs
-- Focus on cause → effect logic and permanent consequences
-- Include only plot-affecting events
-
-## Character Dynamics
-- 1-3 paragraphs describing how the characters' motives, emotions, boundaries, and relationships evolved across the volume
-- Capture the net change from the start of the first arc to the end of the last
-
-## Key Exchanges
-- Up to 8 short, exact quotes that defined the volume
-- Only dialogue that materially shifted tone, emotion, or relationship dynamics
-
-## Outcome & Continuity
-- 5-10 bullets capturing decisions, promises, emotional states, routines, injuries or physical changes, foreshadowed events, unresolved threads, and permanent consequences
-
-KEYWORDS
-- Provide 15-30 standalone retrieval keywords.
-- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable elements only.
-- Each keyword = ONE concept, retrievable if mentioned alone.
-- No narrative keywords, no emotional or abstract words, no multi-fact keywords, no character names.
-
-JSON-only:
-- Return only the JSON object described above.
+var volume_default_default = `You are an expert narrative analyst and memory-engine assistant.\r
+Your task is to take multiple story ARC summaries (each already a condensed span of the story), normalize them, reconstruct the full chronology, and output a single consolidated VOLUME entry in JSON.\r
+\r
+A volume is a higher compression tier: it replaces all of its source arcs in a long-running RP memory system, so it must preserve everything future scenes may depend on while being far more compact than the arcs combined.\r
+\r
+{{TARGET_DIRECTIVE}}\r
+\r
+Strict output format (JSON only; no markdown, no prose outside JSON):\r
+{\r
+  "title": "Short descriptive volume title (3-6 words)",\r
+  "opener": "{{memoria_opener}}",\r
+  "content": "Structured volume summary as a single string (see Summary Content Structure below).",\r
+  "keywords": ["keyword1", "keyword2"],\r
+  "short_comment": "{{memoria_short_comment_rules}}"\r
+}\r
+\r
+The opener field MUST be the exact string shown above, copied verbatim. Do not rephrase it or invent your own.\r
+\r
+Notes:\r
+- Respect chronology of the source arcs (oldest first).\r
+- Merge overlapping or repeated information across arcs into single beats.\r
+- Prefer whole-story trajectory over scene detail: what changed permanently matters more than how each scene played out.\r
+\r
+Summary Content Structure (follow inside the content string; use headings and bullets as plain text):\r
+\r
+# [Volume Title]\r
+Time period: What timeframe the volume covers.\r
+\r
+Volume Premise: One or two sentences describing the overall movement of the story across these arcs.\r
+\r
+## Major Beats\r
+- 5-10 bullets capturing the major plot movements across all arcs\r
+- Focus on cause → effect logic and permanent consequences\r
+- Include only plot-affecting events\r
+\r
+## Character Dynamics\r
+- 1-3 paragraphs describing how the characters' motives, emotions, boundaries, and relationships evolved across the volume\r
+- Capture the net change from the start of the first arc to the end of the last\r
+\r
+## Key Exchanges\r
+- Up to 8 short, exact quotes that defined the volume\r
+- Only dialogue that materially shifted tone, emotion, or relationship dynamics\r
+\r
+## Outcome & Continuity\r
+- 5-10 bullets capturing decisions, promises, emotional states, routines, injuries or physical changes, foreshadowed events, unresolved threads, and permanent consequences\r
+\r
+KEYWORDS\r
+- Provide 15-30 standalone retrieval keywords.\r
+- Concrete nouns, physical objects, places, proper nouns, distinctive actions, or memorable elements only.\r
+- Each keyword = ONE concept, retrievable if mentioned alone.\r
+- No narrative keywords, no emotional or abstract words, no multi-fact keywords, no character names.\r
+\r
+JSON-only:\r
+- Return only the JSON object described above.\r
 - No markdown fences, no commentary, no extra text.`;
 
 // src/backend/presets.ts
@@ -12730,11 +13047,11 @@ var CODEX_FILE_TOKENS = {
 function coverageFor(stubs, profileLag, profileWindow) {
   let covered = 0;
   let uncoveredTokens = 0;
-  for (const m2 of stubs) {
-    if (m2.covered)
+  for (const m of stubs) {
+    if (m.covered)
       covered++;
     else
-      uncoveredTokens += m2.approxTokens;
+      uncoveredTokens += m.approxTokens;
   }
   const uncovered = stubs.length - covered;
   return {
@@ -12752,12 +13069,12 @@ function applyCoverage(stubs, entries, hide) {
       continue;
     for (const id of e.meta.msgIds) {
       const idx = Number(id.slice(1)) - 1;
-      const m2 = stubs[idx];
-      if (!m2)
+      const m = stubs[idx];
+      if (!m)
         continue;
-      m2.covered = true;
-      m2.coveredByEntryId = e.entryId;
-      m2.hidden = hide;
+      m.covered = true;
+      m.coveredByEntryId = e.entryId;
+      m.hidden = hide;
     }
   }
 }
@@ -12804,17 +13121,17 @@ function buildFixture(variant) {
   profile.codexEnabled = !!spec.codex;
   const stubs = makeMessages(spec.total);
   for (const idx of spec.excluded ?? []) {
-    const m2 = stubs[idx];
-    if (m2)
-      m2.excluded = true;
+    const m = stubs[idx];
+    if (m)
+      m.excluded = true;
   }
-  const superseded = new Set((spec.arcs ?? []).flatMap((a2) => a2.sources ?? []));
-  const chapters = spec.chapters.map((c2) => makeView({ ...c2, superseded: superseded.has(c2.id) }));
+  const superseded = new Set((spec.arcs ?? []).flatMap((a) => a.sources ?? []));
+  const chapters = spec.chapters.map((c) => makeView({ ...c, superseded: superseded.has(c.id) }));
   if (spec.ghost)
     chapters.push(makeView(CH[5]));
-  const arcs = (spec.arcs ?? []).map((a2) => makeView(a2));
-  for (const a2 of arcs)
-    a2.sourceChapterEntryIds = (spec.arcs ?? []).find((s) => s.id === a2.entryId)?.sources ?? [];
+  const arcs = (spec.arcs ?? []).map((a) => makeView(a));
+  for (const a of arcs)
+    a.sourceChapterEntryIds = (spec.arcs ?? []).find((s) => s.id === a.entryId)?.sources ?? [];
   applyCoverage(stubs, [...arcs, ...chapters], profile.hideCoveredMessages);
   const coverage = coverageFor(stubs, profile.lagValue, profile.windowValue);
   const headroom = Math.max(0, coverage.uncoveredMessages - profile.lagValue);
@@ -12828,6 +13145,7 @@ function buildFixture(variant) {
     activeProfile: profile,
     chapters,
     arcs,
+    higherBooks: [],
     volumes: [],
     bookId: "book_lesson",
     bookName: "LumiBooks - The Ashford Case",
@@ -12861,6 +13179,7 @@ function buildFixture(variant) {
     codexSources: [],
     codexRootOrigin: null,
     codexRootOriginName: null,
+    codexTokensApproximate: true,
     codexInjectedTokens: spec.codex ? 940 : 0,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],
@@ -12871,7 +13190,7 @@ function buildFixture(variant) {
   };
 }
 function applyFiledChapter(state) {
-  if (state.chapters.some((c2) => c2.entryId === "c3"))
+  if (state.chapters.some((c) => c.entryId === "c3"))
     return;
   const spec = CH[2];
   const view = makeView(spec);
@@ -12946,8 +13265,8 @@ function renderDiploma(host, data, actions) {
   host.replaceChildren();
   const wrap = document.createElement("div");
   wrap.className = "lmb-diploma";
-  const frame2 = document.createElement("div");
-  frame2.className = "lmb-diploma-frame";
+  const frame = document.createElement("div");
+  frame.className = "lmb-diploma-frame";
   const arch = document.createElement("div");
   arch.className = "lmb-diploma-arch";
   arch.textContent = "LUMIBOOKS ACADEMY";
@@ -12977,13 +13296,13 @@ function renderDiploma(host, data, actions) {
   remark.className = "lmb-diploma-remark";
   remark.textContent = GRADE_REMARK[data.grade];
   sealRow.appendChild(remark);
-  frame2.append(arch, course, grant, name, line, stamp, score, sealRow);
-  wrap.appendChild(frame2);
+  frame.append(arch, course, grant, name, line, stamp, score, sealRow);
+  wrap.appendChild(frame);
   const btnRow = document.createElement("div");
   btnRow.className = "lmb-seal-actions";
   btnRow.appendChild(makeButton("Save as image", () => void downloadDiploma(data), { small: true }));
-  for (const a2 of actions) {
-    btnRow.appendChild(makeButton(a2.label, a2.onClick, { small: true, primary: a2.primary }));
+  for (const a of actions) {
+    btnRow.appendChild(makeButton(a.label, a.onClick, { small: true, primary: a.primary }));
   }
   wrap.appendChild(btnRow);
   host.appendChild(wrap);
@@ -13032,9 +13351,9 @@ async function downloadDiploma(data) {
   g.lineWidth = 1;
   g.strokeStyle = "rgba(201, 168, 106, 0.5)";
   g.strokeRect(34, 34, W - 68, H - 68);
-  for (const [x3, y3] of [[24, 24], [W - 24, 24], [24, H - 24], [W - 24, H - 24]]) {
+  for (const [x, y] of [[24, 24], [W - 24, 24], [24, H - 24], [W - 24, H - 24]]) {
     g.save();
-    g.translate(x3, y3);
+    g.translate(x, y);
     g.rotate(Math.PI / 4);
     g.fillStyle = "rgba(201, 168, 106, 0.9)";
     g.fillRect(-5, -5, 10, 10);
@@ -13096,10 +13415,10 @@ async function downloadDiploma(data) {
   g.fillStyle = "rgba(201, 168, 106, 0.8)";
   g.font = display(13);
   g.fillText("— Memoria, Librarian", W / 2, 588);
-  const a2 = document.createElement("a");
-  a2.download = `lumibooks-diploma-${data.courseTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
-  a2.href = canvas.toDataURL("image/png");
-  a2.click();
+  const a = document.createElement("a");
+  a.download = `lumibooks-diploma-${data.courseTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;
+  a.href = canvas.toDataURL("image/png");
+  a.click();
 }
 
 // src/ui/lessons/diagrams.ts
@@ -13168,9 +13487,9 @@ function diagramRot(wrap) {
   let n = 0;
   for (let i = 0;i < MAX - 2; i++)
     col.appendChild(bar("msg", MSG_WIDTHS[n++ % MSG_WIDTHS.length]));
-  const timer2 = setInterval(() => {
+  const timer = setInterval(() => {
     if (!col.isConnected) {
-      clearInterval(timer2);
+      clearInterval(timer);
       return;
     }
     const fresh = bar("msg", MSG_WIDTHS[n++ % MSG_WIDTHS.length]);
@@ -13263,8 +13582,8 @@ function diagramFade(wrap) {
   }
   wrap.appendChild(card);
   const chips = el("lmb-dg-chips");
-  const chipEls = FADE_CHIPS.map((c2) => {
-    const chip = el("lmb-dg-chip", `◆ ${c2}`);
+  const chipEls = FADE_CHIPS.map((c) => {
+    const chip = el("lmb-dg-chip", `◆ ${c}`);
     chips.appendChild(chip);
     return chip;
   });
@@ -13275,8 +13594,8 @@ function diagramFade(wrap) {
     tier.textContent = "chapter";
     tier.classList.remove("hot");
     chips.classList.remove("kept");
-    for (const c2 of chipEls)
-      c2.classList.remove("gone");
+    for (const c of chipEls)
+      c.classList.remove("gone");
     caption.textContent = "the plot survives, the structured facts thin out";
   };
   loop(wrap, [
@@ -13298,8 +13617,8 @@ function diagramFade(wrap) {
         tier.textContent = "with a codex";
         tier.classList.add("hot");
         chips.classList.add("kept");
-        for (const c2 of chipEls)
-          c2.classList.remove("gone");
+        for (const c of chipEls)
+          c.classList.remove("gone");
         caption.textContent = "the codex tracks them explicitly, outside the summaries";
       }
     },
@@ -13371,9 +13690,9 @@ function createLessonEngine(deps) {
   }
   function deepestPresent(path) {
     for (let i = path.length - 1;i >= 0; i--) {
-      const a2 = path[i];
-      if (demoWrap?.querySelector(`[data-lesson="${a2}"]`))
-        return a2;
+      const a = path[i];
+      if (demoWrap?.querySelector(`[data-lesson="${a}"]`))
+        return a;
     }
     return path[0];
   }
@@ -13685,20 +14004,20 @@ function createLessonEngine(deps) {
     return active.fixture;
   }
   function makeSandboxSend(step) {
-    return (m2) => {
+    return (m) => {
       if (!active)
         return;
-      if (m2.type === "codex_set_file_state") {
+      if (m.type === "codex_set_file_state") {
         const fx = active.fixture;
         if (fx) {
           const states = { ...fx.codexFileStates };
-          if (m2.state === "on")
-            delete states[m2.file];
+          if (m.state === "on")
+            delete states[m.file];
           else
-            states[m2.file] = m2.state;
+            states[m.file] = m.state;
           fx.codexFileStates = states;
-          if (m2.state !== "frozen")
-            fx.codexStaleFiles = fx.codexStaleFiles.filter((f) => f !== m2.file);
+          if (m.state !== "frozen")
+            fx.codexStaleFiles = fx.codexStaleFiles.filter((f) => f !== m.file);
         }
         if (step.kind === "do" && step.expect === "codex_set_file_state" && active.doPhase === "idle") {
           markDoDone(step);
@@ -13706,31 +14025,31 @@ function createLessonEngine(deps) {
         scheduleDemoRerender(step);
         return;
       }
-      if (step.kind === "do" && m2.type === step.expect && active.doPhase === "idle") {
-        runDoScript(step, m2);
+      if (step.kind === "do" && m.type === step.expect && active.doPhase === "idle") {
+        runDoScript(step, m);
         return;
       }
-      if (m2.type === "codex_read") {
+      if (m.type === "codex_read") {
         deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0);
         scheduleDemoRerender(step);
         return;
       }
-      if (m2.type === "codex_write_file") {
-        active.codexFiles = { ...active.codexFiles, [m2.file]: m2.content };
-        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m2.file, m2.seq);
-        showToast("success", `Memoria saved ${m2.file}.json`);
+      if (m.type === "codex_write_file") {
+        active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
+        deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
+        showToast("success", `Memoria saved ${m.file}.json`);
         scheduleDemoRerender(step);
         return;
       }
-      if (m2.type === "edit_preview" || m2.type === "watch_stream" || m2.type === "lesson_patch")
+      if (m.type === "edit_preview" || m.type === "watch_stream" || m.type === "lesson_patch")
         return;
       shimmer();
     };
   }
-  function runDoScript(step, m2) {
+  function runDoScript(step, m) {
     if (!active)
       return;
-    if (m2.type === "create_chapter") {
+    if (m.type === "create_chapter") {
       const fx = active.fixture;
       if (!fx) {
         markDoDone(step);
@@ -13754,10 +14073,10 @@ function createLessonEngine(deps) {
       }, 1400);
       return;
     }
-    if (m2.type === "codex_write_file") {
-      active.codexFiles = { ...active.codexFiles, [m2.file]: m2.content };
-      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m2.file, m2.seq);
-      showToast("success", `Memoria saved ${m2.file}.json`);
+    if (m.type === "codex_write_file") {
+      active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
+      deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
+      showToast("success", `Memoria saved ${m.file}.json`);
       markDoDone(step);
       scheduleDemoRerender(step);
       return;
@@ -13873,9 +14192,9 @@ function createLessonEngine(deps) {
       step.prep?.();
       active.prepFor = step;
     }
-    const send = real ? (m2) => {
-      deps.send(m2);
-      if (step.kind === "do" && m2.type === step.expect && active.doPhase !== "done")
+    const send = real ? (m) => {
+      deps.send(m);
+      if (step.kind === "do" && m.type === step.expect && active.doPhase !== "done")
         markDoDone(step);
     } : makeSandboxSend(step);
     const ctx = real ? deps.ctx : makeSandboxCtx();
@@ -13983,13 +14302,13 @@ function createLessonEngine(deps) {
         demoInner.scrollTop += tRect.top + tRect.height / 2 - (cRect.top + cRect.height / 2);
       }
     }
-    const c2 = demoWrap.getBoundingClientRect();
+    const c = demoWrap.getBoundingClientRect();
     const r = target.getBoundingClientRect();
     const pad = 5;
-    const top = Math.max(0, r.top - c2.top - pad);
-    const left = Math.max(0, r.left - c2.left - pad);
-    const right = Math.min(c2.width, r.right - c2.left + pad);
-    const bottom = Math.min(c2.height, r.bottom - c2.top + pad);
+    const top = Math.max(0, r.top - c.top - pad);
+    const left = Math.max(0, r.left - c.left - pad);
+    const right = Math.min(c.width, r.right - c.left + pad);
+    const bottom = Math.min(c.height, r.bottom - c.top + pad);
     const [pT, pL, pR, pB] = overlay;
     Object.assign(pT.style, { display: "", top: "0", left: "0", right: "0", height: `${top}px` });
     Object.assign(pB.style, { display: "", top: `${bottom}px`, left: "0", right: "0", bottom: "0", height: "auto" });
@@ -14011,10 +14330,10 @@ function createLessonEngine(deps) {
         hintRing.style.display = "none";
       } else {
         const h = hintEl.getBoundingClientRect();
-        const hT = Math.max(0, h.top - c2.top - 3);
-        const hL = Math.max(0, h.left - c2.left - 3);
-        const hR = Math.min(c2.width, h.right - c2.left + 3);
-        const hB = Math.min(c2.height, h.bottom - c2.top + 3);
+        const hT = Math.max(0, h.top - c.top - 3);
+        const hL = Math.max(0, h.left - c.left - 3);
+        const hR = Math.min(c.width, h.right - c.left + 3);
+        const hB = Math.min(c.height, h.bottom - c.top + 3);
         Object.assign(hintRing.style, {
           display: "",
           top: `${hT}px`,
@@ -14160,9 +14479,9 @@ function createLessonEngine(deps) {
       note.textContent = already === "gold" ? "Already stamped gold, from the exam or an earlier pass." : "Answered on an earlier pass.";
       content.appendChild(note);
       nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
-      const spacer2 = document.createElement("span");
-      spacer2.className = "lmb-spacer";
-      nav.appendChild(spacer2);
+      const spacer = document.createElement("span");
+      spacer.className = "lmb-spacer";
+      nav.appendChild(spacer);
       nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
       content.appendChild(nav);
       return;
@@ -14326,13 +14645,13 @@ function createLessonEngine(deps) {
       renderStep();
       return;
     }
-    const section2 = active.main[active.sIdx];
-    if (!section2) {
+    const section = active.main[active.sIdx];
+    if (!section) {
       enterRegister();
       return;
     }
     active.tIdx++;
-    if (active.tIdx >= section2.steps.length) {
+    if (active.tIdx >= section.steps.length) {
       active.sIdx++;
       active.tIdx = 0;
       if (active.sIdx >= active.main.length) {
@@ -14357,8 +14676,8 @@ function createLessonEngine(deps) {
     if (active.mode === "lesson") {
       const scored = scoredQuestions(active.course);
       active.wrong = scored.filter((s) => {
-        const a2 = active.answers[s.id];
-        return a2 !== undefined && a2 !== "gold";
+        const a = active.answers[s.id];
+        return a !== undefined && a !== "gold";
       }).length;
       active.total = scored.length;
     }
@@ -14753,6 +15072,7 @@ function setup(ctx) {
       case "stream_text":
         deliverStreamText(msg);
         break;
+      case "summary_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
         break;
