@@ -657,7 +657,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] },
   ];
 
-  const working: CodexBundle = { ...opts.bundle };
+  const working: CodexBundle = structuredClone(opts.bundle);
   const changed = new Set<CodexFileKey>();
   const validateOpts = { relationsTable: profile.codexRelationsTable, strictExtras: true };
   const progressBase = opts.progressBase ?? { chars: 0, thinking: 0 };
@@ -690,6 +690,11 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
   const persistClean = async (): Promise<CodexFileKey[]> => {
     const broken = newDanglingFiles(working, baselineDangling);
     const clean = [...changed].filter((k) => !rejectedFiles.has(k) && !broken.has(k));
+    // A valid file can still remove an entity needed by a rejected/unsaved
+    // file. Validate the exact disk projection before keeping partial work.
+    const projected = { ...opts.bundle };
+    for (const key of clean) (projected as Record<CodexFileKey, CodexFileValue>)[key] = working[key];
+    if (newDangling(projected, baselineDangling).length > 0) return [];
     const saved: CodexFileKey[] = [];
     for (const key of clean) {
       try {
@@ -916,6 +921,19 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
     // only binds once coverage is complete. The agent's own fix beats a
     // mechanical demotion, so keep asking while it is still clearing refs and
     // only repair once it stalls, runs out of patience, or runs out of rounds.
+    // Untouched files retain their references on disk. Preserve the referenced
+    // entity rather than silently editing a frozen or unselected file.
+    for (const d of newDangling(working, baselineDangling)) {
+      if (changed.has(d.file)) continue;
+      for (const key of ["characters", "locations", "things"] as const) {
+        if (!changed.has(key)) continue;
+        const original = opts.bundle[key].entities.find((e) => e.id === d.ref);
+        if (original && !working[key].entities.some((e) => e.id === d.ref)) {
+          working[key].entities.push(structuredClone(original));
+          opts.onDelta?.("text", `\n⤳ Kept ${d.ref}: still referenced by unchanged ${d.file}.json`);
+        }
+      }
+    }
     let dangling = remaining.size === 0 ? newDangling(working, baselineDangling) : [];
     if (dangling.length > 0) {
       integrityRounds++;
@@ -924,7 +942,7 @@ export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunRe
       if (stalled || outOfRoad) {
         const stubborn = dangling.filter((d) => danglingSeen.has(danglingKey(d)));
         if (stubborn.length > 0) {
-          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file)));
+          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file).filter((file) => changed.has(file))));
           for (const r of fixed) opts.onDelta?.("text", `\n⤳ ${r}`);
           if (fixed.length > 0) dangling = newDangling(working, baselineDangling);
         }

@@ -140,3 +140,38 @@ test("locked entities survive a tidy even when the model tries to remove them", 
   expect(calls).toBe(6);
   expect(toasts.at(-1)?.tone).toBe("warn");
 });
+for (const frozen of [false, true]) test(`per-file tidy preserves references in ${frozen ? "frozen" : "unselected"} files`, async () => {
+  data.set(`codex/${chat}/characters.json`, { entities: [{ id: "char:alice", name: "Alice", notes: "x".repeat(500) }] });
+  data.set(`codex/${chat}/knowledge.json`, { items: [{ fact: "secret", knownBy: ["char:alice"] }] });
+  data.get(`codex/${chat}/cursor.json`).fileStates = frozen ? { knowledge: "frozen" } : {};
+  reply = () => ({ writes: [{ file: "characters", content: { entities: [] } }], done: true });
+  await runCodexTidy(chat, profile, user, ["characters"], { unit: "tokens", value: 100 });
+  const { loadCodex } = await import("./store");
+  const { checkIntegrity } = await import("./schema");
+  const loaded = await loadCodex(chat, user, { relationsTable: true });
+  expect(checkIntegrity(loaded.bundle)).toEqual([]);
+  expect(loaded.bundle.characters.entities[0]?.id).toBe("char:alice");
+  expect(loaded.bundle.knowledge.items[0]?.knownBy).toEqual(["char:alice"]);
+  expect(calls).toBe(6);
+  expect(toasts.at(-1)?.tone).toBe("warn");
+});
+
+test("a failed dependent edit cannot persist an entity deletion on its own", async () => {
+  const characters = { entities: [{ id: "char:alice", name: "Alice", notes: "x".repeat(500) }, { id: "char:bob", name: "Bob", notes: "friend" }] };
+  const relations = { relations: [{ type: "pair", a: "char:alice", b: "char:bob", kind: "friendship", state: "friends" }] };
+  data.set(`codex/${chat}/characters.json`, characters);
+  data.set(`codex/${chat}/relations.json`, relations);
+  data.get(`codex/${chat}/cursor.json`).fileStates = {};
+  profile.codexRelationsTable = true;
+  reply = () => ({ writes: [
+    { file: "characters", content: { entities: [characters.entities[1]] } },
+    { file: "relations", content: { relations: [{ type: "pair", a: "char:missing", b: "char:bob", kind: "friendship", state: "friends" }] } },
+  ], done: true });
+  await runCodexTidy(chat, profile, user, ["characters", "relations"], { unit: "tokens", value: 100 });
+  expect(data.get(`codex/${chat}/characters.json`)).toEqual(characters);
+  expect(data.get(`codex/${chat}/relations.json`)).toEqual(relations);
+  expect(toasts.at(-1)?.tone).toBe("error");
+});
+
+
+
