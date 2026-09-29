@@ -1,3 +1,6 @@
+import { loadSettings } from "../storage";
+import type { LMBProfile } from "../../shared";
+import { listCodexChatIds } from "./store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
@@ -105,6 +108,8 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     await doWipe(chatId, userId);
     return;
   }
+  const settings = await loadSettings(userId);
+  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId)!;
   const cursor = await loadCursor(chatId, userId);
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
@@ -152,6 +157,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   for (const rec of desired) {
     seen.add(rec.record);
     const disabled = disabledFor(rec.file) || rec.disabled;
+    const placement = codexEntryPlacement(profile, rec.constant);
     const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file };
     const cur = byRecord.get(rec.record);
     if (!cur) {
@@ -162,7 +168,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
             content: rec.content,
             comment: rec.comment,
             disabled,
-            constant: rec.constant,
+            ...placement,
             key: rec.keys,
             keysecondary: [],
             vectorized: false,
@@ -179,7 +185,10 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     const changed =
       cur.raw.content !== rec.content
       || (cur.raw.comment || "") !== rec.comment
-      || cur.raw.constant !== rec.constant
+      || cur.raw.constant !== placement.constant
+      || cur.raw.position !== placement.position
+      || cur.raw.depth !== placement.depth
+      || cur.raw.role !== placement.role
       || cur.raw.disabled !== disabled
       || !sameKeys(cur.raw.key ?? [], rec.keys)
       || cur.meta.file !== rec.file;
@@ -192,7 +201,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
           content: rec.content,
           comment: rec.comment,
           disabled,
-          constant: rec.constant,
+          ...placement,
           key: rec.keys,
           extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta },
         },
@@ -241,3 +250,14 @@ async function doWipe(chatId: string, userId: string): Promise<void> {
 }
 
 export type { CodexRecordRender };
+
+/** Host lorebook position 4 uses history depth; zero follows the last turn. */
+export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
+  return { constant: profile.codexForceConstant || constant,
+    position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
+    depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
+    role: "system" };
+}
+export async function syncCodexProfiles(userId: string): Promise<void> {
+  for (const chatId of await listCodexChatIds(userId)) await syncCodexEntries(chatId, userId);
+}

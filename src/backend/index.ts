@@ -1,3 +1,4 @@
+import { syncCodexProfiles } from "./codex/sync";
 import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
@@ -568,6 +569,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
         }
+        if (id === activeBefore && ["codexForceConstant", "codexInjectionPosition", "codexInjectionDepth"].some((key) => key in incoming)) {
+          await syncCodexProfiles(userId);
+        }
         // The effective-mode off transition (extra toggle OR codex disable)
         // must clean up pending ghosts here too, independent of automation.
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
@@ -621,6 +625,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         // Deleting the active profile falls back to another one, which may
         // lack effective extra mode: same ghost cleanup as set_active_profile.
+        await syncCodexProfiles(userId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
         }
@@ -633,6 +638,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (!cur.profiles.some((p) => p.id === msg.profileId)) return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
+        await syncCodexProfiles(userId);
         // Switching to a profile without effective extra mode strands any
         // pending ghosts: they belong to the chat, not the profile.
         if (msg.chatId) {

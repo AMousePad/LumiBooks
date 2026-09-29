@@ -168,6 +168,25 @@ export function renderCodexSettings(
     "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
   fields.appendChild(loreHint);
 
+  fields.appendChild(checkbox({
+    checked: profile.codexForceConstant, label: "Always inject codex records",
+    hint: "Inject every enabled record each turn. Otherwise timeline and threads are constant; other records activate by keywords.",
+    onChange: (v) => patch({ codexForceConstant: v }),
+  }));
+  fields.appendChild(labelled("Codex placement", select({
+    value: profile.codexInjectionPosition,
+    options: [{ value: "lorebook", label: "Lorebook (before)" }, { value: "depth", label: "At history depth" }, { value: "after_history", label: "After chat history" }],
+    onChange: (v) => patch({ codexInjectionPosition: v as LMBProfile["codexInjectionPosition"] }),
+  })));
+  if (profile.codexInjectionPosition === "depth") fields.appendChild(labelled("Depth from newest turn", numberInput({
+    value: profile.codexInjectionDepth, min: 0, max: 10000,
+    onBlur: (v) => patch({ codexInjectionDepth: v ?? 4 }),
+  })));
+  const placementHint = document.createElement("div");
+  placementHint.className = "lmb-help";
+  placementHint.textContent = "Summaries replace their source history in place. Codex records are normal lorebook entries: the default follows your preset's Lorebook Before block; depth 0 follows history. Constant activation does not freeze text: codex updates can still break the prompt cache. A larger update window changes it less often; placing it after history preserves the earlier prefix.";
+  fields.appendChild(placementHint);
+
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: "Relations table",

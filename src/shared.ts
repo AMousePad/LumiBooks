@@ -109,6 +109,9 @@ export interface LMBProfile {
   /** Chapter summaries extra-context mode hands the agent as story-so-far. */
   codexStorySoFarCount: number;
   codexRelationsTable: boolean;
+  codexForceConstant: boolean;
+  codexInjectionPosition: "lorebook" | "depth" | "after_history";
+  codexInjectionDepth: number;
   codexThorough: boolean;
   codexConnectionId: string | null;
   codexExtraContext: boolean;
@@ -267,6 +270,9 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexLoreLimitTokens: 25000,
     codexStorySoFarCount: 5,
     codexRelationsTable: true,
+    codexForceConstant: false,
+    codexInjectionPosition: "lorebook",
+    codexInjectionDepth: 4,
     codexThorough: true,
     codexConnectionId: null,
     codexExtraContext: true,
@@ -386,6 +392,9 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexLoreLimitPercent: clampInt(v.codexLoreLimitPercent, 1, 100, base.codexLoreLimitPercent),
     codexLoreLimitTokens: clampInt(v.codexLoreLimitTokens, 0, 1000000, base.codexLoreLimitTokens),
     codexStorySoFarCount: clampInt(v.codexStorySoFarCount, 0, 50, base.codexStorySoFarCount),
+    codexForceConstant: v.codexForceConstant === true,
+    codexInjectionPosition: v.codexInjectionPosition === "depth" || v.codexInjectionPosition === "after_history" ? v.codexInjectionPosition : "lorebook",
+    codexInjectionDepth: clampInt(v.codexInjectionDepth, 0, 10000, base.codexInjectionDepth),
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
     codexThorough: typeof v.codexThorough === "boolean" ? v.codexThorough : base.codexThorough,
     codexConnectionId: typeof v.codexConnectionId === "string" && v.codexConnectionId.trim() ? v.codexConnectionId : null,

@@ -4,7 +4,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { ChapterView, ArcView, FrontendState, ConnectionOption, MessageStub, RegexScriptOption, RootSourceOption } from "../types";
 import type { ChatMessage } from "./coverage";
 import type { LMBProfile } from "../shared";
-import { approximateTokensFromChars } from "../shared";
+import { CODEX_FILE_KEYS, approximateTokensFromChars } from "../shared";
 import { loadSettings } from "./storage";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
 import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding, type LMBEntry } from "./world-book";
@@ -258,7 +258,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const codexFileTokens: Record<string, number> = await getCodexFileTokens(chat.id, userId, codexProfile).catch(() => ({}));
   // Constant entries only (timeline + threads), keyworded records cost per scene.
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled
-    ? (["timeline", "threads"] as const).reduce((acc, k) => {
+    ? (codexProfile.codexForceConstant ? CODEX_FILE_KEYS : ["timeline", "threads"] as const).reduce((acc, k) => {
         const st = (codexPanel.fileStates as Record<string, string>)[k];
         if (st === "noInject" || st === "frozen") return acc;
         return acc + (codexFileTokens[k] ?? 0);
