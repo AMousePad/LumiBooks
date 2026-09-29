@@ -380,6 +380,14 @@ export function buildCodexRebuildMessage(
   return parts.join("\n\n");
 }
 
+const TIDY_FILE_GUIDANCE: Partial<Record<CodexFileKey, string>> = {
+  timeline: "Group events on the same date, or adjacent dates in the same episode, into cohesive chronological chunks. Use the existing when field for the date or date range. Connect actions to outcomes instead of retaining many tiny event rows. Keep important dates, turning points, causal order, participants, and lasting consequences explicit within each chunk; do not merge unrelated periods or invent dates.",
+  relations: "Consolidate redundant relationship rows for the same pair or group into a concise account of the current relationship and the changes that still explain it. Preserve distinct relationship kinds, direction, obligations, tensions, and unresolved consequences. Remove superseded descriptions and repeated interaction details. Do not merge unrelated relationships or erase meaningful differences between members.",
+  threads: "Reassess each thread and seed for present relevance. Merge overlapping storylines and duplicate setups into cohesive threads. Keep active goals, unresolved stakes, and planted details that still plausibly await payoff. Remove obsolete, redundant, trivial, or completed material with no remaining consequence; do not keep a thread merely because it was once marked open. Age or lack of a recent mention alone does not prove irrelevance, and compaction must not invent a resolution.",
+  knowledge: "Reassess secrets and false beliefs for plot relevance. Delete obsolete secrets, inconsequential private details, and overly specific facts that no longer affect choices, stakes, or future scenes. Consolidate related secrets only when their knownBy, hiddenFrom, and falseBeliefs distinctions remain accurate. Preserve consequential hidden information and misunderstandings. Never imply that a character learned a fact just to make merging easier.",
+  world: "Group related lore and facts by topic into cohesive entries. Merge duplicate rules, descriptions, and background details. Keep current canon, enduring constraints, and facts future scenes can use; remove superseded or inconsequential minutiae. Preserve meaningful exceptions and avoid merging unrelated topics into a single undifferentiated record.",
+};
+
 /** User message for a tidy pass: compress in place, no new story material. */
 export function buildCodexTidyMessage(
   ctx: CodexPromptCtx,
@@ -399,6 +407,10 @@ export function buildCodexTidyMessage(
     parts.push(fillPrompt(tpl(ctx, "note_locked_fields"), { IDS: lockedFields.join(", ") }));
   }
   parts.push(`TARGET FILES: ${targets.map((t) => `${t}.json`).join(", ")}. Do not write any other file.`);
+  for (const file of targets) {
+    const guidance = TIDY_FILE_GUIDANCE[file];
+    if (guidance) parts.push(`COMPACTION FOR ${file}.json: ${guidance}`);
+  }
   parts.push(...currentCodexParts(bundle, ctx));
   parts.push(ctx.useTools
     ? `Rewrite the target files now${ctx.sequential ? ", one per response" : ""}. Write only files you actually improved, skip the rest, then call codex_done.`
