@@ -480,6 +480,8 @@ export interface RenderRecordsOptions {
   /** False when the relations file is switched off: entity entries then
    * render without their relation lines. */
   includeRelations: boolean;
+  /** Categories disabled for injection cannot carry folded relations. */
+  disabledFiles?: ReadonlySet<CodexFileKey>;
 }
 
 const ENTITY_FILE_LABEL = {
@@ -549,7 +551,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
     for (const e of bundle[fileKey].entities) {
       const lines = [entityLine(e)];
       for (const t of e.ties ?? []) lines.push(`  * ${t}`);
-      if (opts.includeRelations) {
+      if (opts.includeRelations && !opts.disabledFiles?.has(fileKey) && !e.noInject) {
         bundle.relations.relations.forEach((r, i) => {
           if (!relationInvolves(r, e.id)) return;
           foldedRelations.add(i);
@@ -568,13 +570,17 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
     }
   }
 
-  // Rows whose every endpoint dangles fold under no entity: keep them in one record.
+  // Relations without an injectable entity need their own retrievable record.
   if (opts.includeRelations) {
     const orphans = bundle.relations.relations.filter((_, i) => !foldedRelations.has(i));
     if (orphans.length > 0) {
       const endpointNames = orphans.flatMap((r) =>
         r.type === "pair" ? [r.a, r.b] : [...r.members, ...Object.keys(r.roles ?? {})],
-      ).map((ref) => resolveRefName(names, ref));
+      ).flatMap((ref) => {
+        const entity = [bundle.characters, bundle.locations, bundle.things]
+          .flatMap((f) => f.entities).find((e) => e.id === ref);
+        return entity ? [entity.name, ...(entity.aliases ?? []), ...(entity.keywords ?? [])] : [resolveRefName(names, ref)];
+      });
       out.push({
         record: "rel:unlinked",
         file: "relations",

@@ -115,6 +115,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const relState = cursor.fileStates["relations"];
   const desired = renderCodexRecords(bundle, {
     includeRelations: relState !== "noInject" && relState !== "frozen",
+    disabledFiles: new Set(Object.entries(cursor.fileStates).filter(([, st]) => st === "noInject" || st === "frozen").map(([key]) => key as CodexFileKey)),
   });
 
   const disabledFor = (file: CodexFileKey): boolean => {
