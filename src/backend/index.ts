@@ -1,3 +1,5 @@
+import { TIER_KINDS, HIGHER_TIERS, type HigherTier } from "../shared";
+import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
 import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
@@ -468,14 +470,11 @@ async function retryLastFailure(
   settings: Parameters<typeof createChapterAuto>[2],
 ): Promise<void> {
   const last = getLastFailure(userId, chatId);
-  if (last?.kind === "volume") {
-    const ids = await collectActiveArcIds(chatId, userId);
-    if (ids.length === 0) {
-      clearLastFailure(userId, chatId);
-      await notify(userId, "warn", "Memoria has no arcs left to retry the volume");
-      return;
-    }
-    await createVolumeFromArcs(chatId, ids, profile, settings, userId);
+  if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
+    const tier = (TIER_KINDS.indexOf(last.kind) + 1) as HigherTier;
+    const coverage = await buildCoverage(chatId, userId);
+    const ids = coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
+    if (ids.length) await createHigherFromEntries(tier, chatId, ids, profile, settings, userId);
     return;
   }
   if (last?.kind === "arc") {
@@ -746,6 +745,19 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
+      case "create_higher_from":
+      case "create_higher_auto": {
+        if (!HIGHER_TIERS.includes(msg.tier)) break;
+        const cur = await loadSettings(userId);
+        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+        if (!profile) break;
+        if (msg.type === "create_higher_from") await createHigherFromEntries(msg.tier, msg.chatId, msg.entryIds, profile, cur, userId);
+        else await drainHigherBacklog(msg.tier, msg.chatId, profile, cur, userId);
+        await maybeRunArcCheck(msg.chatId, profile, cur, userId);
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
       case "create_volume_from": {
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
@@ -862,7 +874,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const tier = entry.meta.tier;
-        const busyKind = tier === 3 ? "volume" : tier === 2 ? "arc" : "chapter";
+        const busyKind = TIER_KINDS[tier - 1]!;
         if (getBusy(userId).some((b) => b.kind === busyKind && b.chatId === msg.chatId)) {
           await notify(userId, "warn", `Memoria is already busy with a ${busyKind}`);
           break;
@@ -876,7 +888,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         const isArc = tier === 2;
-        const isVolume = tier === 3;
+        const isVolume = tier >= 3;
         const msgIds = entry.meta.msgIds.slice();
         const sourceIds = Array.isArray(entry.meta.sourceChapterEntryIds)
           ? entry.meta.sourceChapterEntryIds.slice()
@@ -906,7 +918,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (isVolume) {
-          await createVolumeFromArcs(msg.chatId, sourceIds, profile, cur, userId, { replacesEntryId: msg.entryId });
+          await createHigherFromEntries(tier as HigherTier, msg.chatId, sourceIds, profile, cur, userId, { replacesEntryId: msg.entryId });
         } else if (isArc) {
           await createArcFromChapters(msg.chatId, sourceIds, profile, cur, userId, { replacesEntryId: msg.entryId });
         } else {

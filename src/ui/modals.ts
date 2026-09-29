@@ -1,3 +1,4 @@
+import { TIER_NAMES, TIER_KINDS, type SummaryKind } from "../shared";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { DryRunDiagnostic, DryRunMessage, FrontendState, FrontendToBackend } from "../types";
 import { makeButton, textArea, textInput } from "./components";
@@ -6,7 +7,8 @@ function codexCatchupWarnings(state: FrontendState): { booksWarning: string | nu
   // Ghost chapters count: both fast and ultra replay them as summaries.
   const hasBooks = state.chapters.some((c) => !c.isRoot)
     || state.arcs.some((a) => !a.isRoot)
-    || state.volumes.some((v) => !v.isRoot);
+    || state.volumes.some((v) => !v.isRoot)
+    || state.higherBooks.some((v) => !v.isRoot);
   // Mirrors catchupCodex: preview-mode profiles skip the books phase.
   const autoBooks = state.activeProfile.autoCreate && !state.activeProfile.showMemoryPreviews;
   const bigTailNoAuto = state.coverage.approxUncoveredTokens > 150000 && !autoBooks;
@@ -309,7 +311,7 @@ export async function confirmDelete(
 }
 
 export function showDryRunModal(
-  kind: "chapter" | "arc" | "volume" | "codex",
+  kind: SummaryKind | "codex",
   messages: DryRunMessage[],
   diagnostics: DryRunDiagnostic[],
 ): void {

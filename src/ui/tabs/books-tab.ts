@@ -1,3 +1,4 @@
+import { HIGHER_TIERS, TIER_KINDS, TIER_NAMES, type SummaryKind } from "../../shared";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { ArcView, ChapterView, FrontendState, FrontendToBackend, MessageStub } from "../../types";
 import {
@@ -25,7 +26,7 @@ const SUBTABS: { key: BooksSubtab; label: string }[] = [
   { key: "continuity", label: "Advanced" },
 ];
 
-type ShelfGroup = "volumes" | "arcs" | "chapters";
+type ShelfGroup = string;
 
 const localState = {
   subtab: "shelf" as BooksSubtab,
@@ -128,6 +129,7 @@ export function renderBooksTab(
         renderChapterPicker(host, state, send, draw);
         renderArcPicker(host, state, send, draw);
         renderVolumePicker(host, state, send, draw);
+        renderHigherPickers(host, state, send);
       } else {
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
@@ -147,10 +149,10 @@ function renderShelf(
   redraw: () => void,
 ): void {
   const sec = section("The Shelf");
-  const chapters = state.chapters.filter((c) => !c.isRoot);
-  const arcs = state.arcs.filter((a) => !a.isRoot);
-  const volumes = state.volumes.filter((v) => !v.isRoot);
-  if (chapters.length + arcs.length + volumes.length === 0) {
+  const chapters = state.chapters.filter((c) => !c.isRoot && (c.active || c.isGhost));
+  const arcs = state.arcs.filter((a) => !a.isRoot && a.active);
+  const volumes = state.volumes.filter((v) => !v.isRoot && v.active);
+  if (chapters.length + arcs.length + volumes.length + state.higherBooks.filter((v) => v.active && !v.isRoot).length === 0) {
     sec.body.appendChild(textNode("Empty shelf for now. Memoria will start filing once the lag fills.", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
@@ -169,9 +171,11 @@ function renderShelf(
   const listHost = document.createElement("div");
   listHost.className = "lmb-pane";
   lessonMark(listHost, "books.shelf.list");
+  listHost.classList.add("lmb-has-higher"); listHost.tabIndex = 0;
   sec.body.appendChild(listHost);
 
-  const groups: { key: ShelfGroup; title: string; kind: "volume" | "arc" | "chapter"; items: (ChapterView | ArcView)[] }[] = [
+  const groups: { key: ShelfGroup; title: string; kind: SummaryKind; items: (ChapterView | ArcView)[] }[] = [
+    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1]!, title: TIER_NAMES[t - 1]!, kind: TIER_KINDS[t - 1]!, items: state.higherBooks.filter((e) => e.meta.tier === t && !e.isRoot && e.active) })),
     { key: "volumes", title: "Volumes", kind: "volume", items: volumes },
     { key: "arcs", title: "Arcs", kind: "arc", items: arcs },
     { key: "chapters", title: "Chapters", kind: "chapter", items: chapters },
@@ -201,13 +205,16 @@ function renderShelf(
       );
       const items = showAll ? filtered : [...pinned, ...recent];
 
+      const groupHost = document.createElement("div");
+      if (TIER_KINDS.indexOf(g.kind) > 2) groupHost.className = "lmb-higher-peek";
+      listHost.appendChild(groupHost);
       const sub = document.createElement("div");
       sub.className = "lmb-section-title";
       sub.textContent = searching ? `${g.title} (${filtered.length} of ${g.items.length})` : `${g.title} (${g.items.length})`;
-      listHost.appendChild(sub);
+      groupHost.appendChild(sub);
 
       if (searching && filtered.length === 0) {
-        listHost.appendChild(textNode("No match", "lmb-empty"));
+        groupHost.appendChild(textNode("No match", "lmb-empty"));
         continue;
       }
 
@@ -225,7 +232,7 @@ function renderShelf(
         const row = document.createElement("div");
         row.className = "lmb-actions";
         row.appendChild(toggle);
-        listHost.appendChild(row);
+        groupHost.appendChild(row);
       }
 
       const list = document.createElement("ul");
@@ -233,7 +240,7 @@ function renderShelf(
       for (const view of items) {
         list.appendChild(renderEntryRow(view, g.kind, state, ctx, send, redraw));
       }
-      listHost.appendChild(list);
+      groupHost.appendChild(list);
     }
   };
   buildGroups();
@@ -242,7 +249,7 @@ function renderShelf(
 
 function renderEntryRow(
   view: ChapterView | ArcView,
-  kind: "chapter" | "arc" | "volume",
+  kind: SummaryKind,
   state: FrontendState,
   ctx: SpindleFrontendContext,
   send: (m: FrontendToBackend) => void,
@@ -288,7 +295,7 @@ function renderEntryRow(
 
 function renderEntryDetail(
   view: ChapterView | ArcView,
-  kind: "chapter" | "arc" | "volume",
+  kind: SummaryKind,
   state: FrontendState,
   ctx: SpindleFrontendContext,
   send: (m: FrontendToBackend) => void,
@@ -326,7 +333,7 @@ function renderEntryDetail(
   lessonMark(actions, "books.entry.actions");
   actions.append(
     makeButton("Edit", () => {
-      openEditModal(ctx, kind === "arc" ? "Edit arc" : kind === "volume" ? "Edit volume" : "Edit chapter", {
+      openEditModal(ctx, `Edit ${kind}`, {
         comment: view.comment,
         content: view.content,
       }, (next) => {
@@ -358,7 +365,7 @@ function renderEntryDetail(
           ? "Its messages return to the prompt unless a higher tier still covers them."
           : kind === "arc"
             ? "Its chapters revive and keep covering those messages."
-            : "Its arcs revive and keep covering those messages.";
+            : "Its source summaries revive and keep covering those messages.";
         const ok = await confirmDelete(ctx, "Release to lorebook?", `Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. ${freed}`);
         if (!ok || !chatId) return;
         send({ type: "release_entry", chatId, entryId: view.entryId });
@@ -373,7 +380,7 @@ function renderEntryDetail(
           ? "Memoria will let those messages back into the prompt."
           : kind === "arc"
             ? "Its chapters revive and keep covering those messages."
-            : "Its arcs revive and keep covering those messages.");
+            : "Its source summaries revive and keep covering those messages.");
       if (!ok || !chatId) return;
       send({ type: "delete_entry", chatId, entryId: view.entryId });
     }, { small: true, danger: true }),
@@ -775,7 +782,7 @@ function renderVolumePicker(
   }
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "A volume replaces its source arcs in the prompt, the highest compression tier. Volumes are manual only.";
+  help.textContent = "A volume replaces its source arcs in the prompt. Automatic binding is available in Tuning, with a separate threshold and lag for each higher tier.";
   sec.body.appendChild(help);
 
   const list = document.createElement("div");
@@ -857,7 +864,8 @@ function renderContinuity(
   // destructive Rebuild path when a non-destructive Rebase is still allowed.
   const hasOwn = state.chapters.some((ch) => !ch.isRoot && !ch.isGhost)
     || state.arcs.some((a) => !a.isRoot)
-    || state.volumes.some((v) => !v.isRoot);
+    || state.volumes.some((v) => !v.isRoot)
+    || state.higherBooks.some((v) => !v.isRoot);
   const hasRoot = state.rootEntryCount > 0;
   const candidates = state.availableRoots;
 
@@ -865,6 +873,7 @@ function renderContinuity(
   if (hasRoot) {
     const rootEntries = [
       ...state.volumes.filter((v) => v.isRoot),
+      ...state.higherBooks.filter((v) => v.isRoot),
       ...state.arcs.filter((a) => a.isRoot),
       ...state.chapters.filter((ch) => ch.isRoot),
     ];
@@ -875,7 +884,7 @@ function renderContinuity(
         const rowEl = document.createElement("div");
         rowEl.className = "lmb-multiselect-row";
         rowEl.style.opacity = "0.75";
-        const tag = e.meta.tier === 3 ? "VOL" : e.meta.tier === 2 ? "ARC" : "CH";
+        const tag = TIER_NAMES[e.meta.tier - 1];
         rowEl.textContent = `[${tag}] ${e.comment || e.meta.title || e.entryId.slice(0, 6)} (${formatTokens(e.contentTokens)}t)`;
         detail.appendChild(rowEl);
       }
@@ -979,4 +988,29 @@ function renderMaintenance(
   );
   sec.body.appendChild(dangerRow);
   host.appendChild(sec.wrap);
+}
+
+function renderHigherPickers(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
+  for (const tier of HIGHER_TIERS) {
+    const kind = TIER_KINDS[tier - 1]!;
+    const sec = section(`Bind ${TIER_NAMES[tier - 1]}`);
+    const candidates = [...state.arcs, ...state.volumes, ...state.higherBooks].filter((e) => e.active && e.meta.tier === tier - 1);
+    const selected = new Set<string>();
+    const busy = state.busy.some((b) => b.chatId === state.activeChatId && b.kind === kind);
+    // Volume already has a selection picker immediately above this section.
+    if (tier > 3) for (const entry of candidates) {
+      const row = document.createElement("label"); row.className = "lmb-multiselect-row";
+      const cb = document.createElement("input"); cb.type = "checkbox";
+      cb.onchange = () => { if (cb.checked) selected.add(entry.entryId); else selected.delete(entry.entryId); };
+      row.append(cb, document.createTextNode(entry.comment || entry.meta.title || entry.entryId));
+      sec.body.appendChild(row);
+    }
+    const actions = document.createElement("div"); actions.className = "lmb-actions";
+    if (tier > 3) actions.appendChild(makeButton("Bind selected", () => {
+      if (selected.size) send({ type: "create_higher_from", chatId: state.activeChatId!, tier, entryIds: [...selected] });
+    }, { disabled: busy || !candidates.length }));
+    actions.appendChild(makeButton("Bind ready batches", () => send({ type: "create_higher_auto", chatId: state.activeChatId!, tier }), { disabled: busy || !candidates.length }));
+    sec.body.append(actions, textNode(`${candidates.length} active source entries. Ready batches use this tier's threshold and lag from Tuning.`, "lmb-help"));
+    host.appendChild(sec.wrap);
+  }
 }

@@ -33,8 +33,7 @@ export async function copyLmbEntries(
   const clonedMeta = new Map<string, LMBEntryMeta>();
   const ctx: CopyCtx = { idMap, clonedMeta };
   const chapters = sourceEntries.filter((e) => e.meta.tier === 1);
-  const arcs = sourceEntries.filter((e) => e.meta.tier === 2);
-  const volumes = sourceEntries.filter((e) => e.meta.tier === 3);
+  const groups = [2, 3, 4, 5, 6, 7].map((tier) => sourceEntries.filter((e) => e.meta.tier === tier));
 
   for (const ch of chapters) {
     const o = transform(ch, ctx);
@@ -54,7 +53,7 @@ export async function copyLmbEntries(
 
   // Arcs after chapters, volumes after arcs, so each pass can remap its
   // source ids (sourceChapterEntryIds) through the ids cloned before it.
-  for (const group of [arcs, volumes]) {
+  for (const group of groups) {
     for (const entry of group) {
       const o = transform(entry, ctx);
       if (!o) continue;
@@ -78,7 +77,7 @@ export async function copyLmbEntries(
 
   // Re-point supersededByEntryId on every cloned entry whose old superseder
   // was also cloned: chapters point at their new arc, arcs at their new volume.
-  for (const src of [...chapters, ...arcs]) {
+  for (const src of sourceEntries) {
     const newId = idMap.get(src.raw.id);
     if (!newId) continue;
     const oldSuperId = src.meta.supersededByEntryId;

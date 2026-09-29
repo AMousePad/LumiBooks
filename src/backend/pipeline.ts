@@ -1,3 +1,4 @@
+import { TIER_KINDS, TIER_NAMES, HIGHER_TIERS, tierHeader, type HigherTier, type SummaryTier, type SummaryKind } from "../shared";
 import { arcBindingRule, selectBindingBatch } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -85,7 +86,7 @@ function takeFreedGhostNumber(userId: string, chatId: string, windowIds: Set<str
 }
 
 const commitChain = new Map<string, Promise<unknown>>();
-function withCommitMutex<T>(userId: string, chatId: string, tier: 1 | 2 | 3, fn: () => Promise<T>): Promise<T> {
+function withCommitMutex<T>(userId: string, chatId: string, tier: SummaryTier, fn: () => Promise<T>): Promise<T> {
   const key = `${userId}::${chatId}::t${tier}`;
   const prev = commitChain.get(key) ?? Promise.resolve();
   const tail = prev.then(fn, fn);
@@ -207,6 +208,10 @@ const BUSY_PHRASES: Record<BusyKind, { idle: string; writing: string }> = {
   chapter: { idle: "Memoria is filing a chapter", writing: "Memoria is writing a chapter" },
   arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
   volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
+  series: { idle: "Memoria is binding a series", writing: "Memoria is binding a series" },
+  chronicle: { idle: "Memoria is binding a chronicle", writing: "Memoria is binding a chronicle" },
+  epic: { idle: "Memoria is binding a epic", writing: "Memoria is binding a epic" },
+  library: { idle: "Memoria is binding a library", writing: "Memoria is binding a library" },
   codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" },
 };
 
@@ -1011,15 +1016,21 @@ async function commitArc(
   });
 }
 
-export async function createVolumeFromArcs(
+export function createVolumeFromArcs(chatId: string, ids: string[], profile: LMBProfile, settings: LMBSettings, userId: string, opts: { replacesEntryId?: string } = {}): Promise<string | null> {
+  return createHigherFromEntries(3, chatId, ids, profile, settings, userId, opts);
+}
+
+export async function createHigherFromEntries(
+  tier: HigherTier,
   chatId: string,
   arcEntryIds: string[],
   profile: LMBProfile,
   settings: LMBSettings,
   userId: string,
-  opts: { replacesEntryId?: string } = {},
+  opts: { replacesEntryId?: string; automation?: boolean } = {},
 ): Promise<string | null> {
-  if (!setBusy(userId, chatId, "volume", "Memoria is pressing a volume")) return null;
+  const kind = TIER_KINDS[tier - 1]!;
+  if (!setBusy(userId, chatId, kind, `Memoria is binding a ${kind}`)) return null;
   try {
     const entries = await listLmbEntries(chatId, userId);
     const entriesForSelection = opts.replacesEntryId
@@ -1028,12 +1039,12 @@ export async function createVolumeFromArcs(
     const coverage = await buildCoverage(chatId, userId, entriesForSelection);
     const wanted = new Set(arcEntryIds);
     const arcs = coverage.activeEntries
-      .filter((e) => e.meta.tier === 2 && wanted.has(e.raw.id))
+      .filter((e) => e.meta.tier === tier - 1 && wanted.has(e.raw.id))
       .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (arcs.length === 0) return null;
-    return await runVolume(chatId, profile, settings, userId, arcs, opts.replacesEntryId);
+    return await runVolume(chatId, profile, settings, userId, arcs, opts.replacesEntryId, tier, opts.automation);
   } finally {
-    clearBusy(userId, chatId, "volume");
+    clearBusy(userId, chatId, kind);
   }
 }
 
@@ -1044,25 +1055,30 @@ async function runVolume(
   userId: string,
   selected: LMBEntry[],
   replacesEntryId?: string,
+  tier: HigherTier = 3,
+  automation = false,
 ): Promise<string | null> {
-  nyaaToast(userId, "volume_fire", false);
+  const kind = TIER_KINDS[tier - 1]!;
+  const config = profile.higherTiers[tier];
+  if (tier > 3) profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
+  nyaaToast(userId, "volume_fire", automation);
   const totalTurns = selected.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
-  const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
-  const opener = buildVolumeHeader(provisionalSceneNumber, selected.length, totalTurns);
+  const provisionalSceneNumber = await nextSceneNumber(chatId, tier, userId);
+  const opener = tierHeader(tier, provisionalSceneNumber, selected.length, totalTurns);
   const outcome = await runWithRetry(profile.retryCount + 1, async () => {
     const controller = new AbortController();
-    registerAborter(userId, chatId, "volume", controller);
+    registerAborter(userId, chatId, kind, controller);
     try {
       return await summarizeVolume(
         profile, settings.customPresets, chatId, selected, userId, opener,
         {
           externalSignal: controller.signal,
-          onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, "volume", chars, thinking),
-          onDelta: (kind, delta) => appendStreamText(userId, chatId, "volume", kind, delta),
-        },
+          onProgress: (chars, thinking) => updateProgressNumbers(userId, chatId, kind, chars, thinking),
+          onDelta: (deltaKind, delta) => appendStreamText(userId, chatId, kind, deltaKind, delta),
+        }, tier,
       );
     } finally {
-      aborters.delete(busyKey(userId, chatId, "volume"));
+      aborters.delete(busyKey(userId, chatId, kind));
     }
   }, (n, err) => {
     warn(`volume attempt ${n} failed: ${describeError(err)}`);
@@ -1075,8 +1091,8 @@ async function runVolume(
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, "volume", outcome.retries, outcome.err);
-    failToast(userId, "volume", outcome.err);
+    recordFailure(userId, chatId, kind, outcome.retries, outcome.err);
+    failToast(userId, kind, outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
   }
@@ -1089,19 +1105,19 @@ async function runVolume(
   const lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
 
   if (profile.showMemoryPreviews) {
-    const draft = makeGroupPreview("volume", selected, result, firstIdx, lastIdx, replacesEntryId);
+    const draft = makeGroupPreview(kind as Exclude<SummaryKind, "chapter">, selected, result, firstIdx, lastIdx, replacesEntryId);
     pushPreview(userId, chatId, draft);
     cb?.onStateChange(userId, chatId);
     return null;
   }
   try {
-    const entryId = await commitVolume(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId);
+    const entryId = await commitVolume(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, tier);
     nyaaToast(userId, "volume_success", false);
     return entryId;
   } catch (err) {
     warn(`commitVolume failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "volume", 0, err);
-    failToast(userId, "volume", err);
+    recordFailure(userId, chatId, kind, 0, err);
+    failToast(userId, kind, err);
     cb?.onStateChange(userId, chatId);
     return null;
   }
@@ -1115,14 +1131,15 @@ async function commitVolume(
   firstIdx: number,
   lastIdx: number,
   replacesEntryId?: string,
+  tier: HigherTier = 3,
 ): Promise<string> {
-  return withCommitMutex(userId, chatId, 3, async () => {
+  return withCommitMutex(userId, chatId, tier, async () => {
   const freshEntries = await listLmbEntries(chatId, userId);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
   const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
-  const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 2).map((e) => e.raw.id));
+  const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
   const filtered = selected.filter((a) => stillActive.has(a.raw.id));
   if (filtered.length === 0) {
     throw new Error("All source arcs were already bound by another volume or deleted");
@@ -1139,7 +1156,7 @@ async function commitVolume(
   const replacedVolume = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
   const sceneNumber = typeof replacedVolume?.meta.sceneNumber === "number"
     ? replacedVolume.meta.sceneNumber
-    : await nextSceneNumber(chatId, 3, userId);
+    : await nextSceneNumber(chatId, tier, userId);
   const msgIds = selected.flatMap((a) => a.meta.msgIds);
   const sourceArcEntryIds = selected.map((a) => a.raw.id);
   const isRootVolume = selected.length > 0 && selected.every((a) => a.meta.isRoot);
@@ -1157,13 +1174,13 @@ async function commitVolume(
     ? (result.title?.trim() || "Inherited Volume")
     : deriveTitle(result, firstIdx + 1, lastIdx + 1);
   const meta: LMBEntryMeta = {
-    tier: 3,
+    tier,
     chatId,
     msgIds,
     sourceChapterEntryIds: sourceArcEntryIds,
     firstMsgIdx: firstIdx,
     lastMsgIdx: lastIdx,
-    tokenCountInput: selected.reduce((a, e) => a + e.meta.tokenCountOutput, 0),
+    tokenCountInput: selected.reduce((a, e) => a + approximateTokensFromChars(e.raw.content.length), 0),
     tokenCountOutput: result.usageCompletionTokens || approximateTokensFromChars(result.content.length),
     model: result.model,
     connectionId: result.connectionId,
@@ -1176,9 +1193,9 @@ async function commitVolume(
     ...(isRootVolume ? { isRoot: true, rootOrigin } : {}),
   };
   const baseComment = meta.title ?? `Volume - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
-  const comment = `${isRootVolume ? "[Root] " : ""}Vol #${sceneNumber} - ${baseComment}`;
+  const comment = `${isRootVolume ? "[Root] " : ""}${TIER_NAMES[tier - 1]} #${sceneNumber} - ${baseComment}`;
   const volumeSettings = await loadSettings(userId);
-  const volumeOpener = buildVolumeHeader(sceneNumber, sourceArcEntryIds.length, msgIds.length);
+  const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
   const finalVolumeContent = `${volumeOpener}\n\n${result.content}`;
   const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries);
   const failedSupersedes: string[] = [];
@@ -1206,7 +1223,7 @@ async function commitVolume(
       warn(`regen: failed to delete replaced volume ${replacesEntryId}: ${describeError(err)}`);
     }
   }
-  publishVolumeCreated(userId, {
+  if (tier === 3) publishVolumeCreated(userId, {
     chatId,
     volumeEntryId: volumeEntry.id,
     bookId: book.id,
@@ -1281,14 +1298,15 @@ export async function acceptPreview(
         return null;
       }
     }
-    const isVolume = preview.kind === "volume";
+    const targetTier = (TIER_KINDS.indexOf(preview.kind) + 1) as SummaryTier;
+    const isVolume = targetTier >= 3;
     const entries = await listLmbEntries(chatId, userId);
     const groupSelectionEntries = preview.replacesEntryId
       ? entries.filter((e) => e.raw.id !== preview.replacesEntryId)
       : entries;
     const coverage = await buildCoverage(chatId, userId, groupSelectionEntries);
     const wanted = new Set(preview.sourceChapterEntryIds ?? []);
-    const sourceTier = isVolume ? 2 : 1;
+    const sourceTier = targetTier - 1;
     const selected = coverage.activeEntries.filter((e) => e.meta.tier === sourceTier && wanted.has(e.raw.id));
     if (selected.length === 0) {
       dropPendingPreview(userId, chatId, draftId);
@@ -1315,7 +1333,7 @@ export async function acceptPreview(
       const entryId = isVolume
         ? await commitVolume(
             chatId, userId, selected, fakeResult,
-            preview.firstMsgIdx ?? 0, preview.lastMsgIdx ?? 0, preview.replacesEntryId,
+            preview.firstMsgIdx ?? 0, preview.lastMsgIdx ?? 0, preview.replacesEntryId, targetTier as HigherTier,
           )
         : await commitArc(
             chatId, userId, selected, fakeResult,
@@ -1678,12 +1696,15 @@ export async function maybeRunArcCheck(
   automation = false,
 ): Promise<void> {
   if (!profile.autoCreate) return;
-  if (!profile.autoCreateArc) return;
-  if (profile.arcTrigger === "manual") return;
-  await drainArcBacklog(chatId, profile, settings, userId, automation);
+  if (profile.autoCreateArc && profile.arcTrigger !== "manual") {
+    await drainArcBacklog(chatId, profile, settings, userId, automation);
+  }
+  for (const tier of HIGHER_TIERS) {
+    if (profile.higherTiers[tier].enabled) await drainHigherBacklog(tier, chatId, profile, settings, userId, automation);
+  }
 }
 
-async function nextSceneNumber(chatId: string, tier: 1 | 2 | 3, userId: string): Promise<number> {
+async function nextSceneNumber(chatId: string, tier: SummaryTier, userId: string): Promise<number> {
   const entries = await listLmbEntries(chatId, userId).catch(() => [] as LMBEntry[]);
   let max = 0;
   for (const e of entries) {
@@ -1734,7 +1755,7 @@ function makePreview(
 }
 
 function makeGroupPreview(
-  kind: "arc" | "volume",
+  kind: Exclude<SummaryKind, "chapter">,
   selected: LMBEntry[],
   result: SummarizationResult,
   firstIdx: number,
@@ -1744,7 +1765,7 @@ function makeGroupPreview(
   return {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    title: result.title || `${kind === "volume" ? "Volume" : "Arc"} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
+    title: result.title || `${TIER_NAMES[TIER_KINDS.indexOf(kind)]} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
     content: result.content,
     shortComment: result.shortComment,
     keywords: result.keywords ?? [],
@@ -1759,4 +1780,18 @@ function makeGroupPreview(
     presetKey: result.presetKey,
     replacesEntryId,
   };
+}
+
+export async function drainHigherBacklog(tier: HigherTier, chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string, automation = false): Promise<number> {
+  let made = 0;
+  for (let i = 0; i < 100; i++) {
+    if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1])) break;
+    const coverage = await buildCoverage(chatId, userId);
+    const batch = selectBindingBatch(coverage.activeEntries.filter((e) => e.meta.tier === tier - 1), profile.higherTiers[tier]);
+    if (!batch.length) break;
+    const created = await createHigherFromEntries(tier, chatId, batch.map((e) => e.raw.id), profile, settings, userId, { automation });
+    if (!created) break;
+    made++;
+  }
+  return made;
 }

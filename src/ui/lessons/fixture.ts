@@ -377,6 +377,7 @@ export function buildFixture(variant: string): FrontendState {
     activeProfile: profile,
     chapters,
     arcs,
+    higherBooks: [],
     volumes: [],
     bookId: "book_lesson",
     bookName: "LumiBooks - The Ashford Case",

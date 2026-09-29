@@ -40,6 +40,45 @@ export type CodexWriteMode = "batch" | "sequential";
 
 export type CompressionUnit = "messages" | "tokens";
 export type CompressionTargetUnit = "percent" | "tokens";
+export type SummaryTier = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type HigherTier = 3 | 4 | 5 | 6 | 7;
+export type SummaryKind = "chapter" | "arc" | "volume" | "series" | "chronicle" | "epic" | "library";
+export const TIER_KINDS = ["chapter", "arc", "volume", "series", "chronicle", "epic", "library"] as const;
+export const TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Chronicle", "Epic", "Library"] as const;
+export const HIGHER_TIERS = [3, 4, 5, 6, 7] as const;
+export interface HigherTierSettings {
+  enabled: boolean;
+  unit: "entries" | "tokens";
+  batch: number;
+  lag: number;
+  targetUnit: CompressionTargetUnit;
+  targetPercent: number;
+  targetTokens: number;
+}
+export function defaultHigherTiers(): Record<HigherTier, HigherTierSettings> {
+  return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
+    enabled: false, unit: "entries", batch: 6, lag: 2,
+    targetUnit: "percent", targetPercent: 25, targetTokens: 3000,
+  }])) as Record<HigherTier, HigherTierSettings>;
+}
+function normalizeHigherTiers(raw: unknown): Record<HigherTier, HigherTierSettings> {
+  const out = defaultHigherTiers();
+  const values = raw && typeof raw === "object" ? raw as Record<number, Partial<HigherTierSettings>> : {};
+  for (const tier of HIGHER_TIERS) {
+    const v = values[tier];
+    if (!v || typeof v !== "object") continue;
+    out[tier] = { enabled: v.enabled === true, unit: v.unit === "tokens" ? "tokens" : "entries",
+      batch: clampInt(v.batch, v.unit === "tokens" ? 100 : 2, v.unit === "tokens" ? 1000000 : 100, out[tier].batch),
+      lag: clampInt(v.lag, 0, v.unit === "tokens" ? 1000000 : 100, out[tier].lag),
+      targetUnit: v.targetUnit === "tokens" ? "tokens" : "percent",
+      targetPercent: clampInt(v.targetPercent, 5, 95, 25), targetTokens: clampInt(v.targetTokens, 50, 1000000, 3000) };
+  }
+  return out;
+}
+export function tierHeader(tier: SummaryTier, number: number, sources: number, turns: number): string {
+  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${TIER_NAMES[tier - 2]?.toLowerCase() ?? "message"}${sources === 1 || tier === 5 ? "" : "s"}, ${turns} turns)`;
+}
+
 export type ArcTriggerMode = "chapters" | "tokens" | "manual";
 
 export interface SamplerSet {
@@ -84,6 +123,7 @@ export interface LMBProfile {
   autoCreate: boolean;
   autoCreateChapter: boolean;
   autoCreateArc: boolean;
+  higherTiers: Record<HigherTier, HigherTierSettings>;
   hideCoveredMessages: boolean;
   showMemoryPreviews: boolean;
   retryCount: number;
@@ -158,8 +198,8 @@ export interface LMBSettings {
 }
 
 export interface LMBEntryMeta {
-  /** 1 = chapter, 2 = arc, 3 = volume. */
-  tier: 1 | 2 | 3;
+  /** Chapter, Arc, Volume, Series, Chronicle, Epic, Library (1 through 7). */
+  tier: SummaryTier;
   chatId: string;
   msgIds: string[];
   /** Ids of the tier below: chapter ids on an arc, arc ids on a volume. */
@@ -252,6 +292,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     autoCreate: true,
     autoCreateChapter: true,
     autoCreateArc: true,
+    higherTiers: defaultHigherTiers(),
     hideCoveredMessages: true,
     showMemoryPreviews: false,
     retryCount: 3,
@@ -368,6 +409,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     samplers: normalizeSamplers(v.samplers),
     autoCreate: typeof v.autoCreate === "boolean" ? v.autoCreate : base.autoCreate,
     autoCreateChapter: typeof v.autoCreateChapter === "boolean" ? v.autoCreateChapter : base.autoCreateChapter,
+    higherTiers: normalizeHigherTiers(v.higherTiers),
     autoCreateArc: typeof v.autoCreateArc === "boolean" ? v.autoCreateArc : base.autoCreateArc,
     hideCoveredMessages: typeof v.hideCoveredMessages === "boolean" ? v.hideCoveredMessages : base.hideCoveredMessages,
     showMemoryPreviews: typeof v.showMemoryPreviews === "boolean" ? v.showMemoryPreviews : base.showMemoryPreviews,
@@ -449,7 +491,7 @@ export function normalizeCustomPreset(raw: unknown): CustomPreset | null {
 export function normalizeEntryMeta(raw: unknown): LMBEntryMeta | null {
   if (!raw || typeof raw !== "object") return null;
   const v = raw as Partial<LMBEntryMeta>;
-  const tier = v.tier === 3 ? 3 : v.tier === 2 ? 2 : v.tier === 1 ? 1 : null;
+  const tier = Number.isInteger(v.tier) && Number(v.tier) >= 1 && Number(v.tier) <= 7 ? v.tier as SummaryTier : null;
   if (!tier) return null;
   if (typeof v.chatId !== "string" || !v.chatId.trim()) return null;
   const msgIds = Array.isArray(v.msgIds) ? v.msgIds.filter((x): x is string => typeof x === "string") : [];

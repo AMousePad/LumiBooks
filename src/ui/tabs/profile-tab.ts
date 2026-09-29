@@ -1,3 +1,4 @@
+import { HIGHER_TIERS, TIER_NAMES, type HigherTierSettings } from "../../shared";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
 import { CODEX_SAMPLER_DEFAULTS, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
@@ -498,6 +499,35 @@ export function renderAutomation(host: HTMLElement, profile: LMBProfile, patch: 
   arcHint.className = "lmb-field-hint";
   arcHint.textContent = "Arc lag reserves the most-recent chapters and never binds them, so you keep some chapter-level detail.";
   arcFields.appendChild(arcHint);
+  for (const tier of HIGHER_TIERS) {
+    const config = profile.higherTiers[tier];
+    const change = (v: Partial<HigherTierSettings>) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
+    const block = section(`Auto-bind ${TIER_NAMES[tier - 1]}`);
+    block.body.appendChild(checkbox({ checked: config.enabled, label: "Enabled", onChange: (enabled) => change({ enabled }) }));
+    block.body.appendChild(labelled("Trigger unit", select({ value: config.unit,
+      options: [{ value: "entries", label: `${TIER_NAMES[tier - 2]} entries` }, { value: "tokens", label: "Summary tokens" }],
+      onChange: (v) => change({ unit: v === "tokens" ? "tokens" : "entries", batch: v === "tokens" ? 8000 : 6, lag: v === "tokens" ? 2000 : 2 }),
+    })));
+    block.body.appendChild(labelled("Amount to bind", numberInput({ value: config.batch, min: config.unit === "tokens" ? 100 : 2,
+      max: config.unit === "tokens" ? 1000000 : 100, onBlur: (v) => change({ batch: v ?? config.batch }) })));
+    block.body.appendChild(labelled("Recent amount to keep", numberInput({ value: config.lag, min: 0,
+      max: config.unit === "tokens" ? 1000000 : 100, onBlur: (v) => change({ lag: v ?? config.lag }) })));
+    const hint = document.createElement("div"); hint.className = "lmb-help";
+    hint.textContent = `Binds the oldest active ${TIER_NAMES[tier - 2]} summaries; roots and archived sources do not count. ${config.unit === "entries" ? `First binding needs ${config.batch + config.lag} entries (${config.batch} to bind + ${config.lag} kept).` : "Thresholds measure saved summary text."}`;
+    block.body.appendChild(hint);
+    if (tier > 3) {
+      block.body.appendChild(labelled("Compression target", select({ value: config.targetUnit,
+        options: [{ value: "percent", label: "Percent of input" }, { value: "tokens", label: "Fixed tokens" }],
+        onChange: (v) => change({ targetUnit: v === "tokens" ? "tokens" : "percent" }),
+      })));
+      block.body.appendChild(labelled(config.targetUnit === "tokens" ? "Target tokens" : "Target percent", numberInput({
+        value: config.targetUnit === "tokens" ? config.targetTokens : config.targetPercent,
+        min: config.targetUnit === "tokens" ? 50 : 5, max: config.targetUnit === "tokens" ? 1000000 : 95,
+        onBlur: (v) => change(config.targetUnit === "tokens" ? { targetTokens: v ?? 3000 } : { targetPercent: v ?? 25 }),
+      })));
+    }
+    subsWrap.appendChild(block.wrap);
+  }
 
   host.appendChild(sec.wrap);
 }
@@ -636,7 +666,7 @@ export function renderCompressionTargets(host: HTMLElement, profile: LMBProfile,
 
   const volumeHint = document.createElement("div");
   volumeHint.className = "lmb-field-hint";
-  volumeHint.textContent = "Volumes are manual only. Press arcs into a volume from Books → Compose.";
+  volumeHint.textContent = "Bind volumes manually in Books → Compose, or enable volume automation above.";
   sec.body.appendChild(volumeHint);
 
   const volumeRatioGrid = document.createElement("div");

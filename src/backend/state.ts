@@ -93,6 +93,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     chapters: [],
     arcs: [],
     volumes: [],
+    higherBooks: [],
     bookId: null,
     bookName: null,
     connections,
@@ -172,16 +173,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const activeChapterEntries = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot);
   const backlogArcs = countArcBacklog(activeChapterEntries, activeProfile);
 
-  const supersededIds = new Set<string>();
-  for (const e of entries) {
-    if (e.meta.tier !== 1 && !e.raw.disabled && Array.isArray(e.meta.sourceChapterEntryIds)) {
-      for (const sid of e.meta.sourceChapterEntryIds) supersededIds.add(sid);
-    }
-  }
+  const activeIds = new Set(coverage.activeEntries.map((e) => e.raw.id));
 
   const chapters: ChapterView[] = [];
   const arcs: ArcView[] = [];
   const volumes: ArcView[] = [];
+  const higherBooks: ArcView[] = [];
   for (const e of entries) {
     const view: ChapterView = {
       entryId: e.raw.id,
@@ -189,14 +186,16 @@ export async function buildState(userId: string, requestedChatId?: string | null
       comment: e.raw.comment || "",
       content: e.raw.content || "",
       meta: e.meta,
-      active: !(supersededIds.has(e.raw.id) || e.raw.disabled),
+      active: activeIds.has(e.raw.id),
       contentTokens: approximateTokensFromChars((e.raw.content || "").length),
       contentChars: (e.raw.content || "").length,
       sourceTokensInput: e.meta.tokenCountInput || 0,
       isRoot: !!e.meta.isRoot,
       isGhost: e.meta.ghost === true,
     };
-    if (e.meta.tier === 3) {
+    if (e.meta.tier > 3) {
+      higherBooks.push({ ...view, sourceChapterEntryIds: e.meta.sourceChapterEntryIds ?? [] });
+    } else if (e.meta.tier === 3) {
       volumes.push({ ...view, sourceChapterEntryIds: e.meta.sourceChapterEntryIds ?? [] });
     } else if (e.meta.tier === 2) {
       arcs.push({ ...view, sourceChapterEntryIds: e.meta.sourceChapterEntryIds ?? [] });
@@ -280,6 +279,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     chapters,
     arcs,
     volumes,
+    higherBooks,
     bookId,
     bookName,
     coverage: stats,

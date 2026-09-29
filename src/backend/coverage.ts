@@ -30,74 +30,28 @@ export async function buildCoverage(
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);
-  const chapterById = new Map(chapters.map((c) => [c.raw.id, c] as const));
-  const arcById = new Map(arcs.map((a) => [a.raw.id, a] as const));
-
-  const supersededArcIds = new Set<string>();
-  for (const vol of volumes) {
-    for (const aid of vol.meta.sourceChapterEntryIds ?? []) {
-      supersededArcIds.add(aid);
+  const byId = new Map(allEntries.map((e) => [e.raw.id, e]));
+  const superseded = new Set<string>();
+  const visitSources = (entry: LMBEntry, seen: Set<string>, fn: (source: LMBEntry) => void): void => {
+    for (const id of entry.meta.sourceChapterEntryIds ?? []) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const source = byId.get(id);
+      if (!source || source.meta.tier >= entry.meta.tier) continue;
+      fn(source);
+      visitSources(source, seen, fn);
     }
-  }
-
-  // All arcs supersede their chapters, including arcs that are themselves
-  // superseded by a volume - those chapters stay covered by the volume.
-  const supersededChapterIds = new Set<string>();
-  for (const arc of arcs) {
-    for (const cid of arc.meta.sourceChapterEntryIds ?? []) {
-      supersededChapterIds.add(cid);
-    }
-  }
-
+  };
+  for (const entry of entries) visitSources(entry, new Set([entry.raw.id]), (source) => superseded.add(source.raw.id));
+  const activeEntries = entries.filter((e) => !superseded.has(e.raw.id)).sort((a, b) => b.meta.tier - a.meta.tier);
   const coveredBy = new Map<string, string>();
-
-  for (const vol of volumes) {
-    for (const msgId of vol.meta.msgIds) {
-      if (!coveredBy.has(msgId)) coveredBy.set(msgId, vol.raw.id);
-    }
-    for (const aid of vol.meta.sourceChapterEntryIds ?? []) {
-      const arc = arcById.get(aid);
-      if (!arc) continue;
-      for (const msgId of arc.meta.msgIds) {
-        if (!coveredBy.has(msgId)) coveredBy.set(msgId, vol.raw.id);
-      }
-      for (const cid of arc.meta.sourceChapterEntryIds ?? []) {
-        const ch = chapterById.get(cid);
-        if (!ch) continue;
-        for (const msgId of ch.meta.msgIds) {
-          if (!coveredBy.has(msgId)) coveredBy.set(msgId, vol.raw.id);
-        }
-      }
-    }
+  for (const entry of activeEntries) {
+    const cover = (source: LMBEntry) => {
+      for (const id of source.meta.msgIds) if (!coveredBy.has(id)) coveredBy.set(id, entry.raw.id);
+    };
+    cover(entry);
+    visitSources(entry, new Set([entry.raw.id]), cover);
   }
-
-  for (const arc of arcs) {
-    if (supersededArcIds.has(arc.raw.id)) continue;
-    for (const msgId of arc.meta.msgIds) {
-      if (!coveredBy.has(msgId)) coveredBy.set(msgId, arc.raw.id);
-    }
-    for (const cid of arc.meta.sourceChapterEntryIds ?? []) {
-      const ch = chapterById.get(cid);
-      if (!ch) continue;
-      for (const msgId of ch.meta.msgIds) {
-        if (!coveredBy.has(msgId)) coveredBy.set(msgId, arc.raw.id);
-      }
-    }
-  }
-
-  for (const chapter of chapters) {
-    if (supersededChapterIds.has(chapter.raw.id)) continue;
-    for (const msgId of chapter.meta.msgIds) {
-      if (!coveredBy.has(msgId)) coveredBy.set(msgId, chapter.raw.id);
-    }
-  }
-
-  const activeEntries: LMBEntry[] = [
-    ...volumes,
-    ...arcs.filter((a) => !supersededArcIds.has(a.raw.id)),
-    ...chapters.filter((c) => !supersededChapterIds.has(c.raw.id)),
-  ];
-
   return { coveredBy, activeEntries, volumes, arcs, chapters };
 }
 

@@ -1788,6 +1788,13 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   }
   .lmb-busy-dot { transform: rotate(45deg); }
 }
+.lmb-higher-peek { display: none; }
+.lmb-has-higher:hover > .lmb-higher-peek,
+.lmb-has-higher:focus-within > .lmb-higher-peek { display: block; }
+.lmb-spine-seg.series, .lmb-spine-swatch.series { background: #8e73cf; }
+.lmb-spine-seg.chronicle, .lmb-spine-swatch.chronicle { background: #ab72c9; }
+.lmb-spine-seg.epic, .lmb-spine-swatch.epic { background: #cb77ab; }
+.lmb-spine-seg.library, .lmb-spine-swatch.library { background: #d19472; }
 ` + LESSON_STYLES;
 
 /** Lucide "book-marked" (ISC license, lucide.dev): a book with a ribbon

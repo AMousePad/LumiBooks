@@ -1,3 +1,4 @@
+import { TIER_NAMES, type HigherTier } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
@@ -580,15 +581,18 @@ export async function assembleVolumePrompt(
   arcs: LMBEntry[],
   userId: string,
   opener: string,
+  tier: HigherTier = 3,
 ): Promise<DryRunAssembly> {
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
 
-  const presetText = findPresetText(profile, customPresets, "volume");
+  const presetText = findPresetText(profile, customPresets, "volume")
+    .replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]!)
+    .replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2]! + (tier === 5 ? "" : "s"));
   if (!presetText) throw new Error("Volume preset missing");
 
   const body = arcs
-    .map((a, idx) => `<<ARC ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
+    .map((a, idx) => `<<${TIER_NAMES[tier - 2]!.toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
     .join("\n\n");
 
   const { targetTokens, targetPercent, inputTokens: bodyTokens } = await resolveTargets(
@@ -605,7 +609,7 @@ export async function assembleVolumePrompt(
     targetTokens,
     targetPercent,
     previousMemoriesBlock: "",
-    bodyHeading: `<<ARCS TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
+    bodyHeading: `<<${TIER_NAMES[tier - 2]!.toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
     body,
     shortCommentRulesOverride: profile.shortCommentRulesOverride,
     personaOverride: profile.memoriaPersonaOverride,
@@ -647,15 +651,18 @@ export async function summarizeVolume(
   userId: string,
   opener: string,
   streamOptions: StreamOptions,
+  tier: HigherTier = 3,
 ): Promise<SummarizationResult> {
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
 
-  const presetText = findPresetText(profile, customPresets, "volume");
+  const presetText = findPresetText(profile, customPresets, "volume")
+    .replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]!)
+    .replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2]! + (tier === 5 ? "" : "s"));
   if (!presetText) throw new Error("Volume preset missing");
 
   const body = arcs
-    .map((a, idx) => `<<ARC ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
+    .map((a, idx) => `<<${TIER_NAMES[tier - 2]!.toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
     .join("\n\n");
 
   const { targetTokens, targetPercent } = await resolveTargets(
@@ -672,7 +679,7 @@ export async function summarizeVolume(
     targetTokens,
     targetPercent,
     previousMemoriesBlock: "",
-    bodyHeading: `<<ARCS TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
+    bodyHeading: `<<${TIER_NAMES[tier - 2]!.toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
     body,
     shortCommentRulesOverride: profile.shortCommentRulesOverride,
     personaOverride: profile.memoriaPersonaOverride,

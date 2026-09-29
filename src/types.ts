@@ -1,3 +1,4 @@
+import type { SummaryKind, HigherTier } from "./shared";
 import type {
   CustomPreset,
   LMBProfile,
@@ -54,14 +55,14 @@ export interface CoverageStats {
 }
 
 export interface BusyEntry {
-  kind: "chapter" | "arc" | "volume" | "codex";
+  kind: SummaryKind | "codex";
   chatId: string;
   label: string;
   startedAt: number;
 }
 
 export interface FailureRecord {
-  kind: "chapter" | "arc" | "volume";
+  kind: SummaryKind;
   message: string;
   retriedTimes: number;
   at: number;
@@ -92,7 +93,7 @@ export interface RegexScriptOption {
 }
 
 export interface PendingPreview {
-  kind: "chapter" | "arc" | "volume";
+  kind: SummaryKind;
   draftId: string;
   title: string;
   content: string;
@@ -123,6 +124,7 @@ export interface FrontendState {
   chapters: ChapterView[];
   arcs: ArcView[];
   volumes: ArcView[];
+  higherBooks: ArcView[];
   bookId: string | null;
   bookName: string | null;
   connections: ConnectionOption[];
@@ -191,6 +193,8 @@ export type FrontendToBackend =
   | { type: "create_arc"; chatId: string }
   | { type: "create_arc_from"; chatId: string; chapterEntryIds: string[] }
   | { type: "create_all_arcs"; chatId: string }
+  | { type: "create_higher_from"; chatId: string; tier: HigherTier; entryIds: string[] }
+  | { type: "create_higher_auto"; chatId: string; tier: HigherTier }
   | { type: "create_volume_from"; chatId: string; arcEntryIds: string[] }
   | { type: "retry_last_failure"; chatId: string }
   | { type: "delete_entry"; chatId: string; entryId: string }
@@ -200,7 +204,7 @@ export type FrontendToBackend =
   | { type: "resync_hidden"; chatId: string }
   | { type: "resync_visibility"; chatId: string }
   | { type: "set_force_constant"; value: boolean; chatId?: string | null }
-  | { type: "abort_busy"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex" }
+  | { type: "abort_busy"; chatId: string; kind: SummaryKind | "codex" }
   | { type: "dry_run_chapter"; chatId: string }
   | { type: "dry_run_arc"; chatId: string }
   | { type: "dry_run_volume"; chatId: string }
@@ -232,7 +236,7 @@ export type FrontendToBackend =
   | { type: "codex_adopt"; chatId: string; sourceChatId: string }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
-  | { type: "watch_stream"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; on: boolean }
+  | { type: "watch_stream"; chatId: string; kind: SummaryKind | "codex"; on: boolean }
   | { type: "lesson_patch"; course: LessonCourseKey; patch: Partial<LessonCourseState>; chatId?: string | null }
   | {
       type: "lesson_complete";
@@ -268,9 +272,9 @@ export type BackendToFrontend =
   | { type: "toast"; tone: "success" | "info" | "warn" | "error"; text: string }
   | { type: "busy"; entries: BusyEntry[] }
   | { type: "error"; text: string }
-  | { type: "dry_run_result"; kind: "chapter" | "arc" | "volume" | "codex"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
+  | { type: "dry_run_result"; kind: SummaryKind | "codex"; messages: DryRunMessage[]; diagnostics: DryRunDiagnostic[] }
   | { type: "codex_files"; chatId: string; files: Record<string, string>; revision: number; savedFile?: string; savedSeq?: number }
-  | { type: "stream_text"; chatId: string; kind: "chapter" | "arc" | "volume" | "codex"; content: string; thinking: string; running: boolean }
+  | { type: "stream_text"; chatId: string; kind: SummaryKind | "codex"; content: string; thinking: string; running: boolean }
   /** A codex run died because the model narrated instead of tool-calling:
    * the frontend offers the JSON fallback once (unless suppressed). */
   | { type: "codex_tools_hint"; chatId: string }

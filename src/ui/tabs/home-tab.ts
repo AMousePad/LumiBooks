@@ -1,3 +1,4 @@
+import { TIER_NAMES, TIER_KINDS, type SummaryKind } from "../../shared";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { ArcView, ChapterView, FrontendState, FrontendToBackend, PendingPreview } from "../../types";
 import { LESSON_CHAT_PREFIX, codexLessonGated } from "../../shared";
@@ -26,7 +27,7 @@ function busyTrackKey(kind: string, chatId: string): string {
 
 /* ---------------------------------------------------- live stream viewer */
 
-type StreamKind = "chapter" | "arc" | "volume" | "codex";
+type StreamKind = SummaryKind | "codex";
 
 let streamWatch: { chatId: string; kind: StreamKind } | null = null;
 let streamData = { content: "", thinking: "", running: false };
@@ -594,7 +595,7 @@ function drawPromptContent(
 
 /* ------------------------------------------------------------- overview */
 
-type SpineKind = "codex" | "volume" | "arc" | "chapter" | "ghost" | "excluded" | "free";
+type SpineKind = "codex" | SummaryKind | "ghost" | "excluded" | "free";
 
 interface SpineSeg {
   kind: SpineKind;
@@ -610,6 +611,7 @@ interface SpineSeg {
 const SPINE_LABEL: Record<SpineKind, string> = {
   codex: "Knowledge Codex",
   volume: "in a volume",
+  series: "in a series", chronicle: "in a chronicle", epic: "in an epic", library: "in a library",
   arc: "in an arc",
   chapter: "in a chapter",
   ghost: "staged as ghost",
@@ -639,6 +641,7 @@ function collectEntryInfo(state: FrontendState): Map<string, EntryInfo> {
       label: v.comment || v.meta.title || "",
     });
   };
+  for (const v of state.higherBooks) put(v, TIER_KINDS[v.meta.tier - 1]!);
   for (const v of state.volumes) put(v, "volume");
   for (const a of state.arcs) put(a, "arc");
   for (const c of state.chapters) put(c, c.isGhost ? "ghost" : "chapter");
@@ -738,7 +741,7 @@ function renderBreakdown(state: FrontendState): HTMLElement {
 
   // Injected = active entries (roots included, they inject too); ghosts are
   // staged, not injected, so their spans still ride at raw price in the tail.
-  const activeVolumes = state.volumes.filter((v) => v.active);
+  const activeVolumes = [...state.volumes, ...state.higherBooks].filter((v) => v.active);
   const activeArcs = state.arcs.filter((a) => a.active);
   const activeChapters = state.chapters.filter((c) => c.active && !c.isGhost);
   const sum = (list: (ChapterView | ArcView)[]): number => list.reduce((acc, v) => acc + injectedTokens(v), 0);
@@ -760,7 +763,7 @@ function renderBreakdown(state: FrontendState): HTMLElement {
   }
 
   if (codexTokens > 0) wrap.appendChild(row("codex", "Knowledge Codex (constant part)", codexTokens, true));
-  if (activeVolumes.length) wrap.appendChild(row("volume", `Volumes (${activeVolumes.length})`, volTokens, false));
+  if (activeVolumes.length) wrap.appendChild(row("volume", `Volumes and higher (${activeVolumes.length})`, volTokens, false));
   if (activeArcs.length) wrap.appendChild(row("arc", `Arcs (${activeArcs.length})`, arcTokens, false));
   if (activeChapters.length) wrap.appendChild(row("chapter", `Chapters (${activeChapters.length})`, chapTokens, false));
   if (tailCount > 0) wrap.appendChild(row("free", `Uncompressed tail (${tailCount} msgs)`, tailTokens, true));
@@ -795,8 +798,16 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
     arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
     chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length,
   };
-  tiles.appendChild(statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap",
-    "Volumes, arcs, and chapters Memoria has filed for this chat"));
+  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "active vol · arc · chap",
+    "Uncompressed summaries. Hover for existing higher tiers.");
+  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && !e.isRoot && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
+  if (higherCounts.length) {
+    shelfTile.classList.add("lmb-has-higher"); shelfTile.tabIndex = 0;
+    const more = document.createElement("div"); more.className = "lmb-higher-peek";
+    more.textContent = higherCounts.map((e) => `${e.count} ${e.kind}`).join(" · ");
+    shelfTile.appendChild(more);
+  }
+  tiles.appendChild(shelfTile);
   if (codexLessonGated(state.lessons)) {
     const locked = statTile("🔒", "Codex", "take a lesson",
       "The Knowledge Codex unlocks after Memoria's codex lesson");
@@ -884,7 +895,7 @@ function renderFailure(host: HTMLElement, state: FrontendState, send: (m: Fronte
   const head = document.createElement("div");
   head.style.fontWeight = "600";
   head.textContent = f.kind === "arc" ? "Last arc attempt failed"
-    : f.kind === "volume" ? "Last volume attempt failed"
+    : f.kind !== "chapter" ? `Last ${f.kind} attempt failed`
     : "Last chapter attempt failed";
   const detail = document.createElement("div");
   detail.style.opacity = "0.85";

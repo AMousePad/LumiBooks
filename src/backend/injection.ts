@@ -1,3 +1,4 @@
+import { TIER_NAMES } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
@@ -69,7 +70,7 @@ function orderEntries(coverage: CoverageMap, msgIdToIdx: Map<string, number>): O
       : typeof entry.meta.lastMsgIdx === "number"
         ? entry.meta.lastMsgIdx
         : resolvedFirst;
-    const tierName = entry.meta.tier === 3 ? "Volume" : entry.meta.tier === 2 ? "Arc" : "Chapter";
+    const tierName = TIER_NAMES[entry.meta.tier - 1];
     const label =
       entry.raw.comment ||
       (haveIdx ? `${tierName} msgs ${firstIdx + 1}-${lastIdx + 1}` : tierName);
