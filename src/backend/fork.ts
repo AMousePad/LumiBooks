@@ -309,7 +309,6 @@ async function cloneShelfForFork(
   userId: string,
 ): Promise<void> {
   const parentEntries = await listLmbEntries(parentChatId, userId);
-  if (parentEntries.length === 0) return;
 
   const [forkMsgs, parentMsgs] = await Promise.all([
     spindle.chat.getMessages(forkChatId),

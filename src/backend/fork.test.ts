@@ -129,3 +129,9 @@ test("forking before the end of a summary drops abandoned-future prose and reviv
   expect(cursor.lastMsgId).toBe(`${child}-m1`);
   expect(cursor.reconcileUntilMsgId).toBe(`${child}-m1`);
 });
+
+test("forking an empty shelf detaches the parent's book", async () => {
+  await ensureForkAdoption(child, user);
+  expect(chats.get(child).metadata.chat_world_book_ids).not.toContain(chats.get(parent).metadata.lumibooks_book_id);
+  expect(chats.get(child).metadata.lumibooks_fork_adopted).toBe(child);
+});
