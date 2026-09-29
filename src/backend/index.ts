@@ -474,19 +474,19 @@ async function retryLastFailure(
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = (TIER_KINDS.indexOf(last.kind) + 1) as HigherTier;
     const coverage = await buildCoverage(chatId, userId);
-    const ids = coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
-    if (ids.length) await createHigherFromEntries(tier, chatId, ids, profile, settings, userId);
+    const ids = last.sourceEntryIds ?? coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
+    if (ids.length) await createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
   }
   if (last?.kind === "arc") {
-    const ids = await collectActiveChapterIds(chatId, userId);
+    const ids = last.sourceEntryIds ?? await collectActiveChapterIds(chatId, userId);
     if (ids.length === 0) {
       clearLastFailure(userId, chatId);
       const msg = "Memoria has no chapters left to retry the arc";
       await notify(userId, "warn", msg);
       return;
     }
-    await createArcFromChapters(chatId, ids, profile, settings, userId);
+    await createArcFromChapters(chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
   }
   if (extraContextActive(profile)) {

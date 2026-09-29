@@ -398,7 +398,8 @@ async function runWithRetry<T>(
   return { ok: false, err: lastErr, retries: tries - 1 };
 }
 
-function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown): void {
+function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown,
+  selection?: Pick<FailureRecord, "sourceEntryIds" | "replacesEntryId">): void {
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key)) failureByChat.delete(key);
   failureByChat.set(key, {
@@ -406,6 +407,7 @@ function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind
     message: describeError(err),
     retriedTimes: retries,
     at: Date.now(),
+    ...selection,
   });
   capMap(failureByChat, FAILURE_MAP_CAP);
 }
@@ -868,7 +870,7 @@ async function runArc(
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, "arc", outcome.retries, outcome.err);
+    recordFailure(userId, chatId, "arc", outcome.retries, outcome.err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, "arc", outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -893,7 +895,7 @@ async function runArc(
     return entryId;
   } catch (err) {
     warn(`commitArc failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "arc", 0, err);
+    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, "arc", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -1091,7 +1093,7 @@ async function runVolume(
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, kind, outcome.retries, outcome.err);
+    recordFailure(userId, chatId, kind, outcome.retries, outcome.err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, kind, outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -1116,7 +1118,7 @@ async function runVolume(
     return entryId;
   } catch (err) {
     warn(`commitVolume failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, kind, 0, err);
+    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, kind, err);
     cb?.onStateChange(userId, chatId);
     return null;
