@@ -574,6 +574,18 @@ export async function assembleArcPrompt(
   };
 }
 
+function higherTierPreset(text: string, tier: HigherTier): string {
+  // One pass avoids replacing a source Volume again when producing a Series.
+  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
+    const source = word.toLowerCase().startsWith("arc");
+    const name = TIER_NAMES[tier - (source ? 2 : 1)]!;
+    const plural = word.toLowerCase().endsWith("s");
+    const replacement = name + (plural && name !== "Series" ? (name === "Library" ? "" : "s") : "");
+    const result = plural && name === "Library" ? "Libraries" : replacement;
+    return word === word.toUpperCase() ? result.toUpperCase() : result;
+  });
+}
+
 export async function assembleVolumePrompt(
   profile: LMBProfile,
   customPresets: CustomPreset[],
@@ -586,9 +598,7 @@ export async function assembleVolumePrompt(
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
 
-  const presetText = findPresetText(profile, customPresets, "volume")
-    .replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]!)
-    .replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2]! + (tier === 5 ? "" : "s"));
+  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText) throw new Error("Volume preset missing");
 
   const body = arcs
@@ -656,9 +666,7 @@ export async function summarizeVolume(
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
 
-  const presetText = findPresetText(profile, customPresets, "volume")
-    .replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]!)
-    .replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2]! + (tier === 5 ? "" : "s"));
+  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText) throw new Error("Volume preset missing");
 
   const body = arcs

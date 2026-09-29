@@ -120,3 +120,15 @@ test("failed Series preview acceptance must retain its tier for retry", async ()
 });
 
 
+test("Library generation must not instruct the model to produce a Volume from Arcs", async () => {
+ let system = "";
+ (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
+   system = req.messages[0].content;
+   yield { type: "done", content: JSON.stringify({ title: "Library", content: "Summary.", keywords: ["story"] }) };
+ };
+ entries = [source(6, 0), source(6, 1)];
+ expect(await createHigherFromEntries(7, chatId, entries.map((e) => e.id), profile, settings(), userId)).toBeTruthy();
+ expect(system).not.toContain("consolidated VOLUME entry");
+});
+
+
