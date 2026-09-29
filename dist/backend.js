@@ -3013,28 +3013,51 @@ async function deleteCodex(chatId, userId) {
   }
   return failed;
 }
+async function copyCodexToEmptyChat(fromChatId, toChatId, userId, commitCursor) {
+  const files = [];
+  for (const key of CODEX_FILE_KEYS) {
+    const read = await readCodexFileRaw(fromChatId, key, userId);
+    if (read.state === "unreadable")
+      throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+    if (read.state === "ok")
+      files.push({ key, value: read.value });
+  }
+  if (!files.length)
+    return false;
+  const attempted = [];
+  try {
+    for (const { key, value } of files) {
+      attempted.push(key);
+      await spindle.userStorage.setJson(filePath(toChatId, key), value, { indent: 1, userId });
+    }
+    await commitCursor();
+    return true;
+  } catch (err) {
+    for (const key of attempted.reverse()) {
+      try {
+        await spindle.userStorage.delete(filePath(toChatId, key), userId);
+      } catch (rollbackError) {
+        warn(`Codex copy rollback failed for ${toChatId}/${key}: ${describeError(rollbackError)}`);
+      }
+    }
+    throw err;
+  }
+}
 async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUntilId) {
   if (await codexPresence(fromChatId, userId) !== "present")
     return false;
   return withCursorLock(toChatId, userId, async () => {
+    if (await codexHasAnyDataFile(toChatId, userId))
+      return false;
     let preFreeze = null;
     if (await codexPresence(toChatId, userId) === "present") {
       const target = await loadCursor(toChatId, userId);
       const untouched = target.runs === 0 && target.consumedSigs.length === 0 && target.lastMsgId === null;
-      if (!untouched || await codexHasAnyDataFile(toChatId, userId))
+      if (!untouched)
         return false;
       preFreeze = target;
     }
     const cursor = await loadCursor(fromChatId, userId);
-    for (const key of CODEX_FILE_KEYS) {
-      const read = await readCodexFileRaw(fromChatId, key, userId);
-      if (read.state === "unreadable") {
-        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
-      }
-      if (read.state === "absent")
-        continue;
-      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
-    }
     const sigs = [];
     for (const rec of cursor.consumedSigs) {
       const mapped = remapId(rec.id);
@@ -3056,8 +3079,7 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
         frozenAtRuns: { ...cursor.frozenAtRuns, ...preFreeze.frozenAtRuns }
       } : {}
     };
-    await saveCursor(toChatId, next, userId);
-    return true;
+    return copyCodexToEmptyChat(fromChatId, toChatId, userId, () => saveCursor(toChatId, next, userId));
   });
 }
 async function adoptCodexFrom(fromChatId, toChatId, userId) {
@@ -3069,19 +3091,6 @@ async function adoptCodexFrom(fromChatId, toChatId, userId) {
     if (await codexHasAnyDataFile(toChatId, userId))
       return "has_own";
     const source = await loadCursor(fromChatId, userId);
-    let copied = false;
-    for (const key of CODEX_FILE_KEYS) {
-      const read = await readCodexFileRaw(fromChatId, key, userId);
-      if (read.state === "unreadable") {
-        throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
-      }
-      if (read.state === "absent")
-        continue;
-      await spindle.userStorage.setJson(filePath(toChatId, key), read.value, { indent: 1, userId });
-      copied = true;
-    }
-    if (!copied)
-      return "no_source";
     const next = {
       ...emptyCursor(),
       fileStates: { ...source.fileStates },
@@ -3089,8 +3098,8 @@ async function adoptCodexFrom(fromChatId, toChatId, userId) {
       rootOrigin: fromChatId,
       updatedAt: Date.now()
     };
-    await saveCursor(toChatId, next, userId);
-    return "ok";
+    const copied = await copyCodexToEmptyChat(fromChatId, toChatId, userId, () => saveCursor(toChatId, next, userId));
+    return copied ? "ok" : "no_source";
   });
 }
 async function listCodexChatIds(userId) {
@@ -4130,11 +4139,21 @@ ${c.raw.content}`).join(`
     diagnostics
   };
 }
+function higherTierPreset(text, tier) {
+  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
+    const source = word.toLowerCase().startsWith("arc");
+    const name = TIER_NAMES[tier - (source ? 2 : 1)];
+    const plural = word.toLowerCase().endsWith("s");
+    const replacement = name + (plural && name !== "Series" ? name === "Library" ? "" : "s" : "");
+    const result = plural && name === "Library" ? "Libraries" : replacement;
+    return word === word.toUpperCase() ? result.toUpperCase() : result;
+  });
+}
 async function assembleVolumePrompt(profile, customPresets, chatId, arcs, userId, opener, tier = 3) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
     throw new FatalSummarizerError("No connection available for Memoria");
-  const presetText = findPresetText(profile, customPresets, "volume").replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]).replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2] + (tier === 5 ? "" : "s"));
+  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText)
     throw new Error("Volume preset missing");
   const body = arcs.map((a, idx) => `<<${TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
@@ -4181,7 +4200,7 @@ async function summarizeVolume(profile, customPresets, chatId, arcs, userId, ope
   const conn = await resolveConnection(profile, userId);
   if (!conn)
     throw new FatalSummarizerError("No connection available for Memoria");
-  const presetText = findPresetText(profile, customPresets, "volume").replace(/\b[Vv]olume\b/g, TIER_NAMES[tier - 1]).replace(/\b[Aa]rcs\b/g, TIER_NAMES[tier - 2] + (tier === 5 ? "" : "s"));
+  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText)
     throw new Error("Volume preset missing");
   const body = arcs.map((a, idx) => `<<${TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
@@ -5495,8 +5514,17 @@ function codexEntryPlacement(profile, constant) {
   };
 }
 async function syncCodexProfiles(userId) {
-  for (const chatId of await listCodexChatIds(userId))
-    await syncCodexEntries(chatId, userId);
+  const failures = [];
+  for (const chatId of await listCodexChatIds(userId)) {
+    try {
+      await syncCodexEntries(chatId, userId);
+    } catch (err) {
+      const error = describeError(err);
+      failures.push({ chatId, error });
+      warn(`Codex profile sync failed for ${chatId}: ${error}`);
+    }
+  }
+  return failures;
 }
 
 // src/backend/fork.ts
@@ -5759,8 +5787,6 @@ async function findAncestorBook(startChatId, userId) {
 }
 async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId) {
   const parentEntries = await listLmbEntries(parentChatId, userId);
-  if (parentEntries.length === 0)
-    return;
   const [forkMsgs, parentMsgs] = await Promise.all([
     spindle.chat.getMessages(forkChatId),
     spindle.chat.getMessages(parentChatId)
@@ -5811,12 +5837,16 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
       };
     }
     const { ids, first, last } = remap(entry.meta.msgIds);
+    if (ids.length !== entry.meta.msgIds.length)
+      return null;
     if (entry.meta.tier === 1) {
       if (ids.length === 0)
         return null;
       return { msgIds: ids, firstMsgIdx: first, lastMsgIdx: last, extra: { chatId: forkChatId } };
     }
     const survived = (entry.meta.sourceChapterEntryIds ?? []).map((oldId) => ctx.idMap.get(oldId)).filter((x) => typeof x === "string");
+    if (survived.length !== (entry.meta.sourceChapterEntryIds ?? []).length)
+      return null;
     if (ids.length === 0 && survived.length === 0)
       return null;
     let firstIdx = first;
@@ -6203,7 +6233,7 @@ async function runWithRetry(attempts, fn, onRetry) {
   }
   return { ok: false, err: lastErr, retries: tries - 1 };
 }
-function recordFailure(userId, chatId, kind, retries, err) {
+function recordFailure(userId, chatId, kind, retries, err, selection) {
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key))
     failureByChat.delete(key);
@@ -6211,7 +6241,8 @@ function recordFailure(userId, chatId, kind, retries, err) {
     kind,
     message: describeError(err),
     retriedTimes: retries,
-    at: Date.now()
+    at: Date.now(),
+    ...selection
   });
   capMap(failureByChat, FAILURE_MAP_CAP);
 }
@@ -6554,7 +6585,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, "arc", outcome.retries, outcome.err);
+    recordFailure(userId, chatId, "arc", outcome.retries, outcome.err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, "arc", outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -6577,7 +6608,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
     return entryId;
   } catch (err) {
     warn(`commitArc failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "arc", 0, err);
+    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, "arc", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -6734,7 +6765,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, kind, outcome.retries, outcome.err);
+    recordFailure(userId, chatId, kind, outcome.retries, outcome.err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, kind, outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -6757,7 +6788,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
     return entryId;
   } catch (err) {
     warn(`commitVolume failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, kind, 0, err);
+    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
     failToast(userId, kind, err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -6946,12 +6977,16 @@ async function acceptPreview(chatId, draftId, profile, userId) {
     try {
       const entryId = isVolume ? await commitVolume(chatId, userId, selected, fakeResult, preview.firstMsgIdx ?? 0, preview.lastMsgIdx ?? 0, preview.replacesEntryId, targetTier) : await commitArc(chatId, userId, selected, fakeResult, preview.firstMsgIdx ?? 0, preview.lastMsgIdx ?? 0, preview.replacesEntryId);
       dropPendingPreview(userId, chatId, draftId);
+      clearLastFailure(userId, chatId);
       nyaaToast(userId, isVolume ? "volume_success" : "arc_success", false);
       cb?.onStateChange(userId, chatId);
       return entryId;
     } catch (err) {
-      recordFailure(userId, chatId, isVolume ? "volume" : "arc", 0, err);
-      failToast(userId, isVolume ? "volume" : "arc", err);
+      recordFailure(userId, chatId, preview.kind, 0, err, {
+        sourceEntryIds: selected.map((e) => e.raw.id),
+        replacesEntryId: preview.replacesEntryId
+      });
+      failToast(userId, preview.kind, err);
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -8165,7 +8200,7 @@ async function runCodexAgent(opts) {
     { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] }
   ];
-  const working = { ...opts.bundle };
+  const working = structuredClone(opts.bundle);
   const changed = new Set;
   const validateOpts = { relationsTable: profile.codexRelationsTable, strictExtras: true };
   const progressBase = opts.progressBase ?? { chars: 0, thinking: 0 };
@@ -8187,6 +8222,11 @@ async function runCodexAgent(opts) {
   const persistClean = async () => {
     const broken = newDanglingFiles(working, baselineDangling);
     const clean = [...changed].filter((k) => !rejectedFiles.has(k) && !broken.has(k));
+    const projected = { ...opts.bundle };
+    for (const key of clean)
+      projected[key] = working[key];
+    if (newDangling(projected, baselineDangling).length > 0)
+      return [];
     const saved = [];
     for (const key of clean) {
       try {
@@ -8377,6 +8417,20 @@ async function runCodexAgent(opts) {
         doneNote = note.trim();
       outcomes.push({ callId: call.call_id, file: null, errors: [] });
     }
+    for (const d of newDangling(working, baselineDangling)) {
+      if (changed.has(d.file))
+        continue;
+      for (const key of ["characters", "locations", "things"]) {
+        if (!changed.has(key))
+          continue;
+        const original = opts.bundle[key].entities.find((e) => e.id === d.ref);
+        if (original && !working[key].entities.some((e) => e.id === d.ref)) {
+          working[key].entities.push(structuredClone(original));
+          opts.onDelta?.("text", `
+\u2933 Kept ${d.ref}: still referenced by unchanged ${d.file}.json`);
+        }
+      }
+    }
     let dangling = remaining.size === 0 ? newDangling(working, baselineDangling) : [];
     if (dangling.length > 0) {
       integrityRounds++;
@@ -8385,7 +8439,7 @@ async function runCodexAgent(opts) {
       if (stalled || outOfRoad) {
         const stubborn = dangling.filter((d) => danglingSeen.has(danglingKey(d)));
         if (stubborn.length > 0) {
-          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file)));
+          const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file).filter((file) => changed.has(file))));
           for (const r of fixed)
             opts.onDelta?.("text", `
 \u2933 ${r}`);
@@ -9472,6 +9526,14 @@ var INJECTION_CACHE_TTL_MS = 60000;
 var INJECTION_CACHE_CAP = 200;
 var injectionTextCache = new Map;
 var fileTokensCache = new Map;
+var tokenCountEpochs = new Map;
+function invalidateCodexTokenCounts(userId) {
+  tokenCountEpochs.set(userId, (tokenCountEpochs.get(userId) ?? 0) + 1);
+  for (const [chatId, cached] of fileTokensCache) {
+    if (cached.userId === userId)
+      fileTokensCache.delete(chatId);
+  }
+}
 var codexRevisions = new Map;
 function getCodexRevision(chatId) {
   return codexRevisions.get(chatId) ?? 0;
@@ -9493,6 +9555,7 @@ function invalidateCodexInjectionCache(chatId) {
   }
 }
 async function getCodexTokenCounts(chatId, userId, profile) {
+  const epoch = tokenCountEpochs.get(userId) ?? 0;
   const cached = fileTokensCache.get(chatId);
   if (cached && cached.userId === userId && cached.forceConstant === profile.codexForceConstant && Date.now() - cached.at < INJECTION_CACHE_TTL_MS)
     return cached.counts;
@@ -9503,7 +9566,9 @@ async function getCodexTokenCounts(chatId, userId, profile) {
     counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexForceConstant);
     counts.approximate ||= problems.length > 0;
   }
-  fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+  if (epoch === (tokenCountEpochs.get(userId) ?? 0)) {
+    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+  }
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value;
     if (oldest === undefined)
@@ -10555,12 +10620,16 @@ spindle.on("REGEX_SCRIPT_DELETED", (_payload, hostUserId) => {
     invalidateRegexCache(hostUserId);
 });
 spindle.on("CONNECTION_PROFILE_LOADED", (_payload, hostUserId) => {
-  if (hostUserId)
+  if (hostUserId) {
     invalidateConnectionsCache(hostUserId);
+    invalidateCodexTokenCounts(hostUserId);
+  }
 });
 spindle.on("MAIN_API_CHANGED", (_payload, hostUserId) => {
-  if (hostUserId)
+  if (hostUserId) {
     invalidateConnectionsCache(hostUserId);
+    invalidateCodexTokenCounts(hostUserId);
+  }
 });
 async function handleExternalEntryDeletion(userId, bookId, isBookDeletion) {
   const chatId = isBookDeletion ? findCachedChatIdForBook(userId, bookId) : await findChatIdForBook(userId, bookId).catch(() => null);
@@ -10617,20 +10686,20 @@ async function retryLastFailure(chatId, userId, profile, settings) {
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = TIER_KINDS.indexOf(last.kind) + 1;
     const coverage = await buildCoverage(chatId, userId);
-    const ids = coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
+    const ids = last.sourceEntryIds ?? coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
     if (ids.length)
-      await createHigherFromEntries(tier, chatId, ids, profile, settings, userId);
+      await createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
   }
   if (last?.kind === "arc") {
-    const ids = await collectActiveChapterIds(chatId, userId);
+    const ids = last.sourceEntryIds ?? await collectActiveChapterIds(chatId, userId);
     if (ids.length === 0) {
       clearLastFailure(userId, chatId);
       const msg = "Memoria has no chapters left to retry the arc";
       await notify(userId, "warn", msg);
       return;
     }
-    await createArcFromChapters(chatId, ids, profile, settings, userId);
+    await createArcFromChapters(chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
   }
   if (extraContextActive(profile)) {
@@ -10642,6 +10711,16 @@ async function retryLastFailure(chatId, userId, profile, settings) {
     await createChapterAuto(chatId, profile, settings, userId);
   }
   await maybeRunArcCheck(chatId, profile, settings, userId);
+}
+async function syncProfileSettings(userId) {
+  try {
+    const failures = await syncCodexProfiles(userId);
+    if (failures.length)
+      await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync to ${failures.length} chat(s): ${failures.slice(0, 3).map((f) => f.chatId).join(", ")}. Other chats were synced. Reapply the settings after resolving the errors.`);
+  } catch (err) {
+    warn(`Codex profile sync failed: ${describeError(err)}`);
+    await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync: ${describeError(err)}`);
+  }
 }
 spindle.onFrontendMessage(async (raw, userId) => {
   setLastFrontendUserId(userId);
@@ -10702,7 +10781,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (id === activeBefore && ["codexForceConstant", "codexInjectionPosition", "codexInjectionDepth"].some((key) => (key in incoming))) {
-          await syncCodexProfiles(userId);
+          await syncProfileSettings(userId);
         }
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "mode-off");
@@ -10751,7 +10830,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (warned) {
           await notify(userId, "warn", "Memoria keeps at least one profile");
         }
-        await syncCodexProfiles(userId);
+        await syncProfileSettings(userId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
         }
@@ -10764,7 +10843,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
-        await syncCodexProfiles(userId);
+        await syncProfileSettings(userId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-switch");
         }

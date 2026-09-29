@@ -72,5 +72,3 @@ test("counts must use the current story tokenizer after a connection change", as
   const actual = await getCodexTokenCounts(chat, user, profile);
   expect(cached.files.world).toBe(actual.files.world);
 });
-
-

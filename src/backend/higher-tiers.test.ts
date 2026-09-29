@@ -130,5 +130,3 @@ test("Library generation must not instruct the model to produce a Volume from Ar
  expect(await createHigherFromEntries(7, chatId, entries.map((e) => e.id), profile, settings(), userId)).toBeTruthy();
  expect(system).not.toContain("consolidated VOLUME entry");
 });
-
-

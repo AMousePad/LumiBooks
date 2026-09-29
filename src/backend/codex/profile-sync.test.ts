@@ -72,5 +72,3 @@ test("a corrupt old chat must not prevent resyncing healthy chats", async () => 
   expect(failures[0]?.error).toContain("world.json");
   expect(entries.some((e) => e.constant && e.content.includes("Weather"))).toBe(true);
 });
-
-

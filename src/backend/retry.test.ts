@@ -77,5 +77,3 @@ test("retry must respect the failed automatic batch and reserved lag", async () 
  const volume = entries.find((e) => e.extensions.lumibooks.tier === 3);
  expect(volume?.extensions.lumibooks.sourceChapterEntryIds.length).toBe(2);
 });
-
-
