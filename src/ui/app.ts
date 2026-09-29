@@ -1,7 +1,7 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
-import { preserveScroll, scrollPaneTop, showToast } from "./components";
+import { makeButton, preserveScroll, scrollPaneTop, showToast } from "./components";
 import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
@@ -55,6 +55,11 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   strip.className = "lmb-tabstrip";
   root.appendChild(strip);
 
+  const loadNotice = document.createElement("div");
+  loadNotice.className = "lmb-load-notice";
+  loadNotice.setAttribute("role", "status");
+  root.appendChild(loadNotice);
+
   const content = document.createElement("div");
   content.className = "lmb-tab-content";
   root.appendChild(content);
@@ -62,9 +67,40 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   let activeTab: TabKey = "home";
   let lastState: FrontendState | null = null;
   let renderPending = false;
+  let disposed = false;
+  let loadTimer: ReturnType<typeof setTimeout> | undefined;
+  let handshakeRetries = 0;
   const tabButtons = new Map<TabKey, HTMLButtonElement>();
 
   const send = (msg: FrontendToBackend) => ctx.sendToBackend(msg);
+  const clearLoadTimer = () => { clearTimeout(loadTimer); loadTimer = undefined; };
+  const showLoadNotice = (text: string, loading = false) => {
+    loadNotice.replaceChildren();
+    loadNotice.hidden = !text;
+    if (!text) return;
+    if (loading) {
+      const spinner = document.createElement("span");
+      spinner.className = "lmb-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      loadNotice.appendChild(spinner);
+    }
+    loadNotice.append(document.createTextNode(text));
+    if (!loading) loadNotice.appendChild(makeButton("Retry", () => requestState("refresh")));
+  };
+  const requestState = (type: "ready" | "refresh") => {
+    if (disposed) return;
+    clearLoadTimer();
+    if (!lastState) showLoadNotice("Loading LumiBooks…", true);
+    // Retry a lost startup handshake, but stop resending once the backend
+    // acknowledges it: building a large chat's state can take a while.
+    loadTimer = setTimeout(() => {
+      if (disposed || lastState) return;
+      if (handshakeRetries++ < 2) requestState("ready");
+      else showLoadNotice("LumiBooks hasn't responded. You can retry loading it.");
+    }, 5000);
+    try { send({ type, chatId: null }); }
+    catch (err) { clearLoadTimer(); showLoadNotice(`Could not load LumiBooks: ${String(err)}`); }
+  };
 
   const engine = createLessonEngine({
     ctx,
@@ -160,7 +196,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   };
 
   let lastRenderedTab: TabKey | null = null;
-  const doRender = () => {
+  const renderContent = () => {
     if (!lastState) {
       content.replaceChildren();
       lastRenderedTab = null;
@@ -196,6 +232,15 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     }
     lastRenderedTab = activeTab;
   };
+  const doRender = () => {
+    try { renderContent(); }
+    catch (err) {
+      console.error("[LumiBooks] render failed", err);
+      content.replaceChildren();
+      lastRenderedTab = null;
+      showLoadNotice("LumiBooks couldn't display this view. Retry to reload its data.");
+    }
+  };
 
   const renderActive = () => {
     if (viewMode() === "lesson") {
@@ -226,9 +271,23 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     const msg = raw as BackendToFrontend;
     switch (msg.type) {
       case "state":
+        clearLoadTimer();
+        handshakeRetries = 0;
+        showLoadNotice("");
         if (lastState && lastState.activeChatId !== msg.state.activeChatId) closeCodexCatchupModal();
         lastState = msg.state;
         renderActive();
+        break;
+      case "state_loading":
+        clearLoadTimer();
+        if (!lastState) {
+          showLoadNotice("Loading LumiBooks…", true);
+          loadTimer = setTimeout(() => showLoadNotice("This chat is taking longer to load. You can wait or retry."), 20000);
+        }
+        break;
+      case "state_error":
+        clearLoadTimer();
+        showLoadNotice(msg.text);
         break;
       case "toast":
         if (msg.tone === "error") console.error(`[LumiBooks] ${msg.text}`);
@@ -342,10 +401,12 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   };
   document.addEventListener("lmb-lesson-request", onLessonRequest);
 
-  send({ type: "ready", chatId: null });
-  const unsubActivate = tab.onActivate(() => send({ type: "refresh", chatId: null }));
+  const unsubActivate = tab.onActivate(() => requestState("refresh"));
+  requestState("ready");
 
   return () => {
+    disposed = true;
+    clearLoadTimer();
     try { if (engine.isActive()) engine.exit(); } catch (_) { void _; }
     try { unsub(); } catch (_) { void _; }
     try { unsubActivate?.(); } catch (_) { void _; }

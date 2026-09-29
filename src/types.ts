@@ -275,6 +275,8 @@ export interface DryRunDiagnostic {
 
 export type BackendToFrontend =
   | { type: "state"; state: FrontendState }
+  | { type: "state_loading" }
+  | { type: "state_error"; text: string }
   | { type: "toast"; tone: "success" | "info" | "warn" | "error"; text: string }
   | { type: "busy"; entries: BusyEntry[] }
   | { type: "error"; text: string }

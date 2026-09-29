@@ -148,7 +148,7 @@ async function doPushState(userId: string, chatId?: string | null): Promise<void
     send({ type: "state", state }, userId);
   } catch (err) {
     error(`pushState failed: ${describeError(err)}`);
-    send({ type: "error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
+    send({ type: "state_error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
   }
 }
 
@@ -531,6 +531,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
     switch (msg.type) {
       case "ready":
       case "refresh":
+        send({ type: "state_loading" }, userId);
         await pushState(userId, msg.chatId);
         break;
 
@@ -1722,7 +1723,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
   } catch (err) {
     const description = describeError(err);
     error(`frontend handler failed: ${description}`);
-    send({ type: "error", text: description }, userId);
+    send({ type: msg.type === "ready" || msg.type === "refresh" ? "state_error" : "error", text: description }, userId);
   }
 });
 

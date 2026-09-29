@@ -703,6 +703,11 @@ var LESSON_STYLES = `
 
 // src/ui/styles.ts
 var STYLES = `
+.lmb-load-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px; }
+.lmb-load-notice[hidden] { display: none; }
+.lmb-spinner { display: inline-block; width: 16px; height: 16px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: lmb-spin 0.8s linear infinite; }
+@keyframes lmb-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lmb-spinner { animation-duration: 2s; } }
 /* ---------------------------------------------------------------- tokens */
 /* Toasts, modal overlays, and Lumiverse-hosted modal forms mount on
    document.body, outside .lmb-root - tokens are declared on each mount root. */
@@ -14905,14 +14910,61 @@ function setup(ctx) {
   const strip = document.createElement("div");
   strip.className = "lmb-tabstrip";
   root.appendChild(strip);
+  const loadNotice = document.createElement("div");
+  loadNotice.className = "lmb-load-notice";
+  loadNotice.setAttribute("role", "status");
+  root.appendChild(loadNotice);
   const content = document.createElement("div");
   content.className = "lmb-tab-content";
   root.appendChild(content);
   let activeTab = "home";
   let lastState = null;
   let renderPending = false;
+  let disposed = false;
+  let loadTimer;
+  let handshakeRetries = 0;
   const tabButtons = new Map;
   const send = (msg) => ctx.sendToBackend(msg);
+  const clearLoadTimer = () => {
+    clearTimeout(loadTimer);
+    loadTimer = undefined;
+  };
+  const showLoadNotice = (text, loading = false) => {
+    loadNotice.replaceChildren();
+    loadNotice.hidden = !text;
+    if (!text)
+      return;
+    if (loading) {
+      const spinner = document.createElement("span");
+      spinner.className = "lmb-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      loadNotice.appendChild(spinner);
+    }
+    loadNotice.append(document.createTextNode(text));
+    if (!loading)
+      loadNotice.appendChild(makeButton("Retry", () => requestState("refresh")));
+  };
+  const requestState = (type) => {
+    if (disposed)
+      return;
+    clearLoadTimer();
+    if (!lastState)
+      showLoadNotice("Loading LumiBooks…", true);
+    loadTimer = setTimeout(() => {
+      if (disposed || lastState)
+        return;
+      if (handshakeRetries++ < 2)
+        requestState("ready");
+      else
+        showLoadNotice("LumiBooks hasn't responded. You can retry loading it.");
+    }, 5000);
+    try {
+      send({ type, chatId: null });
+    } catch (err) {
+      clearLoadTimer();
+      showLoadNotice(`Could not load LumiBooks: ${String(err)}`);
+    }
+  };
   const engine = createLessonEngine({
     ctx,
     send,
@@ -14999,7 +15051,7 @@ function setup(ctx) {
       renderAboutTab(host, lastState, send);
   };
   let lastRenderedTab = null;
-  const doRender = () => {
+  const renderContent = () => {
     if (!lastState) {
       content.replaceChildren();
       lastRenderedTab = null;
@@ -15035,6 +15087,16 @@ function setup(ctx) {
     }
     lastRenderedTab = activeTab;
   };
+  const doRender = () => {
+    try {
+      renderContent();
+    } catch (err) {
+      console.error("[LumiBooks] render failed", err);
+      content.replaceChildren();
+      lastRenderedTab = null;
+      showLoadNotice("LumiBooks couldn't display this view. Retry to reload its data.");
+    }
+  };
   const renderActive = () => {
     if (viewMode() === "lesson") {
       engine.onHostState();
@@ -15064,10 +15126,24 @@ function setup(ctx) {
     const msg = raw;
     switch (msg.type) {
       case "state":
+        clearLoadTimer();
+        handshakeRetries = 0;
+        showLoadNotice("");
         if (lastState && lastState.activeChatId !== msg.state.activeChatId)
           closeCodexCatchupModal();
         lastState = msg.state;
         renderActive();
+        break;
+      case "state_loading":
+        clearLoadTimer();
+        if (!lastState) {
+          showLoadNotice("Loading LumiBooks…", true);
+          loadTimer = setTimeout(() => showLoadNotice("This chat is taking longer to load. You can wait or retry."), 20000);
+        }
+        break;
+      case "state_error":
+        clearLoadTimer();
+        showLoadNotice(msg.text);
         break;
       case "toast":
         if (msg.tone === "error")
@@ -15178,9 +15254,11 @@ function setup(ctx) {
     engine.start(detail.course, { mode: detail.mode ?? "lesson", section: detail.section, fresh: detail.fresh });
   };
   document.addEventListener("lmb-lesson-request", onLessonRequest);
-  send({ type: "ready", chatId: null });
-  const unsubActivate = tab.onActivate(() => send({ type: "refresh", chatId: null }));
+  const unsubActivate = tab.onActivate(() => requestState("refresh"));
+  requestState("ready");
   return () => {
+    disposed = true;
+    clearLoadTimer();
     try {
       if (engine.isActive())
         engine.exit();
