@@ -471,7 +471,7 @@ async function collectActiveArcIds(chatId: string, userId: string): Promise<stri
     .map((e) => e.raw.id);
 }
 
-async function retryLastFailure(
+export async function retryLastFailure(
   chatId: string,
   userId: string,
   profile: Parameters<typeof createChapterAuto>[1],

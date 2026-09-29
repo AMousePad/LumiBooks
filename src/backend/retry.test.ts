@@ -62,7 +62,7 @@ test("retry must respect the failed automatic batch and reserved lag", async () 
  (globalThis as any).spindle.userStorage.read = async (path: string) => JSON.stringify(disk.get(path));
  const { unlockedLessons } = await import("../shared");
  disk.set("lessons.json", unlockedLessons());
- await import("./index");
+ const { retryLastFailure } = await import("./index");
  registerPipelineCallbacks({ onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {} });
  entries = Array.from({ length: 4 }, (_, i) => source(2, i));
  profile.higherTiers[3] = { ...profile.higherTiers[3], enabled: true, batch: 2, lag: 2 };
@@ -73,7 +73,7 @@ test("retry must respect the failed automatic batch and reserved lag", async () 
    yield { type: "done", content: JSON.stringify({ title: "Bound", content: "Summary.", keywords: ["story"] }) };
  };
  expect(await drainHigherBacklog(3, chatId, profile, settings(), userId, true)).toBe(0);
- await handler({ type: "retry_last_failure", chatId }, userId);
+ await retryLastFailure(chatId, userId, profile, settings());
  const volume = entries.find((e) => e.extensions.lumibooks.tier === 3);
  expect(volume?.extensions.lumibooks.sourceChapterEntryIds.length).toBe(2);
 });
