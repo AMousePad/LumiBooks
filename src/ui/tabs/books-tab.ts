@@ -1,4 +1,5 @@
 import { HIGHER_TIERS, TIER_KINDS, TIER_NAMES, type SummaryKind } from "../../shared";
+import { reportLocalSummaryTransfer } from "../summary-transfer";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { ArcView, ChapterView, FrontendState, FrontendToBackend, MessageStub } from "../../types";
 import {
@@ -1019,15 +1020,19 @@ function renderHigherPickers(host: HTMLElement, state: FrontendState, send: (msg
 
 function renderSummaryTransfer(host: HTMLElement, state: FrontendState, ctx: SpindleFrontendContext, send: (msg: FrontendToBackend) => void): void {
   const sec = section("Summary export and import");
-  sec.body.appendChild(textNode("Export the active shelf as a regular lorebook. Import here adds its enabled entries as root memories before this chat, preserving the prose without a model call. Existing summaries and chat indexing stay intact.", "lmb-help"));
+  sec.body.appendChild(textNode("Export the active shelf with raw-message hashes. Imports link matching messages automatically, or let you choose the coverage. Older lorebooks import as root memories. Summary text is preserved without a model call.", "lmb-help"));
   const actions = document.createElement("div"); actions.className = "lmb-actions";
   const chatId = state.activeChatId!;
   actions.append(makeButton("Export summaries", () => send({ type: "summary_export", chatId })),
-    makeButton("Import lorebook as root", async () => {
+    makeButton("Import summaries", async () => {
       try {
         const files = await ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20_000_000 });
-        if (files[0]) send({ type: "summary_import", chatId, raw: JSON.parse(new TextDecoder().decode(files[0].bytes)) });
-      } catch (err) { console.warn("[LumiBooks] summary import failed", err); showToast("error", "Could not read that lorebook JSON file"); }
+        if (files[0]) {
+          reportLocalSummaryTransfer(chatId, "Reading summary file…");
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          send({ type: "summary_import", chatId, raw: JSON.parse(new TextDecoder().decode(files[0].bytes)) });
+        }
+      } catch (err) { console.warn("[LumiBooks] summary import failed", err); reportLocalSummaryTransfer(chatId, "Could not read that lorebook JSON file", "error"); }
     }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
   sec.body.appendChild(actions); host.appendChild(sec.wrap);
 }

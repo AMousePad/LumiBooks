@@ -705,6 +705,10 @@ var LESSON_STYLES = `
 var STYLES = `
 .lmb-load-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px; }
 .lmb-load-notice[hidden] { display: none; }
+.lmb-summary-transfer { padding: 14px; border: 1px solid var(--lmb-frame-strong); background: var(--lmb-panel-solid); border-radius: 8px; }
+.lmb-summary-transfer[hidden] { display: none; }
+.lmb-summary-transfer label { display: grid; gap: 8px; }
+.lmb-summary-transfer p { overflow-wrap: anywhere; }
 .lmb-spinner { display: inline-block; width: 16px; height: 16px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: lmb-spin 0.8s linear infinite; }
 @keyframes lmb-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .lmb-spinner { animation-duration: 2s; } }
@@ -5283,6 +5287,117 @@ function resetHomeTabLocal() {
   promptCache.expanded.clear();
 }
 
+// src/ui/summary-transfer.ts
+function reportLocalSummaryTransfer(chatId, text, stage = "working") {
+  document.dispatchEvent(new CustomEvent("lmb-summary-transfer", { detail: { id: "local", chatId, stage, text } }));
+}
+function createSummaryTransferPanel(host, send) {
+  const pending = new Map;
+  let chatId = null;
+  const draw = () => {
+    host.replaceChildren();
+    const item = chatId ? pending.get(chatId) : null;
+    host.hidden = !item;
+    if (!item)
+      return;
+    const status = item.status;
+    host.className = "lmb-summary-transfer";
+    const actions = document.createElement("div");
+    actions.className = "lmb-actions";
+    if (item.collapsed) {
+      actions.appendChild(makeButton(status.stage === "working" ? "Summary transfer in progress…" : "Continue summary import/export", () => {
+        item.collapsed = false;
+        draw();
+      }));
+      host.appendChild(actions);
+      return;
+    }
+    const title = document.createElement("strong");
+    title.textContent = "Summary import / export";
+    const text = document.createElement("p");
+    text.setAttribute("role", "status");
+    text.textContent = status.text;
+    if (status.stage === "working") {
+      const spinner = document.createElement("span");
+      spinner.className = "lmb-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      text.prepend(spinner, document.createTextNode(" "));
+    }
+    host.appendChild(title);
+    if (status.stage !== "manual" || status.text !== "Up until which message should these summaries cover?")
+      host.appendChild(text);
+    const choose = (choice, through) => {
+      if (choice !== "cancel") {
+        item.status = { ...status, stage: "working", text: "Processing summary import…" };
+        draw();
+      }
+      send({ type: "summary_import_resolve", chatId: status.chatId, id: status.id, choice, through });
+    };
+    if (status.stage === "mismatch") {
+      actions.append(makeButton("Attempt Matching", () => choose("match")), makeButton("Let me specify", () => choose("specify")));
+    }
+    if (status.stage === "manual") {
+      const label = document.createElement("label");
+      label.textContent = "Up until which message should these summaries cover?";
+      const input = document.createElement("input");
+      input.className = "lmb-input";
+      input.type = "number";
+      input.min = "0";
+      input.max = String(status.messageCount ?? 0);
+      input.step = "1";
+      input.value = item.input;
+      input.required = true;
+      input.addEventListener("input", () => {
+        item.input = input.value;
+      });
+      label.appendChild(input);
+      host.appendChild(label);
+      const help = document.createElement("p");
+      help.className = "lmb-help";
+      help.textContent = `This chat has ${status.messageCount ?? 0} messages. Count from 1; 0 imports roots without covering messages. With a chosen endpoint, the summaries are kept together in one entry covering messages 1–N, preserving all their text.`;
+      host.appendChild(help);
+      actions.appendChild(makeButton("Import summaries", () => {
+        if (input.reportValidity())
+          choose("manual", Number(input.value));
+      }));
+    }
+    if (status.stage !== "working")
+      actions.appendChild(makeButton(status.stage === "done" || status.stage === "error" ? "Dismiss" : "Cancel import", () => {
+        if (status.id !== "local" && status.id !== "busy")
+          choose("cancel");
+        pending.delete(status.chatId);
+        draw();
+      }));
+    actions.appendChild(makeButton("Hide", () => {
+      item.collapsed = true;
+      draw();
+    }));
+    host.appendChild(actions);
+  };
+  return {
+    setChat(next) {
+      if (next !== chatId) {
+        chatId = next;
+        draw();
+      }
+    },
+    deliver(status) {
+      if (status.stage === "cancelled") {
+        pending.delete(status.chatId);
+        if (status.chatId === chatId)
+          draw();
+        return;
+      }
+      const old = pending.get(status.chatId);
+      if (old && JSON.stringify(old.status) === JSON.stringify(status))
+        return;
+      pending.set(status.chatId, { status, collapsed: old?.collapsed ?? false, input: old?.input ?? "" });
+      if (status.chatId === chatId)
+        draw();
+    }
+  };
+}
+
 // src/ui/continuity.ts
 function renderContinuitySection(host, ctx, spec) {
   const sec = section("Continuity (root)");
@@ -6188,18 +6303,21 @@ function renderHigherPickers(host, state, send) {
 }
 function renderSummaryTransfer(host, state, ctx, send) {
   const sec = section("Summary export and import");
-  sec.body.appendChild(textNode("Export the active shelf as a regular lorebook. Import here adds its enabled entries as root memories before this chat, preserving the prose without a model call. Existing summaries and chat indexing stay intact.", "lmb-help"));
+  sec.body.appendChild(textNode("Export the active shelf with raw-message hashes. Imports link matching messages automatically, or let you choose the coverage. Older lorebooks import as root memories. Summary text is preserved without a model call.", "lmb-help"));
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   const chatId = state.activeChatId;
-  actions.append(makeButton("Export summaries", () => send({ type: "summary_export", chatId })), makeButton("Import lorebook as root", async () => {
+  actions.append(makeButton("Export summaries", () => send({ type: "summary_export", chatId })), makeButton("Import summaries", async () => {
     try {
       const files = await ctx.uploads.pickFile({ accept: [".json", "application/json"], maxSizeBytes: 20000000 });
-      if (files[0])
+      if (files[0]) {
+        reportLocalSummaryTransfer(chatId, "Reading summary file…");
+        await new Promise((resolve) => setTimeout(resolve, 0));
         send({ type: "summary_import", chatId, raw: JSON.parse(new TextDecoder().decode(files[0].bytes)) });
+      }
     } catch (err) {
       console.warn("[LumiBooks] summary import failed", err);
-      showToast("error", "Could not read that lorebook JSON file");
+      reportLocalSummaryTransfer(chatId, "Could not read that lorebook JSON file", "error");
     }
   }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
   sec.body.appendChild(actions);
@@ -14914,6 +15032,9 @@ function setup(ctx) {
   loadNotice.className = "lmb-load-notice";
   loadNotice.setAttribute("role", "status");
   root.appendChild(loadNotice);
+  const transferHost = document.createElement("div");
+  transferHost.hidden = true;
+  root.appendChild(transferHost);
   const content = document.createElement("div");
   content.className = "lmb-tab-content";
   root.appendChild(content);
@@ -14924,7 +15045,15 @@ function setup(ctx) {
   let loadTimer;
   let handshakeRetries = 0;
   const tabButtons = new Map;
-  const send = (msg) => ctx.sendToBackend(msg);
+  const send = (msg) => {
+    if (msg.type === "summary_export" || msg.type === "summary_import") {
+      transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? "Preparing summary export…" : "Checking summary coverage…" });
+    }
+    ctx.sendToBackend(msg);
+  };
+  const transferPanel = createSummaryTransferPanel(transferHost, send);
+  const onLocalTransfer = (event) => transferPanel.deliver(event.detail);
+  document.addEventListener("lmb-summary-transfer", onLocalTransfer);
   const clearLoadTimer = () => {
     clearTimeout(loadTimer);
     loadTimer = undefined;
@@ -15132,6 +15261,7 @@ function setup(ctx) {
         if (lastState && lastState.activeChatId !== msg.state.activeChatId)
           closeCodexCatchupModal();
         lastState = msg.state;
+        transferPanel.setChat(lastState.activeChatId);
         renderActive();
         break;
       case "state_loading":
@@ -15221,6 +15351,9 @@ function setup(ctx) {
       case "stream_text":
         deliverStreamText(msg);
         break;
+      case "summary_transfer_status":
+        transferPanel.deliver(msg.status);
+        break;
       case "summary_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
@@ -15275,6 +15408,7 @@ function setup(ctx) {
     try {
       document.removeEventListener("lmb-lesson-request", onLessonRequest);
     } catch (_) {}
+    document.removeEventListener("lmb-summary-transfer", onLocalTransfer);
     try {
       tab.destroy?.();
     } catch (_) {}

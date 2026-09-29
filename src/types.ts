@@ -240,6 +240,7 @@ export type FrontendToBackend =
   | { type: "codex_adopt"; chatId: string; sourceChatId: string }
   | { type: "summary_export"; chatId: string }
   | { type: "summary_import"; chatId: string; raw: unknown }
+  | { type: "summary_import_resolve"; chatId: string; id: string; choice: import("./summary-transfer").SummaryImportChoice; through?: number }
   | { type: "wipe_books"; chatId: string }
   | { type: "rebuild_books"; chatId: string }
   | { type: "watch_stream"; chatId: string; kind: SummaryKind | "codex"; on: boolean }
@@ -288,4 +289,5 @@ export type BackendToFrontend =
    * the frontend offers the JSON fallback once (unless suppressed). */
   | { type: "codex_tools_hint"; chatId: string }
   | { type: "summary_export_data"; chatId: string; filename: string; content: string }
+  | { type: "summary_transfer_status"; status: import("./summary-transfer").SummaryTransferStatus }
   | { type: "codex_backup_data"; chatId: string; filename: string; content: string };

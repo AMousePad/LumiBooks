@@ -2021,12 +2021,71 @@ function selectedChapterRuns(messages, ids) {
   return runs;
 }
 
+// src/backend/summary-matching.ts
+var encoder = new TextEncoder;
+async function sha256(text) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
+  return Array.from(bytes, (n) => n.toString(16).padStart(2, "0")).join("");
+}
+async function hashRawMessages(messages, progress) {
+  const hashes = [];
+  for (let offset = 0;offset < messages.length; offset += 64) {
+    hashes.push(...await Promise.all(messages.slice(offset, offset + 64).map((m) => sha256(JSON.stringify([m.role, m.content])))));
+    progress?.(hashes.length);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return hashes;
+}
+async function makeFingerprint(messages) {
+  return { version: 1, algorithm: "sha256-role-content-v1", contentHash: await sha256(JSON.stringify(messages)), messages };
+}
+async function parseFingerprint(raw) {
+  if (raw === undefined)
+    return null;
+  const v = raw;
+  if (!v || v.version !== 1 || v.algorithm !== "sha256-role-content-v1" || !Array.isArray(v.messages) || v.messages.length > 1e6 || !/^[a-f0-9]{64}$/.test(v.contentHash))
+    throw new Error("Invalid summary message fingerprint");
+  let previous = -1;
+  for (const m of v.messages) {
+    if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash))
+      throw new Error("Invalid summary message fingerprint");
+    previous = m.index;
+  }
+  if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash)
+    throw new Error("The summary message fingerprint is damaged");
+  return v;
+}
+function exactMessageMatch(source, hashes) {
+  return source.messages.every((m) => hashes[m.index] === m.hash) ? source.messages.map((m) => m.index) : null;
+}
+function automaticMessageMatch(source, hashes) {
+  const first = [], last = [];
+  let cursor = 0;
+  for (const m of source.messages) {
+    while (cursor < hashes.length && hashes[cursor] !== m.hash)
+      cursor++;
+    if (cursor === hashes.length)
+      return null;
+    first.push(cursor++);
+  }
+  cursor = hashes.length - 1;
+  for (let i = source.messages.length - 1;i >= 0; i--) {
+    while (cursor >= 0 && hashes[cursor] !== source.messages[i].hash)
+      cursor--;
+    if (cursor < 0)
+      return null;
+    last[i] = cursor--;
+  }
+  return first.every((at, i) => at === last[i]) ? first : null;
+}
+
 // src/backend/summary-backup.ts
 var EXPORT_KEY = "lumibooks_summary";
-function summaryLorebook(entries, name) {
+function summaryLorebook(entries, name, fingerprint, coverage) {
   return {
     name,
-    description: "LumiBooks summaries. Import through Books to use as an inherited root.",
+    description: "LumiBooks summaries. Import through Books to restore message coverage or use as inherited roots.",
+    ...fingerprint ? { extensions: { [EXPORT_KEY]: fingerprint } } : {},
     entries: Object.fromEntries(entries.filter((e) => !e.meta.ghost).map((e, i) => [i, {
       uid: i,
       key: e.raw.key ?? [],
@@ -2038,14 +2097,36 @@ function summaryLorebook(entries, name) {
       position: 0,
       order: i,
       displayIndex: i,
-      extensions: { [EXPORT_KEY]: { tier: e.meta.tier } }
+      extensions: { [EXPORT_KEY]: { tier: e.meta.tier, ...coverage ? { messageIndices: coverage.get(e.raw.id) ?? [] } : {} } }
     }]))
   };
 }
-async function exportSummaryLorebook(chatId, userId) {
+async function exportSummaryLorebook(chatId, userId, progress) {
   const coverage = await buildCoverage(chatId, userId);
   const entries = coverage.activeEntries.slice().sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`);
+  if (!entries.length)
+    throw new Error("There are no active summaries to export");
+  progress?.("Fetching raw chat messages\u2026");
+  const messages = await spindle.chat.getMessages(chatId);
+  const positions = new Map(messages.map((m, i) => [m.id, i]));
+  const byEntry = new Map;
+  for (const e of entries) {
+    const ids = new Set(e.meta.msgIds);
+    if ([...ids].some((id) => !positions.has(id)))
+      continue;
+    byEntry.set(e.raw.id, [...ids].flatMap((id) => positions.has(id) ? [positions.get(id)] : []).sort((a, b) => a - b));
+  }
+  for (const [messageId, entryId] of coverage.coveredBy) {
+    const at = positions.get(messageId), indices = byEntry.get(entryId);
+    if (at !== undefined && indices)
+      indices.push(at);
+  }
+  for (const [id, indices] of byEntry)
+    byEntry.set(id, [...new Set(indices)].sort((a, b) => a - b));
+  const indices = [...new Set([...byEntry.values()].flat())].sort((a, b) => a - b);
+  const hashes = await hashRawMessages(indices.map((i) => messages[i]), (done) => progress?.(`Hashing raw messages\u2026 ${done} / ${indices.length}`));
+  const fingerprint = await makeFingerprint(indices.map((index, i) => ({ index, hash: hashes[i] })));
+  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`, fingerprint, byEntry);
 }
 function parseSummaryLorebook(raw) {
   if (!raw || typeof raw !== "object")
@@ -2068,20 +2149,39 @@ function parseSummaryLorebook(raw) {
     if (!v.content.trim())
       continue;
     const tier = v.extensions?.[EXPORT_KEY]?.tier;
+    const messageIndices = v.extensions?.[EXPORT_KEY]?.messageIndices;
+    if (messageIndices !== undefined && (!Array.isArray(messageIndices) || messageIndices.length > 1e6 || messageIndices.some((n) => !Number.isSafeInteger(n) || n < 0)))
+      throw new Error("Invalid summary coverage indices");
     const keys = v.key ?? v.keys;
     out.push({
       content: v.content,
       comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : "Imported summary",
       keys: Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : [],
-      tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1
+      tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1,
+      ...messageIndices !== undefined ? { messageIndices: [...new Set(messageIndices)].sort((a, b) => a - b) } : {}
     });
   }
   if (!out.length)
     throw new Error("The lorebook has no enabled summaries");
   return out;
 }
-async function importSummaryLorebook(chatId, userId, raw) {
+async function readSummaryImport(raw) {
   const rows = parseSummaryLorebook(raw);
+  const fingerprint = await parseFingerprint(raw.extensions?.[EXPORT_KEY]);
+  if (fingerprint) {
+    const indices = new Set(fingerprint.messages.map((m) => m.index));
+    for (const row of rows) {
+      if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i)))
+        throw new Error("The summary coverage does not match its fingerprint");
+    }
+    const used = new Set(rows.flatMap((r) => r.messageIndices));
+    return { rows, fingerprint: await makeFingerprint(fingerprint.messages.filter((m) => used.has(m.index))) };
+  }
+  return { rows, fingerprint };
+}
+async function saveImportedSummaries(chatId, userId, rows, links) {
+  if (links && (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !links.messages[i]))))
+    throw new Error("Invalid destination coverage");
   const existing = await listLmbEntries(chatId, userId);
   const before = Math.min(0, ...existing.filter((e) => e.meta.isRoot).map((e) => e.meta.firstMsgIdx ?? 0));
   const book = await ensureBookForChat(chatId, userId);
@@ -2089,32 +2189,177 @@ async function importSummaryLorebook(chatId, userId, raw) {
   try {
     for (const [i, row] of rows.entries()) {
       const at = before - rows.length + i;
+      const indices = links?.indices[i] ?? [];
+      const isRoot = indices.length === 0;
+      const comment = isRoot ? row.comment.startsWith("[Root]") ? row.comment : `[Root] ${row.comment}` : row.comment.replace(/^\[Root\]\s*/, "");
       const entry = await createChapterEntry(book.id, {
         tier: row.tier,
         chatId,
-        msgIds: [],
+        msgIds: indices.map((index) => links.messages[index].id),
         sourceChapterEntryIds: [],
-        isRoot: true,
-        firstMsgIdx: at,
-        lastMsgIdx: at,
+        isRoot,
+        firstMsgIdx: indices[0] ?? at,
+        lastMsgIdx: indices.at(-1) ?? at,
         tokenCountInput: 0,
         tokenCountOutput: approximateTokensFromChars(row.content.length),
         model: "",
         connectionId: "",
         createdAt: Date.now(),
         title: row.comment
-      }, row.content, row.comment.startsWith("[Root]") ? row.comment : `[Root] ${row.comment}`, userId, row.keys, true);
+      }, row.content, comment, userId, row.keys, true);
       created.push(entry.id);
     }
   } catch (err) {
     const rollback = await Promise.allSettled(created.map((id) => deleteEntry(id, userId)));
     if (rollback.some((r) => r.status === "rejected"))
-      throw new Error("Import failed and some imported roots could not be removed; inspect Books before retrying", { cause: err });
+      throw new Error("Import failed and some imported summaries could not be removed; inspect Books before retrying", { cause: err });
     throw err;
   } finally {
     invalidateBookCache(userId, chatId);
   }
   return created.length;
+}
+
+// src/backend/summary-transfer.ts
+var transfers = new Map;
+var key = (userId, chatId) => JSON.stringify([userId, chatId]);
+function getSummaryTransfer(userId, chatId) {
+  return transfers.get(key(userId, chatId))?.status ?? null;
+}
+function update(userId, transfer, stage, text, extra = {}) {
+  transfer.status = { ...transfer.status, ...extra, stage, text };
+  try {
+    send({ type: "summary_transfer_status", status: transfer.status }, userId);
+  } catch (err) {
+    warn(`summary transfer progress delivery failed: ${describeError(err)}`);
+  }
+}
+async function runSummaryTransfer(userId, chatId, request) {
+  const k = key(userId, chatId);
+  let transfer = transfers.get(k);
+  if (request.type === "resolve") {
+    if (!transfer || transfer.status.id !== request.id)
+      throw new Error("This import is no longer available. Choose the file again.");
+    if (transfer.running)
+      return false;
+    if (request.choice === "cancel") {
+      transfers.delete(k);
+      send({ type: "summary_transfer_status", status: { ...transfer.status, stage: "cancelled", text: "Import cancelled" } }, userId);
+      return false;
+    }
+    if (!transfer.rows)
+      return false;
+  } else {
+    if (transfer?.running || transfer?.rows) {
+      send({ type: "summary_transfer_status", status: transfer.status }, userId);
+      return false;
+    }
+    transfer = { status: { id: crypto.randomUUID(), chatId, stage: "working", text: "Reading summaries\u2026" }, running: false };
+    if (transfers.size >= 200) {
+      for (const [oldKey, old] of transfers) {
+        if (!old.running && !old.rows)
+          transfers.delete(oldKey);
+        if (transfers.size < 200)
+          break;
+      }
+    }
+    transfers.set(k, transfer);
+  }
+  const t = transfer;
+  t.running = true;
+  let lastProgress = 0;
+  const progress = (text) => {
+    if (Date.now() - lastProgress < 150)
+      return;
+    lastProgress = Date.now();
+    update(userId, t, "working", text);
+  };
+  update(userId, t, "working", request.type === "export" ? "Preparing summary export\u2026" : "Reading raw chat messages\u2026");
+  try {
+    if (request.type === "export") {
+      const data = await exportSummaryLorebook(chatId, userId, progress);
+      send({ type: "summary_export_data", chatId, filename: `lumibooks-summaries-${chatId.slice(0, 8)}.json`, content: JSON.stringify(data, null, 2) }, userId);
+      update(userId, t, "done", "Summary export ready");
+      return false;
+    }
+    if (request.type === "import") {
+      const parsed = await readSummaryImport(request.raw);
+      t.rows = parsed.rows;
+      t.fingerprint = parsed.fingerprint;
+    }
+    const rows = t.rows;
+    const messages = await spindle.chat.getMessages(chatId);
+    const source = t.fingerprint;
+    t.status = { ...t.status, messageCount: messages.length, sourceCount: source?.messages.length ?? 0 };
+    const manual = (text = "Up until which message should these summaries cover?") => {
+      update(userId, t, "manual", text);
+      return false;
+    };
+    if (request.type === "resolve" && request.choice === "specify")
+      return manual();
+    let indices = rows.map(() => []);
+    let importedRows = rows;
+    if (request.type === "resolve" && request.choice === "manual") {
+      if (!Number.isSafeInteger(request.through) || request.through < 0 || request.through > messages.length)
+        return manual("Enter a whole message number from 0 to " + messages.length + ".");
+      if (request.through > 0) {
+        importedRows = [{
+          content: rows.map((r) => r.content).join(`
+
+`),
+          comment: rows.length === 1 ? rows[0].comment : "Imported summaries",
+          keys: [...new Set(rows.flatMap((r) => r.keys))],
+          tier: Math.max(...rows.map((r) => r.tier))
+        }];
+        indices = [Array.from({ length: request.through }, (_, i) => i)];
+      }
+    } else if (source?.messages.length) {
+      if (messages.length < source.messages.length)
+        return manual();
+      const relocate = request.type === "resolve" && request.choice === "match";
+      const selected = relocate ? messages : source.messages.flatMap((m) => messages[m.index] ? [messages[m.index]] : []);
+      const computed = await hashRawMessages(selected, (done) => progress(`Comparing raw messages\u2026 ${done} / ${selected.length}`));
+      const hashes = relocate ? computed : new Array(messages.length);
+      if (!relocate && computed.length === source.messages.length)
+        source.messages.forEach((m, i) => {
+          hashes[m.index] = computed[i];
+        });
+      const matched = exactMessageMatch(source, hashes) ?? (relocate ? automaticMessageMatch(source, hashes) : null);
+      if (!matched) {
+        if (request.type === "resolve" && request.choice === "match")
+          return manual("Automatic matching was incomplete or ambiguous. Up until which message should these summaries cover?");
+        update(userId, t, "mismatch", "The content of this chat is different to the one encoded by the imported summary. Attempt automatic matching?");
+        return false;
+      }
+      const mapping = new Map(source.messages.map((m, i) => [m.index, matched[i]]));
+      indices = rows.map((r) => (r.messageIndices ?? []).map((i) => mapping.get(i)));
+    }
+    const linkedIds = new Set(indices.flat().map((i) => messages[i].id));
+    if (linkedIds.size) {
+      const coverage = await buildCoverage(chatId, userId);
+      if ([...linkedIds].some((id) => coverage.coveredBy.has(id)))
+        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+      const current = await spindle.chat.getMessages(chatId);
+      for (const at of new Set(indices.flat())) {
+        const before = messages[at], now = current[at];
+        if (!now || now.id !== before.id || now.role !== before.role || now.content !== before.content) {
+          t.status.messageCount = current.length;
+          return manual("The chat changed while preparing the import. Up until which message should these summaries cover?");
+        }
+      }
+    }
+    update(userId, t, "working", "Saving imported summaries\u2026");
+    await saveImportedSummaries(chatId, userId, importedRows, { messages, indices });
+    t.rows = undefined;
+    t.fingerprint = undefined;
+    update(userId, t, "done", `Imported ${rows.length} summaries${linkedIds.size ? ` covering ${linkedIds.size} messages` : " as root memories"}`);
+    return true;
+  } catch (err) {
+    update(userId, t, "error", describeError(err));
+    return false;
+  } finally {
+    t.running = false;
+  }
 }
 
 // src/backend/binding.ts
@@ -5556,11 +5801,11 @@ var forkAnomalyCb = null;
 function registerForkAnomalyCallback(cb) {
   forkAnomalyCb = cb;
 }
-function key(userId, chatId) {
+function key2(userId, chatId) {
   return `${userId}::${chatId}`;
 }
 async function ensureForkAdoption(chatId, userId) {
-  const k = key(userId, chatId);
+  const k = key2(userId, chatId);
   if (checked.has(k))
     return;
   const nextTry = retryAt.get(k);
@@ -5595,7 +5840,7 @@ async function ensureForkAdoption(chatId, userId) {
   return p;
 }
 async function forkShelfPending(chatId, userId) {
-  if (checked.has(key(userId, chatId)))
+  if (checked.has(key2(userId, chatId)))
     return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
   const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
@@ -5610,7 +5855,7 @@ async function forkShelfPending(chatId, userId) {
   return true;
 }
 async function forkCodexPending(chatId, userId) {
-  if (checked.has(key(userId, chatId)))
+  if (checked.has(key2(userId, chatId)))
     return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);
   const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
@@ -10408,6 +10653,11 @@ async function doPushState(userId, chatId) {
         return;
     }
     send({ type: "state", state }, userId);
+    if (state.activeChatId) {
+      const status = getSummaryTransfer(userId, state.activeChatId);
+      if (status)
+        send({ type: "summary_transfer_status", status }, userId);
+    }
   } catch (err) {
     error(`pushState failed: ${describeError(err)}`);
     send({ type: "state_error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
@@ -11242,25 +11492,29 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
       case "summary_export": {
-        const backup = await exportSummaryLorebook(msg.chatId, userId);
-        send({
-          type: "summary_export_data",
-          chatId: msg.chatId,
-          filename: `lumibooks-summaries-${msg.chatId.slice(0, 8)}.json`,
-          content: JSON.stringify(backup, null, 2)
-        }, userId);
+        await runSummaryTransfer(userId, msg.chatId, { type: "export" });
         break;
       }
-      case "summary_import": {
-        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Wait for the current task to finish before importing summaries");
+      case "summary_import":
+      case "summary_import_resolve": {
+        if (msg.type === "summary_import_resolve" && msg.choice === "cancel") {
+          await runSummaryTransfer(userId, msg.chatId, { type: "resolve", id: msg.id, choice: msg.choice });
           break;
         }
-        if (!setBusy(userId, msg.chatId, "chapter", "Importing summary roots"))
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: "Wait for the current task to finish before importing summaries" } }, userId);
+          break;
+        }
+        if (!setBusy(userId, msg.chatId, "chapter", "Importing summaries"))
           break;
         try {
-          const count = await importSummaryLorebook(msg.chatId, userId, msg.raw);
-          await notify(userId, "success", `Imported ${count} summaries as root memories`);
+          const imported = await runSummaryTransfer(userId, msg.chatId, msg.type === "summary_import" ? { type: "import", raw: msg.raw } : { type: "resolve", id: msg.id, choice: msg.choice, through: msg.through });
+          if (imported) {
+            const settings = await loadSettings(userId);
+            const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+            if (profile?.hideCoveredMessages)
+              await resyncVisibility(msg.chatId, userId, true);
+          }
         } finally {
           clearBusy(userId, msg.chatId, "chapter");
         }
@@ -11862,6 +12116,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
   } catch (err) {
     const description = describeError(err);
     error(`frontend handler failed: ${description}`);
+    if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {
+      send({ type: "summary_transfer_status", status: { id: getSummaryTransfer(userId, msg.chatId)?.id ?? "local", chatId: msg.chatId, stage: "error", text: description } }, userId);
+    }
     send({ type: msg.type === "ready" || msg.type === "refresh" ? "state_error" : "error", text: description }, userId);
   }
 });

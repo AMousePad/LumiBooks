@@ -7,6 +7,7 @@ import { emptyCursor, loadCursor } from "./codex/store";
 import { saveSettings } from "./storage";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { syncCodexProfiles } from "./codex/sync";
+import { saveImportedSummaries } from "./summary-backup";
 
 const original = (globalThis as any).spindle;
 const user = "fork-user";
@@ -74,6 +75,21 @@ function summary(id: string, tier: number, indexes: number[], sources: string[] 
   const meta = normalizeEntryMeta({ tier, chatId: parent, msgIds: indexes.map((i) => `${parent}-m${i}`), sourceChapterEntryIds: sources, firstMsgIdx: indexes[0], lastMsgIdx: indexes.at(-1), ...extra })!;
   entries.push({ id, world_book_id: chats.get(parent).metadata.lumibooks_book_id, content: id, comment: id, disabled: !!extra.ghost, constant: true, extensions: { lumibooks: meta } });
 }
+
+test("imported coverage remaps on a full fork and drops summaries crossing a shorter fork", async () => {
+  await saveImportedSummaries(parent, user, [
+    { content: "Imported early story", comment: "Early", keys: [], tier: 1 },
+    { content: "Imported later story", comment: "Later", keys: [], tier: 5 },
+  ], { messages: messages.get(parent)!, indices: [[0, 1], [2, 3]] });
+  await ensureForkAdoption(child, user);
+  expect([...((await buildCoverage(child, user)).coveredBy.keys())].sort()).toEqual(messages.get(child)!.map((m) => m.id).sort());
+  const shorter = `short-import-${sequence}`;
+  branch(parent, shorter, 3);
+  await ensureForkAdoption(shorter, user);
+  const inherited = await listLmbEntries(shorter, user);
+  expect(inherited.map((e) => e.raw.content)).toEqual(["Imported early story"]);
+  expect(inherited[0]!.meta.msgIds).toEqual([`${shorter}-m0`, `${shorter}-m1`]);
+});
 
 test("forks and forks of forks own independent shelves through Universe and Codex books", async () => {
   summary("chapter", 1, [0, 1, 2, 3]);

@@ -12,6 +12,8 @@ import { createLessonEngine } from "./lessons/engine";
 import type { LessonRequestDetail } from "./lessons/seal";
 import { clearSealBusy, renderSealPanel, updateSealBusy } from "./lessons/seal";
 import { APP_TABS, type AppTabKey } from "./tab-meta";
+import { createSummaryTransferPanel } from "./summary-transfer";
+import type { SummaryTransferStatus } from "../summary-transfer";
 
 type TabKey = AppTabKey;
 
@@ -59,6 +61,9 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   loadNotice.className = "lmb-load-notice";
   loadNotice.setAttribute("role", "status");
   root.appendChild(loadNotice);
+  const transferHost = document.createElement("div");
+  transferHost.hidden = true;
+  root.appendChild(transferHost);
 
   const content = document.createElement("div");
   content.className = "lmb-tab-content";
@@ -72,7 +77,15 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   let handshakeRetries = 0;
   const tabButtons = new Map<TabKey, HTMLButtonElement>();
 
-  const send = (msg: FrontendToBackend) => ctx.sendToBackend(msg);
+  const send = (msg: FrontendToBackend) => {
+    if (msg.type === "summary_export" || msg.type === "summary_import") {
+      transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? "Preparing summary export…" : "Checking summary coverage…" });
+    }
+    ctx.sendToBackend(msg);
+  };
+  const transferPanel = createSummaryTransferPanel(transferHost, send);
+  const onLocalTransfer = (event: Event) => transferPanel.deliver((event as CustomEvent<SummaryTransferStatus>).detail);
+  document.addEventListener("lmb-summary-transfer", onLocalTransfer);
   const clearLoadTimer = () => { clearTimeout(loadTimer); loadTimer = undefined; };
   const showLoadNotice = (text: string, loading = false) => {
     loadNotice.replaceChildren();
@@ -276,6 +289,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         showLoadNotice("");
         if (lastState && lastState.activeChatId !== msg.state.activeChatId) closeCodexCatchupModal();
         lastState = msg.state;
+        transferPanel.setChat(lastState.activeChatId);
         renderActive();
         break;
       case "state_loading":
@@ -360,6 +374,9 @@ export function setup(ctx: SpindleFrontendContext): () => void {
       case "stream_text":
         deliverStreamText(msg);
         break;
+      case "summary_transfer_status":
+        transferPanel.deliver(msg.status);
+        break;
       case "summary_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
@@ -412,6 +429,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     try { unsubActivate?.(); } catch (_) { void _; }
     try { document.removeEventListener("lmb-reveal-entry", onRevealEntry); } catch (_) { void _; }
     try { document.removeEventListener("lmb-lesson-request", onLessonRequest); } catch (_) { void _; }
+    document.removeEventListener("lmb-summary-transfer", onLocalTransfer);
     try { tab.destroy?.(); } catch (_) { void _; }
   };
 }

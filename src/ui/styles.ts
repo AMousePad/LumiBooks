@@ -16,6 +16,10 @@ import { LESSON_STYLES } from "./lessons/styles-lessons";
 export const STYLES = `
 .lmb-load-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px; }
 .lmb-load-notice[hidden] { display: none; }
+.lmb-summary-transfer { padding: 14px; border: 1px solid var(--lmb-frame-strong); background: var(--lmb-panel-solid); border-radius: 8px; }
+.lmb-summary-transfer[hidden] { display: none; }
+.lmb-summary-transfer label { display: grid; gap: 8px; }
+.lmb-summary-transfer p { overflow-wrap: anywhere; }
 .lmb-spinner { display: inline-block; width: 16px; height: 16px; flex-shrink: 0; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: lmb-spin 0.8s linear infinite; }
 @keyframes lmb-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .lmb-spinner { animation-duration: 2s; } }

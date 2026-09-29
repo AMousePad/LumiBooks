@@ -1,4 +1,4 @@
-import { exportSummaryLorebook, importSummaryLorebook } from "./summary-backup";
+import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
@@ -146,6 +146,10 @@ async function doPushState(userId: string, chatId?: string | null): Promise<void
       if (active && active.id !== chatId) return;
     }
     send({ type: "state", state }, userId);
+    if (state.activeChatId) {
+      const status = getSummaryTransfer(userId, state.activeChatId);
+      if (status) send({ type: "summary_transfer_status", status }, userId);
+    }
   } catch (err) {
     error(`pushState failed: ${describeError(err)}`);
     send({ type: "state_error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
@@ -1065,19 +1069,28 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "summary_export": {
-        const backup = await exportSummaryLorebook(msg.chatId, userId);
-        send({ type: "summary_export_data", chatId: msg.chatId,
-          filename: `lumibooks-summaries-${msg.chatId.slice(0, 8)}.json`, content: JSON.stringify(backup, null, 2) }, userId);
+        await runSummaryTransfer(userId, msg.chatId, { type: "export" });
         break;
       }
-      case "summary_import": {
-        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Wait for the current task to finish before importing summaries"); break;
+      case "summary_import":
+      case "summary_import_resolve": {
+        if (msg.type === "summary_import_resolve" && msg.choice === "cancel") {
+          await runSummaryTransfer(userId, msg.chatId, { type: "resolve", id: msg.id, choice: msg.choice });
+          break;
         }
-        if (!setBusy(userId, msg.chatId, "chapter", "Importing summary roots")) break;
+        if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
+          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: "Wait for the current task to finish before importing summaries" } }, userId); break;
+        }
+        if (!setBusy(userId, msg.chatId, "chapter", "Importing summaries")) break;
         try {
-          const count = await importSummaryLorebook(msg.chatId, userId, msg.raw);
-          await notify(userId, "success", `Imported ${count} summaries as root memories`);
+          const imported = await runSummaryTransfer(userId, msg.chatId, msg.type === "summary_import"
+            ? { type: "import", raw: msg.raw }
+            : { type: "resolve", id: msg.id, choice: msg.choice, through: msg.through });
+          if (imported) {
+            const settings = await loadSettings(userId);
+            const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+            if (profile?.hideCoveredMessages) await resyncVisibility(msg.chatId, userId, true);
+          }
         } finally { clearBusy(userId, msg.chatId, "chapter"); }
         await pushState(userId, msg.chatId);
         break;
@@ -1723,6 +1736,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
   } catch (err) {
     const description = describeError(err);
     error(`frontend handler failed: ${description}`);
+    if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {
+      send({ type: "summary_transfer_status", status: { id: getSummaryTransfer(userId, msg.chatId)?.id ?? "local", chatId: msg.chatId, stage: "error", text: description } }, userId);
+    }
     send({ type: msg.type === "ready" || msg.type === "refresh" ? "state_error" : "error", text: description }, userId);
   }
 });
