@@ -397,7 +397,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.enabled",
           expect: "save_profile",
-          text: "Flip Enabled on. The default settings below suit most chats.",
+          text: "Flip Enable Codex on. The default settings below suit most chats.",
           done: "Enabled! From now on I keep your story bible current after every message.",
         },
         {
@@ -416,7 +416,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "home.actions.updatecodex",
           expect: "codex_update_now",
           optional: true,
-          text: "Press it and I'll read this chat right away, or skip and I'll start after your next message.",
+          text: "Press it and I'll read this chat right away, or skip and I'll do it later!",
           done: "Reading! Watch the busy row on Home if you want to see me think.",
         },
         {

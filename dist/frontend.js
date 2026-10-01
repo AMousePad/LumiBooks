@@ -9794,65 +9794,43 @@ var CODEX_LAG_TOKENS_DEFAULT = 2000;
 var CODEX_WINDOW_TOKENS_DEFAULT = 8000;
 function renderCodexSettings(host, state, profile, patch) {
   const sec = section("Knowledge Codex");
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent = "An agent reads new turns and keeps per-chat lorebook records of characters, locations, things, relations, timeline, threads, world rules, and who-knows-what.";
-  sec.body.appendChild(help);
   sec.body.appendChild(lessonMark(checkbox({
     checked: profile.codexEnabled,
-    label: "Enabled",
-    hint: "Runs automatically after generations once the backlog fills. Manual updates live on Home and the Codex tab.",
-    onChange: (v) => patch({ codexEnabled: v })
+    label: "Enable Codex",
+    onChange: (codexEnabled) => patch({ codexEnabled })
   }), "tuning.codex.enabled"));
-  sec.body.appendChild(checkbox({
-    checked: profile.codexManualOnly,
-    label: "Manual only",
-    hint: "Memoria never updates the codex on her own. Lag and window are ignored, use Update now on Home or the Codex tab.",
-    onChange: (v) => patch({ codexManualOnly: v })
-  }));
-  const fields = document.createElement("div");
-  fields.className = profile.codexEnabled && !profile.codexManualOnly ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
-  sec.body.appendChild(fields);
-  const lagGrid = document.createElement("div");
-  lagGrid.className = "lmb-grid-2";
-  lessonMark(lagGrid, "tuning.codex.lag");
-  lagGrid.append(labelled("Lag unit", select({
-    value: profile.codexLagUnit,
-    options: [
-      { value: "messages", label: "messages" },
-      { value: "tokens", label: "tokens" }
-    ],
-    onChange: (v) => patch({ codexLagUnit: v === "tokens" ? "tokens" : "messages" })
-  })), labelled(profile.codexLagUnit === "tokens" ? "Lag tokens" : "Lag messages", numberInput({
-    value: profile.codexLagValue,
-    min: 0,
-    max: profile.codexLagUnit === "tokens" ? 1e6 : 1e5,
-    step: profile.codexLagUnit === "tokens" ? 50 : 1,
-    defaultValue: profile.codexLagUnit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue,
-    onBlur: (v) => patch({ codexLagValue: v ?? (profile.codexLagUnit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue) })
-  })));
-  fields.appendChild(lagGrid);
-  const windowGrid = document.createElement("div");
-  windowGrid.className = "lmb-grid-2";
-  lessonMark(windowGrid, "tuning.codex.window");
-  windowGrid.append(labelled("Window unit", select({
-    value: profile.codexWindowUnit,
-    options: [
-      { value: "messages", label: "messages" },
-      { value: "tokens", label: "tokens" }
-    ],
-    onChange: (v) => patch({ codexWindowUnit: v === "tokens" ? "tokens" : "messages" })
-  })), labelled(profile.codexWindowUnit === "tokens" ? "Window tokens" : "Window messages", numberInput({
-    value: profile.codexWindowValue,
-    min: 1,
-    max: profile.codexWindowUnit === "tokens" ? 1e6 : 1e5,
-    step: profile.codexWindowUnit === "tokens" ? 100 : 1,
-    defaultValue: profile.codexWindowUnit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue,
-    onBlur: (v) => patch({ codexWindowValue: v ?? (profile.codexWindowUnit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue) })
-  })));
-  fields.appendChild(windowGrid);
+  const updating = section("Codex Updating");
+  const lag = document.createElement("div");
+  for (const kind of ["Window", "Lag"]) {
+    const unit = kind === "Window" ? profile.codexWindowUnit : profile.codexLagUnit;
+    const value = kind === "Window" ? profile.codexWindowValue : profile.codexLagValue;
+    const fallback = kind === "Window" ? unit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue : unit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue;
+    const group = kind === "Lag" ? lag : document.createElement("div");
+    group.className = "lmb-collapsible-body";
+    if (kind === "Window")
+      lessonMark(group, "tuning.codex.window");
+    else
+      lessonMark(group, "tuning.codex.lag");
+    group.append(labelled(`${kind} unit`, select({
+      value: unit,
+      options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+      onChange: (v) => {
+        const next = v === "tokens" ? "tokens" : "messages";
+        patch(kind === "Window" ? { codexWindowUnit: next } : { codexLagUnit: next });
+      }
+    })), labelled(kind, numberInput({
+      value,
+      min: kind === "Window" ? 1 : 0,
+      max: unit === "tokens" ? 1e6 : 1e5,
+      step: unit === "tokens" ? kind === "Window" ? 100 : 50 : 1,
+      defaultValue: fallback,
+      onBlur: (v) => patch(kind === "Window" ? { codexWindowValue: v ?? fallback } : { codexLagValue: v ?? fallback })
+    })));
+    if (kind === "Window")
+      updating.body.appendChild(group);
+  }
   if (profile.codexWindowUnit === "messages") {
-    fields.appendChild(lessonMark(labelled("Tokens breakpoint", numberInput({
+    updating.body.appendChild(lessonMark(labelled("Tokens breakpoint", numberInput({
       value: profile.codexTokenBreakpoint,
       min: 1000,
       max: 1e6,
@@ -9860,15 +9838,13 @@ function renderCodexSettings(host, state, profile, patch) {
       defaultValue: PROFILE_DEFAULTS.codexTokenBreakpoint,
       onBlur: (v) => patch({ codexTokenBreakpoint: v ?? PROFILE_DEFAULTS.codexTokenBreakpoint })
     })), "tuning.codex.breakpoint"));
-    const bpHint = document.createElement("div");
-    bpHint.className = "lmb-field-hint";
-    bpHint.textContent = "The window fires at whichever arrives first: the message count above or this many tokens. Keeps verbose chats from building enormous chunks.";
-    fields.appendChild(bpHint);
+    updating.body.appendChild(textNode("Runs when either the window or this token count is reached.", "lmb-field-hint"));
   }
-  const cadenceHint = document.createElement("div");
-  cadenceHint.className = "lmb-field-hint";
-  cadenceHint.textContent = "Lag is the recent tail the codex leaves alone until it settles. Once a window's worth of older messages piles up behind it, the agent consumes them in one pass. Keep the lag smaller than the chapter lag if you want the codex fresher than the summaries.";
-  fields.appendChild(cadenceHint);
+  appendAutomationControls(updating.body, lag, !profile.codexManualOnly, (enabled) => patch({ codexManualOnly: !enabled }));
+  sec.body.appendChild(updating.wrap);
+  const fields = document.createElement("div");
+  fields.className = "lmb-collapsible-body";
+  sec.body.appendChild(fields);
   const loreGrid = document.createElement("div");
   loreGrid.className = "lmb-grid-2";
   loreGrid.append(labelled("Lore limit", select({
@@ -10068,285 +10044,164 @@ function renderProfilePicker(host, state, ctx, send) {
   sec.body.appendChild(enableWrap.wrap);
   host.appendChild(sec.wrap);
 }
-function renderAutomation(host, profile, patch) {
-  const sec = section("Automation");
-  lessonMark(sec.wrap, "tuning.auto");
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent = "Everything in this section runs in the background after each generation. Manual actions on Home and in Books → Compose always work regardless of these toggles.";
-  sec.body.appendChild(help);
-  sec.body.appendChild(checkbox({
+function renderSummarySettings(host, profile, patch) {
+  const sec = section("Summary settings");
+  sec.body.appendChild(textNode("Window, lag, and compression settings for each tier.", "lmb-help"));
+  sec.body.appendChild(lessonMark(checkbox({
     checked: profile.autoCreate,
     label: "Run automation",
-    hint: "Master toggle. When off, Memoria only acts on manual triggers.",
-    onChange: (v) => patch({ autoCreate: v })
-  }));
-  const subsWrap = document.createElement("div");
-  subsWrap.className = profile.autoCreate ? "lmb-subgroup" : "lmb-subgroup lmb-greyed";
-  sec.body.appendChild(subsWrap);
-  const chapterGroupTitle = document.createElement("div");
-  chapterGroupTitle.className = "lmb-subgroup-title";
-  chapterGroupTitle.textContent = "Auto-file chapters";
-  subsWrap.appendChild(chapterGroupTitle);
-  subsWrap.appendChild(checkbox({
-    checked: profile.autoCreateChapter,
-    label: "Enabled",
-    hint: "Compresses the oldest uncovered window into a chapter once thresholds are met.",
-    onChange: (v) => patch({ autoCreateChapter: v })
-  }));
-  const chapterFields = document.createElement("div");
-  chapterFields.className = profile.autoCreateChapter ? "" : "lmb-greyed";
-  subsWrap.appendChild(chapterFields);
-  const lagGrid = document.createElement("div");
-  lagGrid.className = "lmb-grid-2";
-  lagGrid.append(labelled("Lag unit", select({
-    value: profile.lagUnit,
-    options: [
-      { value: "messages", label: "messages" },
-      { value: "tokens", label: "tokens" }
-    ],
-    onChange: (v) => patch({ lagUnit: v === "tokens" ? "tokens" : "messages" })
-  })), labelled(profile.lagUnit === "tokens" ? "Lag tokens" : "Lag messages", numberInput({
-    value: profile.lagValue,
-    min: 0,
-    max: profile.lagUnit === "tokens" ? 1e6 : 1e5,
-    step: profile.lagUnit === "tokens" ? 50 : 1,
-    defaultValue: PROFILE_DEFAULTS.lagValue,
-    onBlur: (v) => patch({ lagValue: v ?? PROFILE_DEFAULTS.lagValue })
-  })));
-  chapterFields.appendChild(lagGrid);
-  const scheduleHint = document.createElement("div");
-  scheduleHint.className = "lmb-field-hint";
-  scheduleHint.textContent = "Lag is the most-recent portion Memoria leaves uncompressed. Once the lag is full and there's a window's worth of older messages behind it, Memoria files them. In token mode, the lag bucket includes messages up to and including the one that hits the token limit.";
-  chapterFields.appendChild(scheduleHint);
-  const arcGroupTitle = document.createElement("div");
-  arcGroupTitle.className = "lmb-subgroup-title";
-  arcGroupTitle.style.marginTop = "6px";
-  arcGroupTitle.textContent = "Auto-bind arcs";
-  subsWrap.appendChild(arcGroupTitle);
-  subsWrap.appendChild(checkbox({
-    checked: profile.autoCreateArc,
-    label: "Enabled",
-    hint: "Rolls oldest chapters into an arc once the threshold is met, leaving the recent ones as lag.",
-    onChange: (v) => patch({ autoCreateArc: v })
-  }));
-  const arcFields = document.createElement("div");
-  arcFields.className = profile.autoCreateArc ? "" : "lmb-greyed";
-  subsWrap.appendChild(arcFields);
-  const arcGrid = document.createElement("div");
-  arcGrid.className = "lmb-grid-2";
-  lessonMark(arcGrid, "tuning.arc");
-  arcGrid.append(labelled("Trigger", select({
-    value: profile.arcTrigger,
-    options: [
-      { value: "chapters", label: "after N chapters" },
-      { value: "tokens", label: "after N tokens" },
-      { value: "manual", label: "manual only" }
-    ],
-    onChange: (v) => patch({ arcTrigger: v === "tokens" || v === "manual" ? v : "chapters" })
-  })), labelled(profile.arcTrigger === "tokens" ? "Lag tokens" : "Lag chapters", numberInput({
-    value: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters,
-    min: 0,
-    max: profile.arcTrigger === "tokens" ? 200000 : 100,
-    step: profile.arcTrigger === "tokens" ? 100 : 1,
-    disabled: profile.arcTrigger === "manual",
-    defaultValue: profile.arcTrigger === "tokens" ? PROFILE_DEFAULTS.arcLagTokens : PROFILE_DEFAULTS.arcLagChapters,
-    onBlur: (v) => {
-      if (v === null)
-        return;
-      if (profile.arcTrigger === "tokens")
-        patch({ arcLagTokens: v });
+    hint: "Master toggle for all tiers. Turn it off to run summaries manually.",
+    onChange: (autoCreate) => patch({ autoCreate })
+  }), "tuning.auto"));
+  for (const tier of [1, 2, ...HIGHER_TIERS]) {
+    const name = TIER_NAMES[tier - 1];
+    const card = section(tier === 1 ? "Chapter Filing" : `${name} Binding`);
+    const lag = document.createElement("div");
+    lag.className = "lmb-collapsible-body";
+    if (tier === 1) {
+      lessonMark(card.wrap, "tuning.chapter");
+      const window2 = document.createElement("div");
+      window2.className = "lmb-collapsible-body";
+      lessonMark(window2, "tuning.window");
+      window2.append(labelled("Window unit", select({
+        value: profile.windowUnit,
+        options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+        onChange: (v) => patch({ windowUnit: v === "tokens" ? "tokens" : "messages" })
+      })), labelled("Window", numberInput({
+        value: profile.windowValue,
+        min: 1,
+        max: profile.windowUnit === "tokens" ? 1e6 : 1e5,
+        step: profile.windowUnit === "tokens" ? 100 : 1,
+        defaultValue: PROFILE_DEFAULTS.windowValue,
+        onBlur: (v) => patch({ windowValue: v ?? PROFILE_DEFAULTS.windowValue })
+      })));
+      card.body.appendChild(window2);
+      lag.append(labelled("Lag unit", select({
+        value: profile.lagUnit,
+        options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+        onChange: (v) => patch({ lagUnit: v === "tokens" ? "tokens" : "messages" })
+      })), lessonMark(labelled("Lag", numberInput({
+        value: profile.lagValue,
+        min: 0,
+        max: profile.lagUnit === "tokens" ? 1e6 : 1e5,
+        step: profile.lagUnit === "tokens" ? 50 : 1,
+        defaultValue: PROFILE_DEFAULTS.lagValue,
+        onBlur: (v) => patch({ lagValue: v ?? PROFILE_DEFAULTS.lagValue })
+      })), "tuning.lag"));
+    } else if (tier === 2) {
+      lessonMark(card.wrap, "tuning.arc");
+      card.body.append(labelled("Window unit", select({
+        value: profile.arcTrigger,
+        options: [{ value: "chapters", label: "Chapter entries" }, { value: "tokens", label: "Summary tokens" }, { value: "manual", label: "Manual only" }],
+        onChange: (v) => patch({ arcTrigger: v === "tokens" || v === "manual" ? v : "chapters" })
+      })), labelled("Window", numberInput({
+        value: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
+        min: profile.arcTrigger === "tokens" ? 500 : 2,
+        max: profile.arcTrigger === "tokens" ? 200000 : 100,
+        step: profile.arcTrigger === "tokens" ? 500 : 1,
+        disabled: profile.arcTrigger === "manual",
+        defaultValue: profile.arcTrigger === "tokens" ? PROFILE_DEFAULTS.arcAfterTokens : PROFILE_DEFAULTS.arcAfterChapters,
+        onBlur: (v) => {
+          if (v !== null)
+            patch(profile.arcTrigger === "tokens" ? { arcAfterTokens: v } : { arcAfterChapters: v });
+        }
+      })));
+      lag.appendChild(labelled("Lag", numberInput({
+        value: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters,
+        min: 0,
+        max: profile.arcTrigger === "tokens" ? 200000 : 100,
+        step: profile.arcTrigger === "tokens" ? 100 : 1,
+        disabled: profile.arcTrigger === "manual",
+        defaultValue: profile.arcTrigger === "tokens" ? PROFILE_DEFAULTS.arcLagTokens : PROFILE_DEFAULTS.arcLagChapters,
+        onBlur: (v) => {
+          if (v !== null)
+            patch(profile.arcTrigger === "tokens" ? { arcLagTokens: v } : { arcLagChapters: v });
+        }
+      })));
+    } else {
+      const config = profile.higherTiers[tier];
+      const change = (v) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
+      card.body.append(labelled("Window unit", select({
+        value: config.unit,
+        options: [{ value: "entries", label: `${TIER_NAMES[tier - 2]} entries` }, { value: "tokens", label: "Summary tokens" }],
+        onChange: (v) => change({ unit: v === "tokens" ? "tokens" : "entries", batch: v === "tokens" ? 8000 : 6, lag: v === "tokens" ? 2000 : 2 })
+      })), labelled("Window", numberInput({
+        value: config.batch,
+        min: config.unit === "tokens" ? 100 : 2,
+        max: config.unit === "tokens" ? 1e6 : 100,
+        step: config.unit === "tokens" ? 100 : 1,
+        defaultValue: config.unit === "tokens" ? 8000 : 6,
+        onBlur: (v) => change({ batch: v ?? config.batch })
+      })));
+      lag.appendChild(labelled("Lag", numberInput({
+        value: config.lag,
+        min: 0,
+        max: config.unit === "tokens" ? 1e6 : 100,
+        step: config.unit === "tokens" ? 100 : 1,
+        defaultValue: config.unit === "tokens" ? 2000 : 2,
+        onBlur: (v) => change({ lag: v ?? config.lag })
+      })));
+    }
+    appendCompressionTarget(card.body, profile, tier, patch);
+    const enabled = tier === 1 ? profile.autoCreateChapter : tier === 2 ? profile.autoCreateArc : profile.higherTiers[tier].enabled;
+    appendAutomationControls(card.body, lag, enabled, (enabled) => {
+      if (tier === 1)
+        patch({ autoCreateChapter: enabled });
+      else if (tier === 2)
+        patch({ autoCreateArc: enabled });
       else
-        patch({ arcLagChapters: v });
-    }
-  })));
-  arcFields.appendChild(arcGrid);
-  const arcHint = document.createElement("div");
-  arcHint.className = "lmb-field-hint";
-  arcHint.textContent = "Arc lag reserves the most-recent chapters and never binds them, so you keep some chapter-level detail.";
-  arcFields.appendChild(arcHint);
-  for (const tier of HIGHER_TIERS) {
-    const config = profile.higherTiers[tier];
-    const change = (v) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
-    const block = section(`Auto-bind ${TIER_NAMES[tier - 1]}`);
-    block.body.appendChild(checkbox({ checked: config.enabled, label: "Enabled", onChange: (enabled) => change({ enabled }) }));
-    block.body.appendChild(labelled("Trigger unit", select({
-      value: config.unit,
-      options: [{ value: "entries", label: `${TIER_NAMES[tier - 2]} entries` }, { value: "tokens", label: "Summary tokens" }],
-      onChange: (v) => change({ unit: v === "tokens" ? "tokens" : "entries", batch: v === "tokens" ? 8000 : 6, lag: v === "tokens" ? 2000 : 2 })
-    })));
-    block.body.appendChild(labelled("Amount to bind", numberInput({
-      value: config.batch,
-      min: config.unit === "tokens" ? 100 : 2,
-      max: config.unit === "tokens" ? 1e6 : 100,
-      onBlur: (v) => change({ batch: v ?? config.batch })
-    })));
-    block.body.appendChild(labelled("Recent amount to keep", numberInput({
-      value: config.lag,
-      min: 0,
-      max: config.unit === "tokens" ? 1e6 : 100,
-      onBlur: (v) => change({ lag: v ?? config.lag })
-    })));
-    const hint = document.createElement("div");
-    hint.className = "lmb-help";
-    hint.textContent = `Binds the oldest active ${TIER_NAMES[tier - 2]} summaries; roots and archived sources do not count. ${config.unit === "entries" ? `First binding needs ${config.batch + config.lag} entries (${config.batch} to bind + ${config.lag} kept).` : "Thresholds measure saved summary text."}`;
-    block.body.appendChild(hint);
-    if (tier > 3) {
-      block.body.appendChild(labelled("Compression target", select({
-        value: config.targetUnit,
-        options: [{ value: "percent", label: "Percent of input" }, { value: "tokens", label: "Fixed tokens" }],
-        onChange: (v) => change({ targetUnit: v === "tokens" ? "tokens" : "percent" })
-      })));
-      block.body.appendChild(labelled(config.targetUnit === "tokens" ? "Target tokens" : "Target percent", numberInput({
-        value: config.targetUnit === "tokens" ? config.targetTokens : config.targetPercent,
-        min: config.targetUnit === "tokens" ? 50 : 5,
-        max: config.targetUnit === "tokens" ? 1e6 : 95,
-        onBlur: (v) => change(config.targetUnit === "tokens" ? { targetTokens: v ?? 3000 } : { targetPercent: v ?? 25 })
-      })));
-    }
-    subsWrap.appendChild(block.wrap);
+        patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], enabled } } });
+    });
+    sec.body.appendChild(card.wrap);
   }
   host.appendChild(sec.wrap);
 }
-function renderCompressionTargets(host, profile, patch) {
-  const sec = section("Compression targets");
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent = "How much Memoria compresses each chapter and arc, and how much input goes into each. Used by both manual and automatic triggers.";
-  sec.body.appendChild(help);
-  const chapterTitle = document.createElement("div");
-  chapterTitle.className = "lmb-subgroup-title";
-  chapterTitle.textContent = "Chapter";
-  sec.body.appendChild(chapterTitle);
-  const windowGrid = document.createElement("div");
-  windowGrid.className = "lmb-grid-2";
-  lessonMark(windowGrid, "tuning.window");
-  windowGrid.append(labelled("Window unit", select({
-    value: profile.windowUnit,
-    options: [
-      { value: "messages", label: "messages" },
-      { value: "tokens", label: "tokens" }
-    ],
-    onChange: (v) => patch({ windowUnit: v === "tokens" ? "tokens" : "messages" })
-  })), labelled(profile.windowUnit === "tokens" ? "Tokens to chapterize" : "Messages to chapterize", numberInput({
-    value: profile.windowValue,
-    min: 1,
-    max: profile.windowUnit === "tokens" ? 1e6 : 1e5,
-    step: profile.windowUnit === "tokens" ? 100 : 1,
-    defaultValue: PROFILE_DEFAULTS.windowValue,
-    onBlur: (v) => patch({ windowValue: v ?? PROFILE_DEFAULTS.windowValue })
-  })));
-  sec.body.appendChild(windowGrid);
-  const windowHint = document.createElement("div");
-  windowHint.className = "lmb-field-hint";
-  windowHint.textContent = "In token mode, the window includes messages up to and including the one that hits the token limit.";
-  sec.body.appendChild(windowHint);
-  const chapterRatioGrid = document.createElement("div");
-  chapterRatioGrid.className = "lmb-grid-2";
-  chapterRatioGrid.append(labelled("Chapter ratio", select({
-    value: profile.chapterTargetUnit,
-    options: [
-      { value: "percent", label: "% of input" },
-      { value: "tokens", label: "token budget" }
-    ],
-    onChange: (v) => patch({ chapterTargetUnit: v === "tokens" ? "tokens" : "percent" })
-  })), labelled(profile.chapterTargetUnit === "tokens" ? "Chapter tokens" : "Chapter %", numberInput({
-    value: profile.chapterTargetUnit === "tokens" ? profile.chapterTargetTokens : profile.chapterTargetPercent,
-    min: profile.chapterTargetUnit === "tokens" ? 50 : 2,
-    max: profile.chapterTargetUnit === "tokens" ? 1e6 : 90,
-    step: profile.chapterTargetUnit === "tokens" ? 50 : 1,
-    defaultValue: profile.chapterTargetUnit === "tokens" ? PROFILE_DEFAULTS.chapterTargetTokens : PROFILE_DEFAULTS.chapterTargetPercent,
+function appendAutomationControls(host, lag, enabled, onChange) {
+  const controls = [...lag.querySelectorAll("input, select")].map((input) => ({ input, disabled: input.disabled }));
+  const update = (enabled) => {
+    lag.classList.toggle("lmb-greyed", !enabled);
+    for (const { input, disabled } of controls)
+      input.disabled = !enabled || disabled;
+  };
+  update(enabled);
+  host.append(checkbox({ checked: enabled, label: "Automate?", onChange: (enabled) => {
+    update(enabled);
+    onChange(enabled);
+  } }), lag);
+}
+function appendCompressionTarget(host, profile, tier, patch) {
+  const prefix = tier === 1 ? "chapter" : tier === 2 ? "arc" : "volume";
+  const target = tier <= 3 ? {
+    targetUnit: profile[`${prefix}TargetUnit`],
+    targetPercent: profile[`${prefix}TargetPercent`],
+    targetTokens: profile[`${prefix}TargetTokens`]
+  } : profile.higherTiers[tier];
+  const change = (v) => {
+    if (tier > 3) {
+      patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], ...v } } });
+    } else {
+      patch({
+        ...v.targetUnit !== undefined ? { [`${prefix}TargetUnit`]: v.targetUnit } : {},
+        ...v.targetPercent !== undefined ? { [`${prefix}TargetPercent`]: v.targetPercent } : {},
+        ...v.targetTokens !== undefined ? { [`${prefix}TargetTokens`]: v.targetTokens } : {}
+      });
+    }
+  };
+  host.append(labelled("Compression target", select({
+    value: target.targetUnit,
+    options: [{ value: "percent", label: "Percent of input" }, { value: "tokens", label: "Fixed tokens" }],
+    onChange: (v) => change({ targetUnit: v === "tokens" ? "tokens" : "percent" })
+  })), labelled(target.targetUnit === "tokens" ? "Target tokens" : "Target percent", numberInput({
+    value: target.targetUnit === "tokens" ? target.targetTokens : target.targetPercent,
+    min: target.targetUnit === "tokens" ? 50 : tier === 1 ? 2 : 5,
+    max: target.targetUnit === "tokens" ? 1e6 : tier === 1 ? 90 : 95,
+    step: target.targetUnit === "tokens" ? 50 : 1,
+    defaultValue: target.targetUnit === "tokens" ? PROFILE_DEFAULTS[`${prefix}TargetTokens`] : PROFILE_DEFAULTS[`${prefix}TargetPercent`],
     onBlur: (v) => {
-      if (v === null)
-        return;
-      if (profile.chapterTargetUnit === "tokens")
-        patch({ chapterTargetTokens: v });
-      else
-        patch({ chapterTargetPercent: v });
+      if (v !== null)
+        change(target.targetUnit === "tokens" ? { targetTokens: v } : { targetPercent: v });
     }
   })));
-  sec.body.appendChild(chapterRatioGrid);
-  const arcTitle = document.createElement("div");
-  arcTitle.className = "lmb-subgroup-title";
-  arcTitle.style.marginTop = "6px";
-  arcTitle.textContent = "Arc";
-  sec.body.appendChild(arcTitle);
-  sec.body.appendChild(labelled(profile.arcTrigger === "tokens" ? "Tokens to bind" : "Chapters to bind", numberInput({
-    value: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
-    min: profile.arcTrigger === "tokens" ? 500 : 2,
-    max: profile.arcTrigger === "tokens" ? 200000 : 100,
-    step: profile.arcTrigger === "tokens" ? 500 : 1,
-    disabled: profile.arcTrigger === "manual",
-    defaultValue: profile.arcTrigger === "tokens" ? PROFILE_DEFAULTS.arcAfterTokens : PROFILE_DEFAULTS.arcAfterChapters,
-    onBlur: (v) => {
-      if (v === null)
-        return;
-      if (profile.arcTrigger === "tokens")
-        patch({ arcAfterTokens: v });
-      else
-        patch({ arcAfterChapters: v });
-    }
-  })));
-  const arcRatioGrid = document.createElement("div");
-  arcRatioGrid.className = "lmb-grid-2";
-  arcRatioGrid.append(labelled("Arc ratio", select({
-    value: profile.arcTargetUnit,
-    options: [
-      { value: "percent", label: "% of input" },
-      { value: "tokens", label: "token budget" }
-    ],
-    onChange: (v) => patch({ arcTargetUnit: v === "tokens" ? "tokens" : "percent" })
-  })), labelled(profile.arcTargetUnit === "tokens" ? "Arc tokens" : "Arc %", numberInput({
-    value: profile.arcTargetUnit === "tokens" ? profile.arcTargetTokens : profile.arcTargetPercent,
-    min: profile.arcTargetUnit === "tokens" ? 50 : 5,
-    max: profile.arcTargetUnit === "tokens" ? 1e6 : 95,
-    step: profile.arcTargetUnit === "tokens" ? 50 : 1,
-    defaultValue: profile.arcTargetUnit === "tokens" ? PROFILE_DEFAULTS.arcTargetTokens : PROFILE_DEFAULTS.arcTargetPercent,
-    onBlur: (v) => {
-      if (v === null)
-        return;
-      if (profile.arcTargetUnit === "tokens")
-        patch({ arcTargetTokens: v });
-      else
-        patch({ arcTargetPercent: v });
-    }
-  })));
-  sec.body.appendChild(arcRatioGrid);
-  const volumeTitle = document.createElement("div");
-  volumeTitle.className = "lmb-subgroup-title";
-  volumeTitle.style.marginTop = "6px";
-  volumeTitle.textContent = "Volume";
-  sec.body.appendChild(volumeTitle);
-  const volumeHint = document.createElement("div");
-  volumeHint.className = "lmb-field-hint";
-  volumeHint.textContent = "Bind volumes manually in Books → Compose, or enable volume automation above.";
-  sec.body.appendChild(volumeHint);
-  const volumeRatioGrid = document.createElement("div");
-  volumeRatioGrid.className = "lmb-grid-2";
-  volumeRatioGrid.append(labelled("Volume ratio", select({
-    value: profile.volumeTargetUnit,
-    options: [
-      { value: "percent", label: "% of input" },
-      { value: "tokens", label: "token budget" }
-    ],
-    onChange: (v) => patch({ volumeTargetUnit: v === "tokens" ? "tokens" : "percent" })
-  })), labelled(profile.volumeTargetUnit === "tokens" ? "Volume tokens" : "Volume %", numberInput({
-    value: profile.volumeTargetUnit === "tokens" ? profile.volumeTargetTokens : profile.volumeTargetPercent,
-    min: profile.volumeTargetUnit === "tokens" ? 50 : 5,
-    max: profile.volumeTargetUnit === "tokens" ? 1e6 : 95,
-    step: profile.volumeTargetUnit === "tokens" ? 50 : 1,
-    defaultValue: profile.volumeTargetUnit === "tokens" ? PROFILE_DEFAULTS.volumeTargetTokens : PROFILE_DEFAULTS.volumeTargetPercent,
-    onBlur: (v) => {
-      if (v === null)
-        return;
-      if (profile.volumeTargetUnit === "tokens")
-        patch({ volumeTargetTokens: v });
-      else
-        patch({ volumeTargetPercent: v });
-    }
-  })));
-  sec.body.appendChild(volumeRatioGrid);
-  host.appendChild(sec.wrap);
 }
 function renderConnection(host, state, profile, patch) {
   const sec = section("Summary Connection");
@@ -11237,8 +11092,7 @@ function renderTuningTab(host, state, ctx, send) {
           o.btn?.classList.toggle("active", local3.settingsView === o.key);
         body.replaceChildren();
         if (local3.settingsView === "books") {
-          renderCompressionTargets(body, profile, patch);
-          renderAutomation(body, profile, patch);
+          renderSummarySettings(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
           renderRegex(body, state, profile, patch);
@@ -11889,7 +11743,7 @@ var COURSE_BOOKS = {
             setTuningSubtab("settings");
             setSettingsView("books");
           },
-          anchor: "tuning.auto",
+          anchor: "tuning.lag",
           chip: "Lag · 10 messages",
           text: "You lower the lag from 65 down to 10. What changes?",
           options: [
@@ -11917,9 +11771,9 @@ var COURSE_BOOKS = {
             setTuningSubtab("settings");
             setSettingsView("books");
           },
-          anchor: "tuning.window",
-          chip: "Window · 40 · Chapter % · 4",
-          text: "You set the window to 40 and the chapter ratio to 4% (defaults are 18 and 15%). What do your chapters become?",
+          anchor: "tuning.chapter",
+          chip: "Window · 40 · Target percent · 4",
+          text: "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
           options: [
             { text: "Chapters become smaller, and they cover 40 messages each.", correct: true },
             { text: "Chapters become smaller and more frequent" },
@@ -12418,7 +12272,7 @@ var COURSE_CODEX = {
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.enabled",
           expect: "save_profile",
-          text: "Flip Enabled on. The default settings below suit most chats.",
+          text: "Flip Enable Codex on. The default settings below suit most chats.",
           done: "Enabled! From now on I keep your story bible current after every message."
         },
         {
@@ -12437,7 +12291,7 @@ var COURSE_CODEX = {
           anchor: "home.actions.updatecodex",
           expect: "codex_update_now",
           optional: true,
-          text: "Press it and I'll read this chat right away, or skip and I'll start after your next message.",
+          text: "Press it and I'll read this chat right away, or skip and I'll do it later!",
           done: "Reading! Watch the busy row on Home if you want to see me think."
         },
         {

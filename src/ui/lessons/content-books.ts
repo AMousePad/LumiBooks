@@ -601,7 +601,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
             setTuningSubtab("settings");
             setSettingsView("books");
           },
-          anchor: "tuning.auto",
+          anchor: "tuning.lag",
           chip: "Lag · 10 messages",
           text: "You lower the lag from 65 down to 10. What changes?",
           options: [
@@ -629,9 +629,9 @@ export const COURSE_BOOKS: LessonCourseDef = {
             setTuningSubtab("settings");
             setSettingsView("books");
           },
-          anchor: "tuning.window",
-          chip: "Window · 40 · Chapter % · 4",
-          text: "You set the window to 40 and the chapter ratio to 4% (defaults are 18 and 15%). What do your chapters become?",
+          anchor: "tuning.chapter",
+          chip: "Window · 40 · Target percent · 4",
+          text: "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
           options: [
             { text: "Chapters become smaller, and they cover 40 messages each.", correct: true },
             { text: "Chapters become smaller and more frequent" },

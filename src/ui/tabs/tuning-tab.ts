@@ -5,10 +5,9 @@ import { codexLessonGated } from "../../shared";
 import { checkbox, lessonMark, makeSubtabs, scrollPaneTop, section } from "../components";
 import { renderCodexPaneLock } from "../lessons/seal";
 import {
-  renderAutomation,
+  renderSummarySettings,
   renderBehavior,
   renderCodexSettings,
-  renderCompressionTargets,
   renderContext,
   renderProfilePicker,
   renderRegex,
@@ -114,8 +113,7 @@ export function renderTuningTab(
         for (const o of options) o.btn?.classList.toggle("active", local.settingsView === o.key);
         body.replaceChildren();
         if (local.settingsView === "books") {
-          renderCompressionTargets(body, profile, patch);
-          renderAutomation(body, profile, patch);
+          renderSummarySettings(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
           renderRegex(body, state, profile, patch);
