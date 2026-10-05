@@ -1,5 +1,5 @@
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
-import { TIER_KINDS, HIGHER_TIERS, type HigherTier } from "../shared";
+import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
 import { selectedChapterRuns } from "./coverage";
@@ -74,6 +74,7 @@ import {
   patchPendingPreview,
   recordFreedGhostNumber,
   registerPipelineCallbacks,
+  resumeSummaryBinding,
   setBusy,
   setStreamWatcher,
 } from "./pipeline";
@@ -105,6 +106,7 @@ import { invalidateConnectionsCache } from "./summarizer";
 import { invalidateRegexCache } from "./regex";
 import { publishCodexWiped, registerHookEndpoints } from "./hooks";
 import { buildState } from "./state";
+import { summaryRuns } from "./binding";
 import { parseStmbPresetExport } from "./presets";
 
 async function notify(
@@ -178,6 +180,11 @@ function pushState(userId: string, chatId?: string | null): Promise<void> {
     }, PUSH_DEBOUNCE_MS);
     pushTimers.set(userId, timer);
   });
+}
+
+async function resumeActiveSummaryBinding(userId: string, chatId?: string | null): Promise<void> {
+  const chat = chatId ? await spindle.chats.get(chatId, userId) : await spindle.chats.getActive(userId);
+  if (chat) await resumeSummaryBinding(chat.id, userId);
 }
 
 registerPipelineCallbacks({
@@ -360,6 +367,8 @@ spindle.on("CHAT_SWITCHED", async (payload: unknown, hostUserId?: string) => {
   if (p?.chatId) rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
+  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", `Summary repair failed: ${describeError(err)}`));
+  await pushState(userId, p?.chatId ?? null);
 });
 
 spindle.on("MESSAGE_DELETED", async (payload: unknown, hostUserId?: string) => {
@@ -462,17 +471,13 @@ async function cleanupGhostsIfModeOff(userId: string, chatId: string, context: s
 async function collectActiveChapterIds(chatId: string, userId: string): Promise<string[]> {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  return coverage.activeEntries
-    .filter((e) => e.meta.tier === 1 && !e.meta.isRoot)
-    .map((e) => e.raw.id);
+  return summaryRuns(coverage.activeEntries, 1)[0]?.entries.map((e) => e.raw.id) ?? [];
 }
 
 async function collectActiveArcIds(chatId: string, userId: string): Promise<string[]> {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  return coverage.activeEntries
-    .filter((e) => e.meta.tier === 2 && !e.meta.isRoot)
-    .map((e) => e.raw.id);
+  return summaryRuns(coverage.activeEntries, 2)[0]?.entries.map((e) => e.raw.id) ?? [];
 }
 
 export async function retryLastFailure(
@@ -485,7 +490,7 @@ export async function retryLastFailure(
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = (TIER_KINDS.indexOf(last.kind) + 1) as HigherTier;
     const coverage = await buildCoverage(chatId, userId);
-    const ids = last.sourceEntryIds ?? coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
+    const ids = last.sourceEntryIds ?? summaryRuns(coverage.activeEntries, (tier - 1) as SummaryTier)[0]?.entries.map((e) => e.raw.id) ?? [];
     if (ids.length) await createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
   }
@@ -536,6 +541,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "ready":
       case "refresh":
         send({ type: "state_loading" }, userId);
+        await pushState(userId, msg.chatId);
+        await resumeActiveSummaryBinding(userId, msg.chatId);
         await pushState(userId, msg.chatId);
         break;
 
@@ -1172,7 +1179,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         const accepted = await acceptPreview(msg.chatId, msg.draftId, profile, userId);
-        if (accepted && cur.enabled) await maybeRunArcCheck(msg.chatId, profile, cur, userId);
+        if (accepted && cur.enabled) await resumeSummaryBinding(msg.chatId, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1205,6 +1212,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", text);
         } else {
           await notify(userId, "success", `Memoria seeded ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} before the greeting`);
+          await resumeSummaryBinding(msg.chatId, userId);
         }
         await pushState(userId, msg.chatId);
         break;

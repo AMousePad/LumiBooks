@@ -2,7 +2,8 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, HIGHER_TIERS, TIER_NAMES, makeDefaultProfile, normalizeEntryMeta, normalizeProfile } from "../shared";
 import { buildCoverage } from "./coverage";
 import { copyLmbEntries } from "./book-copy";
-import { createHigherFromEntries, drainHigherBacklog, maybeRunArcCheck, getPendingPreviews, acceptPreview, registerPipelineCallbacks } from "./pipeline";
+import { createArcAuto, createArcFromChapters, createHigherFromEntries, drainHigherBacklog, maybeRunArcCheck, getPendingPreviews, getLastFailure, acceptPreview, registerPipelineCallbacks, repairSummaryTimeline } from "./pipeline";
+import { SummaryTimelineError } from "./binding";
 import { invalidateBookCache, listLmbEntries } from "./world-book";
 import { saveSettings } from "./storage";
 
@@ -43,6 +44,31 @@ beforeEach(async () => {
  await saveSettings(userId, settings());
 });
 afterAll(() => { (globalThis as any).spindle = original; });
+
+for (const tier of [2, ...HIGHER_TIERS] as const) for (const rootOnly of [false, true]) {
+ test(`${TIER_NAMES[tier - 1]} compacts ${rootOnly ? "rooted" : "mixed rooted and own"} sources without consuming the lag`, async () => {
+  entries = [source(tier - 1, 0), source(tier - 1, 1), source(tier - 1, 2)];
+  for (const entry of entries.slice(0, rootOnly ? 2 : 1)) {
+   Object.assign(entry.extensions.lumibooks, { isRoot: true, rootOrigin: "past-chat", firstMsgIdx: entry.extensions.lumibooks.firstMsgIdx - 2 });
+  }
+  profile.arcAfterChapters = 2; profile.arcLagChapters = 1;
+  if (tier > 2) profile.higherTiers[tier] = { ...profile.higherTiers[tier], enabled: true, batch: 2, lag: 1 };
+  await saveSettings(userId, settings());
+  if (tier === 2) expect(await createArcAuto(chatId, profile, settings(), userId, true)).toBeTruthy();
+  else expect(await drainHigherBacklog(tier, chatId, profile, settings(), userId, true)).toBe(1);
+  expect(calls).toBe(1);
+  const coverage = await buildCoverage(chatId, userId);
+  const bound = coverage.activeEntries.find((e) => e.meta.tier === tier)!;
+  expect(bound.meta.sourceChapterEntryIds).toEqual([`source-${tier - 1}-0`, `source-${tier - 1}-1`]);
+  expect(!!bound.meta.isRoot).toBe(rootOnly);
+  expect(bound.meta.rootOrigin).toBe(rootOnly ? "past-chat" : undefined);
+  expect(coverage.activeEntries.map((e) => e.raw.id).sort()).toEqual([bound.raw.id, `source-${tier - 1}-2`].sort());
+  expect(entries).toHaveLength(4);
+  for (const entry of entries.slice(0, 2)) expect(entry.extensions.lumibooks.supersededByEntryId).toBe(bound.raw.id);
+  const revived = await buildCoverage(chatId, userId, (await listLmbEntries(chatId, userId)).filter((e) => e.raw.id !== bound.raw.id));
+  expect(revived.activeEntries).toHaveLength(3);
+ });
+}
 
 for (const tier of HIGHER_TIERS) test(`${TIER_NAMES[tier - 1]} binds the exact batch and keeps its own lag`, async () => {
  entries = [source(tier - 1, 0), source(tier - 1, 1), source(tier - 1, 2)];
@@ -117,6 +143,58 @@ test("failed Series preview acceptance must retain its tier for retry", async ()
  (globalThis as any).spindle.world_books.entries.create = create;
  expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeTruthy();
  expect(getLastFailure(userId, chatId)).toBeNull();
+});
+
+for (const tier of [2, ...HIGHER_TIERS] as const) test(`${TIER_NAMES[tier - 1]} repairs a short rooted segment between higher summaries and leaves the newer tail alone`, async () => {
+ entries = [source(tier, 0), source(tier - 1, 1), source(tier, 2), source(tier - 1, 3)];
+ Object.assign(entries[1].extensions.lumibooks, { isRoot: true, rootOrigin: "past-chat" });
+ profile.arcTrigger = "manual";
+ expect(await repairSummaryTimeline(chatId, profile, settings(), userId)).toBe(1);
+ const coverage = await buildCoverage(chatId, userId);
+ const bound = coverage.activeEntries.find((e) => e.raw.id.startsWith("new-"))!;
+ expect(bound.meta.tier).toBe(tier);
+ expect(bound.meta.sourceChapterEntryIds).toEqual([`source-${tier - 1}-1`]);
+ expect(bound.meta.isRoot).toBe(true);
+ expect(coverage.activeEntries.some((e) => e.raw.id === `source-${tier - 1}-3`)).toBe(true);
+ expect(entries).toHaveLength(5);
+ expect(await repairSummaryTimeline(chatId, profile, settings(), userId)).toBe(0);
+ expect(calls).toBe(1);
+});
+
+test("repair previews retain the sources until accepted and resume without repeating the repaired segment", async () => {
+ entries = [source(2, 0), source(1, 1), source(2, 2), source(1, 3)];
+ Object.assign(entries[1].extensions.lumibooks, { isRoot: true, rootOrigin: "past-chat" });
+ profile.showMemoryPreviews = true;
+ expect(await repairSummaryTimeline(chatId, profile, settings(), userId)).toBe(0);
+ expect(entries).toHaveLength(4);
+ const preview = getPendingPreviews(userId, chatId)[0]!;
+ expect(preview.sourceChapterEntryIds).toEqual(["source-1-1"]);
+ expect(await repairSummaryTimeline(chatId, profile, settings(), userId)).toBe(0);
+ expect(calls).toBe(1);
+ expect(await acceptPreview(chatId, preview.draftId, profile, userId)).toBeTruthy();
+ expect((await buildCoverage(chatId, userId)).activeEntries.some((e) => e.raw.id === "source-1-1")).toBe(false);
+ expect(await repairSummaryTimeline(chatId, profile, settings(), userId)).toBe(0);
+ expect(calls).toBe(1);
+});
+
+test("manual binding rejects sources separated by a higher summary before generating", async () => {
+ entries = [source(1, 0), source(2, 1), source(1, 2)];
+ await expect(createArcFromChapters(chatId, ["source-1-0", "source-1-2"], profile, settings(), userId)).rejects.toBeInstanceOf(SummaryTimelineError);
+ expect(calls).toBe(0);
+ expect(entries).toHaveLength(3);
+});
+
+test("a timeline boundary added during generation blocks the commit without superseding its sources", async () => {
+ entries = [source(1, 0), source(1, 2)];
+ (globalThis as any).spindle.generate.rawStream = async function* () {
+  entries.push(source(2, 1));
+  invalidateBookCache(userId, chatId);
+  yield { type: "done", content: JSON.stringify({ title: "Stale", content: "A summary of both chapters.", keywords: [] }) };
+ };
+ expect(await createArcFromChapters(chatId, ["source-1-0", "source-1-2"], profile, settings(), userId)).toBeNull();
+ expect(entries).toHaveLength(3);
+ expect(entries.every((e) => !e.extensions.lumibooks.supersededByEntryId)).toBe(true);
+ expect(getLastFailure(userId, chatId)?.message).toContain("consecutive summaries");
 });
 
 

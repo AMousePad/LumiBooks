@@ -152,10 +152,10 @@ function renderShelf(
   redraw: () => void,
 ): void {
   const sec = section("The Shelf");
-  const chapters = state.chapters.filter((c) => !c.isRoot && (c.active || c.isGhost));
-  const arcs = state.arcs.filter((a) => !a.isRoot && a.active);
-  const volumes = state.volumes.filter((v) => !v.isRoot && v.active);
-  if (chapters.length + arcs.length + volumes.length + state.higherBooks.filter((v) => v.active && !v.isRoot).length === 0) {
+  const chapters = state.chapters;
+  const arcs = state.arcs;
+  const volumes = state.volumes;
+  if (chapters.length + arcs.length + volumes.length + state.higherBooks.length === 0) {
     sec.body.appendChild(textNode("Empty shelf for now. Memoria will start filing once the lag fills.", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
@@ -178,7 +178,7 @@ function renderShelf(
   sec.body.appendChild(listHost);
 
   const groups: { key: ShelfGroup; title: string; kind: SummaryKind; items: (ChapterView | ArcView)[] }[] = [
-    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1]!, title: TIER_NAMES[t - 1]!, kind: TIER_KINDS[t - 1]!, items: state.higherBooks.filter((e) => e.meta.tier === t && !e.isRoot && e.active) })),
+    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1]!, title: TIER_NAMES[t - 1]!, kind: TIER_KINDS[t - 1]!, items: state.higherBooks.filter((e) => e.meta.tier === t) })),
     { key: "volumes", title: "Volumes", kind: "volume", items: volumes },
     { key: "arcs", title: "Arcs", kind: "arc", items: arcs },
     { key: "chapters", title: "Chapters", kind: "chapter", items: chapters },
@@ -362,7 +362,7 @@ function renderEntryDetail(
         const ok = await confirmDelete(ctx, "Regenerate?", "Memoria will delete this entry and resummarize the same range. The old summary text will be lost.");
         if (!ok || !chatId) return;
         send({ type: "regenerate_entry", chatId, entryId: view.entryId });
-      }, { small: true, title: "Delete and resummarize the same range" }),
+      }, { small: true, disabled: !view.active || (view.isRoot && kind === "chapter"), title: "Delete and resummarize the same range" }),
       makeButton("Release", async () => {
         const freed = kind === "chapter"
           ? "Its messages return to the prompt unless a higher tier still covers them."
@@ -899,7 +899,7 @@ function renderContinuity(
     emptyText: "No other chat has memories to inherit from yet",
     inherited: hasRoot
       ? {
-          text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`,
+          text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}.`,
           detail,
           detach: {
             label: "Detach root",
@@ -914,7 +914,7 @@ function renderContinuity(
       ? {
           help: hasOwn
             ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root."
-            : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.",
+            : "Seed this chat with another chat's memories. They inject before the greeting until bound into newer summaries.",
           ariaLabel: "Source chat to inherit memories from",
           placeholder: "Pick a source chat...",
           options: candidates.map((cand) => ({

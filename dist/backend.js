@@ -2363,35 +2363,81 @@ async function runSummaryTransfer(userId, chatId, request) {
 }
 
 // src/backend/binding.ts
-function arcBindingRule(profile) {
-  return {
-    unit: profile.arcTrigger === "chapters" ? "entries" : profile.arcTrigger,
-    batch: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
-    lag: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters
-  };
+function summaryBindingRule(profile, tier) {
+  if (tier === 2)
+    return {
+      unit: profile.arcTrigger === "chapters" ? "entries" : profile.arcTrigger,
+      batch: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
+      lag: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters
+    };
+  return profile.higherTiers[tier];
 }
-function selectBindingBatch(entries, rule) {
-  if (rule.unit === "manual")
+function summaryRuns(entries, tier) {
+  const ordered = entries.filter((e) => !e.meta.ghost && !e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const runs = [];
+  let current = [];
+  for (const entry of ordered) {
+    if (entry.meta.tier === tier)
+      current.push(entry);
+    else if (current.length) {
+      runs.push({ entries: current, closed: entry.meta.tier > tier });
+      current = [];
+    }
+  }
+  if (current.length)
+    runs.push({ entries: current, closed: false });
+  return runs;
+}
+
+class SummaryTimelineError extends Error {
+  constructor() {
+    super("Select consecutive summaries without crossing another summary tier");
+    this.name = "SummaryTimelineError";
+  }
+}
+function assertContiguousBinding(entries, selected) {
+  if (!selected.length)
+    throw new SummaryTimelineError;
+  const ids = new Set(selected.map((e) => e.raw.id));
+  for (const run of summaryRuns(entries, selected[0].meta.tier)) {
+    const positions = run.entries.flatMap((e, i) => ids.has(e.raw.id) ? [i] : []);
+    if (positions.length === selected.length && positions.at(-1) - positions[0] + 1 === selected.length)
+      return;
+  }
+  throw new SummaryTimelineError;
+}
+function selectBindingBatch(entries, tier, rule, closedOnly = false) {
+  if (rule.unit === "manual" && !closedOnly)
     return [];
-  const ordered = entries.filter((e) => !e.meta.isRoot && !e.meta.ghost && !e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const runs = summaryRuns(entries, tier);
+  const ordered = runs.flatMap((run) => run.entries);
   const size = (e) => rule.unit === "tokens" ? approximateTokensFromChars(e.raw.content.length) : 1;
   let cutoff = ordered.length, reserved = 0;
   while (cutoff > 0 && reserved < rule.lag)
     reserved += size(ordered[--cutoff]);
-  const selected = [];
-  let count = 0;
-  for (const entry of ordered.slice(0, cutoff)) {
-    selected.push(entry);
-    count += size(entry);
-    if (count >= Math.max(1, rule.batch))
+  const eligible = new Set(ordered.slice(0, cutoff).map((e) => e.raw.id));
+  for (const run of runs) {
+    if (closedOnly && !run.closed)
+      continue;
+    const selected = [];
+    let count = 0;
+    for (const entry of run.entries) {
+      if (!run.closed && !eligible.has(entry.raw.id))
+        break;
+      selected.push(entry);
+      count += size(entry);
+      if (count >= Math.max(1, rule.batch))
+        return selected;
+    }
+    if (run.closed)
       return selected;
   }
   return [];
 }
-function countBindingBacklog(entries, rule) {
+function countBindingBacklog(entries, tier, rule) {
   let remaining = entries, count = 0;
   for (;; ) {
-    const batch = selectBindingBatch(remaining, rule);
+    const batch = selectBindingBatch(remaining, tier, rule);
     if (!batch.length)
       return count;
     const used = new Set(batch.map((e) => e.raw.id));
@@ -6172,8 +6218,201 @@ async function rebindForkShelf(forkChatId, newBookId, userId) {
   });
 }
 
-// src/backend/pipeline.ts
+// src/backend/lessons.ts
+var cache = new Map;
 var inflight2 = new Map;
+var writeLocks2 = new Map;
+var failOpenUsers = new Set;
+var anomalyCb = null;
+function registerLessonsAnomalyCallback(cb) {
+  anomalyCb = cb;
+}
+function withLessonsLock(userId, fn) {
+  const prev = writeLocks2.get(userId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  writeLocks2.set(userId, next.catch(() => {}));
+  return next;
+}
+async function ensureLessons(userId) {
+  const cached = cache.get(userId);
+  if (cached)
+    return cached;
+  const running = inflight2.get(userId);
+  if (running)
+    return running;
+  const p = (async () => {
+    const state = await loadFromDisk(userId);
+    cache.set(userId, state);
+    return state;
+  })().finally(() => inflight2.delete(userId));
+  inflight2.set(userId, p);
+  return p;
+}
+async function loadFromDisk(userId) {
+  let exists;
+  try {
+    exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
+  } catch (err) {
+    error(`lessons: exists() failed, unlocking as a precaution: ${describeError(err)}`);
+    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    failOpenUsers.add(userId);
+    return unlockedLessons();
+  }
+  if (!exists) {
+    const fresh = await isFreshInstall(userId);
+    const state = makeDefaultLessons(fresh);
+    failOpenUsers.delete(userId);
+    await spindle.userStorage.setJson(LESSONS_PATH, state, { indent: 0, userId }).catch((err) => warn(`lessons: initial save failed: ${describeError(err)}`));
+    await applyGateFlags(userId, fresh).catch((err) => warn(`lessons: gate flag init failed: ${describeError(err)}`));
+    return state;
+  }
+  try {
+    const raw = await spindle.userStorage.read(LESSONS_PATH, userId);
+    failOpenUsers.delete(userId);
+    return normalizeLessons(JSON.parse(raw));
+  } catch (err) {
+    error(`lessons: file unreadable, unlocking as a precaution: ${describeError(err)}`);
+    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    failOpenUsers.add(userId);
+    return unlockedLessons();
+  }
+}
+async function isFreshInstall(userId) {
+  try {
+    return !await spindle.userStorage.exists(SETTINGS_PATH, userId);
+  } catch {
+    return false;
+  }
+}
+async function applyGateFlags(userId, freshInstall) {
+  await mutateSettings(userId, (cur) => ({
+    ...cur,
+    profiles: cur.profiles.map((p) => ({
+      ...p,
+      codexEnabled: false,
+      ...freshInstall ? { autoCreate: false } : {}
+    }))
+  }));
+}
+async function tryReadRealLessons(userId) {
+  try {
+    const exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
+    if (!exists)
+      return null;
+    const raw = await spindle.userStorage.read(LESSONS_PATH, userId);
+    return normalizeLessons(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+async function mutateLessons(userId, fn) {
+  return withLessonsLock(userId, async () => {
+    let cur = await ensureLessons(userId);
+    if (failOpenUsers.has(userId)) {
+      const real = await tryReadRealLessons(userId);
+      if (real) {
+        failOpenUsers.delete(userId);
+        cur = real;
+      }
+    }
+    const next = fn(cur);
+    if (failOpenUsers.has(userId)) {
+      cache.set(userId, next);
+      warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
+      anomalyCb?.(userId, "Memoria couldn't read her lesson register so this change is not saved to disk yet");
+      return next;
+    }
+    await spindle.userStorage.setJson(LESSONS_PATH, next, { indent: 0, userId });
+    cache.set(userId, next);
+    return next;
+  });
+}
+function patchLessonCourse(userId, course, patch) {
+  return mutateLessons(userId, (cur) => {
+    const prev = cur[course];
+    return {
+      ...cur,
+      [course]: {
+        ...prev,
+        ...patch,
+        answers: patch.answers ? { ...prev.answers, ...patch.answers } : prev.answers
+      }
+    };
+  });
+}
+function completeLessonCourse(userId, course, wrong, total, grade, signedName, answers) {
+  return mutateLessons(userId, (cur) => {
+    const prev = cur[course];
+    const bestWrong = prev.bestWrong === null ? wrong : Math.min(prev.bestWrong, wrong);
+    return {
+      ...cur,
+      [course]: {
+        ...prev,
+        status: "done",
+        answers: answers ? { ...prev.answers, ...answers } : prev.answers,
+        attempts: prev.attempts + 1,
+        lastWrong: wrong,
+        lastTotal: total > 0 ? total : null,
+        bestWrong,
+        grade,
+        completedAt: Date.now(),
+        signedName: signedName?.trim() ? signedName.trim().slice(0, 60) : prev.signedName,
+        startedAt: prev.startedAt ?? Date.now()
+      }
+    };
+  });
+}
+function resetLessonCourse(userId, course, mode, section, answerIds) {
+  return mutateLessons(userId, (cur) => {
+    const prev = cur[course];
+    const wasDone = prev.status === "done" || prev.completedAt !== null && prev.grade !== null;
+    const status = wasDone ? "done" : "in_progress";
+    let next;
+    if (mode === "course") {
+      next = {
+        ...prev,
+        status,
+        section: 0,
+        step: 0,
+        answers: {},
+        lastWrong: wasDone ? prev.lastWrong : null,
+        startedAt: Date.now()
+      };
+    } else {
+      const answers = { ...prev.answers };
+      for (const id of answerIds ?? [])
+        delete answers[id];
+      next = {
+        ...prev,
+        status,
+        section: typeof section === "number" && section >= 0 ? section : prev.section,
+        step: 0,
+        answers
+      };
+    }
+    return { ...cur, [course]: next };
+  });
+}
+function skipCourseSeal(userId, course) {
+  return mutateLessons(userId, (cur) => {
+    if (course === "codex" ? cur.codexSealSkipped : cur.booksSealSkipped)
+      return cur;
+    return course === "codex" ? { ...cur, codexSealSkipped: true } : { ...cur, booksSealSkipped: true };
+  });
+}
+function effectiveProfile(profile, lessons) {
+  if (!codexLessonGated(lessons))
+    return profile;
+  if (!profile.codexEnabled)
+    return profile;
+  return { ...profile, codexEnabled: false };
+}
+function codexGated(lessons) {
+  return codexLessonGated(lessons);
+}
+
+// src/backend/pipeline.ts
+var inflight3 = new Map;
 var busyByUser = new Map;
 var aborters = new Map;
 var progressLastPush = new Map;
@@ -6258,10 +6497,10 @@ function pushStreamText(userId, chatId, kind, snap) {
 }
 function setBusy(userId, chatId, kind, label) {
   const key = busyKey(userId, chatId, kind);
-  if (inflight2.has(key))
+  if (inflight3.has(key))
     return false;
   const entry = { kind, chatId, label, startedAt: Date.now() };
-  inflight2.set(key, entry);
+  inflight3.set(key, entry);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key);
   streamLastPush.delete(key);
@@ -6281,7 +6520,7 @@ function setBusy(userId, chatId, kind, label) {
 }
 function clearBusy(userId, chatId, kind) {
   const key = busyKey(userId, chatId, kind);
-  inflight2.delete(key);
+  inflight3.delete(key);
   aborters.delete(key);
   progressLastPush.delete(key);
   progressState.delete(key);
@@ -6292,10 +6531,10 @@ function clearBusy(userId, chatId, kind) {
   }
   streamLastPush.delete(key);
   const fresh = [];
-  for (const k of inflight2.keys()) {
+  for (const k of inflight3.keys()) {
     if (!k.startsWith(`${userId}::`))
       continue;
-    const found = inflight2.get(k);
+    const found = inflight3.get(k);
     if (found)
       fresh.push(found);
   }
@@ -6356,7 +6595,7 @@ function ensureHeartbeat() {
     }
     const touched = new Set;
     for (const [key, ps] of progressState) {
-      const entry = inflight2.get(key);
+      const entry = inflight3.get(key);
       if (!entry)
         continue;
       const elapsed = Date.now() - entry.startedAt;
@@ -6383,7 +6622,7 @@ ${s.slice(-STREAM_BUF_CAP)}`;
 }
 function appendStreamText(userId, chatId, kind, deltaKind, delta) {
   const key = busyKey(userId, chatId, kind);
-  if (!inflight2.has(key))
+  if (!inflight3.has(key))
     return;
   const buf = streamBufs.get(key) ?? { content: "", thinking: "" };
   if (deltaKind === "text")
@@ -6410,7 +6649,7 @@ function setStreamWatcher(userId, chatId, kind, on) {
   pushStreamText(userId, chatId, kind, {
     content: buf?.content ?? "",
     thinking: buf?.thinking ?? "",
-    running: inflight2.has(key)
+    running: inflight3.has(key)
   });
 }
 function updateProgressNumbers(userId, chatId, kind, chars, thinkingChars) {
@@ -6420,7 +6659,7 @@ function updateProgressNumbers(userId, chatId, kind, chars, thinkingChars) {
     return;
   ps.chars = chars;
   ps.thinkingChars = thinkingChars;
-  const entry = inflight2.get(key);
+  const entry = inflight3.get(key);
   if (!entry)
     return;
   const now = Date.now();
@@ -6783,25 +7022,6 @@ ${result.content}`;
     return entry.id;
   });
 }
-async function createArcAuto(chatId, profile, settings, userId, automation = false) {
-  if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc"))
-    return null;
-  try {
-    const entries = await listLmbEntries(chatId, userId);
-    const coverage = await buildCoverage(chatId, userId, entries);
-    const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-    if (chapters.length === 0)
-      return null;
-    if (getPendingPreviews(userId, chatId).some((p) => p.kind === "arc"))
-      return null;
-    const selected = selectBindingBatch(chapters, arcBindingRule(profile));
-    if (selected.length === 0)
-      return null;
-    return await runArc(chatId, profile, settings, userId, selected, { automation });
-  } finally {
-    clearBusy(userId, chatId, "arc");
-  }
-}
 async function createArcFromChapters(chatId, chapterEntryIds, profile, settings, userId, opts = {}) {
   if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc"))
     return null;
@@ -6813,7 +7033,8 @@ async function createArcFromChapters(chatId, chapterEntryIds, profile, settings,
     const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && wanted.has(e.raw.id)).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (chapters.length === 0)
       return null;
-    return await runArc(chatId, profile, settings, userId, chapters, { replacesEntryId: opts.replacesEntryId });
+    assertContiguousBinding(coverage.activeEntries, chapters);
+    return await runArc(chatId, profile, settings, userId, chapters, opts);
   } finally {
     clearBusy(userId, chatId, "arc");
   }
@@ -6893,6 +7114,7 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
       firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
       lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
     }
+    assertContiguousBinding(freshCoverage.activeEntries, selected);
     const book = await ensureBookForChat(chatId, userId);
     const replacedArc = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
     const sceneNumber = typeof replacedArc?.meta.sceneNumber === "number" ? replacedArc.meta.sceneNumber : await nextSceneNumber(chatId, 2, userId);
@@ -6991,6 +7213,7 @@ async function createHigherFromEntries(tier, chatId, arcEntryIds, profile, setti
     const arcs = coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && wanted.has(e.raw.id)).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (arcs.length === 0)
       return null;
+    assertContiguousBinding(coverage.activeEntries, arcs);
     return await runVolume(chatId, profile, settings, userId, arcs, opts.replacesEntryId, tier, opts.automation);
   } finally {
     clearBusy(userId, chatId, kind);
@@ -7074,6 +7297,7 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
       lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
     }
     const book = await ensureBookForChat(chatId, userId);
+    assertContiguousBinding(freshCoverage.activeEntries, selected);
     const replacedVolume = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
     const sceneNumber = typeof replacedVolume?.meta.sceneNumber === "number" ? replacedVolume.meta.sceneNumber : await nextSceneNumber(chatId, tier, userId);
     const msgIds = selected.flatMap((a) => a.meta.msgIds);
@@ -7257,7 +7481,6 @@ async function acceptPreview(chatId, draftId, profile, userId) {
   }
 }
 var CHAPTER_BACKLOG_CAP = 500;
-var ARC_BACKLOG_CAP = 100;
 async function drainChapterBacklog(chatId, profile, settings, userId, automation = false, ghost = false) {
   let made = 0;
   for (let i = 0;i < CHAPTER_BACKLOG_CAP; i++) {
@@ -7294,7 +7517,7 @@ async function dryRunChapter(chatId, profile, settings, userId) {
 async function dryRunArc(chatId, profile, settings, userId) {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const chapters = summaryRuns(coverage.activeEntries, 1)[0]?.entries ?? [];
   if (chapters.length === 0)
     throw new Error("No chapters to bind yet");
   const totalTurns = chapters.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
@@ -7305,7 +7528,7 @@ async function dryRunArc(chatId, profile, settings, userId) {
 async function dryRunVolume(chatId, profile, settings, userId) {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const arcs = coverage.activeEntries.filter((e) => e.meta.tier === 2 && !e.meta.isRoot).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
   if (arcs.length === 0)
     throw new Error("No arcs to press yet");
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
@@ -7314,19 +7537,7 @@ async function dryRunVolume(chatId, profile, settings, userId) {
   return assembleVolumePrompt(profile, settings.customPresets, chatId, arcs, userId, opener);
 }
 async function drainArcBacklog(chatId, profile, settings, userId, automation = false) {
-  if (profile.arcTrigger === "manual")
-    return 0;
-  let made = 0;
-  for (let i = 0;i < ARC_BACKLOG_CAP; i++) {
-    const created = await createArcAuto(chatId, profile, settings, userId, automation).catch((err) => {
-      warn(`createArcAuto failed: ${describeError(err)}`);
-      return null;
-    });
-    if (!created)
-      break;
-    made++;
-  }
-  return made;
+  return drainSummaryBacklog(2, chatId, profile, settings, userId, automation);
 }
 async function sweepStaleGhosts(chatId, userId) {
   const entries = await listLmbEntries(chatId, userId);
@@ -7545,213 +7756,68 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
   };
 }
 async function drainHigherBacklog(tier, chatId, profile, settings, userId, automation = false) {
+  return drainSummaryBacklog(tier, chatId, profile, settings, userId, automation);
+}
+async function createSummaryAuto(tier, chatId, profile, settings, userId, automation, closedOnly = false) {
+  if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1]))
+    return null;
+  const coverage = await buildCoverage(chatId, userId);
+  const sourceTier = tier - 1;
+  const batch = selectBindingBatch(coverage.activeEntries, sourceTier, summaryBindingRule(profile, tier), closedOnly);
+  if (!batch.length)
+    return null;
+  const ids = batch.map((e) => e.raw.id);
+  return tier === 2 ? createArcFromChapters(chatId, ids, profile, settings, userId, { automation }) : createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { automation });
+}
+async function drainSummaryBacklog(tier, chatId, profile, settings, userId, automation, closedOnly = false) {
   let made = 0;
   for (let i = 0;i < 100; i++) {
-    if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1]))
-      break;
-    const coverage = await buildCoverage(chatId, userId);
-    const batch = selectBindingBatch(coverage.activeEntries.filter((e) => e.meta.tier === tier - 1), profile.higherTiers[tier]);
-    if (!batch.length)
-      break;
-    const created = await createHigherFromEntries(tier, chatId, batch.map((e) => e.raw.id), profile, settings, userId, { automation });
+    const created = await createSummaryAuto(tier, chatId, profile, settings, userId, automation, closedOnly);
     if (!created)
       break;
     made++;
   }
   return made;
 }
-
-// src/backend/lessons.ts
-var cache = new Map;
-var inflight3 = new Map;
-var writeLocks2 = new Map;
-var failOpenUsers = new Set;
-var anomalyCb = null;
-function registerLessonsAnomalyCallback(cb) {
-  anomalyCb = cb;
+async function repairSummaryTimeline(chatId, profile, settings, userId) {
+  let made = 0;
+  for (const tier of [2, ...HIGHER_TIERS]) {
+    const before = getLastFailure(userId, chatId);
+    made += await drainSummaryBacklog(tier, chatId, profile, settings, userId, true, true);
+    const failure = getLastFailure(userId, chatId);
+    if (failure && failure !== before)
+      break;
+  }
+  return made;
 }
-function withLessonsLock(userId, fn) {
-  const prev = writeLocks2.get(userId) ?? Promise.resolve();
-  const next = prev.then(fn, fn);
-  writeLocks2.set(userId, next.catch(() => {}));
-  return next;
-}
-async function ensureLessons(userId) {
-  const cached = cache.get(userId);
-  if (cached)
-    return cached;
-  const running = inflight3.get(userId);
+var summaryResumes = new Map;
+function resumeSummaryBinding(chatId, userId) {
+  const key = `${userId}::${chatId}`;
+  const running = summaryResumes.get(key);
   if (running)
     return running;
-  const p = (async () => {
-    const state = await loadFromDisk(userId);
-    cache.set(userId, state);
-    return state;
-  })().finally(() => inflight3.delete(userId));
-  inflight3.set(userId, p);
-  return p;
-}
-async function loadFromDisk(userId) {
-  let exists;
-  try {
-    exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
-  } catch (err) {
-    error(`lessons: exists() failed, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
-    failOpenUsers.add(userId);
-    return unlockedLessons();
-  }
-  if (!exists) {
-    const fresh = await isFreshInstall(userId);
-    const state = makeDefaultLessons(fresh);
-    failOpenUsers.delete(userId);
-    await spindle.userStorage.setJson(LESSONS_PATH, state, { indent: 0, userId }).catch((err) => warn(`lessons: initial save failed: ${describeError(err)}`));
-    await applyGateFlags(userId, fresh).catch((err) => warn(`lessons: gate flag init failed: ${describeError(err)}`));
-    return state;
-  }
-  try {
-    const raw = await spindle.userStorage.read(LESSONS_PATH, userId);
-    failOpenUsers.delete(userId);
-    return normalizeLessons(JSON.parse(raw));
-  } catch (err) {
-    error(`lessons: file unreadable, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
-    failOpenUsers.add(userId);
-    return unlockedLessons();
-  }
-}
-async function isFreshInstall(userId) {
-  try {
-    return !await spindle.userStorage.exists(SETTINGS_PATH, userId);
-  } catch {
-    return false;
-  }
-}
-async function applyGateFlags(userId, freshInstall) {
-  await mutateSettings(userId, (cur) => ({
-    ...cur,
-    profiles: cur.profiles.map((p) => ({
-      ...p,
-      codexEnabled: false,
-      ...freshInstall ? { autoCreate: false } : {}
-    }))
-  }));
-}
-async function tryReadRealLessons(userId) {
-  try {
-    const exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
-    if (!exists)
-      return null;
-    const raw = await spindle.userStorage.read(LESSONS_PATH, userId);
-    return normalizeLessons(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-async function mutateLessons(userId, fn) {
-  return withLessonsLock(userId, async () => {
-    let cur = await ensureLessons(userId);
-    if (failOpenUsers.has(userId)) {
-      const real = await tryReadRealLessons(userId);
-      if (real) {
-        failOpenUsers.delete(userId);
-        cur = real;
-      }
-    }
-    const next = fn(cur);
-    if (failOpenUsers.has(userId)) {
-      cache.set(userId, next);
-      warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
-      anomalyCb?.(userId, "Memoria couldn't read her lesson register so this change is not saved to disk yet");
-      return next;
-    }
-    await spindle.userStorage.setJson(LESSONS_PATH, next, { indent: 0, userId });
-    cache.set(userId, next);
-    return next;
-  });
-}
-function patchLessonCourse(userId, course, patch) {
-  return mutateLessons(userId, (cur) => {
-    const prev = cur[course];
-    return {
-      ...cur,
-      [course]: {
-        ...prev,
-        ...patch,
-        answers: patch.answers ? { ...prev.answers, ...patch.answers } : prev.answers
-      }
-    };
-  });
-}
-function completeLessonCourse(userId, course, wrong, total, grade, signedName, answers) {
-  return mutateLessons(userId, (cur) => {
-    const prev = cur[course];
-    const bestWrong = prev.bestWrong === null ? wrong : Math.min(prev.bestWrong, wrong);
-    return {
-      ...cur,
-      [course]: {
-        ...prev,
-        status: "done",
-        answers: answers ? { ...prev.answers, ...answers } : prev.answers,
-        attempts: prev.attempts + 1,
-        lastWrong: wrong,
-        lastTotal: total > 0 ? total : null,
-        bestWrong,
-        grade,
-        completedAt: Date.now(),
-        signedName: signedName?.trim() ? signedName.trim().slice(0, 60) : prev.signedName,
-        startedAt: prev.startedAt ?? Date.now()
-      }
-    };
-  });
-}
-function resetLessonCourse(userId, course, mode, section, answerIds) {
-  return mutateLessons(userId, (cur) => {
-    const prev = cur[course];
-    const wasDone = prev.status === "done" || prev.completedAt !== null && prev.grade !== null;
-    const status = wasDone ? "done" : "in_progress";
-    let next;
-    if (mode === "course") {
-      next = {
-        ...prev,
-        status,
-        section: 0,
-        step: 0,
-        answers: {},
-        lastWrong: wasDone ? prev.lastWrong : null,
-        startedAt: Date.now()
-      };
-    } else {
-      const answers = { ...prev.answers };
-      for (const id of answerIds ?? [])
-        delete answers[id];
-      next = {
-        ...prev,
-        status,
-        section: typeof section === "number" && section >= 0 ? section : prev.section,
-        step: 0,
-        answers
-      };
-    }
-    return { ...cur, [course]: next };
-  });
-}
-function skipCourseSeal(userId, course) {
-  return mutateLessons(userId, (cur) => {
-    if (course === "codex" ? cur.codexSealSkipped : cur.booksSealSkipped)
-      return cur;
-    return course === "codex" ? { ...cur, codexSealSkipped: true } : { ...cur, booksSealSkipped: true };
-  });
-}
-function effectiveProfile(profile, lessons) {
-  if (!codexLessonGated(lessons))
-    return profile;
-  if (!profile.codexEnabled)
-    return profile;
-  return { ...profile, codexEnabled: false };
-}
-function codexGated(lessons) {
-  return codexLessonGated(lessons);
+  const run = (async () => {
+    const settings = await loadSettings(userId);
+    if (!settings.enabled)
+      return;
+    const rawProfile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+    if (!rawProfile)
+      return;
+    const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
+    await ensureForkAdoption(chatId, userId);
+    if (await forkShelfPending(chatId, userId))
+      return;
+    if (getBusy(userId).some((entry) => entry.chatId === chatId))
+      return;
+    const before = getLastFailure(userId, chatId);
+    await repairSummaryTimeline(chatId, profile, settings, userId);
+    const failure = getLastFailure(userId, chatId);
+    if (failure && failure !== before)
+      return;
+    await maybeRunArcCheck(chatId, profile, settings, userId, true);
+  })().finally(() => summaryResumes.delete(key));
+  summaryResumes.set(key, run);
+  return run;
 }
 
 // src/backend/injection.ts
@@ -10500,8 +10566,7 @@ async function buildState(userId, requestedChatId) {
   const compressibleSize = countCompressibleEligible(messages, backlogCoverage, activeProfile);
   const windowDenom = Math.max(1, activeProfile.windowValue);
   const backlogChapters = Math.max(0, Math.floor(compressibleSize / windowDenom));
-  const activeChapterEntries = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot);
-  const backlogArcs = countArcBacklog(activeChapterEntries, activeProfile);
+  const backlogArcs = countBindingBacklog(coverage.activeEntries, 1, summaryBindingRule(activeProfile, 2));
   const activeIds = new Set(coverage.activeEntries.map((e) => e.raw.id));
   const chapters = [];
   const arcs = [];
@@ -10616,9 +10681,6 @@ async function buildState(userId, requestedChatId) {
     codexRevision: getCodexRevision(chat.id)
   };
 }
-function countArcBacklog(activeChapters, profile) {
-  return countBindingBacklog(activeChapters, arcBindingRule(profile));
-}
 
 // src/backend/index.ts
 async function notify(userId, tone, text, automation = false) {
@@ -10688,6 +10750,11 @@ function pushState(userId, chatId) {
     }, PUSH_DEBOUNCE_MS);
     pushTimers.set(userId, timer);
   });
+}
+async function resumeActiveSummaryBinding(userId, chatId) {
+  const chat = chatId ? await spindle.chats.get(chatId, userId) : await spindle.chats.getActive(userId);
+  if (chat)
+    await resumeSummaryBinding(chat.id, userId);
 }
 registerPipelineCallbacks({
   onBusyChange(userId, entries) {
@@ -10851,6 +10918,8 @@ spindle.on("CHAT_SWITCHED", async (payload, hostUserId) => {
     rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
+  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", `Summary repair failed: ${describeError(err)}`));
+  await pushState(userId, p?.chatId ?? null);
 });
 spindle.on("MESSAGE_DELETED", async (payload, hostUserId) => {
   const p = payload;
@@ -10947,14 +11016,14 @@ async function cleanupGhostsIfModeOff(userId, chatId, context) {
 async function collectActiveChapterIds(chatId, userId) {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  return coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot).map((e) => e.raw.id);
+  return summaryRuns(coverage.activeEntries, 1)[0]?.entries.map((e) => e.raw.id) ?? [];
 }
 async function retryLastFailure(chatId, userId, profile, settings) {
   const last = getLastFailure(userId, chatId);
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = TIER_KINDS.indexOf(last.kind) + 1;
     const coverage = await buildCoverage(chatId, userId);
-    const ids = last.sourceEntryIds ?? coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && !e.meta.isRoot).map((e) => e.raw.id);
+    const ids = last.sourceEntryIds ?? summaryRuns(coverage.activeEntries, tier - 1)[0]?.entries.map((e) => e.raw.id) ?? [];
     if (ids.length)
       await createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
     return;
@@ -11000,6 +11069,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "ready":
       case "refresh":
         send({ type: "state_loading" }, userId);
+        await pushState(userId, msg.chatId);
+        await resumeActiveSummaryBinding(userId, msg.chatId);
         await pushState(userId, msg.chatId);
         break;
       case "save_settings":
@@ -11600,7 +11671,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         const accepted = await acceptPreview(msg.chatId, msg.draftId, profile, userId);
         if (accepted && cur.enabled)
-          await maybeRunArcCheck(msg.chatId, profile, cur, userId);
+          await resumeSummaryBinding(msg.chatId, userId);
         await pushState(userId, msg.chatId);
         break;
       }
@@ -11624,6 +11695,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await notify(userId, "warn", text);
         } else {
           await notify(userId, "success", `Memoria seeded ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} before the greeting`);
+          await resumeSummaryBinding(msg.chatId, userId);
         }
         await pushState(userId, msg.chatId);
         break;

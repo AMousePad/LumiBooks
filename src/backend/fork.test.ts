@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
+import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta, unlockedLessons } from "../shared";
 import { ensureForkAdoption, forkCodexPending, forkShelfPending } from "./fork";
 import { buildCoverage } from "./coverage";
 import { listLmbEntries, invalidateBookCache } from "./world-book";
@@ -8,6 +8,8 @@ import { saveSettings } from "./storage";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { syncCodexProfiles } from "./codex/sync";
 import { saveImportedSummaries } from "./summary-backup";
+import { getLastFailure, registerPipelineCallbacks, resumeSummaryBinding } from "./pipeline";
+import { buildState } from "./state";
 
 const original = (globalThis as any).spindle;
 const user = "fork-user";
@@ -170,6 +172,60 @@ test("higher-tier root adoption, rebuilding and detaching preserve the source", 
   expect(await detachRoot(child, user)).toBe(7);
   expect(await listLmbEntries(child, user)).toEqual([]);
   expect(entries).toEqual(sourceEntries);
+});
+
+for (const failFirst of [false, true]) test(`opening an existing rooted timeline repairs its older gap${failFirst ? " after a failed generation" : ""}`, async () => {
+  const repairUser = `repair-user-${sequence}`;
+  const configured = { ...profile, autoCreate: false, arcAfterChapters: 6, arcLagChapters: 7, retryCount: 0 };
+  let calls = 0;
+  Object.assign((globalThis as any).spindle, {
+    rpcPool: { sync() {} },
+    connections: { async list() { return [{ id: "conn", model: "test", is_default: true }]; } },
+    tokens: { async countText(text: string) { return { total_tokens: Math.ceil(text.length / 4) }; } },
+    regex_scripts: { async list() { return { data: [] }; } },
+    generate: { async *rawStream(req: any) {
+      calls++;
+      expect(req.messages[1].content).toContain("leftover-one");
+      expect(req.messages[1].content).toContain("leftover-two");
+      expect(req.messages[1].content).not.toContain("Continuation summary");
+      expect(req.messages[1].content).not.toContain("recent-arc");
+      if (failFirst && calls === 1) throw new Error("temporary generation fault");
+      yield { type: "done", content: JSON.stringify({ title: "Repaired", content: "An older contiguous story segment.", keywords: [] }) };
+    } },
+  });
+  registerPipelineCallbacks({ onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {} });
+  await saveSettings(repairUser, { ...DEFAULT_SETTINGS, profiles: [configured], activeProfileId: configured.id });
+  disk.set("lessons.json", unlockedLessons());
+  summary("older-arc", 2, [0]); summary("leftover-one", 1, [1]);
+  summary("leftover-two", 1, [2]); summary("recent-arc", 2, [3]);
+  const sourceEntries = structuredClone(entries);
+  chats.set(child, { id: child, name: "Continuation", metadata: {} });
+  messages.set(child, []);
+  expect(await rebaseRoot(child, parent, repairUser)).toEqual({ ok: true, count: 4 });
+  messages.set(child, [{ id: "continuation-message", role: "assistant", content: "A new scene.", index_in_chat: 0 }]);
+  const own = await (globalThis as any).spindle.world_books.entries.create(chats.get(child).metadata.lumibooks_book_id, {
+    content: "Continuation summary", disabled: false, constant: true,
+    extensions: { lumibooks: normalizeEntryMeta({ tier: 1, chatId: child, msgIds: ["continuation-message"], firstMsgIdx: 0, lastMsgIdx: 0 }) },
+  });
+  invalidateBookCache(repairUser, child);
+  expect((await buildState(repairUser, child)).backlogArcs).toBe(1);
+  const before = structuredClone(await listLmbEntries(child, repairUser));
+  await Promise.all([resumeSummaryBinding(child, repairUser), resumeSummaryBinding(child, repairUser)]);
+  if (failFirst) {
+    expect(getLastFailure(repairUser, child)?.kind).toBe("arc");
+    expect(await listLmbEntries(child, repairUser)).toEqual(before);
+    await resumeSummaryBinding(child, repairUser);
+  }
+  const repaired = await buildState(repairUser, child);
+  expect(repaired.backlogArcs).toBe(0);
+  expect(repaired.arcs.filter((e) => e.active)).toHaveLength(3);
+  expect(repaired.chapters.filter((e) => e.active).map((e) => e.entryId)).toEqual([own.id]);
+  expect(repaired.chapters).toHaveLength(3);
+  expect(repaired.chapters.filter((e) => e.isRoot).every((e) => !!e.meta.supersededByEntryId)).toBe(true);
+  expect(entries.filter((e) => e.world_book_id === chats.get(parent).metadata.lumibooks_book_id)).toEqual(sourceEntries);
+  expect(getLastFailure(repairUser, child)).toBeNull();
+  await resumeSummaryBinding(child, repairUser);
+  expect(calls).toBe(failFirst ? 2 : 1);
 });
 
 test("profile changes resync parent and fork books without merging their ownership", async () => {

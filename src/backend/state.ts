@@ -1,13 +1,12 @@
-import { arcBindingRule, countBindingBacklog } from "./binding";
+import { summaryBindingRule, countBindingBacklog } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ChapterView, ArcView, FrontendState, ConnectionOption, MessageStub, RegexScriptOption, RootSourceOption } from "../types";
 import type { ChatMessage } from "./coverage";
-import type { LMBProfile } from "../shared";
 import { approximateTokensFromChars } from "../shared";
 import { loadSettings } from "./storage";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
-import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding, type LMBEntry } from "./world-book";
+import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding } from "./world-book";
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
 import { extraContextActive, getBusy, getLastFailure, getPendingPreviews } from "./pipeline";
@@ -171,8 +170,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const compressibleSize = countCompressibleEligible(messages, backlogCoverage, activeProfile);
   const windowDenom = Math.max(1, activeProfile.windowValue);
   const backlogChapters = Math.max(0, Math.floor(compressibleSize / windowDenom));
-  const activeChapterEntries = coverage.activeEntries.filter((e) => e.meta.tier === 1 && !e.meta.isRoot);
-  const backlogArcs = countArcBacklog(activeChapterEntries, activeProfile);
+  const backlogArcs = countBindingBacklog(coverage.activeEntries, 1, summaryBindingRule(activeProfile, 2));
 
   const activeIds = new Set(coverage.activeEntries.map((e) => e.raw.id));
 
@@ -304,8 +302,4 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexTokensApproximate: codexCounts.approximate,
     codexRevision: getCodexRevision(chat.id),
   };
-}
-
-function countArcBacklog(activeChapters: LMBEntry[], profile: LMBProfile): number {
-  return countBindingBacklog(activeChapters, arcBindingRule(profile));
 }

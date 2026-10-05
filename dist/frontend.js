@@ -5022,13 +5022,13 @@ function renderOverview(host, state, send) {
   lessonMark(tiles, "home.tiles");
   tiles.appendChild(statTile(`${pct}%`, "Filed", `${cov.coveredMessages} of ${cov.totalMessages} msgs`, "Share of this chat's messages already compressed into the shelf"));
   tiles.appendChild(statTile(`~${formatTokens(cov.approxUncoveredTokens)}`, "Tail", `${cov.uncoveredMessages} msgs uncompressed`, "Recent messages still in the prompt at full size, waiting to pass the lag"));
-  const own = {
-    vol: state.volumes.filter((v) => !v.isRoot && v.active).length,
-    arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
-    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length
+  const counts = {
+    vol: state.volumes.filter((v) => v.active).length,
+    arc: state.arcs.filter((a) => a.active).length,
+    chap: state.chapters.filter((c) => !c.isGhost && c.active).length
   };
-  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap", "Uncompressed summaries. Hover for existing higher tiers.");
-  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && !e.isRoot && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
+  const shelfTile = statTile(`${counts.vol} · ${counts.arc} · ${counts.chap}`, "Shelf", "vol · arc · chap", "Uncompressed summaries. Hover for existing higher tiers.");
+  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
   if (higherCounts.length) {
     shelfTile.classList.add("lmb-has-higher");
     shelfTile.tabIndex = 0;
@@ -5561,10 +5561,10 @@ function renderBooksTab(host, state, ctx, send) {
 }
 function renderShelf(host, state, ctx, send, redraw) {
   const sec = section("The Shelf");
-  const chapters = state.chapters.filter((c) => !c.isRoot && (c.active || c.isGhost));
-  const arcs = state.arcs.filter((a) => !a.isRoot && a.active);
-  const volumes = state.volumes.filter((v) => !v.isRoot && v.active);
-  if (chapters.length + arcs.length + volumes.length + state.higherBooks.filter((v) => v.active && !v.isRoot).length === 0) {
+  const chapters = state.chapters;
+  const arcs = state.arcs;
+  const volumes = state.volumes;
+  if (chapters.length + arcs.length + volumes.length + state.higherBooks.length === 0) {
     sec.body.appendChild(textNode("Empty shelf for now. Memoria will start filing once the lag fills.", "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
@@ -5585,7 +5585,7 @@ function renderShelf(host, state, ctx, send, redraw) {
   listHost.tabIndex = 0;
   sec.body.appendChild(listHost);
   const groups = [
-    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1], title: TIER_NAMES[t - 1], kind: TIER_KINDS[t - 1], items: state.higherBooks.filter((e) => e.meta.tier === t && !e.isRoot && e.active) })),
+    ...HIGHER_TIERS.filter((t) => t > 3).reverse().map((t) => ({ key: TIER_KINDS[t - 1], title: TIER_NAMES[t - 1], kind: TIER_KINDS[t - 1], items: state.higherBooks.filter((e) => e.meta.tier === t) })),
     { key: "volumes", title: "Volumes", kind: "volume", items: volumes },
     { key: "arcs", title: "Arcs", kind: "arc", items: arcs },
     { key: "chapters", title: "Chapters", kind: "chapter", items: chapters }
@@ -5732,7 +5732,7 @@ function renderEntryDetail(view, kind, state, ctx, send) {
       if (!ok || !chatId)
         return;
       send({ type: "regenerate_entry", chatId, entryId: view.entryId });
-    }, { small: true, title: "Delete and resummarize the same range" }), makeButton("Release", async () => {
+    }, { small: true, disabled: !view.active || view.isRoot && kind === "chapter", title: "Delete and resummarize the same range" }), makeButton("Release", async () => {
       const freed = kind === "chapter" ? "Its messages return to the prompt unless a higher tier still covers them." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.";
       const ok = await confirmDelete(ctx, "Release to lorebook?", `Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. ${freed}`);
       if (!ok || !chatId)
@@ -6190,7 +6190,7 @@ function renderContinuity(host, state, ctx, send) {
   const wrap = renderContinuitySection(host, ctx, {
     emptyText: "No other chat has memories to inherit from yet",
     inherited: hasRoot ? {
-      text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}, injected before the greeting.`,
+      text: `Inherited from ${originName}: ${state.rootEntryCount} memor${state.rootEntryCount === 1 ? "y" : "ies"}.`,
       detail,
       detach: {
         label: "Detach root",
@@ -6201,7 +6201,7 @@ function renderContinuity(host, state, ctx, send) {
       }
     } : null,
     picker: candidates.length > 0 ? {
-      help: hasOwn ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root." : "Seed this chat with another chat's memories. They inject as a frozen prologue before the greeting.",
+      help: hasOwn ? "This chat already has its own memories. Rebuilding deletes them and re-summarizes on top of the chosen root." : "Seed this chat with another chat's memories. They inject before the greeting until bound into newer summaries.",
       ariaLabel: "Source chat to inherit memories from",
       placeholder: "Pick a source chat...",
       options: candidates.map((cand) => ({

@@ -794,14 +794,14 @@ function renderOverview(host: HTMLElement, state: FrontendState, send: (m: Front
     "Share of this chat's messages already compressed into the shelf"));
   tiles.appendChild(statTile(`~${formatTokens(cov.approxUncoveredTokens)}`, "Tail", `${cov.uncoveredMessages} msgs uncompressed`,
     "Recent messages still in the prompt at full size, waiting to pass the lag"));
-  const own = {
-    vol: state.volumes.filter((v) => !v.isRoot && v.active).length,
-    arc: state.arcs.filter((a) => !a.isRoot && a.active).length,
-    chap: state.chapters.filter((c) => !c.isRoot && !c.isGhost && c.active).length,
+  const counts = {
+    vol: state.volumes.filter((v) => v.active).length,
+    arc: state.arcs.filter((a) => a.active).length,
+    chap: state.chapters.filter((c) => !c.isGhost && c.active).length,
   };
-  const shelfTile = statTile(`${own.vol} · ${own.arc} · ${own.chap}`, "Shelf", "vol · arc · chap",
+  const shelfTile = statTile(`${counts.vol} · ${counts.arc} · ${counts.chap}`, "Shelf", "vol · arc · chap",
     "Uncompressed summaries. Hover for existing higher tiers.");
-  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && !e.isRoot && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
+  const higherCounts = TIER_KINDS.slice(3).map((kind, i) => ({ kind, count: state.higherBooks.filter((e) => e.active && e.meta.tier === i + 4).length })).filter((e) => e.count > 0);
   if (higherCounts.length) {
     shelfTile.classList.add("lmb-has-higher"); shelfTile.tabIndex = 0;
     const more = document.createElement("div"); more.className = "lmb-higher-peek";

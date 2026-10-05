@@ -1,5 +1,5 @@
 import { TIER_KINDS, TIER_NAMES, HIGHER_TIERS, tierHeader, type HigherTier, type SummaryTier, type SummaryKind } from "../shared";
-import { arcBindingRule, selectBindingBatch } from "./binding";
+import { assertContiguousBinding, selectBindingBatch, summaryBindingRule, summaryRuns } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBProfile, LMBSettings, LMBEntryMeta } from "../shared";
@@ -37,6 +37,7 @@ import { describeError, warn } from "./runtime";
 import { publishChapterCreated, publishArcCreated, publishVolumeCreated } from "./hooks";
 import { pickPhrase, type PhraseKind } from "./memoria";
 import { ensureForkAdoption, forkShelfPending } from "./fork";
+import { effectiveProfile, ensureLessons } from "./lessons";
 
 type ChatMessageDTO = ChatMessage;
 
@@ -787,21 +788,7 @@ export async function createArcAuto(
   userId: string,
   automation = false,
 ): Promise<string | null> {
-  if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc")) return null;
-  try {
-    const entries = await listLmbEntries(chatId, userId);
-    const coverage = await buildCoverage(chatId, userId, entries);
-    const chapters = coverage.activeEntries
-      .filter((e) => e.meta.tier === 1 && !e.meta.isRoot)
-      .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-    if (chapters.length === 0) return null;
-    if (getPendingPreviews(userId, chatId).some((p) => p.kind === "arc")) return null;
-    const selected = selectBindingBatch(chapters, arcBindingRule(profile));
-    if (selected.length === 0) return null;
-    return await runArc(chatId, profile, settings, userId, selected, { automation });
-  } finally {
-    clearBusy(userId, chatId, "arc");
-  }
+  return createSummaryAuto(2, chatId, profile, settings, userId, automation);
 }
 
 export async function createArcFromChapters(
@@ -810,7 +797,7 @@ export async function createArcFromChapters(
   profile: LMBProfile,
   settings: LMBSettings,
   userId: string,
-  opts: { replacesEntryId?: string } = {},
+  opts: { replacesEntryId?: string; automation?: boolean } = {},
 ): Promise<string | null> {
   if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc")) return null;
   try {
@@ -824,7 +811,8 @@ export async function createArcFromChapters(
       .filter((e) => e.meta.tier === 1 && wanted.has(e.raw.id))
       .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (chapters.length === 0) return null;
-    return await runArc(chatId, profile, settings, userId, chapters, { replacesEntryId: opts.replacesEntryId });
+    assertContiguousBinding(coverage.activeEntries, chapters);
+    return await runArc(chatId, profile, settings, userId, chapters, opts);
   } finally {
     clearBusy(userId, chatId, "arc");
   }
@@ -930,6 +918,7 @@ async function commitArc(
     firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
     lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
   }
+  assertContiguousBinding(freshCoverage.activeEntries, selected);
   const book = await ensureBookForChat(chatId, userId);
   // On regenerate, keep the replaced arc's scene number (see commitChapter).
   const replacedArc = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
@@ -1044,6 +1033,7 @@ export async function createHigherFromEntries(
       .filter((e) => e.meta.tier === tier - 1 && wanted.has(e.raw.id))
       .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (arcs.length === 0) return null;
+    assertContiguousBinding(coverage.activeEntries, arcs);
     return await runVolume(chatId, profile, settings, userId, arcs, opts.replacesEntryId, tier, opts.automation);
   } finally {
     clearBusy(userId, chatId, kind);
@@ -1154,6 +1144,7 @@ async function commitVolume(
     lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
   }
   const book = await ensureBookForChat(chatId, userId);
+  assertContiguousBinding(freshCoverage.activeEntries, selected);
   // On regenerate, keep the replaced volume's scene number (see commitChapter).
   const replacedVolume = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
   const sceneNumber = typeof replacedVolume?.meta.sceneNumber === "number"
@@ -1360,7 +1351,6 @@ export async function acceptPreview(
 }
 
 const CHAPTER_BACKLOG_CAP = 500;
-const ARC_BACKLOG_CAP = 100;
 
 export async function drainChapterBacklog(
   chatId: string,
@@ -1428,9 +1418,7 @@ export async function dryRunArc(
 ): Promise<DryRunAssembly> {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const chapters = coverage.activeEntries
-    .filter((e) => e.meta.tier === 1 && !e.meta.isRoot)
-    .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const chapters = summaryRuns(coverage.activeEntries, 1)[0]?.entries ?? [];
   if (chapters.length === 0) throw new Error("No chapters to bind yet");
   const totalTurns = chapters.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 2, userId);
@@ -1446,9 +1434,7 @@ export async function dryRunVolume(
 ): Promise<DryRunAssembly> {
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const arcs = coverage.activeEntries
-    .filter((e) => e.meta.tier === 2 && !e.meta.isRoot)
-    .sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
   if (arcs.length === 0) throw new Error("No arcs to press yet");
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
@@ -1463,17 +1449,7 @@ export async function drainArcBacklog(
   userId: string,
   automation = false,
 ): Promise<number> {
-  if (profile.arcTrigger === "manual") return 0;
-  let made = 0;
-  for (let i = 0; i < ARC_BACKLOG_CAP; i++) {
-    const created = await createArcAuto(chatId, profile, settings, userId, automation).catch((err) => {
-      warn(`createArcAuto failed: ${describeError(err)}`);
-      return null;
-    });
-    if (!created) break;
-    made++;
-  }
-  return made;
+  return drainSummaryBacklog(2, chatId, profile, settings, userId, automation);
 }
 
 /**
@@ -1788,15 +1764,64 @@ function makeGroupPreview(
 }
 
 export async function drainHigherBacklog(tier: HigherTier, chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string, automation = false): Promise<number> {
+  return drainSummaryBacklog(tier, chatId, profile, settings, userId, automation);
+}
+
+async function createSummaryAuto(tier: Exclude<SummaryTier, 1>, chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string, automation: boolean, closedOnly = false): Promise<string | null> {
+  if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1])) return null;
+  const coverage = await buildCoverage(chatId, userId);
+  const sourceTier = (tier - 1) as SummaryTier;
+  const batch = selectBindingBatch(coverage.activeEntries, sourceTier, summaryBindingRule(profile, tier), closedOnly);
+  if (!batch.length) return null;
+  const ids = batch.map((e) => e.raw.id);
+  return tier === 2
+    ? createArcFromChapters(chatId, ids, profile, settings, userId, { automation })
+    : createHigherFromEntries(tier, chatId, ids, profile, settings, userId, { automation });
+}
+
+async function drainSummaryBacklog(tier: Exclude<SummaryTier, 1>, chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string, automation: boolean, closedOnly = false): Promise<number> {
   let made = 0;
   for (let i = 0; i < 100; i++) {
-    if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1])) break;
-    const coverage = await buildCoverage(chatId, userId);
-    const batch = selectBindingBatch(coverage.activeEntries.filter((e) => e.meta.tier === tier - 1), profile.higherTiers[tier]);
-    if (!batch.length) break;
-    const created = await createHigherFromEntries(tier, chatId, batch.map((e) => e.raw.id), profile, settings, userId, { automation });
+    const created = await createSummaryAuto(tier, chatId, profile, settings, userId, automation, closedOnly);
     if (!created) break;
     made++;
   }
   return made;
+}
+
+/** Repair only older segments closed by a higher tier; the open tail keeps its normal cadence. */
+export async function repairSummaryTimeline(chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string): Promise<number> {
+  let made = 0;
+  for (const tier of [2, ...HIGHER_TIERS] as const) {
+    const before = getLastFailure(userId, chatId);
+    made += await drainSummaryBacklog(tier, chatId, profile, settings, userId, true, true);
+    const failure = getLastFailure(userId, chatId);
+    if (failure && failure !== before) break;
+  }
+  return made;
+}
+
+const summaryResumes = new Map<string, Promise<void>>();
+
+export function resumeSummaryBinding(chatId: string, userId: string): Promise<void> {
+  const key = `${userId}::${chatId}`;
+  const running = summaryResumes.get(key);
+  if (running) return running;
+  const run = (async () => {
+    const settings = await loadSettings(userId);
+    if (!settings.enabled) return;
+    const rawProfile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+    if (!rawProfile) return;
+    const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
+    await ensureForkAdoption(chatId, userId);
+    if (await forkShelfPending(chatId, userId)) return;
+    if (getBusy(userId).some((entry) => entry.chatId === chatId)) return;
+    const before = getLastFailure(userId, chatId);
+    await repairSummaryTimeline(chatId, profile, settings, userId);
+    const failure = getLastFailure(userId, chatId);
+    if (failure && failure !== before) return;
+    await maybeRunArcCheck(chatId, profile, settings, userId, true);
+  })().finally(() => summaryResumes.delete(key));
+  summaryResumes.set(key, run);
+  return run;
 }
