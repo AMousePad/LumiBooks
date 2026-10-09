@@ -93,6 +93,36 @@ test("imported coverage remaps on a full fork and drops summaries crossing a sho
   expect(inherited[0]!.meta.msgIds).toEqual([`${shorter}-m0`, `${shorter}-m1`]);
 });
 
+test("old chapter and arc ranges use live host numbers in state and after repeated forks", async () => {
+  Object.assign((globalThis as any).spindle, {
+    connections: { async list() { return []; } },
+    regex_scripts: { async list() { return { data: [] }; } },
+  });
+  disk.set("lessons.json", unlockedLessons());
+  for (const m of messages.get(parent)!) m.index_in_chat += 5;
+  summary("chapter", 1, [0, 1]);
+  summary("arc", 2, [0, 1], ["chapter"]);
+  branch(parent, child, 4);
+  for (const target of [parent, child, `grandchild-${sequence}`]) {
+    if (target.startsWith("grandchild")) branch(child, target, 4);
+    if (target !== parent) await ensureForkAdoption(target, user);
+    const state = await buildState(user, target);
+    expect([state.chapters[0]!.meta.firstMsgIdx, state.chapters[0]!.meta.lastMsgIdx]).toEqual([5, 6]);
+    expect([state.arcs[0]!.meta.firstMsgIdx, state.arcs[0]!.meta.lastMsgIdx]).toEqual([5, 6]);
+    expect(state.messages.filter((m) => !m.covered).map((m) => m.indexInChat)).toEqual([7, 8]);
+  }
+  // Correcting the view does not rewrite the original book or its prose.
+  expect(entries.find((e) => e.id === "chapter").extensions.lumibooks.firstMsgIdx).toBe(0);
+});
+
+test("imported coverage stores host numbers despite gaps in the destination chat", async () => {
+  for (const m of messages.get(parent)!) m.index_in_chat += 5;
+  await saveImportedSummaries(parent, user, [{ content: "Imported", comment: "Imported", keys: [], tier: 1 }],
+    { messages: messages.get(parent)!, indices: [[0, 1]] });
+  const [entry] = await listLmbEntries(parent, user);
+  expect([entry!.meta.firstMsgIdx, entry!.meta.lastMsgIdx]).toEqual([5, 6]);
+});
+
 test("forks and forks of forks own independent shelves through Universe and Codex books", async () => {
   summary("chapter", 1, [0, 1, 2, 3]);
   for (let tier = 2; tier <= 7; tier++) summary(`tier-${tier}`, tier, [0, 1, 2, 3], [tier === 2 ? "chapter" : `tier-${tier - 1}`]);

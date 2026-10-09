@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
-import { createChapterFromRange, registerPipelineCallbacks } from "./pipeline";
+import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, getPendingPreviews, registerPipelineCallbacks } from "./pipeline";
 import { invalidateBookCache } from "./world-book";
 import { saveSettings } from "./storage";
 
@@ -44,6 +44,39 @@ beforeEach(async () => {
   await saveSettings(userId, settings());
 });
 afterAll(() => { (globalThis as any).spindle = original; });
+
+test("arc binding orders old offset ranges by live sources and saves host message numbers", async () => {
+  messages = messages.slice(5);
+  entries = [chapter(71, 38, 50), chapter(72, 50, 62)];
+  // A fork had corrected chapter 71; chapter 72 still has an old array offset.
+  Object.assign(entries[0].extensions.lumibooks, { firstMsgIdx: 43, lastMsgIdx: 54 });
+  const id = await createArcFromChapters(chatId, ["chapter-72", "chapter-71"], profile, settings(), userId);
+  expect(id).toBeTruthy();
+  const saved = entries.find((e) => e.id === id).extensions.lumibooks;
+  expect([saved.firstMsgIdx, saved.lastMsgIdx]).toEqual([43, 66]);
+  expect(saved.sourceChapterEntryIds).toEqual(["chapter-71", "chapter-72"]);
+});
+
+for (const mode of ["auto", "manual", "preview"] as const) test(`${mode} filing uses host message numbers after five earlier deletions`, async () => {
+  messages = messages.slice(5);
+  entries = [chapter(71, 0, 50)];
+  Object.assign(entries[0].extensions.lumibooks, { firstMsgIdx: 5, lastMsgIdx: 54 });
+  profile.showMemoryPreviews = mode === "preview";
+  const ids = messages.slice(50, 62).map((m) => m.id);
+  let id = mode === "auto"
+    ? await createChapterAuto(chatId, profile, settings(), userId)
+    : await createChapterFromRange(chatId, ids, profile, settings(), userId);
+  if (mode === "preview") {
+    const draft = getPendingPreviews(userId, chatId)[0]!;
+    expect([draft.firstMsgIdx, draft.lastMsgIdx]).toEqual([55, 66]);
+    id = await acceptPreview(chatId, draft.draftId, profile, userId);
+  }
+  expect(id).toBeTruthy();
+  const saved = entries.find((e) => e.id === id).extensions.lumibooks;
+  expect(saved.msgIds).toEqual(ids);
+  expect([saved.firstMsgIdx, saved.lastMsgIdx]).toEqual([55, 66]);
+  for (let n = 56; n <= 67; n++) expect(requests[0].messages[1].content).toContain(`RAW_MESSAGE_${n}_END`);
+});
 
 test("regenerating chapter 67 includes only preceding memories and preserves its source IDs and ordinal", async () => {
   entries = [chapter(64, 0, 12), chapter(65, 12, 24), chapter(66, 24, 36), chapter(67, 36, 48), chapter(68, 48, 60)];

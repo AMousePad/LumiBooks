@@ -8,6 +8,24 @@ import { listLmbEntries, type LMBEntry } from "./world-book";
 export type ChatMessage = Awaited<ReturnType<typeof spindle.chat.getMessages>>[number];
 type ChatMessageDTO = ChatMessage;
 
+/** Display old summaries using the same live host indexes as Compose. Message
+ * IDs remain authoritative; old releases stored array offsets in these fields. */
+export function withLiveMessageRanges(entries: LMBEntry[], messages: ChatMessageDTO[]): LMBEntry[] {
+  const indexes = new Map(messages.map((m) => [m.id, m.index_in_chat]));
+  return entries.map((entry) => {
+    if (entry.meta.isRoot) return entry;
+    let first = Infinity, last = -Infinity;
+    for (const id of entry.meta.msgIds) {
+      const index = indexes.get(id);
+      if (index === undefined) continue;
+      first = Math.min(first, index);
+      last = Math.max(last, index);
+    }
+    if (!Number.isFinite(first)) return entry;
+    return { ...entry, meta: { ...entry.meta, firstMsgIdx: first, lastMsgIdx: last } };
+  });
+}
+
 export interface CoverageMap {
   coveredBy: Map<string, string>;
   activeEntries: LMBEntry[];

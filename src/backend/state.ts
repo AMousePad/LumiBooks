@@ -5,7 +5,7 @@ import type { ChapterView, ArcView, FrontendState, ConnectionOption, MessageStub
 import type { ChatMessage } from "./coverage";
 import { approximateTokensFromChars } from "../shared";
 import { loadSettings } from "./storage";
-import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
+import { buildCoverage, computeCoverageStats, countCompressibleEligible, withLiveMessageRanges } from "./coverage";
 import { findBookForChat, listLmbEntries, listRootCandidates, reassertChatBinding } from "./world-book";
 import { listConnections, resolveConnection } from "./summarizer";
 import { listRegexScripts } from "./regex";
@@ -158,7 +158,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     warn(`failed to read messages for chat ${chat.id.slice(0, 8)}: ${describeError(err)}`);
   }
 
-  const entries = await listLmbEntries(chat.id, userId).catch(() => []);
+  const entries = withLiveMessageRanges(await listLmbEntries(chat.id, userId).catch(() => []), messages);
   const coverage = await buildCoverage(chat.id, userId, entries);
   const stats = computeCoverageStats(messages, coverage, activeProfile);
 

@@ -1720,6 +1720,24 @@ async function listRootCandidates(userId) {
 }
 
 // src/backend/coverage.ts
+function withLiveMessageRanges(entries, messages) {
+  const indexes = new Map(messages.map((m) => [m.id, m.index_in_chat]));
+  return entries.map((entry) => {
+    if (entry.meta.isRoot)
+      return entry;
+    let first = Infinity, last = -Infinity;
+    for (const id of entry.meta.msgIds) {
+      const index = indexes.get(id);
+      if (index === undefined)
+        continue;
+      first = Math.min(first, index);
+      last = Math.max(last, index);
+    }
+    if (!Number.isFinite(first))
+      return entry;
+    return { ...entry, meta: { ...entry.meta, firstMsgIdx: first, lastMsgIdx: last } };
+  });
+}
 async function buildCoverage(chatId, userId, preloadedEntries, includeGhosts = false) {
   const allEntries = preloadedEntries ?? await listLmbEntries(chatId, userId);
   const entries = allEntries.filter((e) => !e.raw.disabled || includeGhosts && e.meta.ghost === true);
@@ -2198,8 +2216,8 @@ async function saveImportedSummaries(chatId, userId, rows, links) {
         msgIds: indices.map((index) => links.messages[index].id),
         sourceChapterEntryIds: [],
         isRoot,
-        firstMsgIdx: indices[0] ?? at,
-        lastMsgIdx: indices.at(-1) ?? at,
+        firstMsgIdx: isRoot ? at : links.messages[indices[0]].index_in_chat,
+        lastMsgIdx: isRoot ? at : links.messages[indices.at(-1)].index_in_chat,
         tokenCountInput: 0,
         tokenCountOutput: approximateTokensFromChars(row.content.length),
         model: "",
@@ -6892,8 +6910,8 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   }
   clearLastFailure(userId, chatId);
   const result = outcome.value;
-  const firstIdx = allMessages.findIndex((m) => m.id === window[0].id);
-  const lastIdx = allMessages.findIndex((m) => m.id === window[window.length - 1].id);
+  const firstIdx = window[0].index_in_chat;
+  const lastIdx = window[window.length - 1].index_in_chat;
   if (profile.showMemoryPreviews && !ghost) {
     const draft = makePreview("chapter", chatId, window, result, firstIdx, lastIdx, replacesEntryId);
     pushPreview(userId, chatId, draft);
@@ -6932,15 +6950,8 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     }
     if (validWindow.length < window.length) {
       window = validWindow;
-      const validIds = new Set(validWindow.map((m) => m.id));
-      firstIdx = allMessages.findIndex((m) => validIds.has(m.id));
-      lastIdx = -1;
-      for (let i = allMessages.length - 1;i >= 0; i--) {
-        if (validIds.has(allMessages[i].id)) {
-          lastIdx = i;
-          break;
-        }
-      }
+      firstIdx = window[0].index_in_chat;
+      lastIdx = window[window.length - 1].index_in_chat;
     }
     const book = await ensureBookForChat(chatId, userId);
     const replacedEntry = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
@@ -7024,11 +7035,18 @@ ${result.content}`;
     return entry.id;
   });
 }
+async function listTimelineEntries(chatId, userId) {
+  const [entries, messages] = await Promise.all([
+    listLmbEntries(chatId, userId),
+    spindle.chat.getMessages(chatId)
+  ]);
+  return withLiveMessageRanges(entries, messages);
+}
 async function createArcFromChapters(chatId, chapterEntryIds, profile, settings, userId, opts = {}) {
   if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc"))
     return null;
   try {
-    const entries = await listLmbEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId);
     const entriesForSelection = opts.replacesEntryId ? entries.filter((e) => e.raw.id !== opts.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, entriesForSelection);
     const wanted = new Set(chapterEntryIds);
@@ -7101,7 +7119,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
 }
 async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, automation = false) {
   return withCommitMutex(userId, chatId, 2, async () => {
-    const freshEntries = await listLmbEntries(chatId, userId);
+    const freshEntries = await listTimelineEntries(chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 1).map((e) => e.raw.id));
@@ -7208,7 +7226,7 @@ async function createHigherFromEntries(tier, chatId, arcEntryIds, profile, setti
   if (!setBusy(userId, chatId, kind, `Memoria is binding a ${kind}`))
     return null;
   try {
-    const entries = await listLmbEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId);
     const entriesForSelection = opts.replacesEntryId ? entries.filter((e) => e.raw.id !== opts.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, entriesForSelection);
     const wanted = new Set(arcEntryIds);
@@ -7283,7 +7301,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
 }
 async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, tier = 3) {
   return withCommitMutex(userId, chatId, tier, async () => {
-    const freshEntries = await listLmbEntries(chatId, userId);
+    const freshEntries = await listTimelineEntries(chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
@@ -7407,8 +7425,8 @@ async function acceptPreview(chatId, draftId, profile, userId) {
       if (window.length < preview.sourceMessageIds.length) {
         cb?.onToast(userId, "warn", "Some messages were missing or already covered, Memoria saved the rest");
       }
-      const firstIdx = messages.findIndex((m) => m.id === window[0].id);
-      const lastIdx = messages.findIndex((m) => m.id === window[window.length - 1].id);
+      const firstIdx = window[0].index_in_chat;
+      const lastIdx = window[window.length - 1].index_in_chat;
       const fakeResult = {
         rawOutput: preview.content,
         title: preview.title,
@@ -7437,7 +7455,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
     }
     const targetTier = TIER_KINDS.indexOf(preview.kind) + 1;
     const isVolume = targetTier >= 3;
-    const entries = await listLmbEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId);
     const groupSelectionEntries = preview.replacesEntryId ? entries.filter((e) => e.raw.id !== preview.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, groupSelectionEntries);
     const wanted = new Set(preview.sourceChapterEntryIds ?? []);
@@ -7516,7 +7534,7 @@ async function dryRunChapter(chatId, profile, settings, userId) {
   return assembleChapterPrompt(profile, settings.customPresets, chatId, window, previousMemories, userId, opener);
 }
 async function dryRunArc(chatId, profile, settings, userId) {
-  const entries = await listLmbEntries(chatId, userId);
+  const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
   const chapters = summaryRuns(coverage.activeEntries, 1)[0]?.entries ?? [];
   if (chapters.length === 0)
@@ -7527,7 +7545,7 @@ async function dryRunArc(chatId, profile, settings, userId) {
   return assembleArcPrompt(profile, settings.customPresets, chatId, chapters, userId, opener);
 }
 async function dryRunVolume(chatId, profile, settings, userId) {
-  const entries = await listLmbEntries(chatId, userId);
+  const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
   const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
   if (arcs.length === 0)
@@ -7762,7 +7780,7 @@ async function drainHigherBacklog(tier, chatId, profile, settings, userId, autom
 async function createSummaryAuto(tier, chatId, profile, settings, userId, automation, closedOnly = false) {
   if (getPendingPreviews(userId, chatId).some((p) => p.kind === TIER_KINDS[tier - 1]))
     return null;
-  const coverage = await buildCoverage(chatId, userId);
+  const coverage = await buildCoverage(chatId, userId, await listTimelineEntries(chatId, userId));
   const sourceTier = tier - 1;
   const batch = selectBindingBatch(coverage.activeEntries, sourceTier, summaryBindingRule(profile, tier), closedOnly);
   if (!batch.length)
@@ -10560,7 +10578,7 @@ async function buildState(userId, requestedChatId) {
   } catch (err) {
     warn(`failed to read messages for chat ${chat.id.slice(0, 8)}: ${describeError(err)}`);
   }
-  const entries = await listLmbEntries(chat.id, userId).catch(() => []);
+  const entries = withLiveMessageRanges(await listLmbEntries(chat.id, userId).catch(() => []), messages);
   const coverage = await buildCoverage(chat.id, userId, entries);
   const stats = computeCoverageStats(messages, coverage, activeProfile);
   const backlogCoverage = extraContextActive(activeProfile) ? await buildCoverage(chat.id, userId, entries, true) : coverage;

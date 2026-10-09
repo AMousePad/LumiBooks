@@ -82,7 +82,7 @@ export async function readSummaryImport(raw: unknown) {
   return { rows, fingerprint };
 }
 
-export interface SummaryImportLinks { messages: readonly RawSummaryMessage[]; indices: number[][] }
+export interface SummaryImportLinks { messages: readonly (RawSummaryMessage & { index_in_chat: number })[]; indices: number[][] }
 
 /** No links means an ordinary lorebook root. Confirmed links use destination
  * IDs and normal tiers so coverage, binding, release and forks behave normally. */
@@ -105,7 +105,8 @@ export async function saveImportedSummaries(chatId: string, userId: string, rows
       const comment = isRoot ? (row.comment.startsWith("[Root]") ? row.comment : `[Root] ${row.comment}`) : row.comment.replace(/^\[Root\]\s*/, "");
       const entry = await createChapterEntry(book.id, {
         tier: row.tier, chatId, msgIds: indices.map((index) => links!.messages[index]!.id), sourceChapterEntryIds: [], isRoot,
-        firstMsgIdx: indices[0] ?? at, lastMsgIdx: indices.at(-1) ?? at, tokenCountInput: 0,
+        firstMsgIdx: isRoot ? at : links!.messages[indices[0]!]!.index_in_chat,
+        lastMsgIdx: isRoot ? at : links!.messages[indices.at(-1)!]!.index_in_chat, tokenCountInput: 0,
         tokenCountOutput: approximateTokensFromChars(row.content.length),
         model: "", connectionId: "", createdAt: Date.now(), title: row.comment,
       }, row.content, comment, userId, row.keys, true);

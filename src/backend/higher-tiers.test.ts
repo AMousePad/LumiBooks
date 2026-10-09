@@ -23,6 +23,7 @@ beforeEach(async () => {
  (globalThis as any).spindle = {
   log: { info() {}, warn() {}, error() {} }, rpcPool: { sync() {} },
   userStorage: { async setJson() {}, async getJson() { return settings(); } },
+  chat: { async getMessages() { return []; } },
   chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId, chat_world_book_ids: [bookId] } }; }, async update() {} },
   connections: { async list() { return [{ id: "conn", model: "test", is_default: true }]; } },
   tokens: { async countText(text: string) { return { total_tokens: Math.ceil(text.length / 4) }; } },
