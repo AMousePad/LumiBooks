@@ -9,12 +9,9 @@ import { approximateTokensFromChars, buildArcHeader, buildChapterHeader, buildVo
 import {
   buildCoverage,
   withLiveMessageRanges,
-  computeCoverageStats,
   isExcluded,
   liveEndPosition,
-  pickUncoveredTail,
-  selectNextChapterWindow,
-  sizeEligible,
+  selectUncoveredChapterWindow,
   syncHiddenForCoveredMessages,
   trimLagFromTail,
   type CoverageMap,
@@ -443,46 +440,6 @@ export function extraContextActive(profile: LMBProfile): boolean {
   return profile.codexEnabled && profile.codexExtraContext;
 }
 
-/**
- * Ghost windows fill from the EARLIEST uncovered gap rather than the
- * contiguous tail, so a hole left by a swept or deleted mid-run ghost gets
- * refilled instead of stranded behind later coverage. A gap bounded by later
- * coverage files at whatever size it has (it can never grow); an open tail
- * waits for a full window.
- */
-function selectGhostWindow(
-  messages: ChatMessageDTO[],
-  coverage: CoverageMap,
-  effProfile: LMBProfile,
-): ChatMessageDTO[] {
-  const kept = trimLagFromTail(messages, effProfile);
-  let i = 0;
-  while (i < kept.length) {
-    while (i < kept.length && coverage.coveredBy.has(kept[i]!.id)) i++;
-    if (i >= kept.length) return [];
-    const run: ChatMessageDTO[] = [];
-    let boundedByCoverage = false;
-    while (i < kept.length) {
-      const m = kept[i]!;
-      if (coverage.coveredBy.has(m.id)) {
-        boundedByCoverage = true;
-        break;
-      }
-      run.push(m);
-      i++;
-    }
-    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
-    if (!boundedByCoverage && runSize < effProfile.windowValue) return [];
-    // A bounded gap with no eligible content (only excluded or system
-    // messages) can never file a real summary: scan past it or drainGhostBacklog
-    // would pay an LLM call to summarize nothing, or worse stall on it forever.
-    if (runSize === 0) continue;
-    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
-    if (window.length > 0) return window;
-  }
-  return [];
-}
-
 export async function createChapterAuto(
   chatId: string,
   profile: LMBProfile,
@@ -512,15 +469,7 @@ export async function createChapterAuto(
       : profile;
     const includeGhosts = ghost || extraContextActive(profile);
     const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
-    let window: ChatMessageDTO[];
-    if (ghost) {
-      window = selectGhostWindow(messages, coverage, effProfile);
-    } else {
-      const stats = computeCoverageStats(messages, coverage, effProfile);
-      if (!stats.lagSatisfied || (!manual && !stats.windowAvailable)) return null;
-      const uncoveredTail = pickUncoveredTail(messages, coverage);
-      window = selectNextChapterWindow(uncoveredTail, effProfile);
-    }
+    const window = selectUncoveredChapterWindow(messages, coverage, effProfile, manual && !ghost);
     if (window.length === 0) return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
   } finally {
@@ -1408,8 +1357,7 @@ export async function dryRunChapter(
   const entries = await listLmbEntries(chatId, userId);
   // Same coverage the real manual path sees, ghosts included in extra mode.
   const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
-  const uncoveredTail = pickUncoveredTail(messages, coverage);
-  const window = selectNextChapterWindow(uncoveredTail, profile);
+  const window = selectUncoveredChapterWindow(messages, coverage, profile, true);
   if (window.length === 0) {
     throw new Error("No window available, lower the lag or window thresholds");
   }

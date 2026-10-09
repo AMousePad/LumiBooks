@@ -60,6 +60,17 @@ test("a full window is unchanged by the manual path", () => {
   expect(selectNextChapterWindow(msgs, p).length).toBe(3);
 });
 
+test("token windows refill short bounded gaps without consuming the token lag", async () => {
+  const { selectUncoveredChapterWindow } = await import("./coverage");
+  const msgs = messages(10).map((m) => ({ ...m, content: "x".repeat(40) }));
+  const p = { ...profile(20, 50), windowUnit: "tokens" as const, lagUnit: "tokens" as const };
+  const coverage = { ...noCoverage, coveredBy: new Map(["m1", "m2", "m5", "m6"].map((id) => [id, "chapter"])) };
+  expect(selectUncoveredChapterWindow(msgs, coverage, p).map((m) => m.id)).toEqual(["m3", "m4"]);
+  coverage.coveredBy.set("m3", "refill"); coverage.coveredBy.set("m4", "refill");
+  expect(selectUncoveredChapterWindow(msgs, coverage, p)).toEqual([]);
+  expect(selectUncoveredChapterWindow(msgs, coverage, p, true).map((m) => m.id)).toEqual(["m7", "m8"]);
+});
+
 test("three selected replies form one chapter despite unselected turns between them", async () => {
   const { selectedChapterRuns } = await import("./coverage");
   const msgs = messages(6);

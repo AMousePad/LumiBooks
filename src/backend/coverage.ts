@@ -127,14 +127,8 @@ export function computeCoverageStats(
     }
   }
   const uncoveredMessages = totalMessages - coveredMessages;
-  const uncoveredTail = pickUncoveredTail(messages, coverage);
-
-  const tailCounted = sizeEligible(uncoveredTail, profile.lagUnit, profile);
-  const lagSatisfied = tailCounted >= profile.lagValue;
-
-  const compressible = trimLagFromTail(uncoveredTail, profile);
-  const headRoom = sizeEligible(compressible, profile.windowUnit, profile);
-  const windowAvailable = headRoom >= profile.windowValue;
+  const lagSatisfied = sizeEligible(messages, profile.lagUnit, profile) >= profile.lagValue;
+  const windowAvailable = selectUncoveredChapterWindow(messages, coverage, profile).length > 0;
 
   return {
     totalMessages,
@@ -151,8 +145,7 @@ export function countCompressibleEligible(
   coverage: CoverageMap,
   profile: LMBProfile,
 ): number {
-  const tail = pickUncoveredTail(messages, coverage);
-  const compressible = trimLagFromTail(tail, profile);
+  const compressible = trimLagFromTail(messages, profile).filter((m) => !coverage.coveredBy.has(m.id));
   return sizeEligible(compressible, profile.windowUnit, profile);
 }
 
@@ -187,15 +180,45 @@ export function trimLagFromTail(uncoveredTail: ChatMessageDTO[], profile: LMBPro
   return uncoveredTail.slice(0, cutoffIdx);
 }
 
-export function pickUncoveredTail(messages: ChatMessageDTO[], coverage: CoverageMap): ChatMessageDTO[] {
-  const out: ChatMessageDTO[] = [];
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]!;
-    if (coverage.coveredBy.has(m.id)) break;
-    out.push(m);
+/**
+ * Chapter windows fill from the EARLIEST uncovered gap rather than the
+ * contiguous tail, so a hole left by manual selections or deleted summaries gets
+ * refilled instead of stranded behind later coverage. A gap bounded by later
+ * coverage files at whatever size it has (it can never grow); an open tail
+ * waits for a full window unless the user explicitly files a partial chapter.
+ */
+export function selectUncoveredChapterWindow(
+  messages: ChatMessageDTO[],
+  coverage: CoverageMap,
+  effProfile: LMBProfile,
+  allowPartial = false,
+): ChatMessageDTO[] {
+  const kept = trimLagFromTail(messages, effProfile);
+  let i = 0;
+  while (i < kept.length) {
+    while (i < kept.length && coverage.coveredBy.has(kept[i]!.id)) i++;
+    if (i >= kept.length) return [];
+    const run: ChatMessageDTO[] = [];
+    let boundedByCoverage = false;
+    while (i < kept.length) {
+      const m = kept[i]!;
+      if (coverage.coveredBy.has(m.id)) {
+        boundedByCoverage = true;
+        break;
+      }
+      run.push(m);
+      i++;
+    }
+    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
+    if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue) return [];
+    // A bounded gap with no eligible content (only excluded or system
+    // messages) can never file a real summary: scan past it or a backlog drain
+    // would pay an LLM call to summarize nothing, or worse stall on it forever.
+    if (runSize === 0) continue;
+    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
+    if (window.length > 0) return window;
   }
-  out.reverse();
-  return out;
+  return [];
 }
 
 export function sumApproxTokens(messages: ChatMessageDTO[]): number {

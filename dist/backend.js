@@ -1816,12 +1816,8 @@ function computeCoverageStats(messages, coverage, profile) {
     }
   }
   const uncoveredMessages = totalMessages - coveredMessages;
-  const uncoveredTail = pickUncoveredTail(messages, coverage);
-  const tailCounted = sizeEligible(uncoveredTail, profile.lagUnit, profile);
-  const lagSatisfied = tailCounted >= profile.lagValue;
-  const compressible = trimLagFromTail(uncoveredTail, profile);
-  const headRoom = sizeEligible(compressible, profile.windowUnit, profile);
-  const windowAvailable = headRoom >= profile.windowValue;
+  const lagSatisfied = sizeEligible(messages, profile.lagUnit, profile) >= profile.lagValue;
+  const windowAvailable = selectUncoveredChapterWindow(messages, coverage, profile).length > 0;
   return {
     totalMessages,
     coveredMessages,
@@ -1832,8 +1828,7 @@ function computeCoverageStats(messages, coverage, profile) {
   };
 }
 function countCompressibleEligible(messages, coverage, profile) {
-  const tail = pickUncoveredTail(messages, coverage);
-  const compressible = trimLagFromTail(tail, profile);
+  const compressible = trimLagFromTail(messages, profile).filter((m) => !coverage.coveredBy.has(m.id));
   return sizeEligible(compressible, profile.windowUnit, profile);
 }
 function trimLagFromTail(uncoveredTail, profile) {
@@ -1871,16 +1866,35 @@ function trimLagFromTail(uncoveredTail, profile) {
     return [];
   return uncoveredTail.slice(0, cutoffIdx);
 }
-function pickUncoveredTail(messages, coverage) {
-  const out = [];
-  for (let i = messages.length - 1;i >= 0; i--) {
-    const m = messages[i];
-    if (coverage.coveredBy.has(m.id))
-      break;
-    out.push(m);
+function selectUncoveredChapterWindow(messages, coverage, effProfile, allowPartial = false) {
+  const kept = trimLagFromTail(messages, effProfile);
+  let i = 0;
+  while (i < kept.length) {
+    while (i < kept.length && coverage.coveredBy.has(kept[i].id))
+      i++;
+    if (i >= kept.length)
+      return [];
+    const run = [];
+    let boundedByCoverage = false;
+    while (i < kept.length) {
+      const m = kept[i];
+      if (coverage.coveredBy.has(m.id)) {
+        boundedByCoverage = true;
+        break;
+      }
+      run.push(m);
+      i++;
+    }
+    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
+    if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue)
+      return [];
+    if (runSize === 0)
+      continue;
+    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
+    if (window.length > 0)
+      return window;
   }
-  out.reverse();
-  return out;
+  return [];
 }
 function sumApproxTokens(messages) {
   let total = 0;
@@ -6784,36 +6798,6 @@ function failToast(userId, kind, err) {
 function extraContextActive(profile) {
   return profile.codexEnabled && profile.codexExtraContext;
 }
-function selectGhostWindow(messages, coverage, effProfile) {
-  const kept = trimLagFromTail(messages, effProfile);
-  let i = 0;
-  while (i < kept.length) {
-    while (i < kept.length && coverage.coveredBy.has(kept[i].id))
-      i++;
-    if (i >= kept.length)
-      return [];
-    const run = [];
-    let boundedByCoverage = false;
-    while (i < kept.length) {
-      const m = kept[i];
-      if (coverage.coveredBy.has(m.id)) {
-        boundedByCoverage = true;
-        break;
-      }
-      run.push(m);
-      i++;
-    }
-    const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
-    if (!boundedByCoverage && runSize < effProfile.windowValue)
-      return [];
-    if (runSize === 0)
-      continue;
-    const window = selectNextChapterWindow(run, { ...effProfile, lagValue: 0 });
-    if (window.length > 0)
-      return window;
-  }
-  return [];
-}
 async function createChapterAuto(chatId, profile, settings, userId, automation = false, ghost = false, manual = false) {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
     return null;
@@ -6830,16 +6814,7 @@ async function createChapterAuto(chatId, profile, settings, userId, automation =
     const effProfile = ghost ? { ...profile, lagUnit: profile.codexLagUnit, lagValue: profile.codexLagValue } : profile;
     const includeGhosts = ghost || extraContextActive(profile);
     const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
-    let window;
-    if (ghost) {
-      window = selectGhostWindow(messages, coverage, effProfile);
-    } else {
-      const stats = computeCoverageStats(messages, coverage, effProfile);
-      if (!stats.lagSatisfied || !manual && !stats.windowAvailable)
-        return null;
-      const uncoveredTail = pickUncoveredTail(messages, coverage);
-      window = selectNextChapterWindow(uncoveredTail, effProfile);
-    }
+    const window = selectUncoveredChapterWindow(messages, coverage, effProfile, manual && !ghost);
     if (window.length === 0)
       return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
@@ -7523,8 +7498,7 @@ async function dryRunChapter(chatId, profile, settings, userId) {
     throw new Error("Chat has no messages");
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
-  const uncoveredTail = pickUncoveredTail(messages, coverage);
-  const window = selectNextChapterWindow(uncoveredTail, profile);
+  const window = selectUncoveredChapterWindow(messages, coverage, profile, true);
   if (window.length === 0) {
     throw new Error("No window available, lower the lag or window thresholds");
   }

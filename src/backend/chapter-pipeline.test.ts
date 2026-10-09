@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
-import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, getPendingPreviews, registerPipelineCallbacks } from "./pipeline";
+import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dryRunChapter, getPendingPreviews, registerPipelineCallbacks } from "./pipeline";
+import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
 import { invalidateBookCache } from "./world-book";
 import { saveSettings } from "./storage";
 
@@ -44,6 +45,65 @@ beforeEach(async () => {
   await saveSettings(userId, settings());
 });
 afterAll(() => { (globalThis as any).spindle = original; });
+
+for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
+  entries = [chapter(71, 0, 69), chapter(72, 75, 87)];
+  profile.lagValue = 12;
+  // Six missed messages cannot grow to the configured window of twelve.
+  const coverage = await buildCoverage(chatId, userId);
+  expect(computeCoverageStats(messages, coverage, profile).windowAvailable).toBe(true);
+  expect(countCompressibleEligible(messages, coverage, profile)).toBe(7);
+  const dry = await dryRunChapter(chatId, profile, settings(), userId);
+  const id = await createChapterAuto(chatId, profile, settings(), userId, false, false, manual);
+  expect(id).toBeTruthy();
+  const prompt = requests[0].messages[1].content;
+  expect(dry.messages[1]!.content).toBe(prompt);
+  for (let n = 70; n <= 75; n++) expect(prompt).toContain(`RAW_MESSAGE_${n}_END`);
+  expect(prompt).not.toContain("RAW_MESSAGE_88_END");
+  expect(prompt).not.toContain("MEMORY_72");
+  const saved = entries.find((e) => e.id === id).extensions.lumibooks;
+  expect(saved.msgIds).toEqual(messages.slice(69, 75).map((m) => m.id));
+  // The newer open tail still waits for a full window in automation.
+  expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeNull();
+});
+
+test("automation recovers holes left by manual selections while respecting exclusions and changed cadence", async () => {
+  const selected = ["m2", "m4", "m6"];
+  expect(await createChapterFromRange(chatId, selected, profile, settings(), userId)).toBeTruthy();
+  messages[2].metadata = { lmb_excluded: true };
+  profile.windowValue = 20;
+  profile.lagValue = 95;
+  requests = [];
+  const first = await createChapterAuto(chatId, profile, settings(), userId);
+  expect(entries.find((e) => e.id === first).extensions.lumibooks.msgIds).toEqual(["m1"]);
+  // The second eligible hole is still before the lag boundary; its covered
+  // right neighbour sits inside the lag. File chapter may file the short span.
+  const second = await createChapterAuto(chatId, profile, settings(), userId, false, false, true);
+  expect(entries.find((e) => e.id === second).extensions.lumibooks.msgIds).toEqual(["m5"]);
+  expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeNull();
+  for (const req of requests) {
+    expect(req.messages[1].content).not.toContain("RAW_MESSAGE_3_END");
+    expect(req.messages[1].content).not.toContain("RAW_MESSAGE_7_END");
+  }
+});
+
+test("ghost filing retains gap recovery and uses its own generation lag", async () => {
+  entries = [chapter(1, 0, 12), chapter(2, 24, 36)];
+  entries[1].disabled = true;
+  entries[1].extensions.lumibooks.ghost = true;
+  profile.codexEnabled = true;
+  profile.codexExtraContext = true;
+  profile.codexLagValue = 64;
+  profile.lagValue = 90;
+  await saveSettings(userId, settings());
+  const id = await createChapterAuto(chatId, profile, settings(), userId, true, true);
+  expect(id).toBeTruthy();
+  const saved = entries.find((e) => e.id === id);
+  expect(saved.extensions.lumibooks.msgIds).toEqual(messages.slice(12, 24).map((m) => m.id));
+  expect(saved.extensions.lumibooks.ghost).toBe(true);
+  expect(saved.disabled).toBe(true);
+  expect(requests[0].messages[1].content).not.toContain("MEMORY_2");
+});
 
 test("arc binding orders old offset ranges by live sources and saves host message numbers", async () => {
   messages = messages.slice(5);
