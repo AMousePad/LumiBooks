@@ -6845,6 +6845,14 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
     clearBusy(userId, chatId, "chapter");
   }
 }
+function selectPreviousChapters(coverage, messages, window, count, replacesEntryId) {
+  if (count <= 0)
+    return [];
+  const positions = new Map(messages.map((m, i) => [m.id, i]));
+  const first = positions.get(window[0].id);
+  const end = (e) => e.meta.isRoot ? e.meta.lastMsgIdx ?? -1 : liveEndPosition(e.meta.msgIds, undefined, positions);
+  return coverage.activeEntries.filter((e) => e.meta.tier === 1 && e.raw.id !== replacesEntryId && end(e) < first).sort((a, b) => end(a) - end(b)).slice(-count);
+}
 async function runChapter(chatId, profile, settings, userId, allMessages, window, opts = {}) {
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
@@ -6852,13 +6860,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   nyaaToast(userId, "fire", automation);
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
-  let chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && typeof e.meta.firstMsgIdx === "number").sort((a, b) => a.meta.firstMsgIdx - b.meta.firstMsgIdx);
-  if (ghost) {
-    const windowFirstIdx = allMessages.findIndex((m) => m.id === window[0].id);
-    const posById = new Map(allMessages.map((m, i) => [m.id, i]));
-    chapters = chapters.filter((c) => liveEndPosition(c.meta.msgIds, c.meta.lastMsgIdx, posById) < windowFirstIdx);
-  }
-  const previousMemories = profile.previousMemoriesCount > 0 ? chapters.slice(-profile.previousMemoriesCount) : [];
+  const previousMemories = selectPreviousChapters(coverage, allMessages, window, profile.previousMemoriesCount, replacesEntryId);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
   const opener = buildChapterHeader(provisionalSceneNumber, window.length);
   const outcome = await runWithRetry(profile.retryCount + 1, async () => {
@@ -7508,8 +7510,7 @@ async function dryRunChapter(chatId, profile, settings, userId) {
   if (window.length === 0) {
     throw new Error("No window available, lower the lag or window thresholds");
   }
-  const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && typeof e.meta.firstMsgIdx === "number").sort((a, b) => a.meta.firstMsgIdx - b.meta.firstMsgIdx);
-  const previousMemories = profile.previousMemoriesCount > 0 ? chapters.slice(-profile.previousMemoriesCount) : [];
+  const previousMemories = selectPreviousChapters(coverage, messages, window, profile.previousMemoriesCount);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
   const opener = buildChapterHeader(provisionalSceneNumber, window.length);
   return assembleChapterPrompt(profile, settings.customPresets, chatId, window, previousMemories, userId, opener);
