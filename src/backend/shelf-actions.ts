@@ -1,7 +1,16 @@
 import { buildCoverage, unhideCoveredMessages } from "./coverage";
-import { deleteEntry, invalidateBookCache, listLmbEntries, patchEntryMeta, releaseEntry, type LMBEntry } from "./world-book";
+import { deleteEntry, invalidateBookCache, listLmbEntries, patchEntryMeta, releaseEntry, updateEntry, type LMBEntry } from "./world-book";
 import { withCommitMutex } from "./summary-commit";
 import { describeError, warn } from "./runtime";
+
+export async function editSummaryEntry(chatId: string, entryId: string, patch: Parameters<typeof updateEntry>[1], userId: string): Promise<void> {
+  return withCommitMutex(userId, chatId, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    if (!entries.some((entry) => entry.raw.id === entryId)) throw new Error("This summary is no longer available to edit. Refresh Books.");
+    await updateEntry(entryId, patch, userId);
+    invalidateBookCache(userId, chatId);
+  });
+}
 
 export async function clearSummaryShelf(chatId: string, userId: string): Promise<number> {
   return withCommitMutex(userId, chatId, async () => {

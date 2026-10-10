@@ -134,6 +134,27 @@ for (const preview of [false, true]) test(`regeneration preserves edits to its r
   expect(entries[0].extensions.lumibooks.msgIds).toContain("m99");
 });
 
+test("an edit submitted while regeneration is saving remains the final saved text", async () => {
+  const { editSummaryEntry } = await import("./shelf-actions");
+  entries = [chapter(1, 0, 12)];
+  let entered!: () => void, release!: () => void, first = true;
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  const api = (globalThis as any).spindle.world_books.entries, update = api.update;
+  api.update = async (...args: any[]) => {
+    if (first) { first = false; entered(); await paused; }
+    return update(...args);
+  };
+  const regeneration = createChapterFromRange(chatId, messages.slice(0, 12).map((m) => m.id), profile, settings(), userId, { replacesEntryId: "chapter-1" });
+  await writing;
+  const editing = editSummaryEntry(chatId, "chapter-1", { content: "My latest edit" }, userId);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release();
+  await Promise.all([regeneration, editing]);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].content).toBe("My latest edit");
+});
+
 for (const change of ["deleted", "excluded"] as const) test(`chapter regeneration refuses sources already ${change} before it starts`, async () => {
   entries = [chapter(1, 0, 12)];
   const before = structuredClone(entries);

@@ -2068,6 +2068,15 @@ function selectedChapterRuns(messages, ids) {
 }
 
 // src/backend/shelf-actions.ts
+async function editSummaryEntry(chatId, entryId, patch, userId) {
+  return withCommitMutex(userId, chatId, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    if (!entries.some((entry) => entry.raw.id === entryId))
+      throw new Error("This summary is no longer available to edit. Refresh Books.");
+    await updateEntry(entryId, patch, userId);
+    invalidateBookCache(userId, chatId);
+  });
+}
 async function clearSummaryShelf(chatId, userId) {
   return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
@@ -12119,7 +12128,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
       case "update_entry": {
-        await updateEntry(msg.entryId, msg.patch, userId);
+        await editSummaryEntry(msg.chatId, msg.entryId, msg.patch, userId);
         invalidateBookCache(userId, msg.chatId);
         await pushState(userId, msg.chatId);
         break;

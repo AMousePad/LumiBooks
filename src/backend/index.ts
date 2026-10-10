@@ -1,4 +1,4 @@
-import { clearSummaryShelf, removeSummaryEntry } from "./shelf-actions";
+import { clearSummaryShelf, editSummaryEntry, removeSummaryEntry } from "./shelf-actions";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
@@ -38,7 +38,6 @@ import {
 import {
   applyConstantToAllLmbEntries,
   ensureBookForChat,
-  updateEntry,
   listLmbEntries,
   invalidateBookCache,
   findChatIdForBook,
@@ -902,7 +901,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "update_entry": {
-        await updateEntry(msg.entryId, msg.patch, userId);
+        await editSummaryEntry(msg.chatId, msg.entryId, msg.patch, userId);
         invalidateBookCache(userId, msg.chatId);
         await pushState(userId, msg.chatId);
         break;
