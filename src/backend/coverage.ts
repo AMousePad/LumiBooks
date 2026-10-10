@@ -209,6 +209,9 @@ export function selectUncoveredChapterWindow(
       run.push(m);
       i++;
     }
+    // The first reserved message can close the gap without entering its window.
+    // Trimming lag must not erase that boundary and strand a short older gap.
+    if (i === kept.length && messages[i] && coverage.coveredBy.has(messages[i]!.id)) boundedByCoverage = true;
     const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
     if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue) return [];
     // A bounded gap with no eligible content (only excluded or system

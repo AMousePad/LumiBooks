@@ -1887,6 +1887,8 @@ function selectUncoveredChapterWindow(messages, coverage, effProfile, allowParti
       run.push(m);
       i++;
     }
+    if (i === kept.length && messages[i] && coverage.coveredBy.has(messages[i].id))
+      boundedByCoverage = true;
     const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
     if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue)
       return [];

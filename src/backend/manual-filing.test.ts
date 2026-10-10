@@ -79,6 +79,18 @@ test("three selected replies form one chapter despite unselected turns between t
   expect(selectedChapterRuns(msgs, ["m2", "m4", "m6"])).toEqual([["m2"], ["m4", "m6"]]);
 });
 
+test("a covered message at the lag boundary still closes an older short gap", async () => {
+  const { selectUncoveredChapterWindow } = await import("./coverage");
+  const msgs = messages(10);
+  const coverage = { ...noCoverage, coveredBy: new Map(msgs.slice(2).map((m) => [m.id, "later-chapter"])) };
+  const p = profile(8, 12);
+  expect(selectUncoveredChapterWindow(msgs, coverage, p).map((m) => m.id)).toEqual(["m1", "m2"]);
+  expect(computeCoverageStats(msgs, coverage, p).windowAvailable).toBe(true);
+  // An uncovered message at that boundary leaves the gap open; don't consume lag.
+  coverage.coveredBy.delete("m3");
+  expect(selectUncoveredChapterWindow(msgs, coverage, p)).toEqual([]);
+});
+
 test("watching observes a chapter without restarting it, even if viewer delivery fails", async () => {
   const p = await import("./pipeline");
   const seen: string[] = [];
