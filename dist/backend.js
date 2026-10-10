@@ -2059,6 +2059,23 @@ function selectedChapterRuns(messages, ids) {
   return runs;
 }
 
+// src/backend/summary-commit.ts
+var commitChain = new Map;
+function withCommitMutex(userId, chatId, fn) {
+  const key = JSON.stringify([userId, chatId]);
+  const previous = commitChain.get(key) ?? Promise.resolve();
+  const result = previous.then(fn, fn);
+  const guarded = result.catch(() => {
+    return;
+  });
+  commitChain.set(key, guarded);
+  guarded.then(() => {
+    if (commitChain.get(key) === guarded)
+      commitChain.delete(key);
+  });
+  return result;
+}
+
 // src/backend/summary-matching.ts
 var encoder = new TextEncoder;
 async function sha256(text) {
@@ -2218,9 +2235,27 @@ async function readSummaryImport(raw) {
   return { rows, fingerprint };
 }
 async function saveImportedSummaries(chatId, userId, rows, links) {
-  if (links && (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !links.messages[i]))))
-    throw new Error("Invalid destination coverage");
-  const existing = await listLmbEntries(chatId, userId);
+  return withCommitMutex(userId, chatId, () => commitImportedSummaries(chatId, userId, rows, links));
+}
+async function commitImportedSummaries(chatId, userId, rows, links) {
+  if (links) {
+    const messages = links.messages;
+    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i])))
+      throw new Error("Invalid destination coverage");
+  }
+  const existing = await listLmbEntries(chatId, userId, true);
+  if (links?.indices.some((indices) => indices.length)) {
+    const coverage = await buildCoverage(chatId, userId, existing, true);
+    const current = new Map((await spindle.chat.getMessages(chatId)).map((m) => [m.id, m]));
+    for (const index of new Set(links.indices.flat())) {
+      const source = links.messages[index], live = current.get(source.id);
+      if (coverage.coveredBy.has(source.id))
+        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+      if (!live || live.role !== source.role || live.content !== source.content)
+        throw new Error("The chat changed while preparing the import. Choose the file again.");
+    }
+    links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
+  }
   const before = Math.min(0, ...existing.filter((e) => e.meta.isRoot).map((e) => e.meta.firstMsgIdx ?? 0));
   const book = await ensureBookForChat(chatId, userId);
   const created = [];
@@ -6989,21 +7024,6 @@ function takeFreedGhostNumber(userId, chatId, windowIds) {
   if (list.length === 0)
     freedGhostNumbers.delete(key);
   return n;
-}
-var commitChain = new Map;
-function withCommitMutex(userId, chatId, fn) {
-  const key = `${userId}::${chatId}`;
-  const prev = commitChain.get(key) ?? Promise.resolve();
-  const tail = prev.then(fn, fn);
-  const guarded = tail.catch(() => {
-    return;
-  });
-  commitChain.set(key, guarded);
-  guarded.then(() => {
-    if (commitChain.get(key) === guarded)
-      commitChain.delete(key);
-  });
-  return tail;
 }
 var FAILURE_MAP_CAP = 500;
 var PREVIEW_MAP_CAP = 500;

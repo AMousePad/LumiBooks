@@ -97,6 +97,37 @@ test("cancelling while chapter sources load prevents generation and leaves filin
   expect(requests).toHaveLength(1);
 });
 
+for (const importFirst of [true, false]) test(`import and preview acceptance cannot both cover a window (${importFirst ? "import" : "preview"} saves first)`, async () => {
+  const { saveImportedSummaries } = await import("./summary-backup");
+  profile.showMemoryPreviews = true;
+  await createChapterAuto(chatId, profile, settings(), userId);
+  const draft = getPendingPreviews(userId, chatId)[0]!;
+  const api = (globalThis as any).spindle.world_books.entries;
+  const create = api.create;
+  let release!: () => void, entered!: () => void, first = true;
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  api.create = async (...args: any[]) => {
+    if (first) { first = false; entered(); await paused; }
+    return create(...args);
+  };
+  const importSummary = () => saveImportedSummaries(chatId, userId,
+    [{ tier: 1, content: "Imported story", comment: "Imported", keys: [] }],
+    { messages: structuredClone(messages), indices: [Array.from({ length: 12 }, (_, i) => i)] });
+  const preview = () => acceptPreview(chatId, draft.draftId, profile, userId);
+  const firstSave = (importFirst ? importSummary : preview)();
+  await writing;
+  const results = Promise.allSettled([firstSave, (importFirst ? preview : importSummary)()]);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release();
+  const [winner, loser] = await results;
+  expect(winner.status).toBe("fulfilled");
+  expect(entries).toHaveLength(1);
+  if (importFirst) expect(loser).toEqual({ status: "fulfilled", value: null });
+  else expect(loser.status).toBe("rejected");
+  expect((await buildCoverage(chatId, userId)).coveredBy.size).toBe(12);
+});
+
 for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
   entries = [chapter(71, 0, 69), chapter(72, 75, 87)];
   profile.lagValue = 12;

@@ -1,5 +1,6 @@
 import { approximateTokensFromChars, type SummaryTier } from "../shared";
 import { buildCoverage } from "./coverage";
+import { withCommitMutex } from "./summary-commit";
 import { createChapterEntry, deleteEntry, ensureBookForChat, invalidateBookCache, listLmbEntries, type LMBEntry } from "./world-book";
 import { hashRawMessages, makeFingerprint, parseFingerprint, type SummaryFingerprint, type RawSummaryMessage } from "./summary-matching";
 
@@ -92,8 +93,25 @@ export async function importSummaryLorebook(chatId: string, userId: string, raw:
 }
 
 export async function saveImportedSummaries(chatId: string, userId: string, rows: ImportedSummary[], links?: SummaryImportLinks): Promise<number> {
-  if (links && (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !links.messages[i])))) throw new Error("Invalid destination coverage");
-  const existing = await listLmbEntries(chatId, userId);
+  return withCommitMutex(userId, chatId, () => commitImportedSummaries(chatId, userId, rows, links));
+}
+
+async function commitImportedSummaries(chatId: string, userId: string, rows: ImportedSummary[], links?: SummaryImportLinks): Promise<number> {
+  if (links) {
+    const messages = links.messages;
+    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i]))) throw new Error("Invalid destination coverage");
+  }
+  const existing = await listLmbEntries(chatId, userId, true);
+  if (links?.indices.some((indices) => indices.length)) {
+    const coverage = await buildCoverage(chatId, userId, existing, true);
+    const current = new Map((await spindle.chat.getMessages(chatId)).map((m) => [m.id, m]));
+    for (const index of new Set(links.indices.flat())) {
+      const source = links.messages[index]!, live = current.get(source.id);
+      if (coverage.coveredBy.has(source.id)) throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+      if (!live || live.role !== source.role || live.content !== source.content) throw new Error("The chat changed while preparing the import. Choose the file again.");
+    }
+    links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
+  }
   const before = Math.min(0, ...existing.filter((e) => e.meta.isRoot).map((e) => e.meta.firstMsgIdx ?? 0));
   const book = await ensureBookForChat(chatId, userId);
   const created: string[] = [];

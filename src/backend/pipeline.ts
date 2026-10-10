@@ -36,6 +36,7 @@ import { publishChapterCreated, publishArcCreated, publishVolumeCreated } from "
 import { pickPhrase, type PhraseKind } from "./memoria";
 import { ensureForkAdoption, forkShelfPending } from "./fork";
 import { effectiveProfile, ensureLessons } from "./lessons";
+import { withCommitMutex } from "./summary-commit";
 
 import { diagnosticErrorReason, recordDiagnostic, recordSelection, diagnosticEntries } from "./diagnostics";
 
@@ -98,20 +99,6 @@ function takeFreedGhostNumber(userId: string, chatId: string, windowIds: Set<str
   return n;
 }
 
-const commitChain = new Map<string, Promise<unknown>>();
-function withCommitMutex<T>(userId: string, chatId: string, fn: () => Promise<T>): Promise<T> {
-  // Higher tiers can consume entries while lower tiers replace them.
-  // Serialize all summary commits; generation remains concurrent.
-  const key = `${userId}::${chatId}`;
-  const prev = commitChain.get(key) ?? Promise.resolve();
-  const tail = prev.then(fn, fn);
-  const guarded = tail.catch(() => undefined);
-  commitChain.set(key, guarded);
-  guarded.then(() => {
-    if (commitChain.get(key) === guarded) commitChain.delete(key);
-  });
-  return tail;
-}
 const FAILURE_MAP_CAP = 500;
 const PREVIEW_MAP_CAP = 500;
 
