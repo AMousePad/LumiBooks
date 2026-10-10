@@ -54,15 +54,30 @@ const failureByChat = new Map<string, FailureRecord>();
 const previewsByChat = new Map<string, PendingPreview[]>();
 // Source fingerprints stay backend-only and expire with their in-memory draft.
 const previewSources = new WeakMap<PendingPreview, string[]>();
+const replacementSources = new WeakMap<object, string>();
 const changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
 const messageSource = (m: ChatMessageDTO) => msgSig(m.role, m.content || "");
 const entrySource = (e: LMBEntry) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
-async function assertReplacementActive(entries: LMBEntry[], replacesEntryId: string | undefined, chatId: string, userId: string): Promise<void> {
+const replacementSource = (e: LMBEntry) => msgSig("replacement", JSON.stringify([entrySource(e), e.raw.comment, e.raw.key]));
+async function captureReplacement(chatId: string, userId: string, entryId: string | undefined, sourceIds: string[]): Promise<string | undefined> {
+  if (!entryId) return;
+  const entry = (await listLmbEntries(chatId, userId, true)).find((e) => e.raw.id === entryId);
+  if (!entry) throw changedSources();
+  const expected = new Set(entry.meta.tier === 1 ? entry.meta.msgIds : entry.meta.sourceChapterEntryIds ?? []);
+  if (expected.size !== new Set(sourceIds).size || sourceIds.some((id) => !expected.has(id))) throw changedSources();
+  return replacementSource(entry);
+}
+function copyReplacement(from: object, to: object): void {
+  const source = replacementSources.get(from);
+  if (source) replacementSources.set(to, source);
+}
+async function assertReplacementActive(entries: LMBEntry[], replacesEntryId: string | undefined, chatId: string, userId: string, result: SummarizationResult): Promise<void> {
   if (!replacesEntryId) return;
   const coverage = await buildCoverage(chatId, userId, entries);
   // Removing the target before traversing coverage would disconnect its
   // descendants from a higher summary that consumed it during generation.
-  if (!coverage.activeEntries.some((e) => e.raw.id === replacesEntryId)) throw changedSources();
+  const target = coverage.activeEntries.find((e) => e.raw.id === replacesEntryId);
+  if (!target || replacementSources.get(result) !== replacementSource(target)) throw changedSources();
 }
 const committingDrafts = new Set<string>();
 
@@ -387,6 +402,7 @@ export function patchPendingPreview(
   };
   const sources = previewSources.get(old);
   if (sources) previewSources.set(list[idx]!, sources);
+  copyReplacement(old, list[idx]!);
   previewsByChat.set(key, list);
 }
 
@@ -566,6 +582,7 @@ async function runChapter(
   opts: { replacesEntryId?: string; automation?: boolean; ghost?: boolean } = {},
 ): Promise<string | null> {
   const { replacesEntryId } = opts;
+  const replacement = await captureReplacement(chatId, userId, replacesEntryId, window.map((m) => m.id));
   const automation = opts.automation === true;
   const ghost = opts.ghost === true;
   const retrySelection = ghost ? undefined : { sourceMessageIds: window.map((m) => m.id), replacesEntryId };
@@ -613,6 +630,7 @@ async function runChapter(
   clearLastFailure(userId, chatId);
 
   const result = outcome.value;
+  if (replacement) replacementSources.set(result, replacement);
   const firstIdx = window[0]!.index_in_chat;
   const lastIdx = window[window.length - 1]!.index_in_chat;
 
@@ -669,7 +687,7 @@ async function commitChapter(
   firstIdx = window[0]!.index_in_chat;
   lastIdx = window[window.length - 1]!.index_in_chat;
   const freshEntries = await listLmbEntries(chatId, userId, true);
-  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId, result);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -834,6 +852,7 @@ async function runArc(
   opts: { replacesEntryId?: string; automation?: boolean } = {},
 ): Promise<string | null> {
   const { replacesEntryId } = opts;
+  const replacement = await captureReplacement(chatId, userId, replacesEntryId, selected.map((e) => e.raw.id));
   const automation = opts.automation === true;
   nyaaToast(userId, "arc_fire", automation);
   void recordDiagnostic(userId, { event: "context", chatId, mode: "arc", replacesEntryId, flags: { automation, regeneration: !!replacesEntryId }, numbers: { selected: selected.length }, entries: diagnosticEntries(selected) });
@@ -875,6 +894,7 @@ async function runArc(
   clearLastFailure(userId, chatId);
 
   const result = outcome.value;
+  if (replacement) replacementSources.set(result, replacement);
   const firstIdxs = selected.map((c) => c.meta.firstMsgIdx).filter((n): n is number => typeof n === "number");
   const lastIdxs = selected.map((c) => c.meta.lastMsgIdx).filter((n): n is number => typeof n === "number");
   const firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
@@ -911,7 +931,7 @@ async function commitArc(
 ): Promise<string> {
   return withCommitMutex(userId, chatId, async () => {
   const freshEntries = await listTimelineEntries(chatId, userId, true);
-  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId, result);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -1057,6 +1077,7 @@ async function runVolume(
   tier: HigherTier = 3,
   automation = false,
 ): Promise<string | null> {
+  const replacement = await captureReplacement(chatId, userId, replacesEntryId, selected.map((e) => e.raw.id));
   const kind = TIER_KINDS[tier - 1]!;
   const config = profile.higherTiers[tier];
   if (tier > 3) profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
@@ -1100,6 +1121,7 @@ async function runVolume(
   clearLastFailure(userId, chatId);
 
   const result = outcome.value;
+  if (replacement) replacementSources.set(result, replacement);
   const firstIdxs = selected.map((a) => a.meta.firstMsgIdx).filter((n): n is number => typeof n === "number");
   const lastIdxs = selected.map((a) => a.meta.lastMsgIdx).filter((n): n is number => typeof n === "number");
   const firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
@@ -1136,7 +1158,7 @@ async function commitVolume(
 ): Promise<string> {
   return withCommitMutex(userId, chatId, async () => {
   const freshEntries = await listTimelineEntries(chatId, userId, true);
-  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId, result);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -1278,6 +1300,7 @@ export async function acceptPreview(
         connectionId: preview.connectionId,
         presetKey: preview.presetKey,
       };
+      copyReplacement(preview, fakeResult);
       try {
         const entryId = await commitChapter(
           chatId, profile, userId, window, fakeResult,
@@ -1324,6 +1347,7 @@ export async function acceptPreview(
       connectionId: preview.connectionId,
       presetKey: preview.presetKey,
     };
+    copyReplacement(preview, fakeResult);
     try {
       const entryId = isVolume
         ? await commitVolume(
@@ -1739,6 +1763,7 @@ function makePreview(
     replacesEntryId,
   };
   previewSources.set(preview, window.map(messageSource));
+  copyReplacement(result, preview);
   return preview;
 }
 
@@ -1769,6 +1794,7 @@ function makeGroupPreview(
     replacesEntryId,
   };
   previewSources.set(preview, selected.map(entrySource));
+  copyReplacement(result, preview);
   return preview;
 }
 

@@ -134,6 +134,28 @@ for (const tier of [2, 3, 7] as const) for (const change of ["deleted", "disable
  });
 }
 
+for (const tier of [2, 3, 7] as const) for (const preview of [false, true]) test(`tier ${tier} regeneration preserves concurrent target edits ${preview ? "in preview" : "in flight"}`, async () => {
+ const children = [source(tier - 1, 0), source(tier - 1, 1)], parent = source(tier, 0);
+ const ids = children.map((e) => e.id);
+ parent.extensions.lumibooks.sourceChapterEntryIds = ids;
+ parent.extensions.lumibooks.msgIds = ["m0", "m1"];
+ entries = [...children, parent]; profile.showMemoryPreviews = preview;
+ const edit = () => { parent.content = "User's newer summary"; parent.extensions.lumibooks.msgIds.push("m-new"); };
+ if (!preview) {
+  const host = (globalThis as any).spindle, generate = host.generate.rawStream;
+  host.generate.rawStream = async function* (request: any) { edit(); yield* generate(request); };
+ }
+ const result = tier === 2 ? await createArcFromChapters(chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id })
+  : await createHigherFromEntries(tier, chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id });
+ if (preview) {
+  const draft = getPendingPreviews(userId, chatId)[0]!; edit();
+  expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+  expect(getPendingPreviews(userId, chatId)).toHaveLength(1);
+ } else expect(result).toBeNull();
+ expect(parent.content).toBe("User's newer summary");
+ expect(parent.extensions.lumibooks.msgIds).toContain("m-new");
+});
+
 for (const parentFirst of [false, true]) test(`concurrent arc regeneration and volume binding serialize with ${parentFirst ? "volume" : "arc"} saving first`, async () => {
  const chapters = [source(1, 0), source(1, 1)];
  const arc = source(2, 0), otherArc = source(2, 2);

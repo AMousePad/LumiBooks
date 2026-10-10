@@ -113,6 +113,27 @@ test("failed notebook binding cannot save a summary or hide its raw messages", a
   expect(hidden).toBe(12);
 });
 
+for (const preview of [false, true]) test(`regeneration preserves edits to its replacement target ${preview ? "during preview" : "during generation"}`, async () => {
+  profile.showMemoryPreviews = preview;
+  entries = [chapter(1, 0, 12)];
+  const edit = () => { entries[0].content = "User-edited summary"; entries[0].extensions.lumibooks.msgIds.push("m99"); };
+  if (!preview) {
+    const host = (globalThis as any).spindle, generate = host.generate.rawStream;
+    host.generate.rawStream = async function* (request: any) { edit(); yield* generate(request); };
+  }
+  const result = await createChapterFromRange(chatId, messages.slice(0, 12).map((m) => m.id), profile, settings(), userId, { replacesEntryId: "chapter-1" });
+  if (preview) {
+    const draft = getPendingPreviews(userId, chatId)[0]!;
+    edit();
+    patchPendingPreview(userId, chatId, draft.draftId, { content: "Edited draft" });
+    expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+    expect(getPendingPreviews(userId, chatId)).toHaveLength(1);
+  } else expect(result).toBeNull();
+  expect(entries).toHaveLength(1);
+  expect(entries[0].content).toBe("User-edited summary");
+  expect(entries[0].extensions.lumibooks.msgIds).toContain("m99");
+});
+
 for (const change of ["deleted", "excluded"] as const) test(`chapter regeneration refuses sources already ${change} before it starts`, async () => {
   entries = [chapter(1, 0, 12)];
   const before = structuredClone(entries);
