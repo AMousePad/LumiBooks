@@ -161,8 +161,8 @@ export async function buildInjection(
   if (coverage.activeEntries.length === 0) return null;
 
   const historyMsgs = llmMessages.filter(isAssembledHistory);
+  let chatSnapshot: Awaited<ReturnType<typeof spindle.chat.getMessages>> | undefined;
   if (historyMsgs.length === 0) {
-    if (context.capturedWorldInfo !== undefined) return null;
     // Anomalous shape: verify against the chat before shouting. A fully
     // covered chat legitimately assembles zero history.
     let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>> | null = null;
@@ -186,8 +186,9 @@ export async function buildInjection(
         userId,
         "Memoria couldn't find the chat history in this prompt and skipped injecting memories",
       );
+      return null;
     }
-    return null;
+    chatSnapshot = chatMessages;
   }
 
   // Identity contract: the host stamps each assembled history message with
@@ -221,18 +222,21 @@ export async function buildInjection(
 
   let msgIdToIdx: Map<string, number>;
   const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
-  if (missingIdx || needsMetadata) {
+  const assembledIds = new Set(plan.map((item) => item.id));
+  // Hidden or clipped sources cannot be positioned from the visible subset.
+  // Stored ranges may still be offsets written before host-index migration.
+  const needsSourceIndexes = coverage.activeEntries.some((entry) => !entry.meta.isRoot && entry.meta.msgIds.some((id) => !assembledIds.has(id)));
+  if (chatSnapshot || missingIdx || needsMetadata || needsSourceIndexes) {
     let chatMessages: Awaited<ReturnType<typeof spindle.chat.getMessages>>;
     try {
-      chatMessages = await spindle.chat.getMessages(chatId);
+      chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
       injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
       return null;
     }
-    if (chatMessages.length === 0) return null;
-    msgIdToIdx = new Map<string, number>();
-    for (let i = 0; i < chatMessages.length; i++) msgIdToIdx.set(chatMessages[i]!.id, i);
+    msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));
+    const byId = new Map(chatMessages.map((m) => [m.id, m]));
     for (const p of plan) {
       const idx = msgIdToIdx.get(p.id);
       if (idx === undefined) {
@@ -242,7 +246,7 @@ export async function buildInjection(
       p.idx = idx;
       if (p.covered) {
         p.metadata =
-          (chatMessages[idx] as { metadata?: Record<string, unknown> } | undefined)?.metadata ??
+          (byId.get(p.id) as { metadata?: Record<string, unknown> } | undefined)?.metadata ??
           {};
       }
     }
@@ -286,7 +290,11 @@ export async function buildInjection(
     histEnd = out.length;
   }
 
-  flushAt(histEnd < 0 ? out.length : histEnd, Number.POSITIVE_INFINITY);
+  // With fully hidden history there is no insertion anchor. Keep memories
+  // after the leading system instructions and before trailing prompt blocks.
+  let fallbackPos = 0;
+  while (fallbackPos < out.length && out[fallbackPos]!.role === "system") fallbackPos++;
+  flushAt(histEnd < 0 ? fallbackPos : histEnd, Number.POSITIVE_INFINITY);
 
   if (injectedLabels.size === 0) return null;
 

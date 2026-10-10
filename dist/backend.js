@@ -8470,9 +8470,8 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
   if (coverage.activeEntries.length === 0)
     return null;
   const historyMsgs = llmMessages.filter(isAssembledHistory);
+  let chatSnapshot;
   if (historyMsgs.length === 0) {
-    if (context.capturedWorldInfo !== undefined)
-      return null;
     let chatMessages = null;
     try {
       chatMessages = await spindle.chat.getMessages(chatId);
@@ -8485,8 +8484,9 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
     if (hasVisibleMessage) {
       error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. Possible causes: the host clipped history to fit max context, another ` + `extension reshaped the prompt first, or the active preset has no chat-history block. Skipping injection.`);
       injectionAnomalyCb?.(userId, "Memoria couldn't find the chat history in this prompt and skipped injecting memories");
+      return null;
     }
-    return null;
+    chatSnapshot = chatMessages;
   }
   const plan = [];
   let missingIdx = false;
@@ -8508,20 +8508,19 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
   }
   let msgIdToIdx;
   const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
-  if (missingIdx || needsMetadata) {
+  const assembledIds = new Set(plan.map((item) => item.id));
+  const needsSourceIndexes = coverage.activeEntries.some((entry) => !entry.meta.isRoot && entry.meta.msgIds.some((id) => !assembledIds.has(id)));
+  if (chatSnapshot || missingIdx || needsMetadata || needsSourceIndexes) {
     let chatMessages;
     try {
-      chatMessages = await spindle.chat.getMessages(chatId);
+      chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
       injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
       return null;
     }
-    if (chatMessages.length === 0)
-      return null;
-    msgIdToIdx = new Map;
-    for (let i = 0;i < chatMessages.length; i++)
-      msgIdToIdx.set(chatMessages[i].id, i);
+    msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));
+    const byId = new Map(chatMessages.map((m) => [m.id, m]));
     for (const p of plan) {
       const idx = msgIdToIdx.get(p.id);
       if (idx === undefined) {
@@ -8530,7 +8529,7 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
       }
       p.idx = idx;
       if (p.covered) {
-        p.metadata = chatMessages[idx]?.metadata ?? {};
+        p.metadata = byId.get(p.id)?.metadata ?? {};
       }
     }
   } else {
@@ -8572,7 +8571,10 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
       out.push(lm);
     histEnd = out.length;
   }
-  flushAt(histEnd < 0 ? out.length : histEnd, Number.POSITIVE_INFINITY);
+  let fallbackPos = 0;
+  while (fallbackPos < out.length && out[fallbackPos].role === "system")
+    fallbackPos++;
+  flushAt(histEnd < 0 ? fallbackPos : histEnd, Number.POSITIVE_INFINITY);
   if (injectedLabels.size === 0)
     return null;
   const breakdown = [];
