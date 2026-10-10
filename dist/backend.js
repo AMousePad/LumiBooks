@@ -1723,6 +1723,23 @@ async function listRootCandidates(userId) {
   return out;
 }
 
+// src/backend/summary-commit.ts
+var commitChain = new Map;
+function withCommitMutex(userId, chatId, fn) {
+  const key = JSON.stringify([userId, chatId]);
+  const previous = commitChain.get(key) ?? Promise.resolve();
+  const result = previous.then(fn, fn);
+  const guarded = result.catch(() => {
+    return;
+  });
+  commitChain.set(key, guarded);
+  guarded.then(() => {
+    if (commitChain.get(key) === guarded)
+      commitChain.delete(key);
+  });
+  return result;
+}
+
 // src/backend/coverage.ts
 function withLiveMessageRanges(entries, messages) {
   const indexes = new Map(messages.map((m) => [m.id, m.index_in_chat]));
@@ -1975,19 +1992,27 @@ async function syncHiddenForCoveredMessages(chatId, messages, coverage, userId, 
     else if (!desiredHidden && currentlyHidden)
       toFlip.push(m.id);
   }
-  if (toFlip.length === 0)
-    return;
+  await setHidden(chatId, toFlip, desiredHidden);
+}
+async function setHidden(chatId, ids, hidden) {
+  const failures = [];
   const CHUNK = 500;
-  for (let i = 0;i < toFlip.length; i += CHUNK) {
-    const slice = toFlip.slice(i, i + CHUNK);
+  for (let i = 0;i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
     try {
-      await spindle.chat.setMessagesHidden(chatId, slice, desiredHidden);
+      await spindle.chat.setMessagesHidden(chatId, slice, hidden);
     } catch {
       for (const id of slice) {
-        await spindle.chat.setMessageHidden(chatId, id, desiredHidden).catch(() => {});
+        try {
+          await spindle.chat.setMessageHidden(chatId, id, hidden);
+        } catch (err) {
+          failures.push(err);
+        }
       }
     }
   }
+  if (failures.length)
+    throw new AggregateError(failures, `Could not update visibility for ${failures.length} messages. Run Resync visibility again.`);
 }
 function pickOrphanedHiddenIds(messages, coverage) {
   const out = [];
@@ -2004,43 +2029,34 @@ function pickOrphanedHiddenIds(messages, coverage) {
   return out;
 }
 async function unhideCoveredMessages(chatId, msgIds, userId) {
-  if (msgIds.length === 0)
-    return;
-  const CHUNK = 500;
-  for (let i = 0;i < msgIds.length; i += CHUNK) {
-    const slice = msgIds.slice(i, i + CHUNK);
-    try {
-      await spindle.chat.setMessagesHidden(chatId, slice, false);
-    } catch {
-      for (const id of slice) {
-        await spindle.chat.setMessageHidden(chatId, id, false).catch(() => {});
-      }
-    }
-  }
+  await setHidden(chatId, msgIds, false);
 }
 async function resyncVisibility(chatId, userId, desiredHiddenForCovered) {
-  const messages = await spindle.chat.getMessages(chatId);
-  const coverage = await buildCoverage(chatId, userId);
-  const orphanedHidden = pickOrphanedHiddenIds(messages, coverage);
-  let hiddenBefore = 0;
-  let unhiddenAfter = 0;
-  if (orphanedHidden.length > 0) {
-    await unhideCoveredMessages(chatId, orphanedHidden, userId).catch(() => {});
-    unhiddenAfter = orphanedHidden.length;
-  }
-  for (const m of messages) {
-    if (isExcluded(m))
-      continue;
-    if (!coverage.coveredBy.has(m.id))
-      continue;
-    const currentlyHidden = !!(m.extra && m.extra.hidden);
-    if (currentlyHidden !== desiredHiddenForCovered)
-      hiddenBefore++;
-  }
-  if (hiddenBefore > 0) {
-    await syncHiddenForCoveredMessages(chatId, messages, coverage, userId, desiredHiddenForCovered).catch(() => {});
-  }
-  return { unhidden: unhiddenAfter, hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
+  return withCommitMutex(userId, chatId, async () => {
+    const messages = await spindle.chat.getMessages(chatId);
+    const entries = await listLmbEntries(chatId, userId, true);
+    const coverage = await buildCoverage(chatId, userId, entries);
+    const orphanedHidden = pickOrphanedHiddenIds(messages, coverage);
+    let hiddenBefore = 0;
+    let unhiddenAfter = 0;
+    if (orphanedHidden.length > 0) {
+      await unhideCoveredMessages(chatId, orphanedHidden, userId);
+      unhiddenAfter = orphanedHidden.length;
+    }
+    for (const m of messages) {
+      if (isExcluded(m))
+        continue;
+      if (!coverage.coveredBy.has(m.id))
+        continue;
+      const currentlyHidden = !!(m.extra && m.extra.hidden);
+      if (currentlyHidden !== desiredHiddenForCovered)
+        hiddenBefore++;
+    }
+    if (hiddenBefore > 0) {
+      await syncHiddenForCoveredMessages(chatId, messages, coverage, userId, desiredHiddenForCovered);
+    }
+    return { unhidden: unhiddenAfter + (desiredHiddenForCovered ? 0 : hiddenBefore), hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
+  });
 }
 function selectedChapterRuns(messages, ids) {
   const selected = new Set(ids);
@@ -2057,23 +2073,6 @@ function selectedChapterRuns(messages, ids) {
   if (current.length)
     runs.push(current);
   return runs;
-}
-
-// src/backend/summary-commit.ts
-var commitChain = new Map;
-function withCommitMutex(userId, chatId, fn) {
-  const key = JSON.stringify([userId, chatId]);
-  const previous = commitChain.get(key) ?? Promise.resolve();
-  const result = previous.then(fn, fn);
-  const guarded = result.catch(() => {
-    return;
-  });
-  commitChain.set(key, guarded);
-  guarded.then(() => {
-    if (commitChain.get(key) === guarded)
-      commitChain.delete(key);
-  });
-  return result;
 }
 
 // src/backend/shelf-actions.ts

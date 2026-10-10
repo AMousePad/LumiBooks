@@ -4,6 +4,7 @@ import type { LMBProfile } from "../shared";
 import type { CoverageStats } from "../types";
 import { approximateTokensFromChars } from "../shared";
 import { listLmbEntries, type LMBEntry } from "./world-book";
+import { withCommitMutex } from "./summary-commit";
 
 export type ChatMessage = Awaited<ReturnType<typeof spindle.chat.getMessages>>[number];
 type ChatMessageDTO = ChatMessage;
@@ -309,18 +310,24 @@ export async function syncHiddenForCoveredMessages(
     if (desiredHidden && !currentlyHidden) toFlip.push(m.id);
     else if (!desiredHidden && currentlyHidden) toFlip.push(m.id);
   }
-  if (toFlip.length === 0) return;
+  await setHidden(chatId, toFlip, desiredHidden);
+}
+
+async function setHidden(chatId: string, ids: string[], hidden: boolean): Promise<void> {
+  const failures: unknown[] = [];
   const CHUNK = 500;
-  for (let i = 0; i < toFlip.length; i += CHUNK) {
-    const slice = toFlip.slice(i, i + CHUNK);
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
     try {
-      await spindle.chat.setMessagesHidden(chatId, slice, desiredHidden);
+      await spindle.chat.setMessagesHidden(chatId, slice, hidden);
     } catch {
       for (const id of slice) {
-        await spindle.chat.setMessageHidden(chatId, id, desiredHidden).catch(() => {});
+        try { await spindle.chat.setMessageHidden(chatId, id, hidden); }
+        catch (err) { failures.push(err); }
       }
     }
   }
+  if (failures.length) throw new AggregateError(failures, `Could not update visibility for ${failures.length} messages. Run Resync visibility again.`);
 }
 
 export function pickOrphanedHiddenIds(messages: ChatMessageDTO[], coverage: CoverageMap): string[] {
@@ -341,18 +348,7 @@ export async function unhideCoveredMessages(
   userId: string,
 ): Promise<void> {
   void userId;
-  if (msgIds.length === 0) return;
-  const CHUNK = 500;
-  for (let i = 0; i < msgIds.length; i += CHUNK) {
-    const slice = msgIds.slice(i, i + CHUNK);
-    try {
-      await spindle.chat.setMessagesHidden(chatId, slice, false);
-    } catch {
-      for (const id of slice) {
-        await spindle.chat.setMessageHidden(chatId, id, false).catch(() => {});
-      }
-    }
-  }
+  await setHidden(chatId, msgIds, false);
 }
 
 export async function resyncVisibility(
@@ -360,13 +356,15 @@ export async function resyncVisibility(
   userId: string,
   desiredHiddenForCovered: boolean,
 ): Promise<{ unhidden: number; hidden: number }> {
+  return withCommitMutex(userId, chatId, async () => {
   const messages = await spindle.chat.getMessages(chatId);
-  const coverage = await buildCoverage(chatId, userId);
+  const entries = await listLmbEntries(chatId, userId, true);
+  const coverage = await buildCoverage(chatId, userId, entries);
   const orphanedHidden = pickOrphanedHiddenIds(messages, coverage);
   let hiddenBefore = 0;
   let unhiddenAfter = 0;
   if (orphanedHidden.length > 0) {
-    await unhideCoveredMessages(chatId, orphanedHidden, userId).catch(() => {});
+    await unhideCoveredMessages(chatId, orphanedHidden, userId);
     unhiddenAfter = orphanedHidden.length;
   }
   for (const m of messages) {
@@ -376,9 +374,10 @@ export async function resyncVisibility(
     if (currentlyHidden !== desiredHiddenForCovered) hiddenBefore++;
   }
   if (hiddenBefore > 0) {
-    await syncHiddenForCoveredMessages(chatId, messages, coverage, userId, desiredHiddenForCovered).catch(() => {});
+    await syncHiddenForCoveredMessages(chatId, messages, coverage, userId, desiredHiddenForCovered);
   }
-  return { unhidden: unhiddenAfter, hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
+  return { unhidden: unhiddenAfter + (desiredHiddenForCovered ? 0 : hiddenBefore), hidden: desiredHiddenForCovered ? hiddenBefore : 0 };
+  });
 }
 
 /** A manual selection is one chapter, except across an explicit exclusion. */
