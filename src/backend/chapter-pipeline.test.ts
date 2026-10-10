@@ -77,6 +77,26 @@ for (const callback of ["onBusyChange", "onStateChange", "onToast"] as const) {
   });
 }
 
+test("cancelling while chapter sources load prevents generation and leaves filing usable", async () => {
+  const { abortBusy, getBusy } = await import("./pipeline");
+  const api = (globalThis as any).spindle.chat;
+  const read = api.getMessages;
+  let release!: () => void;
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  api.getMessages = async () => { await paused; return read(); };
+  const filing = createChapterAuto(chatId, profile, settings(), userId);
+  const cancelled = abortBusy(userId, chatId, "chapter");
+  release();
+  await filing;
+  expect(cancelled).toBe(true);
+  expect(requests).toHaveLength(0);
+  expect(entries).toHaveLength(0);
+  expect(getBusy(userId)).toHaveLength(0);
+  api.getMessages = read;
+  expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeTruthy();
+  expect(requests).toHaveLength(1);
+});
+
 for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
   entries = [chapter(71, 0, 69), chapter(72, 75, 87)];
   profile.lagValue = 12;

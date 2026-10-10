@@ -7051,6 +7051,7 @@ function setBusy(userId, chatId, kind, label) {
   recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "started" });
   const entry = { kind, chatId, label, startedAt: Date.now() };
   inflight3.set(key, entry);
+  aborters.set(key, new AbortController);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key);
   streamLastPush.delete(key);
@@ -7093,7 +7094,10 @@ function clearBusy(userId, chatId, kind) {
   cb?.onBusyChange(userId, fresh.slice());
 }
 function registerAborter(userId, chatId, kind, controller) {
-  aborters.set(busyKey(userId, chatId, kind), controller);
+  const key = busyKey(userId, chatId, kind);
+  if (aborters.get(key)?.signal.aborted)
+    controller.abort();
+  aborters.set(key, controller);
 }
 function abortBusy(userId, chatId, kind) {
   const controller = aborters.get(busyKey(userId, chatId, kind));

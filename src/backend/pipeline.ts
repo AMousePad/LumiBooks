@@ -177,6 +177,9 @@ export function setBusy(userId: string, chatId: string, kind: BusyKind, label: s
   void recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "started" });
   const entry: BusyEntry = { kind, chatId, label, startedAt: Date.now() };
   inflight.set(key, entry);
+  // Cancellation is available while sources and settings are still loading.
+  // The generation controller inherits this pending cancellation below.
+  aborters.set(key, new AbortController());
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key);
   streamLastPush.delete(key);
@@ -218,7 +221,9 @@ export function clearBusy(userId: string, chatId: string, kind: BusyKind): void 
 }
 
 export function registerAborter(userId: string, chatId: string, kind: BusyKind, controller: AbortController): void {
-  aborters.set(busyKey(userId, chatId, kind), controller);
+  const key = busyKey(userId, chatId, kind);
+  if (aborters.get(key)?.signal.aborted) controller.abort();
+  aborters.set(key, controller);
 }
 
 export function abortBusy(userId: string, chatId: string, kind: BusyKind): boolean {

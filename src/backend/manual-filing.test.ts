@@ -109,3 +109,22 @@ test("watching observes a chapter without restarting it, even if viewer delivery
   expect(seen).toContain("first second");
   expect(p.getBusy("watch-user")).toHaveLength(0);
 });
+
+test("pending cancellation follows the controller handoff for every tier and Codex", async () => {
+  const p = await import("./pipeline");
+  p.registerPipelineCallbacks({ onBusyChange() {}, onToast() {}, onStateChange() {}, onStreamText() {} });
+  for (const kind of ["chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"] as const) {
+    expect(p.setBusy("cancel-user", "cancel-chat", kind, "preparing")).toBe(true);
+    expect(p.abortBusy("cancel-user", "cancel-chat", kind)).toBe(true);
+    const controller = new AbortController();
+    p.registerAborter("cancel-user", "cancel-chat", kind, controller);
+    expect(controller.signal.aborted).toBe(true);
+    p.clearBusy("cancel-user", "cancel-chat", kind);
+    expect(p.abortBusy("cancel-user", "cancel-chat", kind)).toBe(false);
+    expect(p.setBusy("cancel-user", "cancel-chat", kind, "new attempt")).toBe(true);
+    const next = new AbortController();
+    p.registerAborter("cancel-user", "cancel-chat", kind, next);
+    expect(next.signal.aborted).toBe(false);
+    p.clearBusy("cancel-user", "cancel-chat", kind);
+  }
+});
