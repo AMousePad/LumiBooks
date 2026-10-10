@@ -10,6 +10,7 @@
     "build": "bun run build:backend && bun run build:frontend && bun run check:lessons",
     "check:lessons": "bun run scripts/check-lessons.ts",
     "typecheck": "tsc --noEmit",
+    "test:host": "bun scripts/test-real-host.ts",
     "deploy": "powershell.exe -File local/scripts/deploy.ps1"
   },
   "devDependencies": {
