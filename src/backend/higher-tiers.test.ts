@@ -6,6 +6,7 @@ import { createArcAuto, createArcFromChapters, createHigherFromEntries, drainHig
 import { SummaryTimelineError } from "./binding";
 import { invalidateBookCache, listLmbEntries } from "./world-book";
 import { saveSettings } from "./storage";
+import { removeSummaryEntry } from "./shelf-actions";
 
 const original = (globalThis as any).spindle;
 const chatId = "higher-test", userId = "higher-user", bookId = "higher-book";
@@ -23,7 +24,7 @@ beforeEach(async () => {
  (globalThis as any).spindle = {
   log: { info() {}, warn() {}, error() {} }, rpcPool: { sync() {} },
   userStorage: { async setJson() {}, async getJson() { return settings(); } },
-  chat: { async getMessages() { return []; } },
+  chat: { async getMessages() { return []; }, async setMessagesHidden() {}, async setMessageHidden() {} },
   chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId, chat_world_book_ids: [bookId] } }; }, async update() {} },
   connections: { async list() { return [{ id: "conn", model: "test", is_default: true }]; } },
   tokens: { async countText(text: string) { return { total_tokens: Math.ceil(text.length / 4) }; } },
@@ -46,6 +47,62 @@ beforeEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 afterEach(() => { for (const p of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, p.draftId); });
+
+for (const tier of [2, 6]) for (const release of [false, true]) for (const root of [false, true]) {
+ test(`${release ? "releasing" : "deleting"} a compacted tier ${tier} ${root ? "root" : "summary"} preserves descendant coverage`, async () => {
+  const children = [source(tier - 1, 0), source(tier - 1, 1)];
+  const middle = source(tier, 0), parent = source(tier + 1, 0);
+  middle.extensions.lumibooks.sourceChapterEntryIds = children.map((e) => e.id);
+  middle.extensions.lumibooks.msgIds = ["m0", "m1", "direct-middle-source"];
+  parent.extensions.lumibooks.sourceChapterEntryIds = [middle.id];
+  entries = [...children, middle, parent];
+  for (const entry of entries) entry.extensions.lumibooks.isRoot = root;
+  for (const child of children) child.extensions.lumibooks.supersededByEntryId = middle.id;
+  middle.extensions.lumibooks.supersededByEntryId = parent.id;
+  const before = await buildCoverage(chatId, userId);
+  await removeSummaryEntry(chatId, middle.id, userId, release);
+  const after = await buildCoverage(chatId, userId);
+  expect(after.activeEntries.map((e) => e.raw.id)).toEqual([parent.id]);
+  expect([...after.coveredBy.keys()].sort()).toEqual([...before.coveredBy.keys()].sort());
+  if (release) expect(entries.find((e) => e.id === middle.id)?.content).toBe(middle.content);
+  else expect(entries.some((e) => e.id === middle.id)).toBe(false);
+ });
+}
+
+for (const failure of ["preserve", "delete", "cleanup"] as const) test(`removing a compacted arc retains coverage when ${failure} fails`, async () => {
+ const children = [source(1, 0), source(1, 1)], arc = source(2, 0), volume = source(3, 0);
+ arc.extensions.lumibooks.sourceChapterEntryIds = children.map((e) => e.id);
+ volume.extensions.lumibooks.sourceChapterEntryIds = [arc.id];
+ entries = [...children, arc, volume];
+ const api = (globalThis as any).spindle.world_books.entries;
+ const update = api.update;
+ let writes = 0;
+ api.update = async (...args: any[]) => {
+  if (++writes === (failure === "preserve" ? 1 : failure === "cleanup" ? 2 : -1)) throw new Error("write failed");
+  return update(...args);
+ };
+ if (failure === "delete") api.delete = async () => { throw new Error("delete failed"); };
+ if (failure === "cleanup") await removeSummaryEntry(chatId, arc.id, userId);
+ else await expect(removeSummaryEntry(chatId, arc.id, userId)).rejects.toThrow();
+ const coverage = await buildCoverage(chatId, userId);
+ expect(coverage.activeEntries.map((e) => e.raw.id)).toEqual([volume.id]);
+ expect([...coverage.coveredBy.keys()].sort()).toEqual(["m0", "m1"]);
+ expect(entries.some((e) => e.id === arc.id)).toBe(failure !== "cleanup");
+});
+
+test("removing an active arc revives its children and deleting a chapter uncovers only its messages", async () => {
+ const children = [source(1, 0), source(1, 1)], arc = source(2, 0);
+ arc.extensions.lumibooks.sourceChapterEntryIds = children.map((e) => e.id);
+ entries = [...children, arc];
+ const unhidden: string[] = [];
+ (globalThis as any).spindle.chat.setMessagesHidden = async (_chat: string, ids: string[]) => { unhidden.push(...ids); };
+ await removeSummaryEntry(chatId, arc.id, userId);
+ expect((await buildCoverage(chatId, userId)).activeEntries.map((e) => e.raw.id)).toEqual(children.map((e) => e.id));
+ expect(unhidden).toEqual([]);
+ await removeSummaryEntry(chatId, children[0].id, userId);
+ expect(unhidden).toEqual(["m0"]);
+ expect([... (await buildCoverage(chatId, userId)).coveredBy.keys()]).toEqual(["m1"]);
+});
 
 for (const tier of [2, 3, 7] as const) for (const change of ["deleted", "disabled"] as const) {
  test(`tier ${tier} regeneration refuses sources already ${change} before generation`, async () => {

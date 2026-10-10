@@ -1,3 +1,4 @@
+import { removeSummaryEntry } from "./shelf-actions";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
@@ -38,8 +39,6 @@ import {
   applyConstantToAllLmbEntries,
   ensureBookForChat,
   deleteEntry,
-  patchEntryMeta,
-  releaseEntry,
   updateEntry,
   listLmbEntries,
   invalidateBookCache,
@@ -831,84 +830,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
-      case "delete_entry": {
-        const entries = await listLmbEntries(msg.chatId, userId);
-        const entry = entries.find((e) => e.raw.id === msg.entryId);
-        // Free the tier below only when the removed entry was itself active.
-        // Deleting an arc that sits inside a volume must not reactivate its
-        // chapters - the volume still covers them.
-        if (
-          entry
-          && entry.meta.tier !== 1
-          && !entry.meta.supersededByEntryId
-          && Array.isArray(entry.meta.sourceChapterEntryIds)
-        ) {
-          const sourceIds = new Set(entry.meta.sourceChapterEntryIds);
-          for (const src of entries) {
-            if (!sourceIds.has(src.raw.id)) continue;
-            if (src.meta.supersededByEntryId !== msg.entryId) continue;
-            try {
-              await patchEntryMeta(src, { supersededByEntryId: null }, userId);
-            } catch (err) {
-              warn(`failed to clear supersededByEntryId on entry ${src.raw.id}: ${describeError(err)}`);
-            }
-          }
+      case "delete_entry":
+      case "release_entry": {
+        const release = msg.type === "release_entry";
+        const entry = await removeSummaryEntry(msg.chatId, msg.entryId, userId, release);
+        if (!entry) {
+          await notify(userId, "warn", "Memoria can't find that entry");
+          break;
         }
-        // A deleted ghost's span gets refilled by the next drain: keep its
-        // ordinal so the refill doesn't jump to max+1 mid-list.
-        if (entry?.meta.ghost && typeof entry.meta.sceneNumber === "number") {
+        if (entry.meta.ghost && typeof entry.meta.sceneNumber === "number") {
           recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
         }
-        await deleteEntry(msg.entryId, userId);
-        invalidateBookCache(userId, msg.chatId);
-        if (entry) {
-          const remaining = entries.filter((e) => e.raw.id !== msg.entryId);
-          const newCoverage = await buildCoverage(msg.chatId, userId, remaining);
-          const toUnhide = entry.meta.msgIds.filter((id) => !newCoverage.coveredBy.has(id));
-          if (toUnhide.length > 0) {
-            await unhideCoveredMessages(msg.chatId, toUnhide, userId).catch(() => {});
-          }
-        }
-        await pushState(userId, msg.chatId);
-        break;
-      }
-
-      case "release_entry": {
-        const entries = await listLmbEntries(msg.chatId, userId);
-        const entry = entries.find((e) => e.raw.id === msg.entryId);
-        if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry to release");
-          break;
-        }
-        if (entry.meta.ghost) {
-          await notify(userId, "warn", "Memoria can't release a ghost chapter before it's shelved");
-          break;
-        }
-        if (
-          entry.meta.tier !== 1
-          && !entry.meta.supersededByEntryId
-          && Array.isArray(entry.meta.sourceChapterEntryIds)
-        ) {
-          const sourceIds = new Set(entry.meta.sourceChapterEntryIds);
-          for (const src of entries) {
-            if (!sourceIds.has(src.raw.id)) continue;
-            if (src.meta.supersededByEntryId !== msg.entryId) continue;
-            try {
-              await patchEntryMeta(src, { supersededByEntryId: null }, userId);
-            } catch (err) {
-              warn(`failed to clear supersededByEntryId on entry ${src.raw.id}: ${describeError(err)}`);
-            }
-          }
-        }
-        await releaseEntry(entry, userId);
-        invalidateBookCache(userId, msg.chatId);
-        const remaining = entries.filter((e) => e.raw.id !== msg.entryId);
-        const newCoverage = await buildCoverage(msg.chatId, userId, remaining);
-        const toUnhide = entry.meta.msgIds.filter((id) => !newCoverage.coveredBy.has(id));
-        if (toUnhide.length > 0) {
-          await unhideCoveredMessages(msg.chatId, toUnhide, userId).catch(() => {});
-        }
-        await notify(userId, "success", "Memoria released the entry to your lorebook");
+        if (release) await notify(userId, "success", "Memoria released the entry to your lorebook");
         await pushState(userId, msg.chatId);
         break;
       }

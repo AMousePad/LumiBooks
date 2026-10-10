@@ -2076,6 +2076,49 @@ function withCommitMutex(userId, chatId, fn) {
   return result;
 }
 
+// src/backend/shelf-actions.ts
+async function removeSummaryEntry(chatId, entryId, userId, release = false) {
+  return withCommitMutex(userId, chatId, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    const entry = entries.find((e) => e.raw.id === entryId);
+    if (!entry)
+      return null;
+    if (release && entry.meta.ghost)
+      throw new Error("A ghost chapter must be shelved before it can be released.");
+    const before = await buildCoverage(chatId, userId, entries);
+    const parents = entries.filter((e) => e.meta.tier > entry.meta.tier && e.meta.sourceChapterEntryIds?.includes(entryId));
+    try {
+      for (const parent of parents) {
+        const patch = {
+          sourceChapterEntryIds: [...new Set([...parent.meta.sourceChapterEntryIds ?? [], ...entry.meta.sourceChapterEntryIds ?? []])],
+          msgIds: [...new Set([...parent.meta.msgIds, ...entry.meta.msgIds])]
+        };
+        await patchEntryMeta(parent, patch, userId);
+        parent.meta = { ...parent.meta, ...patch };
+      }
+      if (release)
+        await releaseEntry(entry, userId);
+      else
+        await deleteEntry(entryId, userId);
+      for (const parent of parents) {
+        await patchEntryMeta(parent, { sourceChapterEntryIds: parent.meta.sourceChapterEntryIds.filter((id) => id !== entryId) }, userId).catch((err) => warn(`removed summary reference cleanup failed: ${describeError(err)}`));
+      }
+      for (const source of entries) {
+        if (source.meta.supersededByEntryId !== entryId)
+          continue;
+        const parent = parents.find((p) => !p.raw.disabled);
+        await patchEntryMeta(source, { supersededByEntryId: parent?.raw.id ?? null }, userId).catch((err) => warn(`removed summary backlink cleanup failed: ${describeError(err)}`));
+      }
+    } finally {
+      invalidateBookCache(userId, chatId);
+    }
+    const after = await buildCoverage(chatId, userId);
+    const uncovered = [...before.coveredBy.keys()].filter((id) => !after.coveredBy.has(id));
+    await unhideCoveredMessages(chatId, uncovered, userId);
+    return entry;
+  });
+}
+
 // src/backend/summary-matching.ts
 var encoder = new TextEncoder;
 async function sha256(text) {
@@ -11953,73 +11996,19 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await pushState(userId, msg.chatId);
         break;
       }
-      case "delete_entry": {
-        const entries = await listLmbEntries(msg.chatId, userId);
-        const entry = entries.find((e) => e.raw.id === msg.entryId);
-        if (entry && entry.meta.tier !== 1 && !entry.meta.supersededByEntryId && Array.isArray(entry.meta.sourceChapterEntryIds)) {
-          const sourceIds = new Set(entry.meta.sourceChapterEntryIds);
-          for (const src of entries) {
-            if (!sourceIds.has(src.raw.id))
-              continue;
-            if (src.meta.supersededByEntryId !== msg.entryId)
-              continue;
-            try {
-              await patchEntryMeta(src, { supersededByEntryId: null }, userId);
-            } catch (err) {
-              warn(`failed to clear supersededByEntryId on entry ${src.raw.id}: ${describeError(err)}`);
-            }
-          }
+      case "delete_entry":
+      case "release_entry": {
+        const release = msg.type === "release_entry";
+        const entry = await removeSummaryEntry(msg.chatId, msg.entryId, userId, release);
+        if (!entry) {
+          await notify(userId, "warn", "Memoria can't find that entry");
+          break;
         }
-        if (entry?.meta.ghost && typeof entry.meta.sceneNumber === "number") {
+        if (entry.meta.ghost && typeof entry.meta.sceneNumber === "number") {
           recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
         }
-        await deleteEntry(msg.entryId, userId);
-        invalidateBookCache(userId, msg.chatId);
-        if (entry) {
-          const remaining = entries.filter((e) => e.raw.id !== msg.entryId);
-          const newCoverage = await buildCoverage(msg.chatId, userId, remaining);
-          const toUnhide = entry.meta.msgIds.filter((id) => !newCoverage.coveredBy.has(id));
-          if (toUnhide.length > 0) {
-            await unhideCoveredMessages(msg.chatId, toUnhide, userId).catch(() => {});
-          }
-        }
-        await pushState(userId, msg.chatId);
-        break;
-      }
-      case "release_entry": {
-        const entries = await listLmbEntries(msg.chatId, userId);
-        const entry = entries.find((e) => e.raw.id === msg.entryId);
-        if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry to release");
-          break;
-        }
-        if (entry.meta.ghost) {
-          await notify(userId, "warn", "Memoria can't release a ghost chapter before it's shelved");
-          break;
-        }
-        if (entry.meta.tier !== 1 && !entry.meta.supersededByEntryId && Array.isArray(entry.meta.sourceChapterEntryIds)) {
-          const sourceIds = new Set(entry.meta.sourceChapterEntryIds);
-          for (const src of entries) {
-            if (!sourceIds.has(src.raw.id))
-              continue;
-            if (src.meta.supersededByEntryId !== msg.entryId)
-              continue;
-            try {
-              await patchEntryMeta(src, { supersededByEntryId: null }, userId);
-            } catch (err) {
-              warn(`failed to clear supersededByEntryId on entry ${src.raw.id}: ${describeError(err)}`);
-            }
-          }
-        }
-        await releaseEntry(entry, userId);
-        invalidateBookCache(userId, msg.chatId);
-        const remaining = entries.filter((e) => e.raw.id !== msg.entryId);
-        const newCoverage = await buildCoverage(msg.chatId, userId, remaining);
-        const toUnhide = entry.meta.msgIds.filter((id) => !newCoverage.coveredBy.has(id));
-        if (toUnhide.length > 0) {
-          await unhideCoveredMessages(msg.chatId, toUnhide, userId).catch(() => {});
-        }
-        await notify(userId, "success", "Memoria released the entry to your lorebook");
+        if (release)
+          await notify(userId, "success", "Memoria released the entry to your lorebook");
         await pushState(userId, msg.chatId);
         break;
       }
