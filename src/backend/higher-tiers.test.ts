@@ -116,6 +116,36 @@ test("removing an active arc revives its children and deleting a chapter uncover
  expect([... (await buildCoverage(chatId, userId)).coveredBy.keys()]).toEqual(["m1"]);
 });
 
+test("repeated removals through all seven tiers preserve the surviving top summary's coverage", async () => {
+ let sequence = 63917;
+ const random = (n: number) => { sequence = (Math.imul(sequence, 1664525) + 1013904223) >>> 0; return sequence % n; };
+ for (let trial = 0; trial < 12; trial++) {
+  entries = Array.from({ length: 64 }, (_, i) => source(1, i));
+  let level = entries.slice();
+  for (let tier = 2; tier <= 7; tier++) {
+   const next: any[] = [];
+   for (let i = 0; i < level.length; i += 2) {
+    const children = level.slice(i, i + 2), parent = source(tier, i / 2);
+    parent.extensions.lumibooks.sourceChapterEntryIds = children.map((e) => e.id);
+    parent.extensions.lumibooks.msgIds = children.flatMap((e) => e.extensions.lumibooks.msgIds);
+    for (const child of children) child.extensions.lumibooks.supersededByEntryId = parent.id;
+    next.push(parent); entries.push(parent);
+   }
+   level = next;
+  }
+  invalidateBookCache(userId, chatId);
+  const top = level[0].id;
+  const remaining = entries.filter((e) => e.id !== top).map((e) => e.id);
+  for (let removal = 0; removal < 45; removal++) {
+   const [id] = remaining.splice(random(remaining.length), 1);
+   await removeSummaryEntry(chatId, id!, userId, removal % 2 === 0);
+   const coverage = await buildCoverage(chatId, userId);
+   expect(coverage.activeEntries.map((e) => e.raw.id)).toEqual([top]);
+   expect(coverage.coveredBy.size).toBe(64);
+  }
+ }
+});
+
 for (const tier of [2, 3, 7] as const) for (const change of ["deleted", "disabled"] as const) {
  test(`tier ${tier} regeneration refuses sources already ${change} before generation`, async () => {
   const children = [source(tier - 1, 0), source(tier - 1, 1)], parent = source(tier, 0);
