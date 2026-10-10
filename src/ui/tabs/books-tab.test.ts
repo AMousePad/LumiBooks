@@ -155,8 +155,8 @@ test("Advanced exposes always-on diagnostics with separate Export and Clear acti
   const current = state(), sent: any[] = [], host = new Element("div");
   renderBooksTab(host as any, current, {} as any, (msg) => sent.push(msg));
   expect(host.textContent).toContain("Private diagnostics");
-  expect(host.textContent).toContain("Nothing is uploaded automatically");
-  expect(host.textContent).toContain("4 MiB");
+  expect(host.textContent).toContain("No automatic uploads");
+  expect(host.textContent).toContain("as many events as fit in 10 MB");
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Export diagnostics")!.dispatch("click");
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Clear diagnostics")!.dispatch("click");
   expect(sent).toEqual([{ type: "diagnostics_export", chatId: current.activeChatId }, { type: "diagnostics_clear", chatId: current.activeChatId }]);

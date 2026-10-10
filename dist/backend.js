@@ -3616,8 +3616,7 @@ var spindle_default = {
 
 // src/backend/diagnostics.ts
 var DIAGNOSTICS_PATH = "diagnostics.json";
-var DIAGNOSTICS_MAX_BYTES = 4 * 1024 * 1024;
-var DIAGNOSTICS_MAX_EVENTS = 2000;
+var DIAGNOSTICS_MAX_BYTES = 1e7;
 var MAX_EVENT_BYTES = 512 * 1024;
 var MAX_ROWS = 4096;
 var MAX_PENDING = 64;
@@ -3750,22 +3749,45 @@ async function read(userId, storage = spindle.userStorage) {
     schema: 1,
     salt: raw.salt,
     next: Math.max(1, number(raw.next) ?? 1),
-    dropped: Math.max(0, number(raw.dropped) ?? 0) + Math.max(0, rows.length - DIAGNOSTICS_MAX_EVENTS),
-    events: rows.slice(-DIAGNOSTICS_MAX_EVENTS).flatMap((row) => {
+    dropped: Math.max(0, number(raw.dropped) ?? 0),
+    events: rows.flatMap((row) => {
       const e = project(row, true);
       return e ? [e] : [];
     })
   };
-  bound(store);
-  store.next = Math.max(store.next, ...store.events.map((e) => e.seq + 1));
+  for (const event of store.events)
+    store.next = Math.max(store.next, event.seq + 1);
+  bound(store, userId);
   return store;
 }
-function bound(store) {
-  let bytes = size({ ...store, events: [] }) + store.events.reduce((n, e) => n + size(e) + 1, 0);
-  while (store.events.length && (store.events.length > DIAGNOSTICS_MAX_EVENTS || bytes > DIAGNOSTICS_MAX_BYTES - 128)) {
-    bytes -= size(store.events.shift()) + 1;
+function report(store, userId) {
+  return {
+    format: "lumibooks-diagnostics",
+    schema: 1,
+    version: spindle_default.version,
+    exportedAt: Date.now(),
+    indexBase: 0,
+    maxBytes: DIAGNOSTICS_MAX_BYTES,
+    droppedEvents: store.dropped,
+    queueDropsThisSession: health(userId).queueDrops,
+    writeFailuresThisSession: health(userId).writeFailures,
+    privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
+    events: store.events
+  };
+}
+function bound(store, userId) {
+  const sizes = store.events.map((event) => size(event) + 1);
+  let bytes = sizes.reduce((sum, n) => sum + n, 0), removed = 0;
+  while (removed < sizes.length) {
+    const emptyStore = { ...store, events: [] };
+    const overhead = Math.max(size(emptyStore), size(report(emptyStore, userId)));
+    if (bytes - 1 + overhead <= DIAGNOSTICS_MAX_BYTES)
+      break;
+    bytes -= sizes[removed++];
     store.dropped++;
   }
+  if (removed)
+    store.events = store.events.slice(removed);
 }
 async function anonymize(event, salt) {
   const refs = new Map;
@@ -3808,7 +3830,7 @@ function recordDiagnostic(userId, input) {
         safe.truncated = true;
       }
       store.events.push(safe);
-      bound(store);
+      bound(store, userId);
       await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
     }).catch(() => {
       health(userId).writeFailures++;
@@ -3823,20 +3845,7 @@ function recordDiagnostic(userId, input) {
 async function exportDiagnostics(userId) {
   return serial(userId, async () => {
     const store = await read(userId);
-    return JSON.stringify({
-      format: "lumibooks-diagnostics",
-      schema: 1,
-      version: spindle_default.version,
-      exportedAt: Date.now(),
-      indexBase: 0,
-      maxBytes: DIAGNOSTICS_MAX_BYTES,
-      maxEvents: DIAGNOSTICS_MAX_EVENTS,
-      droppedEvents: store.dropped,
-      queueDropsThisSession: health(userId).queueDrops,
-      writeFailuresThisSession: health(userId).writeFailures,
-      privacy: "No chat text, summaries, prompts, reasoning, names, raw IDs, content hashes, credentials or raw errors. IDs are salted pseudonyms; timestamps, counts, indexes and structural relationships remain.",
-      events: store.events
-    }, null, 2);
+    return JSON.stringify(report(store, userId));
   });
 }
 async function clearDiagnostics(userId) {

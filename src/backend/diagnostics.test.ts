@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_MAX_EVENTS, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic } from "./diagnostics";
+import { clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic } from "./diagnostics";
 
 const original = (globalThis as any).spindle;
 let disk: Map<string, any>;
@@ -81,26 +81,35 @@ test("export revalidates saved records instead of trusting arbitrary disk text",
   expect(JSON.parse(output).events).toHaveLength(1);
 });
 
-test("retention bounds event count and disk bytes with explicit dropped and truncated records", async () => {
+test("retention has no event-count cap and bounds compact disk/export bytes", async () => {
   await recordDiagnostic("bounded-user", { event: "operation", chatId: "chat" });
   const store = disk.get(key("bounded-user"));
   const row = store.events[0];
-  store.events = Array.from({ length: DIAGNOSTICS_MAX_EVENTS + 20 }, (_, i) => ({ ...row, seq: i + 1 }));
+  store.events = Array.from({ length: 20_000 }, (_, i) => ({ ...row, seq: i + 1 }));
   store.next = store.events.length + 1;
   await recordDiagnostic("bounded-user", { event: "operation", chatId: "chat" });
   let report = JSON.parse(await exportDiagnostics("bounded-user"));
-  expect(report.events).toHaveLength(DIAGNOSTICS_MAX_EVENTS);
-  expect(report.droppedEvents).toBe(21);
+  expect(report.events).toHaveLength(20_001);
+  expect(report.droppedEvents).toBe(0);
+  expect(report.maxEvents).toBeUndefined();
+  expect(report.maxBytes).toBe(10_000_000);
   const large = disk.get(key("bounded-user"));
   large.events = Array.from({ length: 80 }, (_, i) => ({ ...row, seq: i + 1,
     messages: Array.from({ length: 2000 }, (_, n) => ({ id: row.chatId, index: n, position: n, selected: false })) }));
   await recordDiagnostic("bounded-user", { event: "snapshot", chatId: "chat", messages: Array.from({ length: 4200 }, (_, n) => ({ id: "same-message", index: n })) });
   expect(new TextEncoder().encode(JSON.stringify(disk.get(key("bounded-user")))).length).toBeLessThanOrEqual(DIAGNOSTICS_MAX_BYTES);
   expect(diskBytes.get(key("bounded-user"))).toBeLessThanOrEqual(DIAGNOSTICS_MAX_BYTES);
-  report = JSON.parse(await exportDiagnostics("bounded-user"));
+  const output = await exportDiagnostics("bounded-user");
+  expect(new TextEncoder().encode(output).length).toBeLessThanOrEqual(DIAGNOSTICS_MAX_BYTES);
+  expect(output).toBe(JSON.stringify(JSON.parse(output)));
+  report = JSON.parse(output);
   expect(report.events.at(-1).truncated).toBe(true);
   expect(report.events.at(-1).messages.length).toBeLessThanOrEqual(4096);
-  expect(report.droppedEvents).toBeGreaterThan(21);
+  expect(report.droppedEvents).toBeGreaterThan(0);
+  expect(report.events[0].seq).toBe(report.droppedEvents + 1);
+  // One more evicted event would exceed the budget: byte capacity is used fully.
+  const evicted = large.events[report.droppedEvents - 1];
+  expect(new TextEncoder().encode(output).length + new TextEncoder().encode(JSON.stringify(evicted)).length + 1).toBeGreaterThan(DIAGNOSTICS_MAX_BYTES);
 });
 
 test("clear serializes with pending records and later events use a new salt", async () => {

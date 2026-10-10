@@ -6326,8 +6326,8 @@ function renderSummaryTransfer(host, state, ctx, send) {
 }
 function renderDiagnostics(host, state, send) {
   const sec = section("Private diagnostics");
-  sec.body.appendChild(textNode("Always records recent filing, coverage, regeneration, fork and context decisions for this account. Keeps up to 2,000 events within 4 MiB; older records roll off. Export adds a structural snapshot of this chat.", "lmb-help"));
-  sec.body.appendChild(textNode("Contains timestamps, counts, message numbers and pseudonymous IDs. No chat or summary text, prompts, reasoning, names, credentials or raw errors. Nothing is uploaded automatically. Clear removes saved diagnostics and resets the pseudonyms; recording continues.", "lmb-help"));
+  sec.body.appendChild(textNode("Always on, per account: filing, coverage, regeneration, fork and context decisions. Keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot.", "lmb-help"));
+  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms; recording continues.", "lmb-help"));
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   const chatId = state.activeChatId;

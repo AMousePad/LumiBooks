@@ -7,8 +7,7 @@ import { buildCoverage, isEligibleForCount, isExcluded, type ChatMessage, type C
 import { listLmbEntries, type LMBEntry } from "./world-book";
 
 export const DIAGNOSTICS_PATH = "diagnostics.json";
-export const DIAGNOSTICS_MAX_BYTES = 4 * 1024 * 1024;
-export const DIAGNOSTICS_MAX_EVENTS = 2000;
+export const DIAGNOSTICS_MAX_BYTES = 10_000_000;
 const MAX_EVENT_BYTES = 512 * 1024;
 const MAX_ROWS = 4096;
 const MAX_PENDING = 64;
@@ -112,18 +111,32 @@ async function read(userId: string, storage = spindle.userStorage): Promise<Stor
   const raw = object(await storage.getJson(DIAGNOSTICS_PATH, { fallback: null, userId }));
   if (raw.schema !== 1 || typeof raw.salt !== "string" || !/^[a-f0-9]{32}$/.test(raw.salt)) return empty();
   const rows = Array.isArray(raw.events) ? raw.events : [];
-  const store: Store = { schema: 1, salt: raw.salt, next: Math.max(1, number(raw.next) ?? 1), dropped: Math.max(0, number(raw.dropped) ?? 0) + Math.max(0, rows.length - DIAGNOSTICS_MAX_EVENTS),
-    events: rows.slice(-DIAGNOSTICS_MAX_EVENTS).flatMap((row) => { const e = project(row, true); return e ? [e] : []; }) };
-  bound(store);
-  store.next = Math.max(store.next, ...store.events.map((e) => e.seq + 1));
+  const store: Store = { schema: 1, salt: raw.salt, next: Math.max(1, number(raw.next) ?? 1), dropped: Math.max(0, number(raw.dropped) ?? 0),
+    events: rows.flatMap((row) => { const e = project(row, true); return e ? [e] : []; }) };
+  for (const event of store.events) store.next = Math.max(store.next, event.seq + 1);
+  bound(store, userId);
   return store;
 }
-function bound(store: Store): void {
-  let bytes = size({ ...store, events: [] }) + store.events.reduce((n, e) => n + size(e) + 1, 0);
-  while (store.events.length && (store.events.length > DIAGNOSTICS_MAX_EVENTS || bytes > DIAGNOSTICS_MAX_BYTES - 128)) {
-    bytes -= size(store.events.shift()!) + 1;
+function report(store: Store, userId: string) {
+  return { format: "lumibooks-diagnostics", schema: 1, version: manifest.version,
+    exportedAt: Date.now(), indexBase: 0, maxBytes: DIAGNOSTICS_MAX_BYTES,
+    droppedEvents: store.dropped, queueDropsThisSession: health(userId).queueDrops, writeFailuresThisSession: health(userId).writeFailures,
+    privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
+    events: store.events };
+}
+function bound(store: Store, userId: string): void {
+  const sizes = store.events.map((event) => size(event) + 1);
+  let bytes = sizes.reduce((sum, n) => sum + n, 0), removed = 0;
+  // Include both envelopes and comma separators; retain every complete event
+  // that fits in the larger of the compact disk and export representations.
+  while (removed < sizes.length) {
+    const emptyStore = { ...store, events: [] };
+    const overhead = Math.max(size(emptyStore), size(report(emptyStore, userId)));
+    if (bytes - 1 + overhead <= DIAGNOSTICS_MAX_BYTES) break;
+    bytes -= sizes[removed++]!;
     store.dropped++;
   }
+  if (removed) store.events = store.events.slice(removed);
 }
 async function anonymize(event: Event, salt: string): Promise<Event> {
   const refs = new Map<string, Promise<string>>();
@@ -157,7 +170,7 @@ export function recordDiagnostic(userId: string, input: DiagnosticInput): Promis
       safe.seq = store.next++;
       if (size(safe) > MAX_EVENT_BYTES) { safe.messages = []; safe.entries = []; safe.truncated = true; }
       store.events.push(safe);
-      bound(store);
+      bound(store, userId);
       // The host defaults to pretty JSON; request compact output so the byte
       // budget measures the actual persisted representation.
       await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
@@ -168,11 +181,7 @@ export function recordDiagnostic(userId: string, input: DiagnosticInput): Promis
 export async function exportDiagnostics(userId: string): Promise<string> {
   return serial(userId, async () => {
     const store = await read(userId);
-    return JSON.stringify({ format: "lumibooks-diagnostics", schema: 1, version: manifest.version,
-      exportedAt: Date.now(), indexBase: 0, maxBytes: DIAGNOSTICS_MAX_BYTES, maxEvents: DIAGNOSTICS_MAX_EVENTS,
-      droppedEvents: store.dropped, queueDropsThisSession: health(userId).queueDrops, writeFailuresThisSession: health(userId).writeFailures,
-      privacy: "No chat text, summaries, prompts, reasoning, names, raw IDs, content hashes, credentials or raw errors. IDs are salted pseudonyms; timestamps, counts, indexes and structural relationships remain.",
-      events: store.events }, null, 2);
+    return JSON.stringify(report(store, userId));
   });
 }
 export async function clearDiagnostics(userId: string): Promise<void> {
