@@ -97,6 +97,22 @@ test("cancelling while chapter sources load prevents generation and leaves filin
   expect(requests).toHaveLength(1);
 });
 
+test("failed notebook binding cannot save a summary or hide its raw messages", async () => {
+  profile.hideCoveredMessages = true;
+  const host = (globalThis as any).spindle;
+  host.chats.get = async () => ({ id: chatId, metadata: { lumibooks_book_id: bookId } });
+  host.chats.update = async () => { throw new Error("binding unavailable"); };
+  let hidden = 0;
+  host.chat.setMessagesHidden = async (_chat: string, ids: string[]) => { hidden += ids.length; };
+  expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeNull();
+  expect(entries).toHaveLength(0);
+  expect(hidden).toBe(0);
+  host.chats.update = async () => {};
+  expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeTruthy();
+  expect(entries).toHaveLength(1);
+  expect(hidden).toBe(12);
+});
+
 for (const change of ["deleted", "excluded"] as const) test(`chapter regeneration refuses sources already ${change} before it starts`, async () => {
   entries = [chapter(1, 0, 12)];
   const before = structuredClone(entries);

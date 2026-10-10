@@ -112,9 +112,7 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
   if (existingId) {
     const existing = await spindle.world_books.get(existingId, userId);
     if (existing) {
-      await bindBookToChat(chatId, existing.id, userId).catch((err) =>
-        warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
-      );
+      await bindBookToChat(chatId, existing.id, userId);
       return existing;
     }
   }
@@ -125,22 +123,15 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
     ? (chat.metadata as Record<string, unknown>)["lumibooks_book_id"]
     : undefined;
 
-  const recovery = await recoverBookForChat(chatId, userId).catch((err) => {
-    warn(`book recovery scan failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    return null;
-  });
+  const recovery = await recoverBookForChat(chatId, userId);
   if (recovery) {
-    const existing = await spindle.world_books.get(recovery.bookId, userId).catch(() => null);
+    const existing = await spindle.world_books.get(recovery.bookId, userId);
     if (existing) {
       const meta = (existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {}) as Record<string, unknown>;
       if (meta["lumibooks_chat_id"] !== chatId) {
-        await spindle.world_books.update(existing.id, { metadata: { ...meta, lumibooks_chat_id: chatId } }, userId).catch((err) => {
-          warn(`book recovery: failed to re-tag ${existing.id}: ${describeError(err)}`);
-        });
+        await spindle.world_books.update(existing.id, { metadata: { ...meta, lumibooks_chat_id: chatId } }, userId);
       }
-      await bindBookToChat(chatId, existing.id, userId).catch((err) =>
-        warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
-      );
+      await bindBookToChat(chatId, existing.id, userId);
       setBookCache(cacheKey(userId, chatId), { bookId: existing.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
       error(
         `book recovery: re-linked book ${existing.id} for chat ${chatId.slice(0, 8)} ` +
@@ -182,9 +173,7 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
     userId,
   );
 
-  await bindBookToChat(chatId, book.id, userId).catch((err) =>
-    warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`),
-  );
+  await bindBookToChat(chatId, book.id, userId);
 
   setBookCache(cacheKey(userId, chatId), { bookId: book.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
   return book;
@@ -245,8 +234,8 @@ export function withChatMetaLock<T>(userId: string, chatId: string, fn: () => Pr
 
 function bindBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
-    if (!chat) return;
+    const chat = await spindle.chats.get(chatId, userId);
+    if (!chat) throw new Error("The chat is no longer available; its summary shelf could not be attached.");
     const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
     const existing = Array.isArray((metadata as Record<string, unknown>)["chat_world_book_ids"])
       ? ((metadata as Record<string, unknown>)["chat_world_book_ids"] as string[]).filter((x) => typeof x === "string")
@@ -302,9 +291,7 @@ export async function reassertChatBinding(chatId: string, userId: string): Promi
     ? (md["chat_world_book_ids"] as unknown[]).filter((x): x is string => typeof x === "string")
     : [];
   if (attached.includes(bookId) && md["lumibooks_book_id"] === bookId) return false;
-  await bindBookToChat(chatId, bookId, userId).catch((err) => {
-    warn(`reassertChatBinding: failed to rebind ${bookId} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
-  });
+  await bindBookToChat(chatId, bookId, userId);
   return true;
 }
 
@@ -580,8 +567,8 @@ export async function findCodexBookForChat(chatId: string, userId: string): Prom
 
 function bindCodexBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
-    if (!chat) return;
+    const chat = await spindle.chats.get(chatId, userId);
+    if (!chat) throw new Error("The chat is no longer available; its Codex book could not be attached.");
     const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
     const md = metadata as Record<string, unknown>;
     const existing = Array.isArray(md["chat_world_book_ids"])
@@ -648,7 +635,7 @@ async function doEnsureCodexBookForChat(chatId: string, userId: string): Promise
  * it). Used on forks, where the branch copies the parent's attachments. */
 export function unbindBookFromChat(chatId: string, bookId: string, userId: string): Promise<void> {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    const chat = await spindle.chats.get(chatId, userId);
     if (!chat) return;
     const md = (chat.metadata && typeof chat.metadata === "object") ? { ...(chat.metadata as Record<string, unknown>) } : {};
     const existing = Array.isArray(md["chat_world_book_ids"])
@@ -679,9 +666,7 @@ export async function reassertCodexBinding(chatId: string, userId: string): Prom
   if (attached.includes(claimed)) return false;
   const book = await spindle.world_books.get(claimed, userId).catch(() => null);
   if (!book || !codexBookTaggedFor(book, chatId)) return false;
-  await bindCodexBookToChat(chatId, claimed, userId).catch((err) => {
-    warn(`reassertCodexBinding: failed to rebind ${claimed} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
-  });
+  await bindCodexBookToChat(chatId, claimed, userId);
   return true;
 }
 

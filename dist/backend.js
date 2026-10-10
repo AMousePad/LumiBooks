@@ -1246,7 +1246,7 @@ async function doEnsureBookForChat(chatId, userId) {
   if (existingId) {
     const existing = await spindle.world_books.get(existingId, userId);
     if (existing) {
-      await bindBookToChat(chatId, existing.id, userId).catch((err) => warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`));
+      await bindBookToChat(chatId, existing.id, userId);
       return existing;
     }
   }
@@ -1254,20 +1254,15 @@ async function doEnsureBookForChat(chatId, userId) {
   if (!chat)
     throw new Error(`Chat ${chatId} not found for user`);
   const claim = chat.metadata && typeof chat.metadata === "object" ? chat.metadata["lumibooks_book_id"] : undefined;
-  const recovery = await recoverBookForChat(chatId, userId).catch((err) => {
-    warn(`book recovery scan failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    return null;
-  });
+  const recovery = await recoverBookForChat(chatId, userId);
   if (recovery) {
-    const existing = await spindle.world_books.get(recovery.bookId, userId).catch(() => null);
+    const existing = await spindle.world_books.get(recovery.bookId, userId);
     if (existing) {
       const meta = existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
       if (meta["lumibooks_chat_id"] !== chatId) {
-        await spindle.world_books.update(existing.id, { metadata: { ...meta, lumibooks_chat_id: chatId } }, userId).catch((err) => {
-          warn(`book recovery: failed to re-tag ${existing.id}: ${describeError(err)}`);
-        });
+        await spindle.world_books.update(existing.id, { metadata: { ...meta, lumibooks_chat_id: chatId } }, userId);
       }
-      await bindBookToChat(chatId, existing.id, userId).catch((err) => warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`));
+      await bindBookToChat(chatId, existing.id, userId);
       setBookCache(cacheKey(userId, chatId), { bookId: existing.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
       error(`book recovery: re-linked book ${existing.id} for chat ${chatId.slice(0, 8)} ` + `(${recovery.count} LumiBooks entries; normal lookup MISSED it; chat claim=${typeof claim === "string" ? claim : "none"}; ` + `${recovery.candidates} candidate book(s); userId=${userId.slice(0, 6)})`);
       bookAnomalyCb?.(userId, "warn", recovery.candidates > 1 ? `Memoria re-linked this chat's notebook but found ${recovery.candidates} candidates, you may have duplicate notebooks` : "Memoria re-linked this chat's notebook after its link was lost");
@@ -1286,7 +1281,7 @@ async function doEnsureBookForChat(chatId, userId) {
       lumibooks_created_at: Date.now()
     }
   }, userId);
-  await bindBookToChat(chatId, book.id, userId).catch((err) => warn(`bindBookToChat failed for ${chatId.slice(0, 8)}: ${describeError(err)}`));
+  await bindBookToChat(chatId, book.id, userId);
   setBookCache(cacheKey(userId, chatId), { bookId: book.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
   return book;
 }
@@ -1336,9 +1331,9 @@ function withChatMetaLock(userId, chatId, fn) {
 }
 function bindBookToChat(chatId, bookId, userId) {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    const chat = await spindle.chats.get(chatId, userId);
     if (!chat)
-      return;
+      throw new Error("The chat is no longer available; its summary shelf could not be attached.");
     const metadata = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : {};
     const existing = Array.isArray(metadata["chat_world_book_ids"]) ? metadata["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
     const alreadyBound = existing.includes(bookId);
@@ -1375,9 +1370,7 @@ async function reassertChatBinding(chatId, userId) {
   const attached = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
   if (attached.includes(bookId) && md["lumibooks_book_id"] === bookId)
     return false;
-  await bindBookToChat(chatId, bookId, userId).catch((err) => {
-    warn(`reassertChatBinding: failed to rebind ${bookId} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
-  });
+  await bindBookToChat(chatId, bookId, userId);
   return true;
 }
 var nameSyncAt = new Map;
@@ -1601,9 +1594,9 @@ async function findCodexBookForChat(chatId, userId) {
 }
 function bindCodexBookToChat(chatId, bookId, userId) {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    const chat = await spindle.chats.get(chatId, userId);
     if (!chat)
-      return;
+      throw new Error("The chat is no longer available; its Codex book could not be attached.");
     const metadata = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : {};
     const md = metadata;
     const existing = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
@@ -1657,7 +1650,7 @@ async function doEnsureCodexBookForChat(chatId, userId) {
 }
 function unbindBookFromChat(chatId, bookId, userId) {
   return withChatMetaLock(userId, chatId, async () => {
-    const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+    const chat = await spindle.chats.get(chatId, userId);
     if (!chat)
       return;
     const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
@@ -1686,9 +1679,7 @@ async function reassertCodexBinding(chatId, userId) {
   const book = await spindle.world_books.get(claimed, userId).catch(() => null);
   if (!book || !codexBookTaggedFor(book, chatId))
     return false;
-  await bindCodexBookToChat(chatId, claimed, userId).catch((err) => {
-    warn(`reassertCodexBinding: failed to rebind ${claimed} to ${chatId.slice(0, 8)}: ${describeError(err)}`);
-  });
+  await bindCodexBookToChat(chatId, claimed, userId);
   return true;
 }
 var ROOT_CANDIDATES_TTL_MS = 8000;
