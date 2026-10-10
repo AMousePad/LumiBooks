@@ -97,6 +97,17 @@ test("cancelling while chapter sources load prevents generation and leaves filin
   expect(requests).toHaveLength(1);
 });
 
+for (const change of ["deleted", "excluded"] as const) test(`chapter regeneration refuses sources already ${change} before it starts`, async () => {
+  entries = [chapter(1, 0, 12)];
+  const before = structuredClone(entries);
+  const ids = entries[0].extensions.lumibooks.msgIds.slice();
+  if (change === "deleted") messages = messages.filter((m) => m.id !== ids[0]);
+  else messages[0].metadata = { lmb_excluded: true };
+  await expect(createChapterFromRange(chatId, ids, profile, settings(), userId, { replacesEntryId: "chapter-1" })).rejects.toThrow("Summary sources changed");
+  expect(entries).toEqual(before);
+  expect(requests).toHaveLength(0);
+});
+
 for (const importFirst of [true, false]) test(`import and preview acceptance cannot both cover a window (${importFirst ? "import" : "preview"} saves first)`, async () => {
   const { saveImportedSummaries } = await import("./summary-backup");
   profile.showMemoryPreviews = true;

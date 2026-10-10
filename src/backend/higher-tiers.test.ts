@@ -47,6 +47,24 @@ beforeEach(async () => {
 afterAll(() => { (globalThis as any).spindle = original; });
 afterEach(() => { for (const p of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, p.draftId); });
 
+for (const tier of [2, 3, 7] as const) for (const change of ["deleted", "disabled"] as const) {
+ test(`tier ${tier} regeneration refuses sources already ${change} before generation`, async () => {
+  const children = [source(tier - 1, 0), source(tier - 1, 1)], parent = source(tier, 0);
+  const ids = children.map((e) => e.id);
+  parent.extensions.lumibooks.msgIds = ["m0", "m1"];
+  parent.extensions.lumibooks.sourceChapterEntryIds = ids;
+  entries = [...children, parent];
+  if (change === "deleted") entries = entries.filter((e) => e.id !== ids[0]);
+  else children[0].disabled = true;
+  const before = structuredClone(entries);
+  const action = tier === 2 ? createArcFromChapters(chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id })
+    : createHigherFromEntries(tier, chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id });
+  await expect(action).rejects.toThrow("Summary sources changed");
+  expect(entries).toEqual(before);
+  expect(calls).toBe(0);
+ });
+}
+
 for (const parentFirst of [false, true]) test(`concurrent arc regeneration and volume binding serialize with ${parentFirst ? "volume" : "arc"} saving first`, async () => {
  const chapters = [source(1, 0), source(1, 1)];
  const arc = source(2, 0), otherArc = source(2, 2);

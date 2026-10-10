@@ -7377,11 +7377,11 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
     return null;
   try {
     const messages = await spindle.chat.getMessages(chatId);
-    if (!messages.length)
-      return null;
     const set = new Set(messageIds);
     const liveIds = new Set(messages.map((m) => m.id));
     const window = messages.filter((m) => set.has(m.id) && !isExcluded(m));
+    if (window.length !== set.size)
+      throw changedSources();
     const coverage = await buildCoverage(chatId, userId, undefined, extraContextActive(profile));
     recordSelection(userId, chatId, profile, messages, coverage, window, opts.replacesEntryId ? "regenerate" : "selected", opts.replacesEntryId);
     recordDiagnostic(userId, { event: "action", chatId, mode: opts.replacesEntryId ? "regenerate" : "selected", numbers: { requested: messageIds.length, selected: window.length, missing: messageIds.filter((id) => !liveIds.has(id)).length } });
@@ -7592,11 +7592,13 @@ async function createArcFromChapters(chatId, chapterEntryIds, profile, settings,
   if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc"))
     return null;
   try {
-    const entries = await listTimelineEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId, true);
     const entriesForSelection = opts.replacesEntryId ? entries.filter((e) => e.raw.id !== opts.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, entriesForSelection);
     const wanted = new Set(chapterEntryIds);
     const chapters = coverage.activeEntries.filter((e) => e.meta.tier === 1 && wanted.has(e.raw.id)).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+    if (chapters.length !== wanted.size)
+      throw changedSources();
     if (chapters.length === 0)
       return null;
     assertContiguousBinding(coverage.activeEntries, chapters);
@@ -7772,11 +7774,13 @@ async function createHigherFromEntries(tier, chatId, arcEntryIds, profile, setti
   if (!setBusy(userId, chatId, kind, `Memoria is binding a ${kind}`))
     return null;
   try {
-    const entries = await listTimelineEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId, true);
     const entriesForSelection = opts.replacesEntryId ? entries.filter((e) => e.raw.id !== opts.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, entriesForSelection);
     const wanted = new Set(arcEntryIds);
     const arcs = coverage.activeEntries.filter((e) => e.meta.tier === tier - 1 && wanted.has(e.raw.id)).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+    if (arcs.length !== wanted.size)
+      throw changedSources();
     if (arcs.length === 0)
       return null;
     assertContiguousBinding(coverage.activeEntries, arcs);
