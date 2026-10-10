@@ -286,6 +286,25 @@ for (const operation of [rebaseRoot, rebuildRoot, detachRoot]) {
   });
 }
 
+for (const operation of [rebaseRoot, rebuildRoot]) test(`detaching roots waits for an in-progress ${operation.name}`, async () => {
+  summary("root", 1, [0, 1]);
+  await rebaseRoot(child, parent, user);
+  const api = (globalThis as any).spindle.world_books.entries;
+  const create = api.create;
+  let release!: () => void, entered!: () => void;
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  const copying = new Promise<void>((resolve) => { entered = resolve; });
+  api.create = async (...args: any[]) => { entered(); await paused; return create(...args); };
+  const replacement = operation(child, parent, user);
+  await copying;
+  const detaching = detachRoot(child, user);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release();
+  await Promise.all([replacement, detaching]);
+  expect((await listLmbEntries(child, user)).filter((e) => e.meta.isRoot)).toEqual([]);
+  expect((await listLmbEntries(parent, user)).map((e) => e.raw.id)).toEqual(["root"]);
+});
+
 test("root cleanup reports failure when neither deletion nor disabling succeeds", async () => {
   summary("old-root", 1, [0, 1]);
   await rebaseRoot(child, parent, user);

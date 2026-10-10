@@ -8,6 +8,7 @@ import {
   setEntryDisabled,
 } from "./world-book";
 import { copyLmbEntries, type CopyTransform } from "./book-copy";
+import { withCommitMutex } from "./summary-commit";
 import { describeError, info, warn } from "./runtime";
 
 
@@ -81,13 +82,15 @@ export async function rebaseRoot(
   if (inFlight.has(key)) return { ok: false, reason: "busy" };
   inFlight.add(key);
   try {
-    const targetEntries = await listLmbEntries(targetChatId, userId);
-    if (ownEntries(targetEntries).some((e) => !e.raw.disabled)) return { ok: false, reason: "has_own" };
-    const sourceEntries = (await listLmbEntries(sourceChatId, userId)).filter((e) => !e.raw.disabled);
-    if (sourceEntries.length === 0) return { ok: false, reason: "empty_source" };
-    const existingRoots = targetEntries.filter((e) => e.meta.isRoot);
-    const { count } = await seedRoot(targetChatId, sourceChatId, sourceEntries, existingRoots, userId);
-    return { ok: true, count };
+    return await withCommitMutex(userId, targetChatId, async () => {
+      const targetEntries = await listLmbEntries(targetChatId, userId, true);
+      if (ownEntries(targetEntries).some((e) => !e.raw.disabled)) return { ok: false, reason: "has_own" };
+      const sourceEntries = (await listLmbEntries(sourceChatId, userId, true)).filter((e) => !e.raw.disabled);
+      if (sourceEntries.length === 0) return { ok: false, reason: "empty_source" };
+      const existingRoots = targetEntries.filter((e) => e.meta.isRoot);
+      const { count } = await seedRoot(targetChatId, sourceChatId, sourceEntries, existingRoots, userId);
+      return { ok: true, count } as const;
+    });
   } finally {
     inFlight.delete(key);
   }
@@ -103,20 +106,24 @@ export async function rebuildRoot(
   if (inFlight.has(key)) return { ok: false, reason: "busy" };
   inFlight.add(key);
   try {
-    const sourceEntries = (await listLmbEntries(sourceChatId, userId)).filter((e) => !e.raw.disabled);
-    if (sourceEntries.length === 0) return { ok: false, reason: "empty_source" };
-    const { count, newIds } = await seedRoot(targetChatId, sourceChatId, sourceEntries, [], userId);
-    const after = await listLmbEntries(targetChatId, userId);
-    await retireEntries(after.filter((e) => !newIds.has(e.raw.id)), userId, targetChatId);
-    return { ok: true, count };
+    return await withCommitMutex(userId, targetChatId, async () => {
+      const sourceEntries = (await listLmbEntries(sourceChatId, userId, true)).filter((e) => !e.raw.disabled);
+      if (sourceEntries.length === 0) return { ok: false, reason: "empty_source" };
+      const { count, newIds } = await seedRoot(targetChatId, sourceChatId, sourceEntries, [], userId);
+      const after = await listLmbEntries(targetChatId, userId, true);
+      await retireEntries(after.filter((e) => !newIds.has(e.raw.id)), userId, targetChatId);
+      return { ok: true, count } as const;
+    });
   } finally {
     inFlight.delete(key);
   }
 }
 
 export async function detachRoot(targetChatId: string, userId: string): Promise<number> {
-  const entries = await listLmbEntries(targetChatId, userId);
-  const roots = entries.filter((e) => e.meta.isRoot);
-  await retireEntries(roots, userId, targetChatId);
-  return roots.length;
+  return withCommitMutex(userId, targetChatId, async () => {
+    const entries = await listLmbEntries(targetChatId, userId, true);
+    const roots = entries.filter((e) => e.meta.isRoot);
+    await retireEntries(roots, userId, targetChatId);
+    return roots.length;
+  });
 }
