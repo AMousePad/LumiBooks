@@ -3359,7 +3359,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.0.0-rc.10",
+  version: "1.0.0",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
