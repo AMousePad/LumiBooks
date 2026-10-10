@@ -1,6 +1,7 @@
 import { approximateTokensFromChars, type SummaryTier } from "../shared";
 import { buildCoverage } from "./coverage";
 import { withCommitMutex } from "./summary-commit";
+import { requireForkShelf } from "./fork";
 import { createChapterEntry, deleteEntry, ensureBookForChat, invalidateBookCache, listLmbEntries, type LMBEntry } from "./world-book";
 import { hashRawMessages, makeFingerprint, parseFingerprint, type SummaryFingerprint, type RawSummaryMessage } from "./summary-matching";
 
@@ -93,6 +94,7 @@ export async function importSummaryLorebook(chatId: string, userId: string, raw:
 }
 
 export async function saveImportedSummaries(chatId: string, userId: string, rows: ImportedSummary[], links?: SummaryImportLinks): Promise<number> {
+  await requireForkShelf(chatId, userId);
   return withCommitMutex(userId, chatId, () => commitImportedSummaries(chatId, userId, rows, links));
 }
 

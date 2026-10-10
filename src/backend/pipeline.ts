@@ -34,7 +34,7 @@ import {
 import { describeError, warn } from "./runtime";
 import { publishChapterCreated, publishArcCreated, publishVolumeCreated } from "./hooks";
 import { pickPhrase, type PhraseKind } from "./memoria";
-import { ensureForkAdoption, forkShelfPending } from "./fork";
+import { ensureForkAdoption, forkShelfPending, requireForkShelf } from "./fork";
 import { effectiveProfile, ensureLessons } from "./lessons";
 import { withCommitMutex } from "./summary-commit";
 
@@ -483,6 +483,7 @@ export async function createChapterAuto(
 ): Promise<string | null> {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
   try {
+    await requireForkShelf(chatId, userId);
     // The caller's profile snapshot can be from before a mode toggle; a
     // drain loop must stop minting ghosts the moment the live mode is off.
     if (ghost) {
@@ -518,6 +519,7 @@ export async function createChapterFromRange(
 ): Promise<string | null> {
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
   try {
+    await requireForkShelf(chatId, userId);
     const messages = await spindle.chat.getMessages(chatId);
     const set = new Set(messageIds);
     const liveIds = new Set(messages.map((m) => m.id));

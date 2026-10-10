@@ -122,6 +122,13 @@ export async function forkShelfPending(chatId: string, userId: string): Promise<
   return true;
 }
 
+/** Manual writes must respect the same inheritance barrier as automation.
+ * Otherwise a new empty shelf permanently shadows the parent's memories. */
+export async function requireForkShelf(chatId: string, userId: string): Promise<void> {
+  await ensureForkAdoption(chatId, userId);
+  if (await forkShelfPending(chatId, userId)) throw new Error("Fork inheritance is still pending. Retry after the inherited shelf is restored.");
+}
+
 export async function forkCodexPending(chatId: string, userId: string): Promise<boolean> {
   if (checked.has(key(userId, chatId))) return false;
   const chat = await spindle.chats.get(chatId, userId).catch(() => null);

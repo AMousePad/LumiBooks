@@ -2137,447 +2137,105 @@ async function removeSummaryEntry(chatId, entryId, userId, release = false) {
   });
 }
 
-// src/backend/summary-matching.ts
-var encoder = new TextEncoder;
-async function sha256(text) {
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
-  return Array.from(bytes, (n) => n.toString(16).padStart(2, "0")).join("");
-}
-async function hashRawMessages(messages, progress) {
-  const hashes = [];
-  for (let offset = 0;offset < messages.length; offset += 64) {
-    hashes.push(...await Promise.all(messages.slice(offset, offset + 64).map((m) => sha256(JSON.stringify([m.role, m.content])))));
-    progress?.(hashes.length);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  return hashes;
-}
-async function makeFingerprint(messages) {
-  return { version: 1, algorithm: "sha256-role-content-v1", contentHash: await sha256(JSON.stringify(messages)), messages };
-}
-async function parseFingerprint(raw) {
-  if (raw === undefined)
-    return null;
-  const v = raw;
-  if (!v || v.version !== 1 || v.algorithm !== "sha256-role-content-v1" || !Array.isArray(v.messages) || v.messages.length > 1e6 || !/^[a-f0-9]{64}$/.test(v.contentHash))
-    throw new Error("Invalid summary message fingerprint");
-  let previous = -1;
-  for (const m of v.messages) {
-    if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash))
-      throw new Error("Invalid summary message fingerprint");
-    previous = m.index;
-  }
-  if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash)
-    throw new Error("The summary message fingerprint is damaged");
-  return v;
-}
-function exactMessageMatch(source, hashes) {
-  return source.messages.every((m) => hashes[m.index] === m.hash) ? source.messages.map((m) => m.index) : null;
-}
-function automaticMessageMatch(source, hashes) {
-  const first = [], last = [];
-  let cursor = 0;
-  for (const m of source.messages) {
-    while (cursor < hashes.length && hashes[cursor] !== m.hash)
-      cursor++;
-    if (cursor === hashes.length)
-      return null;
-    first.push(cursor++);
-  }
-  cursor = hashes.length - 1;
-  for (let i = source.messages.length - 1;i >= 0; i--) {
-    while (cursor >= 0 && hashes[cursor] !== source.messages[i].hash)
-      cursor--;
-    if (cursor < 0)
-      return null;
-    last[i] = cursor--;
-  }
-  return first.every((at, i) => at === last[i]) ? first : null;
-}
-
-// src/backend/summary-backup.ts
-var EXPORT_KEY = "lumibooks_summary";
-function summaryLorebook(entries, name, fingerprint, coverage) {
-  return {
-    name,
-    description: "LumiBooks summaries. Import through Books to restore message coverage or use as inherited roots.",
-    ...fingerprint ? { extensions: { [EXPORT_KEY]: fingerprint } } : {},
-    entries: Object.fromEntries(entries.filter((e) => !e.meta.ghost).map((e, i) => [i, {
-      uid: i,
-      key: e.raw.key ?? [],
-      keysecondary: [],
-      content: e.raw.content,
-      comment: e.raw.comment || e.meta.title || `Summary ${i + 1}`,
-      constant: true,
-      disable: false,
-      position: 0,
-      order: i,
-      displayIndex: i,
-      extensions: { [EXPORT_KEY]: { tier: e.meta.tier, ...coverage ? { messageIndices: coverage.get(e.raw.id) ?? [] } : {} } }
-    }]))
-  };
-}
-async function exportSummaryLorebook(chatId, userId, progress) {
-  const coverage = await buildCoverage(chatId, userId);
-  const entries = coverage.activeEntries.slice().sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-  if (!entries.length)
-    throw new Error("There are no active summaries to export");
-  progress?.("Fetching raw chat messages\u2026");
-  const messages = await spindle.chat.getMessages(chatId);
-  const positions = new Map(messages.map((m, i) => [m.id, i]));
-  const byEntry = new Map;
-  for (const e of entries) {
-    const ids = new Set(e.meta.msgIds);
-    if ([...ids].some((id) => !positions.has(id)))
-      continue;
-    byEntry.set(e.raw.id, [...ids].flatMap((id) => positions.has(id) ? [positions.get(id)] : []).sort((a, b) => a - b));
-  }
-  for (const [messageId, entryId] of coverage.coveredBy) {
-    const at = positions.get(messageId), indices = byEntry.get(entryId);
-    if (at !== undefined && indices)
-      indices.push(at);
-  }
-  for (const [id, indices] of byEntry)
-    byEntry.set(id, [...new Set(indices)].sort((a, b) => a - b));
-  const indices = [...new Set([...byEntry.values()].flat())].sort((a, b) => a - b);
-  const hashes = await hashRawMessages(indices.map((i) => messages[i]), (done) => progress?.(`Hashing raw messages\u2026 ${done} / ${indices.length}`));
-  const fingerprint = await makeFingerprint(indices.map((index, i) => ({ index, hash: hashes[i] })));
-  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`, fingerprint, byEntry);
-}
-function parseSummaryLorebook(raw) {
-  if (!raw || typeof raw !== "object")
-    throw new Error("Choose a lorebook JSON file with entries");
-  const entries = raw.entries;
-  if (!entries || typeof entries !== "object")
-    throw new Error("The lorebook has no entries");
-  const rows = Array.isArray(entries) ? entries : Object.values(entries);
-  if (rows.length > 1e4)
-    throw new Error("The lorebook has more than 10,000 entries");
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object")
-      throw new Error("Invalid lorebook entry");
-    const v = row;
-    if (v.disable === true || v.disabled === true || v.enabled === false)
-      continue;
-    if (typeof v.content !== "string")
-      throw new Error("Every lorebook entry needs text content");
-    if (!v.content.trim())
-      continue;
-    const tier = v.extensions?.[EXPORT_KEY]?.tier;
-    const messageIndices = v.extensions?.[EXPORT_KEY]?.messageIndices;
-    if (messageIndices !== undefined && (!Array.isArray(messageIndices) || messageIndices.length > 1e6 || messageIndices.some((n) => !Number.isSafeInteger(n) || n < 0)))
-      throw new Error("Invalid summary coverage indices");
-    const keys = v.key ?? v.keys;
-    out.push({
-      content: v.content,
-      comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : "Imported summary",
-      keys: Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : [],
-      tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1,
-      ...messageIndices !== undefined ? { messageIndices: [...new Set(messageIndices)].sort((a, b) => a - b) } : {}
-    });
-  }
-  if (!out.length)
-    throw new Error("The lorebook has no enabled summaries");
-  return out;
-}
-async function readSummaryImport(raw) {
-  const rows = parseSummaryLorebook(raw);
-  const fingerprint = await parseFingerprint(raw.extensions?.[EXPORT_KEY]);
-  if (fingerprint) {
-    const indices = new Set(fingerprint.messages.map((m) => m.index));
-    for (const row of rows) {
-      if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i)))
-        throw new Error("The summary coverage does not match its fingerprint");
-    }
-    const used = new Set(rows.flatMap((r) => r.messageIndices));
-    return { rows, fingerprint: await makeFingerprint(fingerprint.messages.filter((m) => used.has(m.index))) };
-  }
-  return { rows, fingerprint };
-}
-async function saveImportedSummaries(chatId, userId, rows, links) {
-  return withCommitMutex(userId, chatId, () => commitImportedSummaries(chatId, userId, rows, links));
-}
-async function commitImportedSummaries(chatId, userId, rows, links) {
-  if (links) {
-    const messages = links.messages;
-    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i])))
-      throw new Error("Invalid destination coverage");
-  }
-  const existing = await listLmbEntries(chatId, userId, true);
-  if (links?.indices.some((indices) => indices.length)) {
-    const coverage = await buildCoverage(chatId, userId, existing, true);
-    const current = new Map((await spindle.chat.getMessages(chatId)).map((m) => [m.id, m]));
-    for (const index of new Set(links.indices.flat())) {
-      const source = links.messages[index], live = current.get(source.id);
-      if (coverage.coveredBy.has(source.id))
-        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
-      if (!live || live.role !== source.role || live.content !== source.content)
-        throw new Error("The chat changed while preparing the import. Choose the file again.");
-    }
-    links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
-  }
-  const before = Math.min(0, ...existing.filter((e) => e.meta.isRoot).map((e) => e.meta.firstMsgIdx ?? 0));
-  const book = await ensureBookForChat(chatId, userId);
-  const created = [];
+// src/backend/book-copy.ts
+async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
+  const createdIds = [];
   try {
-    for (const [i, row] of rows.entries()) {
-      const at = before - rows.length + i;
-      const indices = links?.indices[i] ?? [];
-      const isRoot = indices.length === 0;
-      const comment = isRoot ? row.comment.startsWith("[Root]") ? row.comment : `[Root] ${row.comment}` : row.comment.replace(/^\[Root\]\s*/, "");
-      const entry = await createChapterEntry(book.id, {
-        tier: row.tier,
-        chatId,
-        msgIds: indices.map((index) => links.messages[index].id),
-        sourceChapterEntryIds: [],
-        isRoot,
-        firstMsgIdx: isRoot ? at : links.messages[indices[0]].index_in_chat,
-        lastMsgIdx: isRoot ? at : links.messages[indices.at(-1)].index_in_chat,
-        tokenCountInput: 0,
-        tokenCountOutput: approximateTokensFromChars(row.content.length),
-        model: "",
-        connectionId: "",
-        createdAt: Date.now(),
-        title: row.comment
-      }, row.content, comment, userId, row.keys, true);
-      created.push(entry.id);
-    }
+    return await copyEntries(targetBookId, sourceEntries, userId, transform, createdIds);
   } catch (err) {
-    const rollback = await Promise.allSettled(created.map((id) => deleteEntry(id, userId)));
-    if (rollback.some((r) => r.status === "rejected"))
-      throw new Error("Import failed and some imported summaries could not be removed; inspect Books before retrying", { cause: err });
-    throw err;
-  } finally {
-    invalidateBookCache(userId, chatId);
-  }
-  return created.length;
-}
-
-// src/backend/summary-transfer.ts
-var transfers = new Map;
-var key = (userId, chatId) => JSON.stringify([userId, chatId]);
-function getSummaryTransfer(userId, chatId) {
-  return transfers.get(key(userId, chatId))?.status ?? null;
-}
-function update(userId, transfer, stage, text, extra = {}) {
-  transfer.status = { ...transfer.status, ...extra, stage, text };
-  try {
-    send({ type: "summary_transfer_status", status: transfer.status }, userId);
-  } catch (err) {
-    warn(`summary transfer progress delivery failed: ${describeError(err)}`);
-  }
-}
-async function runSummaryTransfer(userId, chatId, request) {
-  const k = key(userId, chatId);
-  let transfer = transfers.get(k);
-  if (request.type === "resolve") {
-    if (!transfer || transfer.status.id !== request.id)
-      throw new Error("This import is no longer available. Choose the file again.");
-    if (transfer.running)
-      return false;
-    if (request.choice === "cancel") {
-      transfers.delete(k);
-      send({ type: "summary_transfer_status", status: { ...transfer.status, stage: "cancelled", text: "Import cancelled" } }, userId);
-      return false;
-    }
-    if (!transfer.rows)
-      return false;
-  } else {
-    if (transfer?.running || transfer?.rows) {
-      send({ type: "summary_transfer_status", status: transfer.status }, userId);
-      return false;
-    }
-    transfer = { status: { id: crypto.randomUUID(), chatId, stage: "working", text: "Reading summaries\u2026" }, running: false };
-    if (transfers.size >= 200) {
-      for (const [oldKey, old] of transfers) {
-        if (!old.running && !old.rows)
-          transfers.delete(oldKey);
-        if (transfers.size < 200)
-          break;
-      }
-    }
-    transfers.set(k, transfer);
-  }
-  const t = transfer;
-  t.running = true;
-  let lastProgress = 0;
-  const progress = (text) => {
-    if (Date.now() - lastProgress < 150)
-      return;
-    lastProgress = Date.now();
-    update(userId, t, "working", text);
-  };
-  update(userId, t, "working", request.type === "export" ? "Preparing summary export\u2026" : "Reading raw chat messages\u2026");
-  try {
-    if (request.type === "export") {
-      const data = await exportSummaryLorebook(chatId, userId, progress);
-      send({ type: "summary_export_data", chatId, filename: `lumibooks-summaries-${chatId.slice(0, 8)}.json`, content: JSON.stringify(data, null, 2) }, userId);
-      update(userId, t, "done", "Summary export ready");
-      return false;
-    }
-    if (request.type === "import") {
-      const parsed = await readSummaryImport(request.raw);
-      t.rows = parsed.rows;
-      t.fingerprint = parsed.fingerprint;
-    }
-    const rows = t.rows;
-    const messages = await spindle.chat.getMessages(chatId);
-    const source = t.fingerprint;
-    t.status = { ...t.status, messageCount: messages.length, sourceCount: source?.messages.length ?? 0 };
-    const manual = (text = "Up until which message should these summaries cover?") => {
-      update(userId, t, "manual", text);
-      return false;
-    };
-    if (request.type === "resolve" && request.choice === "specify")
-      return manual();
-    let indices = rows.map(() => []);
-    let importedRows = rows;
-    if (request.type === "resolve" && request.choice === "manual") {
-      if (!Number.isSafeInteger(request.through) || request.through < 0 || request.through > messages.length)
-        return manual("Enter a whole message number from 0 to " + messages.length + ".");
-      if (request.through > 0) {
-        importedRows = [{
-          content: rows.map((r) => r.content).join(`
-
-`),
-          comment: rows.length === 1 ? rows[0].comment : "Imported summaries",
-          keys: [...new Set(rows.flatMap((r) => r.keys))],
-          tier: Math.max(...rows.map((r) => r.tier))
-        }];
-        indices = [Array.from({ length: request.through }, (_, i) => i)];
-      }
-    } else if (source?.messages.length) {
-      if (messages.length < source.messages.length)
-        return manual();
-      const relocate = request.type === "resolve" && request.choice === "match";
-      const selected = relocate ? messages : source.messages.flatMap((m) => messages[m.index] ? [messages[m.index]] : []);
-      const computed = await hashRawMessages(selected, (done) => progress(`Comparing raw messages\u2026 ${done} / ${selected.length}`));
-      const hashes = relocate ? computed : new Array(messages.length);
-      if (!relocate && computed.length === source.messages.length)
-        source.messages.forEach((m, i) => {
-          hashes[m.index] = computed[i];
-        });
-      const matched = exactMessageMatch(source, hashes) ?? (relocate ? automaticMessageMatch(source, hashes) : null);
-      if (!matched) {
-        if (request.type === "resolve" && request.choice === "match")
-          return manual("Automatic matching was incomplete or ambiguous. Up until which message should these summaries cover?");
-        update(userId, t, "mismatch", "The content of this chat is different to the one encoded by the imported summary. Attempt automatic matching?");
-        return false;
-      }
-      const mapping = new Map(source.messages.map((m, i) => [m.index, matched[i]]));
-      indices = rows.map((r) => (r.messageIndices ?? []).map((i) => mapping.get(i)));
-    }
-    const linkedIds = new Set(indices.flat().map((i) => messages[i].id));
-    if (linkedIds.size) {
-      const coverage = await buildCoverage(chatId, userId);
-      if ([...linkedIds].some((id) => coverage.coveredBy.has(id)))
-        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
-      const current = await spindle.chat.getMessages(chatId);
-      for (const at of new Set(indices.flat())) {
-        const before = messages[at], now = current[at];
-        if (!now || now.id !== before.id || now.role !== before.role || now.content !== before.content) {
-          t.status.messageCount = current.length;
-          return manual("The chat changed while preparing the import. Up until which message should these summaries cover?");
+    for (const id of createdIds.reverse()) {
+      try {
+        await spindle.world_books.entries.delete(id, userId);
+      } catch (cleanupError) {
+        warn(`copy rollback could not delete an entry: ${describeError(cleanupError)}`);
+        try {
+          await spindle.world_books.entries.update(id, { disabled: true }, userId);
+        } catch (disableError) {
+          warn(`copy rollback could not disable an entry: ${describeError(disableError)}`);
         }
       }
     }
-    update(userId, t, "working", "Saving imported summaries\u2026");
-    await saveImportedSummaries(chatId, userId, importedRows, { messages, indices });
-    t.rows = undefined;
-    t.fingerprint = undefined;
-    update(userId, t, "done", `Imported ${rows.length} summaries${linkedIds.size ? ` covering ${linkedIds.size} messages` : " as root memories"}`);
-    return true;
-  } catch (err) {
-    update(userId, t, "error", describeError(err));
-    return false;
-  } finally {
-    t.running = false;
+    throw err;
   }
 }
-
-// src/backend/binding.ts
-function summaryBindingRule(profile, tier) {
-  if (tier === 2)
-    return {
-      unit: profile.arcTrigger === "chapters" ? "entries" : profile.arcTrigger,
-      batch: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
-      lag: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters
-    };
-  return profile.higherTiers[tier];
-}
-function summaryRuns(entries, tier) {
-  const ordered = entries.filter((e) => !e.meta.ghost && !e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-  const runs = [];
-  let current = [];
-  for (const entry of ordered) {
-    if (entry.meta.tier === tier)
-      current.push(entry);
-    else if (current.length) {
-      runs.push({ entries: current, closed: entry.meta.tier > tier });
-      current = [];
-    }
-  }
-  if (current.length)
-    runs.push({ entries: current, closed: false });
-  return runs;
-}
-
-class SummaryTimelineError extends Error {
-  constructor() {
-    super("Select consecutive summaries without crossing another summary tier");
-    this.name = "SummaryTimelineError";
-  }
-}
-function assertContiguousBinding(entries, selected) {
-  if (!selected.length)
-    throw new SummaryTimelineError;
-  const ids = new Set(selected.map((e) => e.raw.id));
-  for (const run of summaryRuns(entries, selected[0].meta.tier)) {
-    const positions = run.entries.flatMap((e, i) => ids.has(e.raw.id) ? [i] : []);
-    if (positions.length === selected.length && positions.at(-1) - positions[0] + 1 === selected.length)
-      return;
-  }
-  throw new SummaryTimelineError;
-}
-function selectBindingBatch(entries, tier, rule, closedOnly = false) {
-  if (rule.unit === "manual" && !closedOnly)
-    return [];
-  const runs = summaryRuns(entries, tier);
-  const ordered = runs.flatMap((run) => run.entries);
-  const size = (e) => rule.unit === "tokens" ? approximateTokensFromChars(e.raw.content.length) : 1;
-  let cutoff = ordered.length, reserved = 0;
-  while (cutoff > 0 && reserved < rule.lag)
-    reserved += size(ordered[--cutoff]);
-  const eligible = new Set(ordered.slice(0, cutoff).map((e) => e.raw.id));
-  for (const run of runs) {
-    if (closedOnly && !run.closed)
+async function copyEntries(targetBookId, sourceEntries, userId, transform, createdIds) {
+  const idMap = new Map;
+  const clonedMeta = new Map;
+  const ctx = { idMap, clonedMeta };
+  const chapters = sourceEntries.filter((e) => e.meta.tier === 1);
+  const groups = [2, 3, 4, 5, 6, 7].map((tier) => sourceEntries.filter((e) => e.meta.tier === tier));
+  for (const ch of chapters) {
+    const o = transform(ch, ctx);
+    if (!o)
       continue;
-    const selected = [];
-    let count = 0;
-    for (const entry of run.entries) {
-      if (!run.closed && !eligible.has(entry.raw.id))
-        break;
-      selected.push(entry);
-      count += size(entry);
-      if (count >= Math.max(1, rule.batch))
-        return selected;
+    const meta = {
+      ...ch.meta,
+      msgIds: o.msgIds,
+      firstMsgIdx: o.firstMsgIdx,
+      lastMsgIdx: o.lastMsgIdx,
+      supersededByEntryId: null,
+      ...o.extra
+    };
+    const created = await createClone(targetBookId, ch.raw, meta, userId, o.comment);
+    createdIds.push(created.id);
+    idMap.set(ch.raw.id, created.id);
+    clonedMeta.set(ch.raw.id, meta);
+  }
+  for (const group of groups) {
+    for (const entry of group) {
+      const o = transform(entry, ctx);
+      if (!o)
+        continue;
+      const sourceChapterEntryIds = (entry.meta.sourceChapterEntryIds ?? []).map((oldId) => idMap.get(oldId)).filter((x) => typeof x === "string");
+      const meta = {
+        ...entry.meta,
+        msgIds: o.msgIds,
+        sourceChapterEntryIds,
+        firstMsgIdx: o.firstMsgIdx,
+        lastMsgIdx: o.lastMsgIdx,
+        supersededByEntryId: null,
+        ...o.extra
+      };
+      const created = await createClone(targetBookId, entry.raw, meta, userId, o.comment);
+      createdIds.push(created.id);
+      idMap.set(entry.raw.id, created.id);
+      clonedMeta.set(entry.raw.id, meta);
     }
-    if (run.closed)
-      return selected;
   }
-  return [];
+  for (const src of sourceEntries) {
+    const newId = idMap.get(src.raw.id);
+    if (!newId)
+      continue;
+    const oldSuperId = src.meta.supersededByEntryId;
+    if (!oldSuperId)
+      continue;
+    const newSuperId = idMap.get(oldSuperId);
+    if (!newSuperId)
+      continue;
+    const baseMeta = clonedMeta.get(src.raw.id);
+    if (!baseMeta)
+      continue;
+    const ext = src.raw.extensions || {};
+    try {
+      await spindle.world_books.entries.update(newId, { extensions: { ...ext, [EXTENSION_KEY]: { ...baseMeta, supersededByEntryId: newSuperId } } }, userId);
+    } catch (err) {
+      warn(`copyLmbEntries: failed to re-point entry ${newId.slice(0, 8)}: ${describeError(err)}`);
+    }
+  }
+  return idMap;
 }
-function countBindingBacklog(entries, tier, rule) {
-  let remaining = entries, count = 0;
-  for (;; ) {
-    const batch = selectBindingBatch(remaining, tier, rule);
-    if (!batch.length)
-      return count;
-    const used = new Set(batch.map((e) => e.raw.id));
-    remaining = remaining.filter((e) => !used.has(e.raw.id));
-    count++;
-  }
+async function createClone(bookId, source, meta, userId, commentOverride) {
+  const ext = source.extensions || {};
+  return spindle.world_books.entries.create(bookId, {
+    content: source.content,
+    comment: commentOverride ?? source.comment,
+    disabled: source.disabled,
+    constant: source.constant,
+    key: source.key ?? [],
+    keysecondary: source.keysecondary ?? [],
+    vectorized: source.vectorized ?? false,
+    extensions: { ...ext, [EXTENSION_KEY]: meta }
+  }, userId);
 }
 
 // src/backend/codex/schema.ts
@@ -3692,6 +3350,11 @@ async function mutateSettings(userId, fn) {
     return normalized;
   });
 }
+
+// src/prompts/fill.ts
+function fillPrompt(template, vars) {
+  return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
+}
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
@@ -3723,7 +3386,7 @@ var DIAGNOSTICS_MAX_BYTES = 1e7;
 var MAX_EVENT_BYTES = 512 * 1024;
 var MAX_ROWS = 4096;
 var MAX_PENDING = 64;
-var encoder2 = new TextEncoder;
+var encoder = new TextEncoder;
 var EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost"];
 var MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"];
 var OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"];
@@ -3766,7 +3429,7 @@ function object(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 function size(value) {
-  return encoder2.encode(JSON.stringify(value)).length;
+  return encoder.encode(JSON.stringify(value)).length;
 }
 function project(raw, stored) {
   const v = object(raw);
@@ -3898,7 +3561,7 @@ async function anonymize(event, salt) {
     if (id === undefined)
       return Promise.resolve(undefined);
     if (!refs.has(id))
-      refs.set(id, crypto.subtle.digest("SHA-256", encoder2.encode(`${salt}\x00${id}`)).then((hash) => "r_" + [...new Uint8Array(hash).slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("")));
+      refs.set(id, crypto.subtle.digest("SHA-256", encoder.encode(`${salt}\x00${id}`)).then((hash) => "r_" + [...new Uint8Array(hash).slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("")));
     return refs.get(id);
   };
   const [chatId, relatedChatId, entryId, replacesEntryId, messages, entries] = await Promise.all([
@@ -4146,11 +3809,6 @@ function runScript(input, script) {
     warn(`regex script ${script.id} failed: ${describeError(err)}`);
     return input;
   }
-}
-
-// src/prompts/fill.ts
-function fillPrompt(template, vars) {
-  return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
 }
 
 // src/prompts/books/target-directive.txt
@@ -5405,183 +5063,6 @@ function repairJson(s) {
   return out;
 }
 
-// src/backend/hooks.ts
-var CHAPTER_KEY = `${EXTENSION_ID}.latest_chapter`;
-var ARC_KEY = `${EXTENSION_ID}.latest_arc`;
-var VOLUME_KEY = `${EXTENSION_ID}.latest_volume`;
-var CODEX_UPDATED_KEY = `${EXTENSION_ID}.codex_updated`;
-var codexEndpoint = (chatId) => `${EXTENSION_ID}.codex.${chatId}`;
-var registered = false;
-function registerHookEndpoints() {
-  if (registered)
-    return;
-  registered = true;
-  try {
-    spindle.rpcPool?.sync?.(CHAPTER_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(ARC_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(VOLUME_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, null, { requires: [] });
-  } catch (err) {
-    warn(`rpcPool unavailable: ${describeError(err)}`);
-  }
-}
-function publishCodexSnapshot(chatId, snapshot, rendered) {
-  try {
-    spindle.rpcPool?.sync?.(codexEndpoint(chatId), snapshot, { requires: [] });
-    spindle.rpcPool?.sync?.(`${codexEndpoint(chatId)}.rendered`, rendered, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish codex snapshot: ${describeError(err)}`);
-  }
-}
-function publishCodexUpdated(event) {
-  try {
-    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, { ...event, updatedAt: Date.now() }, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish codex_updated: ${describeError(err)}`);
-  }
-}
-function publishCodexWiped(chatId, userId) {
-  publishCodexSnapshot(chatId, null, null);
-  publishCodexUpdated({ chatId, userId, changedFiles: [...CODEX_FILE_KEYS], reason: "wipe" });
-}
-function publishChapterCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(CHAPTER_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish chapter_created: ${describeError(err)}`);
-  }
-}
-function publishArcCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(ARC_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish arc_created: ${describeError(err)}`);
-  }
-}
-function publishVolumeCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(VOLUME_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish volume_created: ${describeError(err)}`);
-  }
-}
-
-// src/backend/book-copy.ts
-async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
-  const createdIds = [];
-  try {
-    return await copyEntries(targetBookId, sourceEntries, userId, transform, createdIds);
-  } catch (err) {
-    for (const id of createdIds.reverse()) {
-      try {
-        await spindle.world_books.entries.delete(id, userId);
-      } catch (cleanupError) {
-        warn(`copy rollback could not delete an entry: ${describeError(cleanupError)}`);
-        try {
-          await spindle.world_books.entries.update(id, { disabled: true }, userId);
-        } catch (disableError) {
-          warn(`copy rollback could not disable an entry: ${describeError(disableError)}`);
-        }
-      }
-    }
-    throw err;
-  }
-}
-async function copyEntries(targetBookId, sourceEntries, userId, transform, createdIds) {
-  const idMap = new Map;
-  const clonedMeta = new Map;
-  const ctx = { idMap, clonedMeta };
-  const chapters = sourceEntries.filter((e) => e.meta.tier === 1);
-  const groups = [2, 3, 4, 5, 6, 7].map((tier) => sourceEntries.filter((e) => e.meta.tier === tier));
-  for (const ch of chapters) {
-    const o = transform(ch, ctx);
-    if (!o)
-      continue;
-    const meta = {
-      ...ch.meta,
-      msgIds: o.msgIds,
-      firstMsgIdx: o.firstMsgIdx,
-      lastMsgIdx: o.lastMsgIdx,
-      supersededByEntryId: null,
-      ...o.extra
-    };
-    const created = await createClone(targetBookId, ch.raw, meta, userId, o.comment);
-    createdIds.push(created.id);
-    idMap.set(ch.raw.id, created.id);
-    clonedMeta.set(ch.raw.id, meta);
-  }
-  for (const group of groups) {
-    for (const entry of group) {
-      const o = transform(entry, ctx);
-      if (!o)
-        continue;
-      const sourceChapterEntryIds = (entry.meta.sourceChapterEntryIds ?? []).map((oldId) => idMap.get(oldId)).filter((x) => typeof x === "string");
-      const meta = {
-        ...entry.meta,
-        msgIds: o.msgIds,
-        sourceChapterEntryIds,
-        firstMsgIdx: o.firstMsgIdx,
-        lastMsgIdx: o.lastMsgIdx,
-        supersededByEntryId: null,
-        ...o.extra
-      };
-      const created = await createClone(targetBookId, entry.raw, meta, userId, o.comment);
-      createdIds.push(created.id);
-      idMap.set(entry.raw.id, created.id);
-      clonedMeta.set(entry.raw.id, meta);
-    }
-  }
-  for (const src of sourceEntries) {
-    const newId = idMap.get(src.raw.id);
-    if (!newId)
-      continue;
-    const oldSuperId = src.meta.supersededByEntryId;
-    if (!oldSuperId)
-      continue;
-    const newSuperId = idMap.get(oldSuperId);
-    if (!newSuperId)
-      continue;
-    const baseMeta = clonedMeta.get(src.raw.id);
-    if (!baseMeta)
-      continue;
-    const ext = src.raw.extensions || {};
-    try {
-      await spindle.world_books.entries.update(newId, { extensions: { ...ext, [EXTENSION_KEY]: { ...baseMeta, supersededByEntryId: newSuperId } } }, userId);
-    } catch (err) {
-      warn(`copyLmbEntries: failed to re-point entry ${newId.slice(0, 8)}: ${describeError(err)}`);
-    }
-  }
-  return idMap;
-}
-async function createClone(bookId, source, meta, userId, commentOverride) {
-  const ext = source.extensions || {};
-  return spindle.world_books.entries.create(bookId, {
-    content: source.content,
-    comment: commentOverride ?? source.comment,
-    disabled: source.disabled,
-    constant: source.constant,
-    key: source.key ?? [],
-    keysecondary: source.keysecondary ?? [],
-    vectorized: source.vectorized ?? false,
-    extensions: { ...ext, [EXTENSION_KEY]: meta }
-  }, userId);
-}
-
 // src/backend/codex/prompt.ts
 function tpl(ctx, key) {
   return codexTemplateText(key, ctx.overrides);
@@ -6429,420 +5910,169 @@ async function syncCodexProfiles(userId) {
   return failures;
 }
 
-// src/backend/fork.ts
-var FORK_ADOPTED_FLAG = "lumibooks_fork_adopted";
-var CODEX_ADOPTED_FLAG = "lumibooks_codex_fork_adopted";
-var MAX_ANCESTRY_HOPS = 100;
-var checked = new Set;
-var inflight = new Map;
-var retryAt = new Map;
-var RETRY_BACKOFF_MS = 30000;
-var forkAnomalyCb = null;
-function registerForkAnomalyCallback(cb) {
-  forkAnomalyCb = cb;
-}
-function key2(userId, chatId) {
-  return `${userId}::${chatId}`;
-}
-async function inheritedMessageIds(ancestorId, forkId, userId) {
-  let currentId = forkId;
-  let currentMessages = await spindle.chat.getMessages(currentId);
-  let mapped = new Map(currentMessages.map((m) => [m.id, m.id]));
-  const seen = new Set;
-  while (currentId !== ancestorId) {
-    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS)
-      throw new Error("Fork ancestry could not be resolved");
-    seen.add(currentId);
-    const chat = await spindle.chats.get(currentId, userId);
-    const metadata = chat?.metadata;
-    const parentId = metadata?.["branched_from"];
-    const branchAt = metadata?.["branch_at_message"];
-    if (typeof parentId !== "string")
-      throw new Error("Fork ancestry is incomplete");
-    const parentMessages = await spindle.chat.getMessages(parentId);
-    const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
-    if (boundary === undefined)
-      return new Map;
-    const parentByIndex = new Map(parentMessages.map((m) => [m.index_in_chat, m]));
-    const next = new Map;
-    for (const message of currentMessages) {
-      if (message.index_in_chat > boundary)
-        continue;
-      const targetId = mapped.get(message.id);
-      const source = parentByIndex.get(message.index_in_chat);
-      if (targetId && source && source.role === message.role && source.content === message.content)
-        next.set(source.id, targetId);
-    }
-    mapped = next;
-    currentId = parentId;
-    currentMessages = parentMessages;
-  }
-  return mapped;
-}
-async function ensureForkAdoption(chatId, userId) {
-  const k = key2(userId, chatId);
-  if (checked.has(k))
-    return;
-  const nextTry = retryAt.get(k);
-  if (nextTry && Date.now() < nextTry)
-    return;
-  const existing = inflight.get(k);
-  if (existing)
-    return existing;
-  const p = (async () => {
-    try {
-      const settled = await doForkAdoption(chatId, userId);
-      if (settled) {
-        if (checked.size > 5000)
-          checked.clear();
-        checked.add(k);
-        retryAt.delete(k);
-      } else {
-        if (retryAt.size > 1000)
-          retryAt.clear();
-        retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
-      }
-    } catch (err) {
-      if (retryAt.size > 1000)
-        retryAt.clear();
-      retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
-      recordDiagnostic(userId, { event: "fork", chatId, outcome: "failed", reason: "adoption" });
-      warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    } finally {
-      inflight.delete(k);
-    }
-  })();
-  inflight.set(k, p);
-  return p;
-}
-async function forkShelfPending(chatId, userId) {
-  if (checked.has(key2(userId, chatId)))
-    return false;
-  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
-  const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-  if (!md || typeof md["branched_from"] !== "string")
-    return false;
-  const flag = md[FORK_ADOPTED_FLAG];
-  if (flag === chatId)
-    return false;
-  if (flag === true) {
-    return await findBookForChat(chatId, userId).catch(() => null) === null;
-  }
-  return true;
-}
-async function forkCodexPending(chatId, userId) {
-  if (checked.has(key2(userId, chatId)))
-    return false;
-  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
-  const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-  if (!md || typeof md["branched_from"] !== "string")
-    return false;
-  const flag = md[CODEX_ADOPTED_FLAG];
-  if (flag === chatId)
-    return false;
-  if (flag === true) {
-    return await codexPresence(chatId, userId).catch(() => "absent") !== "present";
-  }
-  return true;
-}
-async function doForkAdoption(forkChatId, userId) {
-  const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-  if (!chat)
-    return false;
-  const meta = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-  const branchedFrom = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
-  if (!branchedFrom)
-    return true;
-  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: "started", reason: "adoption" });
-  let shelfSettled = true;
-  if (meta?.[FORK_ADOPTED_FLAG] !== forkChatId) {
-    const owned = await findBookForChat(forkChatId, userId).catch(() => null);
-    if (!owned) {
-      const ancestor = await findAncestorBook(branchedFrom, userId);
-      if (ancestor === "fault") {
-        shelfSettled = false;
-      } else if (ancestor) {
-        try {
-          await cloneShelfForFork(forkChatId, chat.name ?? null, ancestor.chatId, userId);
-        } catch (err) {
-          shelfSettled = false;
-          warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-          forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
-        }
-      } else {
-        await markShelfAdopted(forkChatId, userId).catch(() => {});
-      }
-    } else {
-      await markShelfAdopted(forkChatId, userId).catch(() => {});
-    }
-  }
-  const codexSettled = await adoptForkCodex(forkChatId, branchedFrom, userId);
-  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: shelfSettled && codexSettled ? "success" : "pending", reason: "adoption" });
-  return shelfSettled && codexSettled;
-}
-async function adoptForkCodex(forkChatId, branchedFrom, userId) {
-  try {
-    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-    if (!chat)
-      return false;
-    const md = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-    const flag = md?.[CODEX_ADOPTED_FLAG];
-    if (flag === forkChatId)
-      return true;
-    if (flag === true && await codexPresence(forkChatId, userId) === "present") {
-      await markCodexAdopted(forkChatId, userId);
-      return true;
-    }
-    const attached = Array.isArray(md?.["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
-    for (const bookId of attached) {
-      const book = await spindle.world_books.get(bookId, userId);
-      if (!book)
-        continue;
-      const tag = codexBookChatTag(book);
-      if (tag && tag !== forkChatId) {
-        await unbindBookFromChat(forkChatId, bookId, userId);
-      }
-    }
-    let ancestorChatId = null;
-    {
-      const seen = new Set;
-      let cur = branchedFrom;
-      let hops = 0;
-      while (cur && hops < MAX_ANCESTRY_HOPS) {
-        const cid = cur;
-        if (seen.has(cid))
-          break;
-        seen.add(cid);
-        hops++;
-        if (await codexPresence(cid, userId) === "present") {
-          ancestorChatId = cid;
-          break;
-        }
-        const ancChat = await spindle.chats.get(cid, userId).catch(() => null);
-        const ancMeta = ancChat && ancChat.metadata && typeof ancChat.metadata === "object" ? ancChat.metadata : null;
-        cur = ancMeta && typeof ancMeta["branched_from"] === "string" ? ancMeta["branched_from"] : null;
-      }
-    }
-    if (!ancestorChatId) {
-      await markCodexAdopted(forkChatId, userId);
-      return true;
-    }
-    if (getBusy(userId).some((b) => b.kind === "codex" && (b.chatId === ancestorChatId || b.chatId === forkChatId))) {
-      return false;
-    }
-    const [forkMsgs, inheritedIds] = await Promise.all([
-      spindle.chat.getMessages(forkChatId),
-      inheritedMessageIds(ancestorChatId, forkChatId, userId)
-    ]);
-    const remapToFork = (ancestorMsgId) => inheritedIds.get(ancestorMsgId) ?? null;
-    let forkTip = null;
-    let tipIdx = -1;
-    for (const m of forkMsgs) {
-      if (m.index_in_chat > tipIdx) {
-        tipIdx = m.index_in_chat;
-        forkTip = m.id;
-      }
-    }
-    const inherited = await inheritCodex(ancestorChatId, forkChatId, userId, remapToFork, forkTip);
-    await syncCodexEntries(forkChatId, userId);
-    if (inherited) {
-      info(`fork adoption: inherited codex from ${ancestorChatId.slice(0, 8)} into ${forkChatId.slice(0, 8)}`);
-    }
-    await markCodexAdopted(forkChatId, userId);
-    return true;
-  } catch (err) {
-    warn(`fork codex adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-    forkAnomalyCb?.(userId, `Memoria couldn't carry the codex into this fork and will retry: ${shortErrorText(err)}`);
-    return false;
-  }
-}
-async function markShelfAdopted(forkChatId, userId) {
-  await withChatMetaLock(userId, forkChatId, async () => {
-    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-    if (!chat)
-      return;
-    const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
-    if (md[FORK_ADOPTED_FLAG] === forkChatId)
-      return;
-    md[FORK_ADOPTED_FLAG] = forkChatId;
-    await spindle.chats.update(forkChatId, { metadata: md }, userId);
-  });
-}
-async function markCodexAdopted(forkChatId, userId) {
-  await withChatMetaLock(userId, forkChatId, async () => {
-    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-    if (!chat)
-      throw new Error("fork chat vanished while recording codex adoption");
-    const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
-    if (md[CODEX_ADOPTED_FLAG] === forkChatId)
-      return;
-    md[CODEX_ADOPTED_FLAG] = forkChatId;
-    await spindle.chats.update(forkChatId, { metadata: md }, userId);
-  });
-}
-async function findAncestorBook(startChatId, userId) {
-  const seen = new Set;
-  let cur = startChatId;
-  let hops = 0;
-  while (cur && hops < MAX_ANCESTRY_HOPS) {
-    const chatId = cur;
-    if (seen.has(chatId))
-      break;
-    seen.add(chatId);
-    hops++;
-    let bookId;
-    try {
-      bookId = await findBookForChat(chatId, userId);
-    } catch {
-      return "fault";
-    }
-    if (bookId)
-      return { chatId, bookId };
-    let chat;
-    try {
-      chat = await spindle.chats.get(chatId, userId);
-    } catch {
-      return "fault";
-    }
-    const meta = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
-    cur = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
-  }
-  return null;
-}
-async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId) {
-  const parentEntries = await listLmbEntries(parentChatId, userId);
-  const [forkMsgs, inheritedIds] = await Promise.all([
-    spindle.chat.getMessages(forkChatId),
-    inheritedMessageIds(parentChatId, forkChatId, userId)
-  ]);
-  const forkIdxById = new Map(forkMsgs.map((m) => [m.id, m.index_in_chat]));
-  const remap = (msgIds) => {
-    const ids = [];
-    let first = Number.POSITIVE_INFINITY;
-    let last = -1;
-    for (const id of msgIds) {
-      const forkId = inheritedIds.get(id);
-      if (forkId === undefined)
-        continue;
-      const idx = forkIdxById.get(forkId);
-      if (idx === undefined)
-        continue;
-      ids.push(forkId);
-      if (idx < first)
-        first = idx;
-      if (idx > last)
-        last = idx;
-    }
+// src/backend/binding.ts
+function summaryBindingRule(profile, tier) {
+  if (tier === 2)
     return {
-      ids,
-      first: first === Number.POSITIVE_INFINITY ? undefined : first,
-      last: last === -1 ? undefined : last
+      unit: profile.arcTrigger === "chapters" ? "entries" : profile.arcTrigger,
+      batch: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
+      lag: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters
     };
-  };
-  const forkTransform = (entry, ctx) => {
-    if (entry.meta.ghost) {
-      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, mode: "ghost", outcome: "skipped" });
-      return null;
-    }
-    if (entry.meta.isRoot) {
-      return {
-        msgIds: entry.meta.msgIds.slice(),
-        firstMsgIdx: entry.meta.firstMsgIdx,
-        lastMsgIdx: entry.meta.lastMsgIdx,
-        extra: { chatId: forkChatId }
-      };
-    }
-    const { ids, first, last } = remap(entry.meta.msgIds);
-    if (ids.length !== entry.meta.msgIds.length) {
-      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, outcome: "skipped", reason: "missing", numbers: { sourceCount: entry.meta.msgIds.length, selected: ids.length } });
-      return null;
-    }
-    if (entry.meta.tier === 1) {
-      if (ids.length === 0)
-        return null;
-      return { msgIds: ids, firstMsgIdx: first, lastMsgIdx: last, extra: { chatId: forkChatId } };
-    }
-    const survived = (entry.meta.sourceChapterEntryIds ?? []).map((oldId) => ctx.idMap.get(oldId)).filter((x) => typeof x === "string");
-    if (survived.length !== (entry.meta.sourceChapterEntryIds ?? []).length)
-      return null;
-    if (ids.length === 0 && survived.length === 0)
-      return null;
-    let firstIdx = first;
-    let lastIdx = last;
-    if (firstIdx === undefined || lastIdx === undefined) {
-      for (const oldId of entry.meta.sourceChapterEntryIds ?? []) {
-        const cm = ctx.clonedMeta.get(oldId);
-        if (!cm)
-          continue;
-        if (cm.firstMsgIdx !== undefined)
-          firstIdx = firstIdx === undefined ? cm.firstMsgIdx : Math.min(firstIdx, cm.firstMsgIdx);
-        if (cm.lastMsgIdx !== undefined)
-          lastIdx = lastIdx === undefined ? cm.lastMsgIdx : Math.max(lastIdx, cm.lastMsgIdx);
-      }
-    }
-    return { msgIds: ids, firstMsgIdx: firstIdx, lastMsgIdx: lastIdx, extra: { chatId: forkChatId } };
-  };
-  const newBook = await spindle.world_books.create({
-    name: bookNameFor(forkChatName, forkChatId),
-    description: "Memoria's shelf for this chat. Chapters and arcs live here.",
-    metadata: {
-      lumibooks_chat_id: forkChatId,
-      lumibooks_created_at: Date.now(),
-      lumibooks_forked_from: parentChatId
-    }
-  }, userId);
-  let cloned = 0;
-  try {
-    const idMap = await copyLmbEntries(newBook.id, parentEntries, userId, forkTransform);
-    cloned = idMap.size;
-    recordDiagnostic(userId, {
-      event: "fork",
-      chatId: forkChatId,
-      relatedChatId: parentChatId,
-      outcome: "success",
-      numbers: { sourceCount: parentEntries.length, selected: cloned },
-      messages: forkMsgs.map((m, position) => ({ id: m.id, index: m.index_in_chat, position })),
-      entries: parentEntries.flatMap((e) => {
-        const id = idMap.get(e.raw.id);
-        return id ? [{ id, tier: e.meta.tier, sources: [e.raw.id], sourceEntryCount: 1, sourceCount: e.meta.msgIds.length }] : [];
-      })
-    });
-    await rebindForkShelf(forkChatId, newBook.id, userId);
-  } catch (err) {
-    await spindle.world_books.delete(newBook.id, userId).catch(() => {});
-    throw err;
-  }
-  invalidateBookCache(userId, forkChatId);
-  try {
-    const settings = await loadSettings(userId);
-    const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
-    const desiredHidden = profile ? profile.hideCoveredMessages : true;
-    await resyncVisibility(forkChatId, userId, desiredHidden);
-  } catch (err) {
-    warn(`fork adoption: visibility resync failed: ${describeError(err)}`);
-  }
-  info(`adopted fork ${forkChatId.slice(0, 8)} from ${parentChatId.slice(0, 8)} (${cloned} entries cloned)`);
+  return profile.higherTiers[tier];
 }
-async function rebindForkShelf(forkChatId, newBookId, userId) {
-  await withChatMetaLock(userId, forkChatId, async () => {
-    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-    if (!chat)
+function summaryRuns(entries, tier) {
+  const ordered = entries.filter((e) => !e.meta.ghost && !e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const runs = [];
+  let current = [];
+  for (const entry of ordered) {
+    if (entry.meta.tier === tier)
+      current.push(entry);
+    else if (current.length) {
+      runs.push({ entries: current, closed: entry.meta.tier > tier });
+      current = [];
+    }
+  }
+  if (current.length)
+    runs.push({ entries: current, closed: false });
+  return runs;
+}
+
+class SummaryTimelineError extends Error {
+  constructor() {
+    super("Select consecutive summaries without crossing another summary tier");
+    this.name = "SummaryTimelineError";
+  }
+}
+function assertContiguousBinding(entries, selected) {
+  if (!selected.length)
+    throw new SummaryTimelineError;
+  const ids = new Set(selected.map((e) => e.raw.id));
+  for (const run of summaryRuns(entries, selected[0].meta.tier)) {
+    const positions = run.entries.flatMap((e, i) => ids.has(e.raw.id) ? [i] : []);
+    if (positions.length === selected.length && positions.at(-1) - positions[0] + 1 === selected.length)
       return;
-    const metadata = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
-    const inheritedBookId = typeof metadata["lumibooks_book_id"] === "string" ? metadata["lumibooks_book_id"] : null;
-    const existing = Array.isArray(metadata["chat_world_book_ids"]) ? metadata["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
-    const nextBookIds = existing.filter((id) => id !== inheritedBookId && id !== newBookId);
-    nextBookIds.push(newBookId);
-    metadata["chat_world_book_ids"] = nextBookIds;
-    metadata["lumibooks_book_id"] = newBookId;
-    metadata[FORK_ADOPTED_FLAG] = forkChatId;
-    await spindle.chats.update(forkChatId, { metadata }, userId);
-  });
+  }
+  throw new SummaryTimelineError;
+}
+function selectBindingBatch(entries, tier, rule, closedOnly = false) {
+  if (rule.unit === "manual" && !closedOnly)
+    return [];
+  const runs = summaryRuns(entries, tier);
+  const ordered = runs.flatMap((run) => run.entries);
+  const size = (e) => rule.unit === "tokens" ? approximateTokensFromChars(e.raw.content.length) : 1;
+  let cutoff = ordered.length, reserved = 0;
+  while (cutoff > 0 && reserved < rule.lag)
+    reserved += size(ordered[--cutoff]);
+  const eligible = new Set(ordered.slice(0, cutoff).map((e) => e.raw.id));
+  for (const run of runs) {
+    if (closedOnly && !run.closed)
+      continue;
+    const selected = [];
+    let count = 0;
+    for (const entry of run.entries) {
+      if (!run.closed && !eligible.has(entry.raw.id))
+        break;
+      selected.push(entry);
+      count += size(entry);
+      if (count >= Math.max(1, rule.batch))
+        return selected;
+    }
+    if (run.closed)
+      return selected;
+  }
+  return [];
+}
+function countBindingBacklog(entries, tier, rule) {
+  let remaining = entries, count = 0;
+  for (;; ) {
+    const batch = selectBindingBatch(remaining, tier, rule);
+    if (!batch.length)
+      return count;
+    const used = new Set(batch.map((e) => e.raw.id));
+    remaining = remaining.filter((e) => !used.has(e.raw.id));
+    count++;
+  }
+}
+
+// src/backend/hooks.ts
+var CHAPTER_KEY = `${EXTENSION_ID}.latest_chapter`;
+var ARC_KEY = `${EXTENSION_ID}.latest_arc`;
+var VOLUME_KEY = `${EXTENSION_ID}.latest_volume`;
+var CODEX_UPDATED_KEY = `${EXTENSION_ID}.codex_updated`;
+var codexEndpoint = (chatId) => `${EXTENSION_ID}.codex.${chatId}`;
+var registered = false;
+function registerHookEndpoints() {
+  if (registered)
+    return;
+  registered = true;
+  try {
+    spindle.rpcPool?.sync?.(CHAPTER_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(ARC_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(VOLUME_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, null, { requires: [] });
+  } catch (err) {
+    warn(`rpcPool unavailable: ${describeError(err)}`);
+  }
+}
+function publishCodexSnapshot(chatId, snapshot, rendered) {
+  try {
+    spindle.rpcPool?.sync?.(codexEndpoint(chatId), snapshot, { requires: [] });
+    spindle.rpcPool?.sync?.(`${codexEndpoint(chatId)}.rendered`, rendered, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex snapshot: ${describeError(err)}`);
+  }
+}
+function publishCodexUpdated(event) {
+  try {
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, { ...event, updatedAt: Date.now() }, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex_updated: ${describeError(err)}`);
+  }
+}
+function publishCodexWiped(chatId, userId) {
+  publishCodexSnapshot(chatId, null, null);
+  publishCodexUpdated({ chatId, userId, changedFiles: [...CODEX_FILE_KEYS], reason: "wipe" });
+}
+function publishChapterCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(CHAPTER_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish chapter_created: ${describeError(err)}`);
+  }
+}
+function publishArcCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(ARC_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish arc_created: ${describeError(err)}`);
+  }
+}
+function publishVolumeCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(VOLUME_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish volume_created: ${describeError(err)}`);
+  }
 }
 
 // src/backend/lessons.ts
 var cache = new Map;
-var inflight2 = new Map;
+var inflight = new Map;
 var writeLocks2 = new Map;
 var failOpenUsers = new Set;
 var anomalyCb = null;
@@ -6859,15 +6089,15 @@ async function ensureLessons(userId) {
   const cached = cache.get(userId);
   if (cached)
     return cached;
-  const running = inflight2.get(userId);
+  const running = inflight.get(userId);
   if (running)
     return running;
   const p = (async () => {
     const state = await loadFromDisk(userId);
     cache.set(userId, state);
     return state;
-  })().finally(() => inflight2.delete(userId));
-  inflight2.set(userId, p);
+  })().finally(() => inflight.delete(userId));
+  inflight.set(userId, p);
   return p;
 }
 async function loadFromDisk(userId) {
@@ -7034,7 +6264,7 @@ function codexGated(lessons) {
 }
 
 // src/backend/pipeline.ts
-var inflight3 = new Map;
+var inflight2 = new Map;
 var busyByUser = new Map;
 var aborters = new Map;
 var progressLastPush = new Map;
@@ -7125,13 +6355,13 @@ function pushStreamText(userId, chatId, kind, snap) {
 }
 function setBusy(userId, chatId, kind, label) {
   const key = busyKey(userId, chatId, kind);
-  if (inflight3.has(key)) {
+  if (inflight2.has(key)) {
     recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "skipped", reason: "busy" });
     return false;
   }
   recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "started" });
   const entry = { kind, chatId, label, startedAt: Date.now() };
-  inflight3.set(key, entry);
+  inflight2.set(key, entry);
   aborters.set(key, new AbortController);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
   streamBufs.delete(key);
@@ -7152,8 +6382,8 @@ function setBusy(userId, chatId, kind, label) {
 }
 function clearBusy(userId, chatId, kind) {
   const key = busyKey(userId, chatId, kind);
-  recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "finished", numbers: { durationMs: Date.now() - (inflight3.get(key)?.startedAt ?? Date.now()) } });
-  inflight3.delete(key);
+  recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "finished", numbers: { durationMs: Date.now() - (inflight2.get(key)?.startedAt ?? Date.now()) } });
+  inflight2.delete(key);
   aborters.delete(key);
   progressLastPush.delete(key);
   progressState.delete(key);
@@ -7164,10 +6394,10 @@ function clearBusy(userId, chatId, kind) {
   }
   streamLastPush.delete(key);
   const fresh = [];
-  for (const k of inflight3.keys()) {
+  for (const k of inflight2.keys()) {
     if (!k.startsWith(`${userId}::`))
       continue;
-    const found = inflight3.get(k);
+    const found = inflight2.get(k);
     if (found)
       fresh.push(found);
   }
@@ -7231,7 +6461,7 @@ function ensureHeartbeat() {
     }
     const touched = new Set;
     for (const [key, ps] of progressState) {
-      const entry = inflight3.get(key);
+      const entry = inflight2.get(key);
       if (!entry)
         continue;
       const elapsed = Date.now() - entry.startedAt;
@@ -7258,7 +6488,7 @@ ${s.slice(-STREAM_BUF_CAP)}`;
 }
 function appendStreamText(userId, chatId, kind, deltaKind, delta) {
   const key = busyKey(userId, chatId, kind);
-  if (!inflight3.has(key))
+  if (!inflight2.has(key))
     return;
   const buf = streamBufs.get(key) ?? { content: "", thinking: "" };
   if (deltaKind === "text")
@@ -7285,7 +6515,7 @@ function setStreamWatcher(userId, chatId, kind, on) {
   pushStreamText(userId, chatId, kind, {
     content: buf?.content ?? "",
     thinking: buf?.thinking ?? "",
-    running: inflight3.has(key)
+    running: inflight2.has(key)
   });
 }
 function updateProgressNumbers(userId, chatId, kind, chars, thinkingChars) {
@@ -7295,7 +6525,7 @@ function updateProgressNumbers(userId, chatId, kind, chars, thinkingChars) {
     return;
   ps.chars = chars;
   ps.thinkingChars = thinkingChars;
-  const entry = inflight3.get(key);
+  const entry = inflight2.get(key);
   if (!entry)
     return;
   const now = Date.now();
@@ -7412,6 +6642,7 @@ async function createChapterAuto(chatId, profile, settings, userId, automation =
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
     return null;
   try {
+    await requireForkShelf(chatId, userId);
     if (ghost) {
       const live = await loadSettings(userId);
       const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
@@ -7437,6 +6668,7 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
   if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
     return null;
   try {
+    await requireForkShelf(chatId, userId);
     const messages = await spindle.chat.getMessages(chatId);
     const set = new Set(messageIds);
     const liveIds = new Set(messages.map((m) => m.id));
@@ -8461,6 +7693,782 @@ function resumeSummaryBinding(chatId, userId) {
   })().finally(() => summaryResumes.delete(key));
   summaryResumes.set(key, run);
   return run;
+}
+
+// src/backend/fork.ts
+var FORK_ADOPTED_FLAG = "lumibooks_fork_adopted";
+var CODEX_ADOPTED_FLAG = "lumibooks_codex_fork_adopted";
+var MAX_ANCESTRY_HOPS = 100;
+var checked = new Set;
+var inflight3 = new Map;
+var retryAt = new Map;
+var RETRY_BACKOFF_MS = 30000;
+var forkAnomalyCb = null;
+function registerForkAnomalyCallback(cb) {
+  forkAnomalyCb = cb;
+}
+function key(userId, chatId) {
+  return `${userId}::${chatId}`;
+}
+async function inheritedMessageIds(ancestorId, forkId, userId) {
+  let currentId = forkId;
+  let currentMessages = await spindle.chat.getMessages(currentId);
+  let mapped = new Map(currentMessages.map((m) => [m.id, m.id]));
+  const seen = new Set;
+  while (currentId !== ancestorId) {
+    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS)
+      throw new Error("Fork ancestry could not be resolved");
+    seen.add(currentId);
+    const chat = await spindle.chats.get(currentId, userId);
+    const metadata = chat?.metadata;
+    const parentId = metadata?.["branched_from"];
+    const branchAt = metadata?.["branch_at_message"];
+    if (typeof parentId !== "string")
+      throw new Error("Fork ancestry is incomplete");
+    const parentMessages = await spindle.chat.getMessages(parentId);
+    const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
+    if (boundary === undefined)
+      return new Map;
+    const parentByIndex = new Map(parentMessages.map((m) => [m.index_in_chat, m]));
+    const next = new Map;
+    for (const message of currentMessages) {
+      if (message.index_in_chat > boundary)
+        continue;
+      const targetId = mapped.get(message.id);
+      const source = parentByIndex.get(message.index_in_chat);
+      if (targetId && source && source.role === message.role && source.content === message.content)
+        next.set(source.id, targetId);
+    }
+    mapped = next;
+    currentId = parentId;
+    currentMessages = parentMessages;
+  }
+  return mapped;
+}
+async function ensureForkAdoption(chatId, userId) {
+  const k = key(userId, chatId);
+  if (checked.has(k))
+    return;
+  const nextTry = retryAt.get(k);
+  if (nextTry && Date.now() < nextTry)
+    return;
+  const existing = inflight3.get(k);
+  if (existing)
+    return existing;
+  const p = (async () => {
+    try {
+      const settled = await doForkAdoption(chatId, userId);
+      if (settled) {
+        if (checked.size > 5000)
+          checked.clear();
+        checked.add(k);
+        retryAt.delete(k);
+      } else {
+        if (retryAt.size > 1000)
+          retryAt.clear();
+        retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
+      }
+    } catch (err) {
+      if (retryAt.size > 1000)
+        retryAt.clear();
+      retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
+      recordDiagnostic(userId, { event: "fork", chatId, outcome: "failed", reason: "adoption" });
+      warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
+    } finally {
+      inflight3.delete(k);
+    }
+  })();
+  inflight3.set(k, p);
+  return p;
+}
+async function forkShelfPending(chatId, userId) {
+  if (checked.has(key(userId, chatId)))
+    return false;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+  if (!md || typeof md["branched_from"] !== "string")
+    return false;
+  const flag = md[FORK_ADOPTED_FLAG];
+  if (flag === chatId)
+    return false;
+  if (flag === true) {
+    return await findBookForChat(chatId, userId).catch(() => null) === null;
+  }
+  return true;
+}
+async function requireForkShelf(chatId, userId) {
+  await ensureForkAdoption(chatId, userId);
+  if (await forkShelfPending(chatId, userId))
+    throw new Error("Fork inheritance is still pending. Retry after the inherited shelf is restored.");
+}
+async function forkCodexPending(chatId, userId) {
+  if (checked.has(key(userId, chatId)))
+    return false;
+  const chat = await spindle.chats.get(chatId, userId).catch(() => null);
+  const md = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+  if (!md || typeof md["branched_from"] !== "string")
+    return false;
+  const flag = md[CODEX_ADOPTED_FLAG];
+  if (flag === chatId)
+    return false;
+  if (flag === true) {
+    return await codexPresence(chatId, userId).catch(() => "absent") !== "present";
+  }
+  return true;
+}
+async function doForkAdoption(forkChatId, userId) {
+  const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+  if (!chat)
+    return false;
+  const meta = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+  const branchedFrom = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
+  if (!branchedFrom)
+    return true;
+  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: "started", reason: "adoption" });
+  let shelfSettled = true;
+  if (meta?.[FORK_ADOPTED_FLAG] !== forkChatId) {
+    const owned = await findBookForChat(forkChatId, userId).catch(() => null);
+    if (!owned) {
+      const ancestor = await findAncestorBook(branchedFrom, userId);
+      if (ancestor === "fault") {
+        shelfSettled = false;
+      } else if (ancestor) {
+        try {
+          await cloneShelfForFork(forkChatId, chat.name ?? null, ancestor.chatId, userId);
+        } catch (err) {
+          shelfSettled = false;
+          warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
+          forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
+        }
+      } else {
+        await markShelfAdopted(forkChatId, userId).catch(() => {});
+      }
+    } else {
+      await markShelfAdopted(forkChatId, userId).catch(() => {});
+    }
+  }
+  const codexSettled = await adoptForkCodex(forkChatId, branchedFrom, userId);
+  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: shelfSettled && codexSettled ? "success" : "pending", reason: "adoption" });
+  return shelfSettled && codexSettled;
+}
+async function adoptForkCodex(forkChatId, branchedFrom, userId) {
+  try {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat)
+      return false;
+    const md = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+    const flag = md?.[CODEX_ADOPTED_FLAG];
+    if (flag === forkChatId)
+      return true;
+    if (flag === true && await codexPresence(forkChatId, userId) === "present") {
+      await markCodexAdopted(forkChatId, userId);
+      return true;
+    }
+    const attached = Array.isArray(md?.["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
+    for (const bookId of attached) {
+      const book = await spindle.world_books.get(bookId, userId);
+      if (!book)
+        continue;
+      const tag = codexBookChatTag(book);
+      if (tag && tag !== forkChatId) {
+        await unbindBookFromChat(forkChatId, bookId, userId);
+      }
+    }
+    let ancestorChatId = null;
+    {
+      const seen = new Set;
+      let cur = branchedFrom;
+      let hops = 0;
+      while (cur && hops < MAX_ANCESTRY_HOPS) {
+        const cid = cur;
+        if (seen.has(cid))
+          break;
+        seen.add(cid);
+        hops++;
+        if (await codexPresence(cid, userId) === "present") {
+          ancestorChatId = cid;
+          break;
+        }
+        const ancChat = await spindle.chats.get(cid, userId).catch(() => null);
+        const ancMeta = ancChat && ancChat.metadata && typeof ancChat.metadata === "object" ? ancChat.metadata : null;
+        cur = ancMeta && typeof ancMeta["branched_from"] === "string" ? ancMeta["branched_from"] : null;
+      }
+    }
+    if (!ancestorChatId) {
+      await markCodexAdopted(forkChatId, userId);
+      return true;
+    }
+    if (getBusy(userId).some((b) => b.kind === "codex" && (b.chatId === ancestorChatId || b.chatId === forkChatId))) {
+      return false;
+    }
+    const [forkMsgs, inheritedIds] = await Promise.all([
+      spindle.chat.getMessages(forkChatId),
+      inheritedMessageIds(ancestorChatId, forkChatId, userId)
+    ]);
+    const remapToFork = (ancestorMsgId) => inheritedIds.get(ancestorMsgId) ?? null;
+    let forkTip = null;
+    let tipIdx = -1;
+    for (const m of forkMsgs) {
+      if (m.index_in_chat > tipIdx) {
+        tipIdx = m.index_in_chat;
+        forkTip = m.id;
+      }
+    }
+    const inherited = await inheritCodex(ancestorChatId, forkChatId, userId, remapToFork, forkTip);
+    await syncCodexEntries(forkChatId, userId);
+    if (inherited) {
+      info(`fork adoption: inherited codex from ${ancestorChatId.slice(0, 8)} into ${forkChatId.slice(0, 8)}`);
+    }
+    await markCodexAdopted(forkChatId, userId);
+    return true;
+  } catch (err) {
+    warn(`fork codex adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
+    forkAnomalyCb?.(userId, `Memoria couldn't carry the codex into this fork and will retry: ${shortErrorText(err)}`);
+    return false;
+  }
+}
+async function markShelfAdopted(forkChatId, userId) {
+  await withChatMetaLock(userId, forkChatId, async () => {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat)
+      return;
+    const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
+    if (md[FORK_ADOPTED_FLAG] === forkChatId)
+      return;
+    md[FORK_ADOPTED_FLAG] = forkChatId;
+    await spindle.chats.update(forkChatId, { metadata: md }, userId);
+  });
+}
+async function markCodexAdopted(forkChatId, userId) {
+  await withChatMetaLock(userId, forkChatId, async () => {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat)
+      throw new Error("fork chat vanished while recording codex adoption");
+    const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
+    if (md[CODEX_ADOPTED_FLAG] === forkChatId)
+      return;
+    md[CODEX_ADOPTED_FLAG] = forkChatId;
+    await spindle.chats.update(forkChatId, { metadata: md }, userId);
+  });
+}
+async function findAncestorBook(startChatId, userId) {
+  const seen = new Set;
+  let cur = startChatId;
+  let hops = 0;
+  while (cur && hops < MAX_ANCESTRY_HOPS) {
+    const chatId = cur;
+    if (seen.has(chatId))
+      break;
+    seen.add(chatId);
+    hops++;
+    let bookId;
+    try {
+      bookId = await findBookForChat(chatId, userId);
+    } catch {
+      return "fault";
+    }
+    if (bookId)
+      return { chatId, bookId };
+    let chat;
+    try {
+      chat = await spindle.chats.get(chatId, userId);
+    } catch {
+      return "fault";
+    }
+    const meta = chat && chat.metadata && typeof chat.metadata === "object" ? chat.metadata : null;
+    cur = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
+  }
+  return null;
+}
+async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId) {
+  const parentEntries = await listLmbEntries(parentChatId, userId);
+  const [forkMsgs, inheritedIds] = await Promise.all([
+    spindle.chat.getMessages(forkChatId),
+    inheritedMessageIds(parentChatId, forkChatId, userId)
+  ]);
+  const forkIdxById = new Map(forkMsgs.map((m) => [m.id, m.index_in_chat]));
+  const remap = (msgIds) => {
+    const ids = [];
+    let first = Number.POSITIVE_INFINITY;
+    let last = -1;
+    for (const id of msgIds) {
+      const forkId = inheritedIds.get(id);
+      if (forkId === undefined)
+        continue;
+      const idx = forkIdxById.get(forkId);
+      if (idx === undefined)
+        continue;
+      ids.push(forkId);
+      if (idx < first)
+        first = idx;
+      if (idx > last)
+        last = idx;
+    }
+    return {
+      ids,
+      first: first === Number.POSITIVE_INFINITY ? undefined : first,
+      last: last === -1 ? undefined : last
+    };
+  };
+  const forkTransform = (entry, ctx) => {
+    if (entry.meta.ghost) {
+      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, mode: "ghost", outcome: "skipped" });
+      return null;
+    }
+    if (entry.meta.isRoot) {
+      return {
+        msgIds: entry.meta.msgIds.slice(),
+        firstMsgIdx: entry.meta.firstMsgIdx,
+        lastMsgIdx: entry.meta.lastMsgIdx,
+        extra: { chatId: forkChatId }
+      };
+    }
+    const { ids, first, last } = remap(entry.meta.msgIds);
+    if (ids.length !== entry.meta.msgIds.length) {
+      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, outcome: "skipped", reason: "missing", numbers: { sourceCount: entry.meta.msgIds.length, selected: ids.length } });
+      return null;
+    }
+    if (entry.meta.tier === 1) {
+      if (ids.length === 0)
+        return null;
+      return { msgIds: ids, firstMsgIdx: first, lastMsgIdx: last, extra: { chatId: forkChatId } };
+    }
+    const survived = (entry.meta.sourceChapterEntryIds ?? []).map((oldId) => ctx.idMap.get(oldId)).filter((x) => typeof x === "string");
+    if (survived.length !== (entry.meta.sourceChapterEntryIds ?? []).length)
+      return null;
+    if (ids.length === 0 && survived.length === 0)
+      return null;
+    let firstIdx = first;
+    let lastIdx = last;
+    if (firstIdx === undefined || lastIdx === undefined) {
+      for (const oldId of entry.meta.sourceChapterEntryIds ?? []) {
+        const cm = ctx.clonedMeta.get(oldId);
+        if (!cm)
+          continue;
+        if (cm.firstMsgIdx !== undefined)
+          firstIdx = firstIdx === undefined ? cm.firstMsgIdx : Math.min(firstIdx, cm.firstMsgIdx);
+        if (cm.lastMsgIdx !== undefined)
+          lastIdx = lastIdx === undefined ? cm.lastMsgIdx : Math.max(lastIdx, cm.lastMsgIdx);
+      }
+    }
+    return { msgIds: ids, firstMsgIdx: firstIdx, lastMsgIdx: lastIdx, extra: { chatId: forkChatId } };
+  };
+  const newBook = await spindle.world_books.create({
+    name: bookNameFor(forkChatName, forkChatId),
+    description: "Memoria's shelf for this chat. Chapters and arcs live here.",
+    metadata: {
+      lumibooks_chat_id: forkChatId,
+      lumibooks_created_at: Date.now(),
+      lumibooks_forked_from: parentChatId
+    }
+  }, userId);
+  let cloned = 0;
+  try {
+    const idMap = await copyLmbEntries(newBook.id, parentEntries, userId, forkTransform);
+    cloned = idMap.size;
+    recordDiagnostic(userId, {
+      event: "fork",
+      chatId: forkChatId,
+      relatedChatId: parentChatId,
+      outcome: "success",
+      numbers: { sourceCount: parentEntries.length, selected: cloned },
+      messages: forkMsgs.map((m, position) => ({ id: m.id, index: m.index_in_chat, position })),
+      entries: parentEntries.flatMap((e) => {
+        const id = idMap.get(e.raw.id);
+        return id ? [{ id, tier: e.meta.tier, sources: [e.raw.id], sourceEntryCount: 1, sourceCount: e.meta.msgIds.length }] : [];
+      })
+    });
+    await rebindForkShelf(forkChatId, newBook.id, userId);
+  } catch (err) {
+    await spindle.world_books.delete(newBook.id, userId).catch(() => {});
+    throw err;
+  }
+  invalidateBookCache(userId, forkChatId);
+  try {
+    const settings = await loadSettings(userId);
+    const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+    const desiredHidden = profile ? profile.hideCoveredMessages : true;
+    await resyncVisibility(forkChatId, userId, desiredHidden);
+  } catch (err) {
+    warn(`fork adoption: visibility resync failed: ${describeError(err)}`);
+  }
+  info(`adopted fork ${forkChatId.slice(0, 8)} from ${parentChatId.slice(0, 8)} (${cloned} entries cloned)`);
+}
+async function rebindForkShelf(forkChatId, newBookId, userId) {
+  await withChatMetaLock(userId, forkChatId, async () => {
+    const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
+    if (!chat)
+      return;
+    const metadata = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
+    const inheritedBookId = typeof metadata["lumibooks_book_id"] === "string" ? metadata["lumibooks_book_id"] : null;
+    const existing = Array.isArray(metadata["chat_world_book_ids"]) ? metadata["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
+    const nextBookIds = existing.filter((id) => id !== inheritedBookId && id !== newBookId);
+    nextBookIds.push(newBookId);
+    metadata["chat_world_book_ids"] = nextBookIds;
+    metadata["lumibooks_book_id"] = newBookId;
+    metadata[FORK_ADOPTED_FLAG] = forkChatId;
+    await spindle.chats.update(forkChatId, { metadata }, userId);
+  });
+}
+
+// src/backend/summary-matching.ts
+var encoder2 = new TextEncoder;
+async function sha256(text) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder2.encode(text)));
+  return Array.from(bytes, (n) => n.toString(16).padStart(2, "0")).join("");
+}
+async function hashRawMessages(messages, progress) {
+  const hashes = [];
+  for (let offset = 0;offset < messages.length; offset += 64) {
+    hashes.push(...await Promise.all(messages.slice(offset, offset + 64).map((m) => sha256(JSON.stringify([m.role, m.content])))));
+    progress?.(hashes.length);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return hashes;
+}
+async function makeFingerprint(messages) {
+  return { version: 1, algorithm: "sha256-role-content-v1", contentHash: await sha256(JSON.stringify(messages)), messages };
+}
+async function parseFingerprint(raw) {
+  if (raw === undefined)
+    return null;
+  const v = raw;
+  if (!v || v.version !== 1 || v.algorithm !== "sha256-role-content-v1" || !Array.isArray(v.messages) || v.messages.length > 1e6 || !/^[a-f0-9]{64}$/.test(v.contentHash))
+    throw new Error("Invalid summary message fingerprint");
+  let previous = -1;
+  for (const m of v.messages) {
+    if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash))
+      throw new Error("Invalid summary message fingerprint");
+    previous = m.index;
+  }
+  if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash)
+    throw new Error("The summary message fingerprint is damaged");
+  return v;
+}
+function exactMessageMatch(source, hashes) {
+  return source.messages.every((m) => hashes[m.index] === m.hash) ? source.messages.map((m) => m.index) : null;
+}
+function automaticMessageMatch(source, hashes) {
+  const first = [], last = [];
+  let cursor = 0;
+  for (const m of source.messages) {
+    while (cursor < hashes.length && hashes[cursor] !== m.hash)
+      cursor++;
+    if (cursor === hashes.length)
+      return null;
+    first.push(cursor++);
+  }
+  cursor = hashes.length - 1;
+  for (let i = source.messages.length - 1;i >= 0; i--) {
+    while (cursor >= 0 && hashes[cursor] !== source.messages[i].hash)
+      cursor--;
+    if (cursor < 0)
+      return null;
+    last[i] = cursor--;
+  }
+  return first.every((at, i) => at === last[i]) ? first : null;
+}
+
+// src/backend/summary-backup.ts
+var EXPORT_KEY = "lumibooks_summary";
+function summaryLorebook(entries, name, fingerprint, coverage) {
+  return {
+    name,
+    description: "LumiBooks summaries. Import through Books to restore message coverage or use as inherited roots.",
+    ...fingerprint ? { extensions: { [EXPORT_KEY]: fingerprint } } : {},
+    entries: Object.fromEntries(entries.filter((e) => !e.meta.ghost).map((e, i) => [i, {
+      uid: i,
+      key: e.raw.key ?? [],
+      keysecondary: [],
+      content: e.raw.content,
+      comment: e.raw.comment || e.meta.title || `Summary ${i + 1}`,
+      constant: true,
+      disable: false,
+      position: 0,
+      order: i,
+      displayIndex: i,
+      extensions: { [EXPORT_KEY]: { tier: e.meta.tier, ...coverage ? { messageIndices: coverage.get(e.raw.id) ?? [] } : {} } }
+    }]))
+  };
+}
+async function exportSummaryLorebook(chatId, userId, progress) {
+  const coverage = await buildCoverage(chatId, userId);
+  const entries = coverage.activeEntries.slice().sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  if (!entries.length)
+    throw new Error("There are no active summaries to export");
+  progress?.("Fetching raw chat messages\u2026");
+  const messages = await spindle.chat.getMessages(chatId);
+  const positions = new Map(messages.map((m, i) => [m.id, i]));
+  const byEntry = new Map;
+  for (const e of entries) {
+    const ids = new Set(e.meta.msgIds);
+    if ([...ids].some((id) => !positions.has(id)))
+      continue;
+    byEntry.set(e.raw.id, [...ids].flatMap((id) => positions.has(id) ? [positions.get(id)] : []).sort((a, b) => a - b));
+  }
+  for (const [messageId, entryId] of coverage.coveredBy) {
+    const at = positions.get(messageId), indices = byEntry.get(entryId);
+    if (at !== undefined && indices)
+      indices.push(at);
+  }
+  for (const [id, indices] of byEntry)
+    byEntry.set(id, [...new Set(indices)].sort((a, b) => a - b));
+  const indices = [...new Set([...byEntry.values()].flat())].sort((a, b) => a - b);
+  const hashes = await hashRawMessages(indices.map((i) => messages[i]), (done) => progress?.(`Hashing raw messages\u2026 ${done} / ${indices.length}`));
+  const fingerprint = await makeFingerprint(indices.map((index, i) => ({ index, hash: hashes[i] })));
+  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`, fingerprint, byEntry);
+}
+function parseSummaryLorebook(raw) {
+  if (!raw || typeof raw !== "object")
+    throw new Error("Choose a lorebook JSON file with entries");
+  const entries = raw.entries;
+  if (!entries || typeof entries !== "object")
+    throw new Error("The lorebook has no entries");
+  const rows = Array.isArray(entries) ? entries : Object.values(entries);
+  if (rows.length > 1e4)
+    throw new Error("The lorebook has more than 10,000 entries");
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object")
+      throw new Error("Invalid lorebook entry");
+    const v = row;
+    if (v.disable === true || v.disabled === true || v.enabled === false)
+      continue;
+    if (typeof v.content !== "string")
+      throw new Error("Every lorebook entry needs text content");
+    if (!v.content.trim())
+      continue;
+    const tier = v.extensions?.[EXPORT_KEY]?.tier;
+    const messageIndices = v.extensions?.[EXPORT_KEY]?.messageIndices;
+    if (messageIndices !== undefined && (!Array.isArray(messageIndices) || messageIndices.length > 1e6 || messageIndices.some((n) => !Number.isSafeInteger(n) || n < 0)))
+      throw new Error("Invalid summary coverage indices");
+    const keys = v.key ?? v.keys;
+    out.push({
+      content: v.content,
+      comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : "Imported summary",
+      keys: Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : [],
+      tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1,
+      ...messageIndices !== undefined ? { messageIndices: [...new Set(messageIndices)].sort((a, b) => a - b) } : {}
+    });
+  }
+  if (!out.length)
+    throw new Error("The lorebook has no enabled summaries");
+  return out;
+}
+async function readSummaryImport(raw) {
+  const rows = parseSummaryLorebook(raw);
+  const fingerprint = await parseFingerprint(raw.extensions?.[EXPORT_KEY]);
+  if (fingerprint) {
+    const indices = new Set(fingerprint.messages.map((m) => m.index));
+    for (const row of rows) {
+      if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i)))
+        throw new Error("The summary coverage does not match its fingerprint");
+    }
+    const used = new Set(rows.flatMap((r) => r.messageIndices));
+    return { rows, fingerprint: await makeFingerprint(fingerprint.messages.filter((m) => used.has(m.index))) };
+  }
+  return { rows, fingerprint };
+}
+async function saveImportedSummaries(chatId, userId, rows, links) {
+  await requireForkShelf(chatId, userId);
+  return withCommitMutex(userId, chatId, () => commitImportedSummaries(chatId, userId, rows, links));
+}
+async function commitImportedSummaries(chatId, userId, rows, links) {
+  if (links) {
+    const messages = links.messages;
+    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i])))
+      throw new Error("Invalid destination coverage");
+  }
+  const existing = await listLmbEntries(chatId, userId, true);
+  if (links?.indices.some((indices) => indices.length)) {
+    const coverage = await buildCoverage(chatId, userId, existing, true);
+    const current = new Map((await spindle.chat.getMessages(chatId)).map((m) => [m.id, m]));
+    for (const index of new Set(links.indices.flat())) {
+      const source = links.messages[index], live = current.get(source.id);
+      if (coverage.coveredBy.has(source.id))
+        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+      if (!live || live.role !== source.role || live.content !== source.content)
+        throw new Error("The chat changed while preparing the import. Choose the file again.");
+    }
+    links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
+  }
+  const before = Math.min(0, ...existing.filter((e) => e.meta.isRoot).map((e) => e.meta.firstMsgIdx ?? 0));
+  const book = await ensureBookForChat(chatId, userId);
+  const created = [];
+  try {
+    for (const [i, row] of rows.entries()) {
+      const at = before - rows.length + i;
+      const indices = links?.indices[i] ?? [];
+      const isRoot = indices.length === 0;
+      const comment = isRoot ? row.comment.startsWith("[Root]") ? row.comment : `[Root] ${row.comment}` : row.comment.replace(/^\[Root\]\s*/, "");
+      const entry = await createChapterEntry(book.id, {
+        tier: row.tier,
+        chatId,
+        msgIds: indices.map((index) => links.messages[index].id),
+        sourceChapterEntryIds: [],
+        isRoot,
+        firstMsgIdx: isRoot ? at : links.messages[indices[0]].index_in_chat,
+        lastMsgIdx: isRoot ? at : links.messages[indices.at(-1)].index_in_chat,
+        tokenCountInput: 0,
+        tokenCountOutput: approximateTokensFromChars(row.content.length),
+        model: "",
+        connectionId: "",
+        createdAt: Date.now(),
+        title: row.comment
+      }, row.content, comment, userId, row.keys, true);
+      created.push(entry.id);
+    }
+  } catch (err) {
+    const rollback = await Promise.allSettled(created.map((id) => deleteEntry(id, userId)));
+    if (rollback.some((r) => r.status === "rejected"))
+      throw new Error("Import failed and some imported summaries could not be removed; inspect Books before retrying", { cause: err });
+    throw err;
+  } finally {
+    invalidateBookCache(userId, chatId);
+  }
+  return created.length;
+}
+
+// src/backend/summary-transfer.ts
+var transfers = new Map;
+var key2 = (userId, chatId) => JSON.stringify([userId, chatId]);
+function getSummaryTransfer(userId, chatId) {
+  return transfers.get(key2(userId, chatId))?.status ?? null;
+}
+function update(userId, transfer, stage, text, extra = {}) {
+  transfer.status = { ...transfer.status, ...extra, stage, text };
+  try {
+    send({ type: "summary_transfer_status", status: transfer.status }, userId);
+  } catch (err) {
+    warn(`summary transfer progress delivery failed: ${describeError(err)}`);
+  }
+}
+async function runSummaryTransfer(userId, chatId, request) {
+  const k = key2(userId, chatId);
+  let transfer = transfers.get(k);
+  if (request.type === "resolve") {
+    if (!transfer || transfer.status.id !== request.id)
+      throw new Error("This import is no longer available. Choose the file again.");
+    if (transfer.running)
+      return false;
+    if (request.choice === "cancel") {
+      transfers.delete(k);
+      send({ type: "summary_transfer_status", status: { ...transfer.status, stage: "cancelled", text: "Import cancelled" } }, userId);
+      return false;
+    }
+    if (!transfer.rows)
+      return false;
+  } else {
+    if (transfer?.running || transfer?.rows) {
+      send({ type: "summary_transfer_status", status: transfer.status }, userId);
+      return false;
+    }
+    transfer = { status: { id: crypto.randomUUID(), chatId, stage: "working", text: "Reading summaries\u2026" }, running: false };
+    if (transfers.size >= 200) {
+      for (const [oldKey, old] of transfers) {
+        if (!old.running && !old.rows)
+          transfers.delete(oldKey);
+        if (transfers.size < 200)
+          break;
+      }
+    }
+    transfers.set(k, transfer);
+  }
+  const t = transfer;
+  t.running = true;
+  let lastProgress = 0;
+  const progress = (text) => {
+    if (Date.now() - lastProgress < 150)
+      return;
+    lastProgress = Date.now();
+    update(userId, t, "working", text);
+  };
+  update(userId, t, "working", request.type === "export" ? "Preparing summary export\u2026" : "Reading raw chat messages\u2026");
+  try {
+    if (request.type === "export") {
+      const data = await exportSummaryLorebook(chatId, userId, progress);
+      send({ type: "summary_export_data", chatId, filename: `lumibooks-summaries-${chatId.slice(0, 8)}.json`, content: JSON.stringify(data, null, 2) }, userId);
+      update(userId, t, "done", "Summary export ready");
+      return false;
+    }
+    if (request.type === "import") {
+      const parsed = await readSummaryImport(request.raw);
+      t.rows = parsed.rows;
+      t.fingerprint = parsed.fingerprint;
+    }
+    const rows = t.rows;
+    const messages = await spindle.chat.getMessages(chatId);
+    const source = t.fingerprint;
+    t.status = { ...t.status, messageCount: messages.length, sourceCount: source?.messages.length ?? 0 };
+    const manual = (text = "Up until which message should these summaries cover?") => {
+      update(userId, t, "manual", text);
+      return false;
+    };
+    if (request.type === "resolve" && request.choice === "specify")
+      return manual();
+    let indices = rows.map(() => []);
+    let importedRows = rows;
+    if (request.type === "resolve" && request.choice === "manual") {
+      if (!Number.isSafeInteger(request.through) || request.through < 0 || request.through > messages.length)
+        return manual("Enter a whole message number from 0 to " + messages.length + ".");
+      if (request.through > 0) {
+        importedRows = [{
+          content: rows.map((r) => r.content).join(`
+
+`),
+          comment: rows.length === 1 ? rows[0].comment : "Imported summaries",
+          keys: [...new Set(rows.flatMap((r) => r.keys))],
+          tier: Math.max(...rows.map((r) => r.tier))
+        }];
+        indices = [Array.from({ length: request.through }, (_, i) => i)];
+      }
+    } else if (source?.messages.length) {
+      if (messages.length < source.messages.length)
+        return manual();
+      const relocate = request.type === "resolve" && request.choice === "match";
+      const selected = relocate ? messages : source.messages.flatMap((m) => messages[m.index] ? [messages[m.index]] : []);
+      const computed = await hashRawMessages(selected, (done) => progress(`Comparing raw messages\u2026 ${done} / ${selected.length}`));
+      const hashes = relocate ? computed : new Array(messages.length);
+      if (!relocate && computed.length === source.messages.length)
+        source.messages.forEach((m, i) => {
+          hashes[m.index] = computed[i];
+        });
+      const matched = exactMessageMatch(source, hashes) ?? (relocate ? automaticMessageMatch(source, hashes) : null);
+      if (!matched) {
+        if (request.type === "resolve" && request.choice === "match")
+          return manual("Automatic matching was incomplete or ambiguous. Up until which message should these summaries cover?");
+        update(userId, t, "mismatch", "The content of this chat is different to the one encoded by the imported summary. Attempt automatic matching?");
+        return false;
+      }
+      const mapping = new Map(source.messages.map((m, i) => [m.index, matched[i]]));
+      indices = rows.map((r) => (r.messageIndices ?? []).map((i) => mapping.get(i)));
+    }
+    const linkedIds = new Set(indices.flat().map((i) => messages[i].id));
+    if (linkedIds.size) {
+      const coverage = await buildCoverage(chatId, userId);
+      if ([...linkedIds].some((id) => coverage.coveredBy.has(id)))
+        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+      const current = await spindle.chat.getMessages(chatId);
+      for (const at of new Set(indices.flat())) {
+        const before = messages[at], now = current[at];
+        if (!now || now.id !== before.id || now.role !== before.role || now.content !== before.content) {
+          t.status.messageCount = current.length;
+          return manual("The chat changed while preparing the import. Up until which message should these summaries cover?");
+        }
+      }
+    }
+    update(userId, t, "working", "Saving imported summaries\u2026");
+    await saveImportedSummaries(chatId, userId, importedRows, { messages, indices });
+    t.rows = undefined;
+    t.fingerprint = undefined;
+    update(userId, t, "done", `Imported ${rows.length} summaries${linkedIds.size ? ` covering ${linkedIds.size} messages` : " as root memories"}`);
+    return true;
+  } catch (err) {
+    update(userId, t, "error", describeError(err));
+    return false;
+  } finally {
+    t.running = false;
+  }
 }
 
 // src/backend/injection.ts

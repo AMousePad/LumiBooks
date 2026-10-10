@@ -8,7 +8,7 @@ import { saveSettings } from "./storage";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { syncCodexProfiles } from "./codex/sync";
 import { saveImportedSummaries } from "./summary-backup";
-import { getLastFailure, registerPipelineCallbacks, resumeSummaryBinding } from "./pipeline";
+import { createChapterAuto, createChapterFromRange, getLastFailure, registerPipelineCallbacks, resumeSummaryBinding } from "./pipeline";
 import { buildState } from "./state";
 
 const original = (globalThis as any).spindle;
@@ -77,6 +77,43 @@ function summary(id: string, tier: number, indexes: number[], sources: string[] 
   const meta = normalizeEntryMeta({ tier, chatId: parent, msgIds: indexes.map((i) => `${parent}-m${i}`), sourceChapterEntryIds: sources, firstMsgIdx: indexes[0], lastMsgIdx: indexes.at(-1), ...extra })!;
   entries.push({ id, world_book_id: chats.get(parent).metadata.lumibooks_book_id, content: id, comment: id, disabled: !!extra.ghost, constant: true, extensions: { lumibooks: meta } });
 }
+
+for (const action of ["file", "selection", "import"] as const) test(`${action} cannot create a new shelf while fork inheritance awaits retry`, async () => {
+  summary("inherited-chapter", 1, [0, 1]);
+  const host = (globalThis as any).spindle;
+  const create = host.world_books.entries.create;
+  host.world_books.entries.create = async () => { throw new Error("copy unavailable"); };
+  await ensureForkAdoption(child, user);
+  expect(await forkShelfPending(child, user)).toBe(true);
+  host.world_books.entries.create = create;
+  let generations = 0;
+  host.connections = { async list() { return [{ id: "conn", model: "test", is_default: true }]; } };
+  host.tokens = { async countText() { return { total_tokens: 10 }; } };
+  host.generate = { async *rawStream() { generations++; yield { type: "done", content: JSON.stringify({ title: "Summary", content: "New summary", keywords: [] }) }; } };
+  host.rpcPool = { sync() {} };
+  registerPipelineCallbacks({ onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {} });
+  const p = { ...profile, windowValue: 2, lagValue: 0, retryCount: 0 };
+  const settings = { ...DEFAULT_SETTINGS, profiles: [p], activeProfileId: p.id };
+  const before = structuredClone(entries);
+  const work = () => action === "file" ? createChapterAuto(child, p, settings, user, false, false, true)
+    : action === "selection" ? createChapterFromRange(child, messages.get(child)!.slice(0, 2).map((m) => m.id), p, settings, user)
+    : saveImportedSummaries(child, user, [{ tier: 1, content: "Imported root", comment: "Import", keys: [] }]);
+  await expect(work()).rejects.toThrow("Fork inheritance");
+  expect(generations).toBe(0);
+  expect(entries).toEqual(before);
+  expect(await forkShelfPending(child, user)).toBe(true);
+  expect([...books.values()].some((b) => b.metadata?.lumibooks_chat_id === child)).toBe(false);
+  const now = Date.now, later = now() + 31_000;
+  Date.now = () => later;
+  try {
+    // A selection of already inherited messages must not be duplicated, but
+    // the inheritance retry must succeed for every manual entry point.
+    await work();
+  } finally { Date.now = now; }
+  expect(await forkShelfPending(child, user)).toBe(false);
+  expect((await listLmbEntries(child, user)).some((e) => e.raw.content === "inherited-chapter")).toBe(true);
+  expect([...books.values()].filter((b) => b.metadata?.lumibooks_chat_id === child)).toHaveLength(1);
+});
 
 test("delayed fork adoption never maps new fork turns to abandoned parent turns at the same indexes", async () => {
   summary("early", 1, [0, 1]);
