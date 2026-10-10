@@ -3241,7 +3241,6 @@ function migrateSettings(userId, raw, fromVersion) {
   if (running)
     return running;
   const p = (async () => {
-    const started = Date.now();
     const migratedPresets = [];
     const flipped = {
       ...raw,
@@ -3283,9 +3282,7 @@ function migrateSettings(userId, raw, fromVersion) {
     } catch (err) {
       warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
     }
-    const cur = settingsCache.get(userId);
-    if (!cur || cur.at <= started)
-      cacheSettings(userId, normalized);
+    cacheSettings(userId, normalized);
     return normalized;
   })().finally(() => migrationInflight.delete(userId));
   migrationInflight.set(userId, p);
@@ -3295,7 +3292,12 @@ async function loadSettings(userId) {
   const cached = settingsCache.get(userId);
   if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
     return cached.data;
-  const started = Date.now();
+  return withSettingsLock(userId, () => loadSettingsUnlocked(userId));
+}
+async function loadSettingsUnlocked(userId) {
+  const cached = settingsCache.get(userId);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
+    return cached.data;
   const exists = await spindle.userStorage.exists(SETTINGS_PATH, userId);
   let raw = null;
   if (exists) {
@@ -3316,14 +3318,12 @@ async function loadSettings(userId) {
     return migrateSettings(userId, raw, diskVersion);
   }
   const normalized = normalizeSettings(raw);
-  const cur = settingsCache.get(userId);
-  if (!cur || cur.at <= started)
-    cacheSettings(userId, normalized);
+  cacheSettings(userId, normalized);
   return normalized;
 }
 async function patchSettings(userId, patch) {
   return withSettingsLock(userId, async () => {
-    const current = await loadSettings(userId);
+    const current = await loadSettingsUnlocked(userId);
     const next = { ...current, ...patch };
     const normalized = normalizeSettings(next);
     await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
@@ -3333,7 +3333,7 @@ async function patchSettings(userId, patch) {
 }
 async function mutateSettings(userId, fn) {
   return withSettingsLock(userId, async () => {
-    const current = await loadSettings(userId);
+    const current = await loadSettingsUnlocked(userId);
     const next = await fn(current);
     const normalized = normalizeSettings(next);
     await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });

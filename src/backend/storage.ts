@@ -27,14 +27,12 @@ const migrationInflight = new Map<string, Promise<LMBSettings>>();
 
 /** One-time default flips for older settings files (v4: thorough + extra
  * context on; v5: codex window 30 -> 20; v6: codex tool calls off; v7: the
- * legacy codexDirectivesOverride becomes a custom "codex" preset). Lock-free:
- * mutateSettings calls loadSettings while holding the settings lock, taking
- * it here would deadlock. */
+ * legacy codexDirectivesOverride becomes a custom "codex" preset). The caller
+ * already holds the settings lock, including when loading triggers migration. */
 function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion: number): Promise<LMBSettings> {
   const running = migrationInflight.get(userId);
   if (running) return running;
   const p = (async () => {
-    const started = Date.now();
     const migratedPresets: LMBSettings["customPresets"] = [];
     const flipped: Partial<LMBSettings> = {
       ...raw,
@@ -80,10 +78,7 @@ function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion:
       // next uncached load retries this write.
       warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
     }
-    // Same freshness guard as loadSettings: a locked save that landed while
-    // this ran must not be shadowed by the migration payload.
-    const cur = settingsCache.get(userId);
-    if (!cur || cur.at <= started) cacheSettings(userId, normalized);
+    cacheSettings(userId, normalized);
     return normalized;
   })().finally(() => migrationInflight.delete(userId));
   migrationInflight.set(userId, p);
@@ -93,7 +88,14 @@ function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion:
 export async function loadSettings(userId: string): Promise<LMBSettings> {
   const cached = settingsCache.get(userId);
   if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS) return cached.data;
-  const started = Date.now();
+  return withSettingsLock(userId, () => loadSettingsUnlocked(userId));
+}
+
+/** Disk reads can migrate and write. Serialize them with saves so an older
+ * read or migration cannot overwrite a newly saved profile or logs opt-out. */
+async function loadSettingsUnlocked(userId: string): Promise<LMBSettings> {
+  const cached = settingsCache.get(userId);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS) return cached.data;
   // Transport faults propagate: a locked mutation reading defaults here would
   // persist them over the user's file. Corrupt JSON is deterministic and
   // falls back to defaults so the next save can recover the install.
@@ -121,8 +123,7 @@ export async function loadSettings(userId: string): Promise<LMBSettings> {
     return migrateSettings(userId, raw, diskVersion);
   }
   const normalized = normalizeSettings(raw);
-  const cur = settingsCache.get(userId);
-  if (!cur || cur.at <= started) cacheSettings(userId, normalized);
+  cacheSettings(userId, normalized);
   return normalized;
 }
 
@@ -137,7 +138,7 @@ export async function saveSettings(userId: string, next: LMBSettings): Promise<L
 
 export async function patchSettings(userId: string, patch: Partial<LMBSettings>): Promise<LMBSettings> {
   return withSettingsLock(userId, async () => {
-    const current = await loadSettings(userId);
+    const current = await loadSettingsUnlocked(userId);
     const next = { ...current, ...patch };
     const normalized = normalizeSettings(next);
     await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
@@ -151,7 +152,7 @@ export async function mutateSettings(
   fn: (current: LMBSettings) => LMBSettings | Promise<LMBSettings>,
 ): Promise<LMBSettings> {
   return withSettingsLock(userId, async () => {
-    const current = await loadSettings(userId);
+    const current = await loadSettingsUnlocked(userId);
     const next = await fn(current);
     const normalized = normalizeSettings(next);
     await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
