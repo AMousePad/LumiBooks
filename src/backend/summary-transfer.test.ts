@@ -51,6 +51,16 @@ test("mismatched chat waits without writes, then uniquely relocates messages lea
   expect(imported()[0].extensions.lumibooks.msgIds).toEqual(["target-0", "target-1"]);
 });
 
+test("overlapping coverage inside one imported file is rejected before any writes", async () => {
+  const raw = await exportSummaryLorebook("source", user);
+  Object.values(raw.entries)[1]!.extensions.lumibooks_summary.messageIndices.push(1);
+  expect(await runSummaryTransfer(user, "target", { type: "import", raw })).toBe(false);
+  expect(status().stage).toBe("error");
+  expect(status().text).toContain("overlapping");
+  expect(creates).toBe(0);
+  expect(imported()).toHaveLength(0);
+});
+
 test("short or edited chats ask for an endpoint; manual import keeps the bundle atomic", async () => {
   const raw = await exportSummaryLorebook("source", user);
   chats.set("target", chats.get("target")!.slice(0, 2));

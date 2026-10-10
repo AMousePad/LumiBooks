@@ -8312,6 +8312,15 @@ async function commitImportedSummaries(chatId, userId, rows, links) {
     const messages = links.messages;
     if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i])))
       throw new Error("Invalid destination coverage");
+    const claimed = new Set;
+    for (const indices of links.indices) {
+      for (const index of new Set(indices)) {
+        const id = messages[index].id;
+        if (claimed.has(id))
+          throw new Error("This import contains overlapping summary coverage. Resolve the overlapping entries before importing.");
+        claimed.add(id);
+      }
+    }
   }
   const existing = await listLmbEntries(chatId, userId, true);
   if (links?.indices.some((indices) => indices.length)) {
