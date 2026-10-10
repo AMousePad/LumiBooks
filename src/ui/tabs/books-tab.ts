@@ -358,15 +358,16 @@ function renderEntryDetail(
   // Regenerating a ghost would commit a real chapter (and hide its messages)
   // ahead of the injection lag, and releasing one orphans a disabled entry.
   // Ghosts re-summarize on their own when their sources change: Edit + Delete only.
+  const compacted = !view.active && !!view.meta.supersededByEntryId;
   if (!view.isGhost) {
     actions.append(
       makeButton("Regenerate", async () => {
-        const ok = await confirmDelete(ctx, "Regenerate?", "Memoria will delete this entry and resummarize the same range. The old summary text will be lost.");
+        const ok = await confirmDelete(ctx, "Regenerate?", "Memoria will resummarize the same sources and replace this entry after saving succeeds.");
         if (!ok || !chatId) return;
         send({ type: "regenerate_entry", chatId, entryId: view.entryId });
-      }, { small: true, disabled: !view.active || (view.isRoot && kind === "chapter"), title: "Delete and resummarize the same range" }),
+      }, { small: true, disabled: !view.active || (view.isRoot && kind === "chapter"), title: "Resummarize the same sources" }),
       makeButton("Release", async () => {
-        const freed = kind === "chapter"
+        const freed = compacted ? "Higher-tier memories keep covering these sources." : kind === "chapter"
           ? "Its messages return to the prompt unless a higher tier still covers them."
           : kind === "arc"
             ? "Its chapters revive and keep covering those messages."
@@ -381,6 +382,7 @@ function renderEntryDetail(
     makeButton("Delete", async () => {
       const ok = await confirmDelete(ctx, "Delete?", view.isGhost
         ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass."
+        : compacted ? "Higher-tier memories keep covering these sources."
         : kind === "chapter"
           ? "Memoria will let those messages back into the prompt."
           : kind === "arc"

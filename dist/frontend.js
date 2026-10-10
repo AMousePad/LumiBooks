@@ -5728,14 +5728,15 @@ function renderEntryDetail(view, kind, state, ctx, send) {
       send({ type: "update_entry", chatId, entryId: view.entryId, patch });
     });
   }, { small: true, title: "Edit this entry's label and content" }));
+  const compacted = !view.active && !!view.meta.supersededByEntryId;
   if (!view.isGhost) {
     actions.append(makeButton("Regenerate", async () => {
-      const ok = await confirmDelete(ctx, "Regenerate?", "Memoria will delete this entry and resummarize the same range. The old summary text will be lost.");
+      const ok = await confirmDelete(ctx, "Regenerate?", "Memoria will resummarize the same sources and replace this entry after saving succeeds.");
       if (!ok || !chatId)
         return;
       send({ type: "regenerate_entry", chatId, entryId: view.entryId });
-    }, { small: true, disabled: !view.active || view.isRoot && kind === "chapter", title: "Delete and resummarize the same range" }), makeButton("Release", async () => {
-      const freed = kind === "chapter" ? "Its messages return to the prompt unless a higher tier still covers them." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.";
+    }, { small: true, disabled: !view.active || view.isRoot && kind === "chapter", title: "Resummarize the same sources" }), makeButton("Release", async () => {
+      const freed = compacted ? "Higher-tier memories keep covering these sources." : kind === "chapter" ? "Its messages return to the prompt unless a higher tier still covers them." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.";
       const ok = await confirmDelete(ctx, "Release to lorebook?", `Memoria will hand this entry to your regular lorebook (prefixed with [orphaned]) and stop managing it. ${freed}`);
       if (!ok || !chatId)
         return;
@@ -5743,7 +5744,7 @@ function renderEntryDetail(view, kind, state, ctx, send) {
     }, { small: true, title: "Strip the LumiBooks marker so the entry becomes a regular lorebook entry" }));
   }
   actions.append(makeButton("Delete", async () => {
-    const ok = await confirmDelete(ctx, "Delete?", view.isGhost ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass." : kind === "chapter" ? "Memoria will let those messages back into the prompt." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.");
+    const ok = await confirmDelete(ctx, "Delete?", view.isGhost ? "Memoria will drop this ghost chapter. She will re-summarize the span on her next pass." : compacted ? "Higher-tier memories keep covering these sources." : kind === "chapter" ? "Memoria will let those messages back into the prompt." : kind === "arc" ? "Its chapters revive and keep covering those messages." : "Its source summaries revive and keep covering those messages.");
     if (!ok || !chatId)
       return;
     send({ type: "delete_entry", chatId, entryId: view.entryId });
