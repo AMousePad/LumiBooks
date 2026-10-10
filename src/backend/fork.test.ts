@@ -232,6 +232,45 @@ test("forking an empty shelf detaches the parent's book", async () => {
   expect(chats.get(child).metadata.lumibooks_fork_adopted).toBe(child);
 });
 
+for (const operation of [rebaseRoot, rebuildRoot]) test(`${operation.name} rolls back an incomplete copy before retrying`, async () => {
+  summary("chapter-one", 1, [0, 1]);
+  summary("chapter-two", 1, [2, 3]);
+  summary("arc", 2, [0, 1, 2, 3], ["chapter-one", "chapter-two"]);
+  expect(await rebaseRoot(child, parent, user)).toEqual({ ok: true, count: 3 });
+  const before = structuredClone(entries);
+  const api = (globalThis as any).spindle.world_books.entries;
+  const create = api.create;
+  let calls = 0;
+  api.create = async (...args: any[]) => {
+    if (++calls === 2) throw new Error("copy write failed");
+    return create(...args);
+  };
+  await expect(operation(child, parent, user)).rejects.toThrow("copy write failed");
+  expect(entries).toEqual(before);
+  api.create = create;
+  expect(await operation(child, parent, user)).toEqual({ ok: true, count: 3 });
+  expect((await listLmbEntries(child, user)).length).toBe(3);
+  expect(entries.filter((e) => e.world_book_id === chats.get(parent).metadata.lumibooks_book_id))
+    .toEqual(before.filter((e) => e.world_book_id === chats.get(parent).metadata.lumibooks_book_id));
+});
+
+test("an incomplete root copy disables its new entries when rollback deletion fails", async () => {
+  summary("one", 1, [0, 1]); summary("two", 1, [2, 3]);
+  const api = (globalThis as any).spindle.world_books.entries;
+  const create = api.create;
+  let calls = 0;
+  api.create = async (...args: any[]) => {
+    if (++calls === 2) throw new Error("copy failed");
+    return create(...args);
+  };
+  api.delete = async () => { throw new Error("delete failed"); };
+  await expect(rebaseRoot(child, parent, user)).rejects.toThrow("copy failed");
+  const copied = entries.filter((e) => e.extensions.lumibooks.chatId === child);
+  expect(copied).toHaveLength(1);
+  expect(copied[0].disabled).toBe(true);
+  expect(entries.filter((e) => e.extensions.lumibooks.chatId === parent).every((e) => !e.disabled)).toBe(true);
+});
+
 test("higher-tier root adoption, rebuilding and detaching preserve the source", async () => {
   summary("chapter", 1, [0, 1, 2, 3]);
   for (let tier = 2; tier <= 7; tier++) summary(`tier-${tier}`, tier, [0, 1, 2, 3], [tier === 2 ? "chapter" : `tier-${tier - 1}`]);

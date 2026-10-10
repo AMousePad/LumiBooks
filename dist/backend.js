@@ -5384,6 +5384,26 @@ function publishVolumeCreated(userId, event) {
 
 // src/backend/book-copy.ts
 async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
+  const createdIds = [];
+  try {
+    return await copyEntries(targetBookId, sourceEntries, userId, transform, createdIds);
+  } catch (err) {
+    for (const id of createdIds.reverse()) {
+      try {
+        await spindle.world_books.entries.delete(id, userId);
+      } catch (cleanupError) {
+        warn(`copy rollback could not delete an entry: ${describeError(cleanupError)}`);
+        try {
+          await spindle.world_books.entries.update(id, { disabled: true }, userId);
+        } catch (disableError) {
+          warn(`copy rollback could not disable an entry: ${describeError(disableError)}`);
+        }
+      }
+    }
+    throw err;
+  }
+}
+async function copyEntries(targetBookId, sourceEntries, userId, transform, createdIds) {
   const idMap = new Map;
   const clonedMeta = new Map;
   const ctx = { idMap, clonedMeta };
@@ -5402,6 +5422,7 @@ async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
       ...o.extra
     };
     const created = await createClone(targetBookId, ch.raw, meta, userId, o.comment);
+    createdIds.push(created.id);
     idMap.set(ch.raw.id, created.id);
     clonedMeta.set(ch.raw.id, meta);
   }
@@ -5421,6 +5442,7 @@ async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
         ...o.extra
       };
       const created = await createClone(targetBookId, entry.raw, meta, userId, o.comment);
+      createdIds.push(created.id);
       idMap.set(entry.raw.id, created.id);
       clonedMeta.set(entry.raw.id, meta);
     }

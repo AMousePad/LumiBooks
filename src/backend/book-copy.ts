@@ -29,6 +29,31 @@ export async function copyLmbEntries(
   userId: string,
   transform: CopyTransform,
 ): Promise<Map<string, string>> {
+  const createdIds: string[] = [];
+  try {
+    return await copyEntries(targetBookId, sourceEntries, userId, transform, createdIds);
+  } catch (err) {
+    // Rebase copies into an existing book. Undo only entries from this attempt,
+    // so an interrupted copy cannot leave duplicate active roots on retry.
+    for (const id of createdIds.reverse()) {
+      try { await spindle.world_books.entries.delete(id, userId); }
+      catch (cleanupError) {
+        warn(`copy rollback could not delete an entry: ${describeError(cleanupError)}`);
+        try { await spindle.world_books.entries.update(id, { disabled: true }, userId); }
+        catch (disableError) { warn(`copy rollback could not disable an entry: ${describeError(disableError)}`); }
+      }
+    }
+    throw err;
+  }
+}
+
+async function copyEntries(
+  targetBookId: string,
+  sourceEntries: LMBEntry[],
+  userId: string,
+  transform: CopyTransform,
+  createdIds: string[],
+): Promise<Map<string, string>> {
   const idMap = new Map<string, string>();
   const clonedMeta = new Map<string, LMBEntryMeta>();
   const ctx: CopyCtx = { idMap, clonedMeta };
@@ -47,6 +72,7 @@ export async function copyLmbEntries(
       ...o.extra,
     };
     const created = await createClone(targetBookId, ch.raw, meta, userId, o.comment);
+    createdIds.push(created.id);
     idMap.set(ch.raw.id, created.id);
     clonedMeta.set(ch.raw.id, meta);
   }
@@ -70,6 +96,7 @@ export async function copyLmbEntries(
         ...o.extra,
       };
       const created = await createClone(targetBookId, entry.raw, meta, userId, o.comment);
+      createdIds.push(created.id);
       idMap.set(entry.raw.id, created.id);
       clonedMeta.set(entry.raw.id, meta);
     }
