@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { normalizeEntryMeta } from "../shared";
 import { resyncVisibility, unhideCoveredMessages } from "./coverage";
 import { invalidateBookCache } from "./world-book";
+import { removeSummaryEntry } from "./shelf-actions";
 
 const original = (globalThis as any).spindle;
 const chatId = "visibility-chat", userId = "visibility-user", bookId = "visibility-book";
@@ -18,7 +19,10 @@ beforeEach(() => {
       async setMessageHidden(_chat: string, id: string, hidden: boolean) { messages.find((m) => m.id === id).extra.hidden = hidden; },
     },
     chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId } }; } },
-    world_books: { async get() { return book; }, entries: { async list() { return { data: structuredClone(entries), total: entries.length }; } } },
+    world_books: { async get() { return book; }, entries: {
+      async list() { return { data: structuredClone(entries), total: entries.length }; },
+      async delete(id: string) { entries = entries.filter((e) => e.id !== id); },
+    } },
   };
   invalidateBookCache(userId, chatId);
 });
@@ -54,5 +58,25 @@ test("visibility resync ignores stale cached coverage after entries disappear", 
   await resyncVisibility(chatId, userId, true);
   entries = [];
   expect(await resyncVisibility(chatId, userId, true)).toEqual({ unhidden: 2, hidden: 0 });
+  expect(messages.every((m) => !m.extra.hidden)).toBe(true);
+});
+
+test("deleting a chapter during visibility repair cannot leave its raw messages hidden", async () => {
+  messages.forEach((m) => { m.extra.hidden = false; });
+  let entered!: () => void, release!: () => void;
+  const hiding = new Promise<void>((resolve) => { entered = resolve; });
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  const api = (globalThis as any).spindle.chat, write = api.setMessagesHidden;
+  api.setMessagesHidden = async (chat: string, ids: string[], hidden: boolean) => {
+    if (hidden) { entered(); await paused; }
+    return write(chat, ids, hidden);
+  };
+  const repair = resyncVisibility(chatId, userId, true);
+  await hiding;
+  const deletion = removeSummaryEntry(chatId, "chapter", userId);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  release();
+  await Promise.all([repair, deletion]);
+  expect(entries).toHaveLength(0);
   expect(messages.every((m) => !m.extra.hidden)).toBe(true);
 });
