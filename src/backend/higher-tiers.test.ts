@@ -47,6 +47,45 @@ beforeEach(async () => {
 afterAll(() => { (globalThis as any).spindle = original; });
 afterEach(() => { for (const p of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, p.draftId); });
 
+for (const parentFirst of [false, true]) test(`concurrent arc regeneration and volume binding serialize with ${parentFirst ? "volume" : "arc"} saving first`, async () => {
+ const chapters = [source(1, 0), source(1, 1)];
+ const arc = source(2, 0), otherArc = source(2, 2);
+ arc.extensions.lumibooks.msgIds = ["m0", "m1"];
+ arc.extensions.lumibooks.sourceChapterEntryIds = chapters.map((e) => e.id);
+ entries = [...chapters, arc, otherArc];
+ let enter!: () => void, release!: () => void, generated!: () => void;
+ const entered = new Promise<void>((r) => { enter = r; });
+ const gate = new Promise<void>((r) => { release = r; });
+ const secondGenerated = new Promise<void>((r) => { generated = r; });
+ const api = (globalThis as any).spindle;
+ const create = api.world_books.entries.create, generate = api.generate.rawStream;
+ let firstWrite = true;
+ api.world_books.entries.create = async (...args: any[]) => {
+  if (firstWrite) { firstWrite = false; enter(); await gate; }
+  return create(...args);
+ };
+ api.generate.rawStream = async function* (req: any) {
+  for await (const event of generate(req)) { if (calls === 2) generated(); yield event; }
+ };
+ const childRun = () => createArcFromChapters(chatId, chapters.map((e) => e.id), profile, settings(), userId, { replacesEntryId: arc.id });
+ const parentRun = () => createHigherFromEntries(3, chatId, [arc.id, otherArc.id], profile, settings(), userId);
+ const first = parentFirst ? parentRun() : childRun();
+ await entered;
+ const second = parentFirst ? childRun() : parentRun();
+ try {
+  await secondGenerated;
+  // Let the second operation reach its commit while the first write is paused.
+  await new Promise((r) => setTimeout(r, 0));
+ } finally { release(); }
+ const results = await Promise.all([first, second]);
+ expect(results.filter(Boolean)).toHaveLength(1);
+ const coverage = await buildCoverage(chatId, userId);
+ expect(coverage.coveredBy.size).toBe(3);
+ expect(coverage.activeEntries).toHaveLength(parentFirst ? 1 : 2);
+ const allIds = new Set(entries.map((e) => e.id));
+ for (const entry of entries) for (const id of entry.extensions.lumibooks.sourceChapterEntryIds ?? []) expect(allIds.has(id)).toBe(true);
+});
+
 for (const tier of [2, 3, 7] as const) for (const preview of [false, true]) for (const change of ["delete", "cover", "edit", "coverage"] as const) {
  test(`${TIER_NAMES[tier - 1]} ${preview ? "preview" : "in-flight result"} refuses changed source: ${change}`, async () => {
   entries = [source(tier - 1, 0), source(tier - 1, 1)];

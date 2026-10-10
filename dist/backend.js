@@ -6924,6 +6924,13 @@ var previewSources = new WeakMap;
 var changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
 var messageSource = (m) => msgSig(m.role, m.content || "");
 var entrySource = (e) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
+async function assertReplacementActive(entries, replacesEntryId, chatId, userId) {
+  if (!replacesEntryId)
+    return;
+  const coverage = await buildCoverage(chatId, userId, entries);
+  if (!coverage.activeEntries.some((e) => e.raw.id === replacesEntryId))
+    throw changedSources();
+}
 var committingDrafts = new Set;
 var PROGRESS_PUSH_INTERVAL_MS = 250;
 var freedGhostNumbers = new Map;
@@ -6957,8 +6964,8 @@ function takeFreedGhostNumber(userId, chatId, windowIds) {
   return n;
 }
 var commitChain = new Map;
-function withCommitMutex(userId, chatId, tier, fn) {
-  const key = `${userId}::${chatId}::t${tier}`;
+function withCommitMutex(userId, chatId, fn) {
+  const key = `${userId}::${chatId}`;
   const prev = commitChain.get(key) ?? Promise.resolve();
   const tail = prev.then(fn, fn);
   const guarded = tail.catch(() => {
@@ -7405,7 +7412,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   }
 }
 async function commitChapter(chatId, profile, userId, window, result, firstIdx, lastIdx, allMessages, fromPreview, replacesEntryId, ghost = false) {
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
     if (ghost) {
       const live = await loadSettings(userId);
       const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
@@ -7425,6 +7432,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     firstIdx = window[0].index_in_chat;
     lastIdx = window[window.length - 1].index_in_chat;
     const freshEntries = await listLmbEntries(chatId, userId, true);
+    await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
     const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
@@ -7606,8 +7614,9 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
   }
 }
 async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, automation = false) {
-  return withCommitMutex(userId, chatId, 2, async () => {
+  return withCommitMutex(userId, chatId, async () => {
     const freshEntries = await listTimelineEntries(chatId, userId, true);
+    await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 1).map((e) => e.raw.id));
@@ -7796,8 +7805,9 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
   }
 }
 async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, tier = 3) {
-  return withCommitMutex(userId, chatId, tier, async () => {
+  return withCommitMutex(userId, chatId, async () => {
     const freshEntries = await listTimelineEntries(chatId, userId, true);
+    await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
@@ -8058,7 +8068,7 @@ async function drainArcBacklog(chatId, profile, settings, userId, automation = f
   return drainSummaryBacklog(2, chatId, profile, settings, userId, automation);
 }
 async function sweepStaleGhosts(chatId, userId) {
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
     const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled);
     if (ghosts.length === 0)
@@ -8096,7 +8106,7 @@ function ghostSourcesChanged(ghost, messages) {
   });
 }
 async function promoteGhostChapters(chatId, profile, userId, automation = false) {
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
     const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (ghosts.length === 0)
@@ -8179,7 +8189,7 @@ async function cleanupGhostsAfterModeOff(chatId, profile, userId) {
     return;
   await sweepStaleGhosts(chatId, userId).catch((err) => warn(`mode-off ghost sweep failed: ${describeError(err)}`));
   await promoteGhostChapters(chatId, profile, userId, true).catch((err) => warn(`mode-off ghost promotion failed: ${describeError(err)}`));
-  await withCommitMutex(userId, chatId, 1, async () => {
+  await withCommitMutex(userId, chatId, async () => {
     const remaining = (await listLmbEntries(chatId, userId)).filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled);
     for (const g of remaining) {
       await deleteEntry(g.raw.id, userId).catch((err) => warn(`mode-off ghost cleanup failed for ${g.raw.id}: ${describeError(err)}`));

@@ -56,6 +56,13 @@ const previewSources = new WeakMap<PendingPreview, string[]>();
 const changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
 const messageSource = (m: ChatMessageDTO) => msgSig(m.role, m.content || "");
 const entrySource = (e: LMBEntry) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
+async function assertReplacementActive(entries: LMBEntry[], replacesEntryId: string | undefined, chatId: string, userId: string): Promise<void> {
+  if (!replacesEntryId) return;
+  const coverage = await buildCoverage(chatId, userId, entries);
+  // Removing the target before traversing coverage would disconnect its
+  // descendants from a higher summary that consumed it during generation.
+  if (!coverage.activeEntries.some((e) => e.raw.id === replacesEntryId)) throw changedSources();
+}
 const committingDrafts = new Set<string>();
 
 const PROGRESS_PUSH_INTERVAL_MS = 250;
@@ -92,8 +99,10 @@ function takeFreedGhostNumber(userId: string, chatId: string, windowIds: Set<str
 }
 
 const commitChain = new Map<string, Promise<unknown>>();
-function withCommitMutex<T>(userId: string, chatId: string, tier: SummaryTier, fn: () => Promise<T>): Promise<T> {
-  const key = `${userId}::${chatId}::t${tier}`;
+function withCommitMutex<T>(userId: string, chatId: string, fn: () => Promise<T>): Promise<T> {
+  // Higher tiers can consume entries while lower tiers replace them.
+  // Serialize all summary commits; generation remains concurrent.
+  const key = `${userId}::${chatId}`;
   const prev = commitChain.get(key) ?? Promise.resolve();
   const tail = prev.then(fn, fn);
   const guarded = tail.catch(() => undefined);
@@ -633,7 +642,7 @@ async function commitChapter(
   replacesEntryId?: string,
   ghost = false,
 ): Promise<string> {
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
   // The summarize call ran unfenced: if extra mode went off meanwhile, the
   // cleanup pass already ran and committing this ghost would strand it.
   if (ghost) {
@@ -654,6 +663,7 @@ async function commitChapter(
   firstIdx = window[0]!.index_in_chat;
   lastIdx = window[window.length - 1]!.index_in_chat;
   const freshEntries = await listLmbEntries(chatId, userId, true);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -902,8 +912,9 @@ async function commitArc(
   replacesEntryId?: string,
   automation = false,
 ): Promise<string> {
-  return withCommitMutex(userId, chatId, 2, async () => {
+  return withCommitMutex(userId, chatId, async () => {
   const freshEntries = await listTimelineEntries(chatId, userId, true);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -1134,8 +1145,9 @@ async function commitVolume(
   replacesEntryId?: string,
   tier: HigherTier = 3,
 ): Promise<string> {
-  return withCommitMutex(userId, chatId, tier, async () => {
+  return withCommitMutex(userId, chatId, async () => {
   const freshEntries = await listTimelineEntries(chatId, userId, true);
+  await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -1462,7 +1474,7 @@ export async function drainArcBacklog(
  * dropping and re-summarizing them is free of injection flicker.
  */
 export async function sweepStaleGhosts(chatId: string, userId: string): Promise<number> {
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
   const entries = await listLmbEntries(chatId, userId, true);
   const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled);
   if (ghosts.length === 0) return 0;
@@ -1512,10 +1524,10 @@ export async function promoteGhostChapters(
   userId: string,
   automation = false,
 ): Promise<number> {
-  // The overlap check and the flip must not race a concurrent tier-1 commit
+  // The overlap check and the flip must not race a concurrent summary commit
   // (accept_preview, manual filing), or a ghost can promote over a span a
   // real chapter just took. The commit paths hold this same mutex.
-  return withCommitMutex(userId, chatId, 1, async () => {
+  return withCommitMutex(userId, chatId, async () => {
   const entries = await listLmbEntries(chatId, userId, true);
   const ghosts = entries
     .filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled)
@@ -1627,10 +1639,10 @@ export async function cleanupGhostsAfterModeOff(
   await promoteGhostChapters(chatId, profile, userId, true).catch((err) =>
     warn(`mode-off ghost promotion failed: ${describeError(err)}`),
   );
-  // The delete pass shares the tier-1 mutex with promotion and refetches
+  // The delete pass shares the commit mutex with promotion and refetches
   // inside it: a concurrent cleanup could otherwise promote a ghost between
   // this scan and the delete, and we'd destroy an enabled, announced chapter.
-  await withCommitMutex(userId, chatId, 1, async () => {
+  await withCommitMutex(userId, chatId, async () => {
     const remaining = (await listLmbEntries(chatId, userId)).filter(
       (e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled,
     );
