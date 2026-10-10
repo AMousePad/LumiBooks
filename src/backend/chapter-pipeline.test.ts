@@ -1,7 +1,7 @@
 import { captureDiagnosticSnapshot, exportDiagnostics } from "./diagnostics";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
-import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dryRunChapter, getPendingPreviews, registerPipelineCallbacks } from "./pipeline";
+import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dropPendingPreview, dryRunChapter, getPendingPreviews, patchPendingPreview, registerPipelineCallbacks } from "./pipeline";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
 import { invalidateBookCache } from "./world-book";
 import { saveSettings } from "./storage";
@@ -46,7 +46,10 @@ beforeEach(async () => {
   invalidateBookCache(userId, chatId);
   await saveSettings(userId, settings());
 });
-afterEach(async () => { await exportDiagnostics(userId); });
+afterEach(async () => {
+  for (const preview of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, preview.draftId);
+  await exportDiagnostics(userId);
+});
 afterAll(() => { (globalThis as any).spindle = original; });
 
 for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
@@ -189,4 +192,48 @@ test("diagnostic storage failure cannot prevent a chapter from being generated a
   expect(JSON.parse(exported).writeFailuresThisSession).toBeGreaterThan(0);
   expect(exported).not.toContain("PRIVATE_SERVER_ERROR");
   expect(entries.find((e) => e.id === id).extensions.lumibooks.msgIds).toHaveLength(12);
+});
+
+for (const preview of [false, true]) for (const change of ["delete", "exclude", "cover", "edit"] as const) {
+  test(`chapter ${preview ? "preview" : "in-flight result"} refuses changed source: ${change}`, async () => {
+    profile.showMemoryPreviews = preview;
+    const ids = messages.slice(0, 12).map((m) => m.id);
+    const mutate = () => {
+      if (change === "delete") messages = messages.filter((m) => m.id !== "m1");
+      if (change === "exclude") messages = messages.map((m) => m.id === "m1" ? { ...m, metadata: { lmb_excluded: true } } : m);
+      if (change === "cover") entries.push(chapter(99, 0, 1));
+      if (change === "edit") messages = messages.map((m) => m.id === "m1" ? { ...m, content: "New story" } : m);
+    };
+    if (!preview) {
+      const generate = (globalThis as any).spindle.generate.rawStream;
+      (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
+        for await (const event of generate(req)) { if (event.type === "done") mutate(); yield event; }
+      };
+    }
+    const id = await createChapterFromRange(chatId, ids, profile, settings(), userId);
+    if (preview) {
+      const draft = getPendingPreviews(userId, chatId).at(-1)!;
+      mutate();
+      expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+      expect(getPendingPreviews(userId, chatId).some((p) => p.draftId === draft.draftId)).toBe(true);
+    } else expect(id).toBeNull();
+    expect(entries.filter((e) => e.id.startsWith("new-"))).toHaveLength(0);
+  });
+}
+
+test("edited previews still save after unrelated chat changes without losing source indexes", async () => {
+  profile.showMemoryPreviews = true;
+  const ids = messages.slice(5, 17).map((m) => m.id);
+  await createChapterFromRange(chatId, ids, profile, settings(), userId);
+  const draft = getPendingPreviews(userId, chatId).at(-1)!;
+  patchPendingPreview(userId, chatId, draft.draftId, { title: "Edited title", content: "User-edited summary" });
+  messages = messages.slice(5);
+  messages.push({ ...messages.at(-1), id: "new-message", content: "A later turn", index_in_chat: 100 });
+  const id = await acceptPreview(chatId, draft.draftId, profile, userId);
+  expect(id).toBeTruthy();
+  const saved = entries.find((e) => e.id === id);
+  expect(saved.content).toContain("User-edited summary");
+  expect(saved.extensions.lumibooks.msgIds).toEqual(ids);
+  expect(saved.extensions.lumibooks.firstMsgIdx).toBe(5);
+  expect(saved.extensions.lumibooks.lastMsgIdx).toBe(16);
 });

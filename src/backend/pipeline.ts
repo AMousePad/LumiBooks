@@ -51,6 +51,11 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const HEARTBEAT_INTERVAL_MS = 1000;
 const failureByChat = new Map<string, FailureRecord>();
 const previewsByChat = new Map<string, PendingPreview[]>();
+// Source fingerprints stay backend-only and expire with their in-memory draft.
+const previewSources = new WeakMap<PendingPreview, string[]>();
+const changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
+const messageSource = (m: ChatMessageDTO) => msgSig(m.role, m.content || "");
+const entrySource = (e: LMBEntry) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 const committingDrafts = new Set<string>();
 
 const PROGRESS_PUSH_INTERVAL_MS = 250;
@@ -367,6 +372,8 @@ export function patchPendingPreview(
     title: patch.title !== undefined ? patch.title : old.title,
     content: patch.content !== undefined ? patch.content : old.content,
   };
+  const sources = previewSources.get(old);
+  if (sources) previewSources.set(list[idx]!, sources);
   previewsByChat.set(key, list);
 }
 
@@ -636,7 +643,17 @@ async function commitChapter(
       throw new Error("Extra context mode was turned off while this ghost was being written");
     }
   }
-  const freshEntries = await listLmbEntries(chatId, userId);
+  const liveMessages = await spindle.chat.getMessages(chatId);
+  const liveById = new Map(liveMessages.map((m) => [m.id, m]));
+  if (window.some((m) => {
+    const live = liveById.get(m.id);
+    return !live || isExcluded(live) || messageSource(live) !== messageSource(m);
+  })) throw changedSources();
+  window = window.map((m) => liveById.get(m.id)!);
+  allMessages = liveMessages;
+  firstIdx = window[0]!.index_in_chat;
+  lastIdx = window[window.length - 1]!.index_in_chat;
+  const freshEntries = await listLmbEntries(chatId, userId, true);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -653,9 +670,7 @@ async function commitChapter(
   }
   if (validWindow.length < window.length) {
     void recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
-    window = validWindow;
-    firstIdx = window[0]!.index_in_chat;
-    lastIdx = window[window.length - 1]!.index_in_chat;
+    throw changedSources();
   }
   const book = await ensureBookForChat(chatId, userId);
   // On regenerate, keep the replaced chapter's scene number so a mid-list
@@ -759,9 +774,9 @@ async function commitChapter(
 
 /** Binding uses live ranges too, so old offset-based entries and newly filed
  * host-indexed entries stay in story order without rewriting existing books. */
-async function listTimelineEntries(chatId: string, userId: string): Promise<LMBEntry[]> {
+async function listTimelineEntries(chatId: string, userId: string, fresh = false): Promise<LMBEntry[]> {
   const [entries, messages] = await Promise.all([
-    listLmbEntries(chatId, userId), spindle.chat.getMessages(chatId),
+    listLmbEntries(chatId, userId, fresh), spindle.chat.getMessages(chatId),
   ]);
   return withLiveMessageRanges(entries, messages);
 }
@@ -888,7 +903,7 @@ async function commitArc(
   automation = false,
 ): Promise<string> {
   return withCommitMutex(userId, chatId, 2, async () => {
-  const freshEntries = await listTimelineEntries(chatId, userId);
+  const freshEntries = await listTimelineEntries(chatId, userId, true);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -899,12 +914,15 @@ async function commitArc(
     throw new Error("All source chapters were already bound by another arc or deleted");
   }
   if (filtered.length < selected.length) {
-    selected = filtered;
-    const firstIdxs = selected.map((c) => c.meta.firstMsgIdx).filter((n): n is number => typeof n === "number");
-    const lastIdxs = selected.map((c) => c.meta.lastMsgIdx).filter((n): n is number => typeof n === "number");
-    firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
-    lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
+    throw changedSources();
   }
+  const freshById = new Map(freshEntries.map((e) => [e.raw.id, e]));
+  if (selected.some((e) => entrySource(e) !== entrySource(freshById.get(e.raw.id)!))) throw changedSources();
+  selected = selected.map((e) => freshById.get(e.raw.id)!);
+  const liveFirst = selected.flatMap((e) => e.meta.firstMsgIdx === undefined ? [] : [e.meta.firstMsgIdx]);
+  const liveLast = selected.flatMap((e) => e.meta.lastMsgIdx === undefined ? [] : [e.meta.lastMsgIdx]);
+  firstIdx = liveFirst.length ? Math.min(...liveFirst) : 0;
+  lastIdx = liveLast.length ? Math.max(...liveLast) : firstIdx;
   assertContiguousBinding(freshCoverage.activeEntries, selected);
   const book = await ensureBookForChat(chatId, userId);
   // On regenerate, keep the replaced arc's scene number (see commitChapter).
@@ -1117,7 +1135,7 @@ async function commitVolume(
   tier: HigherTier = 3,
 ): Promise<string> {
   return withCommitMutex(userId, chatId, tier, async () => {
-  const freshEntries = await listTimelineEntries(chatId, userId);
+  const freshEntries = await listTimelineEntries(chatId, userId, true);
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
@@ -1128,12 +1146,15 @@ async function commitVolume(
     throw new Error("All source arcs were already bound by another volume or deleted");
   }
   if (filtered.length < selected.length) {
-    selected = filtered;
-    const firstIdxs = selected.map((a) => a.meta.firstMsgIdx).filter((n): n is number => typeof n === "number");
-    const lastIdxs = selected.map((a) => a.meta.lastMsgIdx).filter((n): n is number => typeof n === "number");
-    firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
-    lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
+    throw changedSources();
   }
+  const freshById = new Map(freshEntries.map((e) => [e.raw.id, e]));
+  if (selected.some((e) => entrySource(e) !== entrySource(freshById.get(e.raw.id)!))) throw changedSources();
+  selected = selected.map((e) => freshById.get(e.raw.id)!);
+  const liveFirst = selected.flatMap((e) => e.meta.firstMsgIdx === undefined ? [] : [e.meta.firstMsgIdx]);
+  const liveLast = selected.flatMap((e) => e.meta.lastMsgIdx === undefined ? [] : [e.meta.lastMsgIdx]);
+  firstIdx = liveFirst.length ? Math.min(...liveFirst) : 0;
+  lastIdx = liveLast.length ? Math.max(...liveLast) : firstIdx;
   const book = await ensureBookForChat(chatId, userId);
   assertContiguousBinding(freshCoverage.activeEntries, selected);
   // On regenerate, keep the replaced volume's scene number (see commitChapter).
@@ -1239,19 +1260,16 @@ export async function acceptPreview(
     if (preview.kind === "chapter") {
       const messages = await spindle.chat.getMessages(chatId);
       const acceptEntries = preview.replacesEntryId
-        ? (await listLmbEntries(chatId, userId)).filter((e) => e.raw.id !== preview.replacesEntryId)
-        : undefined;
+        ? (await listLmbEntries(chatId, userId, true)).filter((e) => e.raw.id !== preview.replacesEntryId)
+        : await listLmbEntries(chatId, userId, true);
       const coverage = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage.coveredBy.has(m.id) && !isExcluded(m));
-      if (window.length === 0) {
-        dropPendingPreview(userId, chatId, draftId);
-        cb?.onToast(userId, "warn", "Memoria can't save this chapter, its messages were deleted or already filed");
+      const sources = previewSources.get(preview);
+      if (window.length !== preview.sourceMessageIds.length || !sources || window.some((m, i) => m.id !== preview.sourceMessageIds[i] || messageSource(m) !== sources[i])) {
+        cb?.onToast(userId, "warn", changedSources().message);
         cb?.onStateChange(userId, chatId);
         return null;
-      }
-      if (window.length < preview.sourceMessageIds.length) {
-        cb?.onToast(userId, "warn", "Some messages were missing or already covered, Memoria saved the rest");
       }
       const firstIdx = window[0]!.index_in_chat;
       const lastIdx = window[window.length - 1]!.index_in_chat;
@@ -1286,19 +1304,18 @@ export async function acceptPreview(
     }
     const targetTier = (TIER_KINDS.indexOf(preview.kind) + 1) as SummaryTier;
     const isVolume = targetTier >= 3;
-    const entries = await listTimelineEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId, true);
     const groupSelectionEntries = preview.replacesEntryId
       ? entries.filter((e) => e.raw.id !== preview.replacesEntryId)
       : entries;
     const coverage = await buildCoverage(chatId, userId, groupSelectionEntries);
     const wanted = new Set(preview.sourceChapterEntryIds ?? []);
     const sourceTier = targetTier - 1;
-    const selected = coverage.activeEntries.filter((e) => e.meta.tier === sourceTier && wanted.has(e.raw.id));
-    if (selected.length === 0) {
-      dropPendingPreview(userId, chatId, draftId);
-      cb?.onToast(userId, "warn", isVolume
-        ? "Memoria can't save this volume, its arcs were deleted or already bound"
-        : "Memoria can't save this arc, its chapters were deleted or already bound");
+    const activeById = new Map(coverage.activeEntries.filter((e) => e.meta.tier === sourceTier).map((e) => [e.raw.id, e]));
+    const selected = [...wanted].flatMap((id) => activeById.has(id) ? [activeById.get(id)!] : []);
+    const sources = previewSources.get(preview);
+    if (selected.length !== wanted.size || !sources || selected.some((e, i) => entrySource(e) !== sources[i])) {
+      cb?.onToast(userId, "warn", changedSources().message);
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -1706,7 +1723,7 @@ function makePreview(
   replacesEntryId?: string,
 ): PendingPreview {
   void chatId;
-  return {
+  const preview: PendingPreview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
@@ -1723,6 +1740,8 @@ function makePreview(
     presetKey: result.presetKey,
     replacesEntryId,
   };
+  previewSources.set(preview, window.map(messageSource));
+  return preview;
 }
 
 function makeGroupPreview(
@@ -1733,7 +1752,7 @@ function makeGroupPreview(
   lastIdx: number,
   replacesEntryId?: string,
 ): PendingPreview {
-  return {
+  const preview: PendingPreview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     title: result.title || `${TIER_NAMES[TIER_KINDS.indexOf(kind)]} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
@@ -1751,6 +1770,8 @@ function makeGroupPreview(
     presetKey: result.presetKey,
     replacesEntryId,
   };
+  previewSources.set(preview, selected.map(entrySource));
+  return preview;
 }
 
 export async function drainHigherBacklog(tier: HigherTier, chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string, automation = false): Promise<number> {

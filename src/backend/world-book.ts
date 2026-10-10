@@ -342,10 +342,10 @@ const ENTRIES_CACHE_TTL_MS = 4000;
 const ENTRIES_CACHE_CAP = 300;
 const entriesCache = new Map<string, { at: number; data: LMBEntry[] }>();
 
-export async function listLmbEntries(chatId: string, userId: string): Promise<LMBEntry[]> {
+export async function listLmbEntries(chatId: string, userId: string, fresh = false): Promise<LMBEntry[]> {
   const key = cacheKey(userId, chatId);
   const cached = entriesCache.get(key);
-  if (cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS) return cached.data;
+  if (!fresh && cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS) return cached.data;
   const bookId = await findBookForChat(chatId, userId);
   if (!bookId) return [];
   const raw = await listAllEntries(bookId, userId);

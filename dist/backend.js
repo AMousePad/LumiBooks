@@ -1407,10 +1407,10 @@ async function syncManagedBookNames(chatId, chatName, shelfBookId, userId) {
 var ENTRIES_CACHE_TTL_MS = 4000;
 var ENTRIES_CACHE_CAP = 300;
 var entriesCache = new Map;
-async function listLmbEntries(chatId, userId) {
+async function listLmbEntries(chatId, userId, fresh = false) {
   const key = cacheKey(userId, chatId);
   const cached = entriesCache.get(key);
-  if (cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS)
+  if (!fresh && cached && Date.now() - cached.at < ENTRIES_CACHE_TTL_MS)
     return cached.data;
   const bookId = await findBookForChat(chatId, userId);
   if (!bookId)
@@ -6910,6 +6910,10 @@ var heartbeatTimer = null;
 var HEARTBEAT_INTERVAL_MS = 1000;
 var failureByChat = new Map;
 var previewsByChat = new Map;
+var previewSources = new WeakMap;
+var changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
+var messageSource = (m) => msgSig(m.role, m.content || "");
+var entrySource = (e) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 var committingDrafts = new Set;
 var PROGRESS_PUSH_INTERVAL_MS = 250;
 var freedGhostNumbers = new Map;
@@ -7196,6 +7200,9 @@ function patchPendingPreview(userId, chatId, draftId, patch) {
     title: patch.title !== undefined ? patch.title : old.title,
     content: patch.content !== undefined ? patch.content : old.content
   };
+  const sources = previewSources.get(old);
+  if (sources)
+    previewSources.set(list[idx], sources);
   previewsByChat.set(key, list);
 }
 function pushPreview(userId, chatId, preview) {
@@ -7396,7 +7403,18 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
         throw new Error("Extra context mode was turned off while this ghost was being written");
       }
     }
-    const freshEntries = await listLmbEntries(chatId, userId);
+    const liveMessages = await spindle.chat.getMessages(chatId);
+    const liveById = new Map(liveMessages.map((m) => [m.id, m]));
+    if (window.some((m) => {
+      const live = liveById.get(m.id);
+      return !live || isExcluded(live) || messageSource(live) !== messageSource(m);
+    }))
+      throw changedSources();
+    window = window.map((m) => liveById.get(m.id));
+    allMessages = liveMessages;
+    firstIdx = window[0].index_in_chat;
+    lastIdx = window[window.length - 1].index_in_chat;
+    const freshEntries = await listLmbEntries(chatId, userId, true);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
     const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
@@ -7407,9 +7425,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     }
     if (validWindow.length < window.length) {
       recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
-      window = validWindow;
-      firstIdx = window[0].index_in_chat;
-      lastIdx = window[window.length - 1].index_in_chat;
+      throw changedSources();
     }
     const book = await ensureBookForChat(chatId, userId);
     const replacedEntry = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
@@ -7495,9 +7511,9 @@ ${result.content}`;
     return entry.id;
   });
 }
-async function listTimelineEntries(chatId, userId) {
+async function listTimelineEntries(chatId, userId, fresh = false) {
   const [entries, messages] = await Promise.all([
-    listLmbEntries(chatId, userId),
+    listLmbEntries(chatId, userId, fresh),
     spindle.chat.getMessages(chatId)
   ]);
   return withLiveMessageRanges(entries, messages);
@@ -7581,7 +7597,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
 }
 async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, automation = false) {
   return withCommitMutex(userId, chatId, 2, async () => {
-    const freshEntries = await listTimelineEntries(chatId, userId);
+    const freshEntries = await listTimelineEntries(chatId, userId, true);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 1).map((e) => e.raw.id));
@@ -7590,12 +7606,16 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
       throw new Error("All source chapters were already bound by another arc or deleted");
     }
     if (filtered.length < selected.length) {
-      selected = filtered;
-      const firstIdxs = selected.map((c) => c.meta.firstMsgIdx).filter((n) => typeof n === "number");
-      const lastIdxs = selected.map((c) => c.meta.lastMsgIdx).filter((n) => typeof n === "number");
-      firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
-      lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
+      throw changedSources();
     }
+    const freshById = new Map(freshEntries.map((e) => [e.raw.id, e]));
+    if (selected.some((e) => entrySource(e) !== entrySource(freshById.get(e.raw.id))))
+      throw changedSources();
+    selected = selected.map((e) => freshById.get(e.raw.id));
+    const liveFirst = selected.flatMap((e) => e.meta.firstMsgIdx === undefined ? [] : [e.meta.firstMsgIdx]);
+    const liveLast = selected.flatMap((e) => e.meta.lastMsgIdx === undefined ? [] : [e.meta.lastMsgIdx]);
+    firstIdx = liveFirst.length ? Math.min(...liveFirst) : 0;
+    lastIdx = liveLast.length ? Math.max(...liveLast) : firstIdx;
     assertContiguousBinding(freshCoverage.activeEntries, selected);
     const book = await ensureBookForChat(chatId, userId);
     const replacedArc = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
@@ -7767,7 +7787,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
 }
 async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx, replacesEntryId, tier = 3) {
   return withCommitMutex(userId, chatId, tier, async () => {
-    const freshEntries = await listTimelineEntries(chatId, userId);
+    const freshEntries = await listTimelineEntries(chatId, userId, true);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
     const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage);
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
@@ -7776,12 +7796,16 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
       throw new Error("All source arcs were already bound by another volume or deleted");
     }
     if (filtered.length < selected.length) {
-      selected = filtered;
-      const firstIdxs = selected.map((a) => a.meta.firstMsgIdx).filter((n) => typeof n === "number");
-      const lastIdxs = selected.map((a) => a.meta.lastMsgIdx).filter((n) => typeof n === "number");
-      firstIdx = firstIdxs.length ? Math.min(...firstIdxs) : 0;
-      lastIdx = lastIdxs.length ? Math.max(...lastIdxs) : firstIdx;
+      throw changedSources();
     }
+    const freshById = new Map(freshEntries.map((e) => [e.raw.id, e]));
+    if (selected.some((e) => entrySource(e) !== entrySource(freshById.get(e.raw.id))))
+      throw changedSources();
+    selected = selected.map((e) => freshById.get(e.raw.id));
+    const liveFirst = selected.flatMap((e) => e.meta.firstMsgIdx === undefined ? [] : [e.meta.firstMsgIdx]);
+    const liveLast = selected.flatMap((e) => e.meta.lastMsgIdx === undefined ? [] : [e.meta.lastMsgIdx]);
+    firstIdx = liveFirst.length ? Math.min(...liveFirst) : 0;
+    lastIdx = liveLast.length ? Math.max(...liveLast) : firstIdx;
     const book = await ensureBookForChat(chatId, userId);
     assertContiguousBinding(freshCoverage.activeEntries, selected);
     const replacedVolume = replacesEntryId ? freshEntries.find((e) => e.raw.id === replacesEntryId) : undefined;
@@ -7880,18 +7904,15 @@ async function acceptPreview(chatId, draftId, profile, userId) {
   try {
     if (preview.kind === "chapter") {
       const messages = await spindle.chat.getMessages(chatId);
-      const acceptEntries = preview.replacesEntryId ? (await listLmbEntries(chatId, userId)).filter((e) => e.raw.id !== preview.replacesEntryId) : undefined;
+      const acceptEntries = preview.replacesEntryId ? (await listLmbEntries(chatId, userId, true)).filter((e) => e.raw.id !== preview.replacesEntryId) : await listLmbEntries(chatId, userId, true);
       const coverage = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage.coveredBy.has(m.id) && !isExcluded(m));
-      if (window.length === 0) {
-        dropPendingPreview(userId, chatId, draftId);
-        cb?.onToast(userId, "warn", "Memoria can't save this chapter, its messages were deleted or already filed");
+      const sources = previewSources.get(preview);
+      if (window.length !== preview.sourceMessageIds.length || !sources || window.some((m, i) => m.id !== preview.sourceMessageIds[i] || messageSource(m) !== sources[i])) {
+        cb?.onToast(userId, "warn", changedSources().message);
         cb?.onStateChange(userId, chatId);
         return null;
-      }
-      if (window.length < preview.sourceMessageIds.length) {
-        cb?.onToast(userId, "warn", "Some messages were missing or already covered, Memoria saved the rest");
       }
       const firstIdx = window[0].index_in_chat;
       const lastIdx = window[window.length - 1].index_in_chat;
@@ -7923,15 +7944,16 @@ async function acceptPreview(chatId, draftId, profile, userId) {
     }
     const targetTier = TIER_KINDS.indexOf(preview.kind) + 1;
     const isVolume = targetTier >= 3;
-    const entries = await listTimelineEntries(chatId, userId);
+    const entries = await listTimelineEntries(chatId, userId, true);
     const groupSelectionEntries = preview.replacesEntryId ? entries.filter((e) => e.raw.id !== preview.replacesEntryId) : entries;
     const coverage = await buildCoverage(chatId, userId, groupSelectionEntries);
     const wanted = new Set(preview.sourceChapterEntryIds ?? []);
     const sourceTier = targetTier - 1;
-    const selected = coverage.activeEntries.filter((e) => e.meta.tier === sourceTier && wanted.has(e.raw.id));
-    if (selected.length === 0) {
-      dropPendingPreview(userId, chatId, draftId);
-      cb?.onToast(userId, "warn", isVolume ? "Memoria can't save this volume, its arcs were deleted or already bound" : "Memoria can't save this arc, its chapters were deleted or already bound");
+    const activeById = new Map(coverage.activeEntries.filter((e) => e.meta.tier === sourceTier).map((e) => [e.raw.id, e]));
+    const selected = [...wanted].flatMap((id) => activeById.has(id) ? [activeById.get(id)] : []);
+    const sources = previewSources.get(preview);
+    if (selected.length !== wanted.size || !sources || selected.some((e, i) => entrySource(e) !== sources[i])) {
+      cb?.onToast(userId, "warn", changedSources().message);
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -8206,7 +8228,7 @@ function deriveTitle(result, firstMsg, lastMsg) {
   return `Compressed - msgs ${firstMsg}-${lastMsg}`;
 }
 function makePreview(kind, chatId, window, result, firstIdx, lastIdx, replacesEntryId) {
-  return {
+  const preview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
@@ -8223,9 +8245,11 @@ function makePreview(kind, chatId, window, result, firstIdx, lastIdx, replacesEn
     presetKey: result.presetKey,
     replacesEntryId
   };
+  previewSources.set(preview, window.map(messageSource));
+  return preview;
 }
 function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEntryId) {
-  return {
+  const preview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     title: result.title || `${TIER_NAMES[TIER_KINDS.indexOf(kind)]} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
@@ -8243,6 +8267,8 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
     presetKey: result.presetKey,
     replacesEntryId
   };
+  previewSources.set(preview, selected.map(entrySource));
+  return preview;
 }
 async function drainHigherBacklog(tier, chatId, profile, settings, userId, automation = false) {
   return drainSummaryBacklog(tier, chatId, profile, settings, userId, automation);

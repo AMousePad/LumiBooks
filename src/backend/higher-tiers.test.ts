@@ -1,8 +1,8 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, HIGHER_TIERS, TIER_NAMES, makeDefaultProfile, normalizeEntryMeta, normalizeProfile } from "../shared";
 import { buildCoverage } from "./coverage";
 import { copyLmbEntries } from "./book-copy";
-import { createArcAuto, createArcFromChapters, createHigherFromEntries, drainHigherBacklog, maybeRunArcCheck, getPendingPreviews, getLastFailure, acceptPreview, registerPipelineCallbacks, repairSummaryTimeline } from "./pipeline";
+import { createArcAuto, createArcFromChapters, createHigherFromEntries, drainHigherBacklog, dropPendingPreview, maybeRunArcCheck, getPendingPreviews, getLastFailure, acceptPreview, registerPipelineCallbacks, repairSummaryTimeline } from "./pipeline";
 import { SummaryTimelineError } from "./binding";
 import { invalidateBookCache, listLmbEntries } from "./world-book";
 import { saveSettings } from "./storage";
@@ -45,6 +45,41 @@ beforeEach(async () => {
  await saveSettings(userId, settings());
 });
 afterAll(() => { (globalThis as any).spindle = original; });
+afterEach(() => { for (const p of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, p.draftId); });
+
+for (const tier of [2, 3, 7] as const) for (const preview of [false, true]) for (const change of ["delete", "cover", "edit", "coverage"] as const) {
+ test(`${TIER_NAMES[tier - 1]} ${preview ? "preview" : "in-flight result"} refuses changed source: ${change}`, async () => {
+  entries = [source(tier - 1, 0), source(tier - 1, 1)];
+  const ids = entries.map((e) => e.id);
+  profile.showMemoryPreviews = preview;
+  const mutate = () => {
+   if (change === "delete") entries = entries.filter((e) => e.id !== ids[0]);
+   if (change === "edit") entries = entries.map((e) => e.id === ids[0] ? { ...e, content: "Changed source summary" } : e);
+   if (change === "coverage") entries = entries.map((e) => e.id === ids[0] ? { ...e, extensions: { lumibooks: { ...e.extensions.lumibooks, msgIds: ["different-message"] } } } : e);
+   if (change === "cover") {
+    const parent = source(tier, 0);
+    parent.extensions.lumibooks.sourceChapterEntryIds = [ids[0]];
+    entries.push(parent);
+   }
+  };
+  if (!preview) {
+   const generate = (globalThis as any).spindle.generate.rawStream;
+   (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
+    for await (const event of generate(req)) { if (event.type === "done") mutate(); yield event; }
+   };
+  }
+  const id = tier === 2 ? await createArcFromChapters(chatId, ids, profile, settings(), userId)
+    : await createHigherFromEntries(tier, chatId, ids, profile, settings(), userId);
+  if (preview) {
+   const draft = getPendingPreviews(userId, chatId).at(-1)!;
+   mutate();
+   expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+   expect(getPendingPreviews(userId, chatId).some((p) => p.draftId === draft.draftId)).toBe(true);
+  } else expect(id).toBeNull();
+  expect(entries.some((e) => e.id.startsWith("new-"))).toBe(false);
+  expect(entries.filter((e) => ids.includes(e.id)).every((e) => !e.extensions.lumibooks.supersededByEntryId)).toBe(true);
+ });
+}
 
 for (const tier of [2, ...HIGHER_TIERS] as const) for (const rootOnly of [false, true]) {
  test(`${TIER_NAMES[tier - 1]} compacts ${rootOnly ? "rooted" : "mixed rooted and own"} sources without consuming the lag`, async () => {
