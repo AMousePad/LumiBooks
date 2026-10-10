@@ -8058,45 +8058,51 @@ async function drainArcBacklog(chatId, profile, settings, userId, automation = f
   return drainSummaryBacklog(2, chatId, profile, settings, userId, automation);
 }
 async function sweepStaleGhosts(chatId, userId) {
-  const entries = await listLmbEntries(chatId, userId);
-  const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true);
-  if (ghosts.length === 0)
-    return 0;
-  const messages = await spindle.chat.getMessages(chatId);
-  const byId = new Map(messages.map((m) => [m.id, m]));
-  let dropped = 0;
-  for (const g of ghosts) {
-    const sigs = g.meta.msgSigs;
-    const stale = !sigs || sigs.length !== g.meta.msgIds.length ? g.meta.msgIds.some((id) => !byId.has(id)) : g.meta.msgIds.some((id, i) => {
-      const m = byId.get(id);
-      return !m || msgSig(m.role, m.content || "") !== sigs[i];
-    });
-    if (!stale)
-      continue;
-    try {
-      await deleteEntry(g.raw.id, userId);
-      recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "stale" });
-      if (typeof g.meta.sceneNumber === "number") {
-        recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+  return withCommitMutex(userId, chatId, 1, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled);
+    if (ghosts.length === 0)
+      return 0;
+    const messages = await spindle.chat.getMessages(chatId);
+    const byId = new Map(messages.map((m) => [m.id, m]));
+    let dropped = 0;
+    for (const g of ghosts) {
+      if (!ghostSourcesChanged(g, byId))
+        continue;
+      try {
+        await deleteEntry(g.raw.id, userId);
+        recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "stale" });
+        if (typeof g.meta.sceneNumber === "number") {
+          recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
+        }
+        dropped++;
+      } catch (err) {
+        warn(`ghost sweep: failed to delete stale ghost ${g.raw.id}: ${describeError(err)}`);
       }
-      dropped++;
-    } catch (err) {
-      warn(`ghost sweep: failed to delete stale ghost ${g.raw.id}: ${describeError(err)}`);
     }
-  }
-  if (dropped > 0) {
-    invalidateBookCache(userId, chatId);
-    cb?.onStateChange(userId, chatId);
-  }
-  return dropped;
+    if (dropped > 0) {
+      invalidateBookCache(userId, chatId);
+      cb?.onStateChange(userId, chatId);
+    }
+    return dropped;
+  });
+}
+function ghostSourcesChanged(ghost, messages) {
+  const sigs = ghost.meta.msgSigs;
+  const haveSigs = sigs?.length === ghost.meta.msgIds.length;
+  return ghost.meta.msgIds.some((id, i) => {
+    const message = messages.get(id);
+    return !message || isExcluded(message) || haveSigs && messageSource(message) !== sigs[i];
+  });
 }
 async function promoteGhostChapters(chatId, profile, userId, automation = false) {
   return withCommitMutex(userId, chatId, 1, async () => {
-    const entries = await listLmbEntries(chatId, userId);
+    const entries = await listLmbEntries(chatId, userId, true);
     const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled).sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
     if (ghosts.length === 0)
       return 0;
     const messages = await spindle.chat.getMessages(chatId);
+    const byId = new Map(messages.map((m) => [m.id, m]));
     const realCoverage = await buildCoverage(chatId, userId, entries);
     const posById = new Map(messages.map((m, i) => [m.id, i]));
     const pastLagBoundary = trimLagFromTail(messages, profile).length;
@@ -8105,16 +8111,17 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
     for (const g of ghosts) {
       if (g.meta.msgIds.length === 0)
         continue;
-      if (g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
+      const stale = ghostSourcesChanged(g, byId);
+      if (stale || g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
         try {
           await deleteEntry(g.raw.id, userId);
-          recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "coverage_changed" });
+          recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: stale ? "stale" : "coverage_changed" });
           if (typeof g.meta.sceneNumber === "number") {
             recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
           }
           zombies++;
         } catch (err) {
-          warn(`ghost promotion: failed to delete overlapped ghost ${g.raw.id}: ${describeError(err)}`);
+          warn(`ghost promotion: failed to delete invalid ghost ${g.raw.id}: ${describeError(err)}`);
         }
         continue;
       }
@@ -8126,6 +8133,8 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
         continue;
       try {
         await promoteGhostEntry(g, userId);
+        for (const id of g.meta.msgIds)
+          realCoverage.coveredBy.set(id, g.raw.id);
         recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "success", numbers: { lag: profile.lagValue, sourceCount: g.meta.msgIds.length } });
         promoted.push(g);
       } catch (err) {

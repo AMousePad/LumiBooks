@@ -1,7 +1,8 @@
 import { captureDiagnosticSnapshot, exportDiagnostics } from "./diagnostics";
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
-import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dropPendingPreview, dryRunChapter, getPendingPreviews, patchPendingPreview, registerPipelineCallbacks } from "./pipeline";
+import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dropPendingPreview, dryRunChapter, getPendingPreviews, maybeRunPipeline, patchPendingPreview, promoteGhostChapters, registerPipelineCallbacks } from "./pipeline";
+import { msgSig } from "./codex/store";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
 import { invalidateBookCache } from "./world-book";
 import { saveSettings } from "./storage";
@@ -236,4 +237,49 @@ test("edited previews still save after unrelated chat changes without losing sou
   expect(saved.extensions.lumibooks.msgIds).toEqual(ids);
   expect(saved.extensions.lumibooks.firstMsgIdx).toBe(5);
   expect(saved.extensions.lumibooks.lastMsgIdx).toBe(16);
+});
+
+function ghost(number: number, start: number, end: number) {
+  const entry = chapter(number, start, end);
+  entry.disabled = true;
+  Object.assign(entry.extensions.lumibooks!, { ghost: true, msgSigs: messages.slice(start, end).map((m) => msgSig(m.role, m.content)) });
+  return entry;
+}
+
+for (const change of ["edit", "exclude"] as const) for (const failedCleanup of [false, true]) {
+  test(`ghost promotion rejects ${change} even when cleanup ${failedCleanup ? "fails" : "has not run"}`, async () => {
+    entries = [ghost(1, 0, 12)];
+    profile.codexEnabled = true; profile.codexExtraContext = true; profile.autoCreate = false;
+    await saveSettings(userId, settings());
+    if (change === "edit") messages[0].content = "Edited after staging";
+    else messages[0].metadata = { lmb_excluded: true };
+    if (failedCleanup) {
+      (globalThis as any).spindle.world_books.entries.delete = async () => { throw new Error("storage fault"); };
+      await maybeRunPipeline(chatId, profile, settings(), userId);
+    } else expect(await promoteGhostChapters(chatId, profile, userId)).toBe(0);
+    expect(entries.every((e) => e.disabled && e.extensions.lumibooks.ghost)).toBe(true);
+    invalidateBookCache(userId, chatId);
+    expect((await buildCoverage(chatId, userId)).coveredBy.size).toBe(0);
+  });
+}
+
+test("overlapping staged chapters cannot both promote into active coverage", async () => {
+  entries = [ghost(1, 0, 12), ghost(2, 6, 18)];
+  expect(await promoteGhostChapters(chatId, profile, userId)).toBe(1);
+  const coverage = await buildCoverage(chatId, userId);
+  expect(coverage.activeEntries).toHaveLength(1);
+  expect(coverage.coveredBy.size).toBe(12);
+  expect(coverage.coveredBy.has("m13")).toBe(false);
+});
+
+test("unchanged staged chapters promote only after their whole window clears the lag", async () => {
+  entries = [ghost(1, 0, 12)];
+  profile.lagValue = 90;
+  expect(await promoteGhostChapters(chatId, profile, userId)).toBe(0);
+  expect(entries[0].disabled).toBe(true);
+  profile.lagValue = 88;
+  expect(await promoteGhostChapters(chatId, profile, userId)).toBe(1);
+  expect(entries[0].disabled).toBe(false);
+  expect(entries[0].extensions.lumibooks.ghost).not.toBe(true);
+  expect((await buildCoverage(chatId, userId)).coveredBy.size).toBe(12);
 });
