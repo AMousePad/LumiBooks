@@ -3399,10 +3399,11 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
     }
     const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
     const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
+    const prefixEnd = sigs.length ? sigs[sigs.length - 1].id : mappedPrefix;
     const next = {
       ...cursor,
       consumedSigs: sigs,
-      lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1].id : mappedPrefix),
+      lastMsgId: sigs.length < cursor.consumedSigs.length ? prefixEnd : mappedLast ?? prefixEnd,
       prefixMsgId: mappedPrefix,
       pendingReconcile: true,
       reconcileUntilMsgId: reconcileUntilId,
@@ -6320,6 +6321,41 @@ function registerForkAnomalyCallback(cb) {
 function key2(userId, chatId) {
   return `${userId}::${chatId}`;
 }
+async function inheritedMessageIds(ancestorId, forkId, userId) {
+  let currentId = forkId;
+  let currentMessages = await spindle.chat.getMessages(currentId);
+  let mapped = new Map(currentMessages.map((m) => [m.id, m.id]));
+  const seen = new Set;
+  while (currentId !== ancestorId) {
+    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS)
+      throw new Error("Fork ancestry could not be resolved");
+    seen.add(currentId);
+    const chat = await spindle.chats.get(currentId, userId);
+    const metadata = chat?.metadata;
+    const parentId = metadata?.["branched_from"];
+    const branchAt = metadata?.["branch_at_message"];
+    if (typeof parentId !== "string")
+      throw new Error("Fork ancestry is incomplete");
+    const parentMessages = await spindle.chat.getMessages(parentId);
+    const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
+    if (boundary === undefined)
+      return new Map;
+    const parentByIndex = new Map(parentMessages.map((m) => [m.index_in_chat, m]));
+    const next = new Map;
+    for (const message of currentMessages) {
+      if (message.index_in_chat > boundary)
+        continue;
+      const targetId = mapped.get(message.id);
+      const source = parentByIndex.get(message.index_in_chat);
+      if (targetId && source && source.role === message.role && source.content === message.content)
+        next.set(source.id, targetId);
+    }
+    mapped = next;
+    currentId = parentId;
+    currentMessages = parentMessages;
+  }
+  return mapped;
+}
 async function ensureForkAdoption(chatId, userId) {
   const k = key2(userId, chatId);
   if (checked.has(k))
@@ -6471,27 +6507,11 @@ async function adoptForkCodex(forkChatId, branchedFrom, userId) {
     if (getBusy(userId).some((b) => b.kind === "codex" && (b.chatId === ancestorChatId || b.chatId === forkChatId))) {
       return false;
     }
-    const [forkMsgs, ancMsgs] = await Promise.all([
+    const [forkMsgs, inheritedIds] = await Promise.all([
       spindle.chat.getMessages(forkChatId),
-      spindle.chat.getMessages(ancestorChatId)
+      inheritedMessageIds(ancestorChatId, forkChatId, userId)
     ]);
-    const ancIdxById = new Map;
-    for (const m of ancMsgs)
-      ancIdxById.set(m.id, m.index_in_chat);
-    const forkIdByIdx = new Map;
-    for (const m of forkMsgs) {
-      if (forkIdByIdx.has(m.index_in_chat)) {
-        warn(`fork codex adoption: duplicate index_in_chat ${m.index_in_chat} in fork ${forkChatId.slice(0, 8)}; remap may be imprecise`);
-        continue;
-      }
-      forkIdByIdx.set(m.index_in_chat, m.id);
-    }
-    const remapToFork = (ancestorMsgId) => {
-      const idx = ancIdxById.get(ancestorMsgId);
-      if (idx === undefined)
-        return null;
-      return forkIdByIdx.get(idx) ?? null;
-    };
+    const remapToFork = (ancestorMsgId) => inheritedIds.get(ancestorMsgId) ?? null;
     let forkTip = null;
     let tipIdx = -1;
     for (const m of forkMsgs) {
@@ -6568,31 +6588,21 @@ async function findAncestorBook(startChatId, userId) {
 }
 async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId) {
   const parentEntries = await listLmbEntries(parentChatId, userId);
-  const [forkMsgs, parentMsgs] = await Promise.all([
+  const [forkMsgs, inheritedIds] = await Promise.all([
     spindle.chat.getMessages(forkChatId),
-    spindle.chat.getMessages(parentChatId)
+    inheritedMessageIds(parentChatId, forkChatId, userId)
   ]);
-  const parentIdxById = new Map;
-  for (const m of parentMsgs)
-    parentIdxById.set(m.id, m.index_in_chat);
-  const forkIdByIdx = new Map;
-  for (const m of forkMsgs) {
-    if (forkIdByIdx.has(m.index_in_chat)) {
-      warn(`fork adoption: duplicate index_in_chat ${m.index_in_chat} in fork ${forkChatId.slice(0, 8)}; remap may be imprecise`);
-      continue;
-    }
-    forkIdByIdx.set(m.index_in_chat, m.id);
-  }
+  const forkIdxById = new Map(forkMsgs.map((m) => [m.id, m.index_in_chat]));
   const remap = (msgIds) => {
     const ids = [];
     let first = Number.POSITIVE_INFINITY;
     let last = -1;
     for (const id of msgIds) {
-      const idx = parentIdxById.get(id);
-      if (idx === undefined)
-        continue;
-      const forkId = forkIdByIdx.get(idx);
+      const forkId = inheritedIds.get(id);
       if (forkId === undefined)
+        continue;
+      const idx = forkIdxById.get(forkId);
+      if (idx === undefined)
         continue;
       ids.push(forkId);
       if (idx < first)

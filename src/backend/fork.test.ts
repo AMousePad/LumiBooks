@@ -70,13 +70,59 @@ beforeEach(async () => {
 afterAll(() => { (globalThis as any).spindle = original; });
 
 function branch(from: string, to: string, count: number) {
-  chats.set(to, { id: to, name: "Fork", metadata: { ...structuredClone(chats.get(from).metadata), branched_from: from } });
+  chats.set(to, { id: to, name: "Fork", metadata: { ...structuredClone(chats.get(from).metadata), branched_from: from, branch_at_message: messages.get(from)![count - 1]?.id } });
   messages.set(to, messages.get(from)!.slice(0, count).map((m, i) => ({ ...m, id: `${to}-m${i}` })));
 }
 function summary(id: string, tier: number, indexes: number[], sources: string[] = [], extra: any = {}) {
   const meta = normalizeEntryMeta({ tier, chatId: parent, msgIds: indexes.map((i) => `${parent}-m${i}`), sourceChapterEntryIds: sources, firstMsgIdx: indexes[0], lastMsgIdx: indexes.at(-1), ...extra })!;
   entries.push({ id, world_book_id: chats.get(parent).metadata.lumibooks_book_id, content: id, comment: id, disabled: !!extra.ghost, constant: true, extensions: { lumibooks: meta } });
 }
+
+test("delayed fork adoption never maps new fork turns to abandoned parent turns at the same indexes", async () => {
+  summary("early", 1, [0, 1]);
+  summary("abandoned", 1, [2, 3]);
+  branch(parent, child, 2);
+  // Identical text is still a different branch; the host's fork point is decisive.
+  messages.get(child)!.push(...messages.get(parent)!.slice(2).map((m) => ({ ...m, id: `${child}-new-${m.index_in_chat}` })));
+  await ensureForkAdoption(child, user);
+  expect((await listLmbEntries(child, user)).map((e) => e.raw.content)).toEqual(["early"]);
+  expect((await buildCoverage(child, user)).coveredBy.has(`${child}-new-2`)).toBe(false);
+  const cursor = await loadCursor(child, user);
+  expect(cursor.lastMsgId).toBe(`${child}-m1`);
+  expect(cursor.consumedSigs.map((s) => s.id)).toEqual([`${child}-m0`, `${child}-m1`]);
+});
+
+test("ancestor adoption respects every intervening fork point", async () => {
+  summary("early", 1, [0]);
+  summary("abandoned", 1, [1, 2, 3]);
+  branch(parent, child, 1);
+  messages.get(child)!.push(...messages.get(parent)!.slice(1).map((m) => ({ ...m, id: `${child}-new-${m.index_in_chat}` })));
+  const grandchild = `late-grandchild-${sequence}`;
+  branch(child, grandchild, 4);
+  await ensureForkAdoption(grandchild, user);
+  expect((await listLmbEntries(grandchild, user)).map((e) => e.raw.content)).toEqual(["early"]);
+  expect((await loadCursor(grandchild, user)).lastMsgId).toBe(`${grandchild}-m0`);
+});
+
+for (const changedChat of ["parent", "fork"] as const) test(`fork adoption drops summaries whose ${changedChat} sources were edited`, async () => {
+  summary("early", 1, [0, 1]);
+  summary("changed", 1, [2, 3]);
+  messages.get(changedChat === "parent" ? parent : child)![2].content = "An edited turn";
+  await ensureForkAdoption(child, user);
+  expect((await listLmbEntries(child, user)).map((e) => e.raw.content)).toEqual(["early"]);
+  expect((await buildCoverage(child, user)).coveredBy.has(`${child}-m2`)).toBe(false);
+  expect((await loadCursor(child, user)).lastMsgId).toBe(`${child}-m1`);
+});
+
+test("a deleted fork point leaves unverified summary coverage available for regeneration", async () => {
+  summary("unverified", 1, [0, 1]);
+  messages.set(parent, messages.get(parent)!.slice(0, 3));
+  await ensureForkAdoption(child, user);
+  expect(await listLmbEntries(child, user)).toEqual([]);
+  expect((await buildCoverage(child, user)).coveredBy.size).toBe(0);
+  expect((await loadCursor(child, user)).lastMsgId).toBeNull();
+  expect(await forkShelfPending(child, user)).toBe(false);
+});
 
 test("imported coverage remaps on a full fork and drops summaries crossing a shorter fork", async () => {
   await saveImportedSummaries(parent, user, [

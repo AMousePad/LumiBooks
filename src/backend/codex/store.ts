@@ -391,10 +391,13 @@ export async function inheritCodex(
     }
     const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
     const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
+    const prefixEnd = sigs.length ? sigs[sigs.length - 1]!.id : mappedPrefix;
     const next: CodexCursor = {
       ...cursor,
       consumedSigs: sigs,
-      lastMsgId: mappedLast ?? (sigs.length ? sigs[sigs.length - 1]!.id : mappedPrefix),
+      // A later ID may still map after a deleted/edited turn. Advancing to it
+      // would skip the hole that truncated the verified consumed prefix.
+      lastMsgId: sigs.length < cursor.consumedSigs.length ? prefixEnd : mappedLast ?? prefixEnd,
       prefixMsgId: mappedPrefix,
       pendingReconcile: true,
       reconcileUntilMsgId: reconcileUntilId,

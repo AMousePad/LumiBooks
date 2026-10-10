@@ -36,6 +36,42 @@ function key(userId: string, chatId: string): string {
   return `${userId}::${chatId}`;
 }
 
+/** Host forks preserve indexes but later turns can reuse the other branch's
+ * indexes. Compose a map through the actual fork points, never through those
+ * later turns or messages whose content has since diverged. */
+async function inheritedMessageIds(ancestorId: string, forkId: string, userId: string): Promise<Map<string, string>> {
+  let currentId = forkId;
+  let currentMessages = await spindle.chat.getMessages(currentId);
+  let mapped = new Map(currentMessages.map((m) => [m.id, m.id]));
+  const seen = new Set<string>();
+  while (currentId !== ancestorId) {
+    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS) throw new Error("Fork ancestry could not be resolved");
+    seen.add(currentId);
+    const chat = await spindle.chats.get(currentId, userId);
+    const metadata = chat?.metadata;
+    const parentId = metadata?.["branched_from"];
+    const branchAt = metadata?.["branch_at_message"];
+    if (typeof parentId !== "string") throw new Error("Fork ancestry is incomplete");
+    const parentMessages = await spindle.chat.getMessages(parentId);
+    const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
+    // A deleted fork point cannot prove which later indexes were inherited.
+    // Leave the raw messages uncovered so they can be summarized afresh.
+    if (boundary === undefined) return new Map();
+    const parentByIndex = new Map(parentMessages.map((m) => [m.index_in_chat, m]));
+    const next = new Map<string, string>();
+    for (const message of currentMessages) {
+      if (message.index_in_chat > boundary) continue;
+      const targetId = mapped.get(message.id);
+      const source = parentByIndex.get(message.index_in_chat);
+      if (targetId && source && source.role === message.role && source.content === message.content) next.set(source.id, targetId);
+    }
+    mapped = next;
+    currentId = parentId;
+    currentMessages = parentMessages;
+  }
+  return mapped;
+}
+
 export async function ensureForkAdoption(chatId: string, userId: string): Promise<void> {
   const k = key(userId, chatId);
   if (checked.has(k)) return;
@@ -204,25 +240,11 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
       return false;
     }
 
-    const [forkMsgs, ancMsgs] = await Promise.all([
+    const [forkMsgs, inheritedIds] = await Promise.all([
       spindle.chat.getMessages(forkChatId),
-      spindle.chat.getMessages(ancestorChatId),
+      inheritedMessageIds(ancestorChatId, forkChatId, userId),
     ]);
-    const ancIdxById = new Map<string, number>();
-    for (const m of ancMsgs) ancIdxById.set(m.id, m.index_in_chat);
-    const forkIdByIdx = new Map<number, string>();
-    for (const m of forkMsgs) {
-      if (forkIdByIdx.has(m.index_in_chat)) {
-        warn(`fork codex adoption: duplicate index_in_chat ${m.index_in_chat} in fork ${forkChatId.slice(0, 8)}; remap may be imprecise`);
-        continue;
-      }
-      forkIdByIdx.set(m.index_in_chat, m.id);
-    }
-    const remapToFork = (ancestorMsgId: string): string | null => {
-      const idx = ancIdxById.get(ancestorMsgId);
-      if (idx === undefined) return null;
-      return forkIdByIdx.get(idx) ?? null;
-    };
+    const remapToFork = (ancestorMsgId: string): string | null => inheritedIds.get(ancestorMsgId) ?? null;
     let forkTip: string | null = null;
     let tipIdx = -1;
     for (const m of forkMsgs) {
@@ -313,30 +335,21 @@ async function cloneShelfForFork(
 ): Promise<void> {
   const parentEntries = await listLmbEntries(parentChatId, userId);
 
-  const [forkMsgs, parentMsgs] = await Promise.all([
+  const [forkMsgs, inheritedIds] = await Promise.all([
     spindle.chat.getMessages(forkChatId),
-    spindle.chat.getMessages(parentChatId),
+    inheritedMessageIds(parentChatId, forkChatId, userId),
   ]);
-  const parentIdxById = new Map<string, number>();
-  for (const m of parentMsgs) parentIdxById.set(m.id, m.index_in_chat);
-  const forkIdByIdx = new Map<number, string>();
-  for (const m of forkMsgs) {
-    if (forkIdByIdx.has(m.index_in_chat)) {
-      warn(`fork adoption: duplicate index_in_chat ${m.index_in_chat} in fork ${forkChatId.slice(0, 8)}; remap may be imprecise`);
-      continue;
-    }
-    forkIdByIdx.set(m.index_in_chat, m.id);
-  }
+  const forkIdxById = new Map(forkMsgs.map((m) => [m.id, m.index_in_chat]));
 
   const remap = (msgIds: string[]): { ids: string[]; first?: number; last?: number } => {
     const ids: string[] = [];
     let first = Number.POSITIVE_INFINITY;
     let last = -1;
     for (const id of msgIds) {
-      const idx = parentIdxById.get(id);
-      if (idx === undefined) continue;
-      const forkId = forkIdByIdx.get(idx);
+      const forkId = inheritedIds.get(id);
       if (forkId === undefined) continue;
+      const idx = forkIdxById.get(forkId);
+      if (idx === undefined) continue;
       ids.push(forkId);
       if (idx < first) first = idx;
       if (idx > last) last = idx;
