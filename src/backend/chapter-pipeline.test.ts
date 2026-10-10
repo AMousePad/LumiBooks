@@ -158,7 +158,8 @@ test("regenerating chapter 67 includes only preceding memories and preserves its
   const saved = entries.find((e) => e.id === id).extensions.lumibooks;
   expect(saved.msgIds).toEqual(ids);
   expect(saved.sceneNumber).toBe(67);
-  expect(entries.some((e) => e.id === "chapter-67")).toBe(false);
+  expect(id).toBe("chapter-67");
+  expect(entries).toHaveLength(5);
 });
 
 
@@ -282,4 +283,26 @@ test("unchanged staged chapters promote only after their whole window clears the
   expect(entries[0].disabled).toBe(false);
   expect(entries[0].extensions.lumibooks.ghost).not.toBe(true);
   expect((await buildCoverage(chatId, userId)).coveredBy.size).toBe(12);
+});
+
+test("regeneration updates one entry without depending on a separate deletion", async () => {
+  const original = chapter(67, 0, 12);
+  original.extensions = { ...original.extensions, unrelated: { keep: true } } as any;
+  entries = [original];
+  let deletions = 0;
+  (globalThis as any).spindle.world_books.entries.delete = async () => { deletions++; throw new Error("delete failed"); };
+  const id = await createChapterFromRange(chatId, original.extensions.lumibooks!.msgIds, profile, settings(), userId, { replacesEntryId: original.id });
+  expect(id).toBe(original.id);
+  expect(deletions).toBe(0);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].content).toContain("A compressed story.");
+  expect(entries[0].extensions.unrelated).toEqual({ keep: true });
+});
+
+test("failed regeneration update leaves the original chapter intact", async () => {
+  entries = [chapter(67, 0, 12)];
+  const before = structuredClone(entries);
+  (globalThis as any).spindle.world_books.entries.update = async () => { throw new Error("update failed"); };
+  expect(await createChapterFromRange(chatId, entries[0].extensions.lumibooks.msgIds, profile, settings(), userId, { replacesEntryId: entries[0].id })).toBeNull();
+  expect(entries).toEqual(before);
 });

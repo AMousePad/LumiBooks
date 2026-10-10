@@ -33,7 +33,7 @@ beforeEach(async () => {
   } },
   world_books: { async get() { return book; }, async list() { return { data: [book], total: 1 }; },
    entries: {
-    async list(id: string) { const data = entries.filter((e) => e.world_book_id === id); return { data, total: data.length }; },
+    async list(id: string) { const data = structuredClone(entries.filter((e) => e.world_book_id === id)); return { data, total: data.length }; },
     async create(id: string, value: any) { const entry = { ...value, id: `new-${++serial}`, world_book_id: id }; entries.push(entry); return entry; },
     async update(id: string, patch: any) { const row = entries.find((e) => e.id === id); Object.assign(row, patch); return row; },
     async delete(id: string) { entries = entries.filter((e) => e.id !== id); return true; },
@@ -58,11 +58,15 @@ for (const parentFirst of [false, true]) test(`concurrent arc regeneration and v
  const gate = new Promise<void>((r) => { release = r; });
  const secondGenerated = new Promise<void>((r) => { generated = r; });
  const api = (globalThis as any).spindle;
- const create = api.world_books.entries.create, generate = api.generate.rawStream;
+ const create = api.world_books.entries.create, update = api.world_books.entries.update, generate = api.generate.rawStream;
  let firstWrite = true;
  api.world_books.entries.create = async (...args: any[]) => {
   if (firstWrite) { firstWrite = false; enter(); await gate; }
   return create(...args);
+ };
+ api.world_books.entries.update = async (...args: any[]) => {
+  if (firstWrite && args[1].content !== undefined) { firstWrite = false; enter(); await gate; }
+  return update(...args);
  };
  api.generate.rawStream = async function* (req: any) {
   for await (const event of generate(req)) { if (calls === 2) generated(); yield event; }
@@ -84,6 +88,31 @@ for (const parentFirst of [false, true]) test(`concurrent arc regeneration and v
  expect(coverage.activeEntries).toHaveLength(parentFirst ? 1 : 2);
  const allIds = new Set(entries.map((e) => e.id));
  for (const entry of entries) for (const id of entry.extensions.lumibooks.sourceChapterEntryIds ?? []) expect(allIds.has(id)).toBe(true);
+});
+
+for (const tier of [2, 3, 7] as const) for (const fail of [false, true]) test(`${TIER_NAMES[tier - 1]} regeneration ${fail ? "preserves the original on write failure" : "updates its existing entry without deletion"}`, async () => {
+ const children = [source(tier - 1, 0), source(tier - 1, 1)], parent = source(tier, 0);
+ const ids = children.map((e) => e.id);
+ parent.extensions.lumibooks.msgIds = ["m0", "m1"];
+ parent.extensions.lumibooks.sourceChapterEntryIds = ids;
+ parent.extensions.lumibooks.sceneNumber = 10;
+ for (const child of children) child.extensions.lumibooks.supersededByEntryId = parent.id;
+ entries = [...children, parent];
+ const before = structuredClone(entries), api = (globalThis as any).spindle.world_books.entries;
+ let deletions = 0;
+ api.delete = async () => { deletions++; throw new Error("delete failed"); };
+ if (fail) api.update = async () => { throw new Error("update failed"); };
+ const id = tier === 2 ? await createArcFromChapters(chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id })
+   : await createHigherFromEntries(tier, chatId, ids, profile, settings(), userId, { replacesEntryId: parent.id });
+ expect(id).toBe(fail ? null : parent.id);
+ expect(deletions).toBe(0);
+ expect(entries).toHaveLength(3);
+ if (fail) expect(entries).toEqual(before);
+ else {
+  expect(entries.at(-1).content).toContain("A compressed story.");
+  expect(entries.at(-1).extensions.lumibooks.sceneNumber).toBe(10);
+  expect((await buildCoverage(chatId, userId)).activeEntries.map((e) => e.raw.id)).toEqual([parent.id]);
+ }
 });
 
 for (const tier of [2, 3, 7] as const) for (const preview of [false, true]) for (const change of ["delete", "cover", "edit", "coverage"] as const) {
@@ -194,7 +223,8 @@ test("higher-tier previews accept at their original tier and regeneration keeps 
  profile.showMemoryPreviews = false;
  const replacement = await createHigherFromEntries(6, chatId, ["source-5-0", "source-5-1"], profile, settings(), userId, { replacesEntryId: id! });
  expect(replacement).toBeTruthy();
- expect(entries.some((e) => e.id === id)).toBe(false);
+ expect(replacement).toBe(id);
+ expect(entries.filter((e) => e.extensions.lumibooks.tier === 6)).toHaveLength(1);
  expect((await buildCoverage(chatId, userId)).activeEntries[0]!.meta.tier).toBe(6);
 });
 

@@ -376,10 +376,9 @@ export async function createChapterEntry(
   keys: string[] = [],
   constant: boolean = true,
   disabled: boolean = false,
+  replacement?: LMBEntry,
 ): Promise<WorldBookEntryDTO> {
-  return spindle.world_books.entries.create(
-    bookId,
-    {
+  const payload = {
       content,
       comment,
       disabled,
@@ -388,11 +387,15 @@ export async function createChapterEntry(
       keysecondary: [],
       vectorized: false,
       extensions: {
+        ...(replacement?.raw.extensions ?? {}),
         [EXTENSION_KEY]: meta,
       },
-    },
-    userId,
-  );
+  };
+  // Regeneration is one update: a separate create/delete can leave two active
+  // copies when deletion fails, and unnecessarily breaks stable entry links.
+  return replacement
+    ? spindle.world_books.entries.update(replacement.raw.id, payload, userId)
+    : spindle.world_books.entries.create(bookId, payload, userId);
 }
 
 export async function applyConstantToAllLmbEntries(userId: string, constant: boolean): Promise<number> {

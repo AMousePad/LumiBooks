@@ -105,14 +105,14 @@ for (const extra of [false, true]) for (const regenerate of [false, true]) test(
  };
  expect(await createChapterFromRange(chatId, ids, profile, settings(), userId, regenerate ? { replacesEntryId: old.id } : {})).toBeNull();
  await retryLastFailure(chatId, userId, profile, settings());
- const created = entries.find((e) => e.id.startsWith("new-"));
+ const created = entries.find((e) => regenerate ? e.id === old.id : e.id.startsWith("new-"));
  expect(created?.extensions.lumibooks.msgIds).toEqual(ids);
  expect(created?.extensions.lumibooks.ghost).not.toBe(true);
  expect(requests).toHaveLength(2);
  expect(requests[1].messages[1].content.match(/RETRY_SOURCE_\d+_END/g)).toEqual(ids.map((id) => `RETRY_SOURCE_${id.slice(1)}_END`));
  expect(getLastFailure(userId, chatId)).toBeNull();
  if (regenerate) {
-   expect(entries.some((e) => e.id === old.id)).toBe(false);
+   expect(entries).toHaveLength(1);
    expect(created.extensions.lumibooks.sceneNumber).toBe(67);
  }
 });

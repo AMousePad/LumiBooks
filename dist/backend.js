@@ -1437,8 +1437,8 @@ async function listLmbEntries(chatId, userId, fresh = false) {
   }
   return out;
 }
-async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], constant = true, disabled = false) {
-  return spindle.world_books.entries.create(bookId, {
+async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], constant = true, disabled = false, replacement) {
+  const payload = {
     content,
     comment,
     disabled,
@@ -1447,9 +1447,11 @@ async function createChapterEntry(bookId, meta, content, comment, userId, keys =
     keysecondary: [],
     vectorized: false,
     extensions: {
+      ...replacement?.raw.extensions ?? {},
       [EXTENSION_KEY]: meta
     }
-  }, userId);
+  };
+  return replacement ? spindle.world_books.entries.update(replacement.raw.id, payload, userId) : spindle.world_books.entries.create(bookId, payload, userId);
 }
 async function applyConstantToAllLmbEntries(userId, constant) {
   const books = await listAllBooks(userId);
@@ -7484,7 +7486,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
 ${result.content}`;
     let entry;
     try {
-      entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost);
+      entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost, replacedEntry);
     } catch (err) {
       if (freedTaken !== null)
         recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
@@ -7492,15 +7494,6 @@ ${result.content}`;
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
     invalidateBookCache(userId, chatId);
-    if (replacesEntryId) {
-      try {
-        await deleteEntry(replacesEntryId, userId);
-        invalidateBookCache(userId, chatId);
-      } catch (err) {
-        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "chapter", outcome: "failed", reason: "storage" });
-        warn(`regen: failed to delete replaced chapter ${replacesEntryId}: ${describeError(err)}`);
-      }
-    }
     if (profile.hideCoveredMessages && !ghost) {
       try {
         await syncHiddenForCoveredMessages(chatId, allMessages, {
@@ -7683,7 +7676,7 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
     const finalArcContent = `${arcOpener}
 
 ${result.content}`;
-    const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries);
+    const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries, false, replacedArc);
     const failedSupersedes = [];
     for (const ch of selected) {
       try {
@@ -7698,15 +7691,6 @@ ${result.content}`;
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: arcEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: arcEntry, meta }]) });
     invalidateBookCache(userId, chatId);
-    if (replacesEntryId) {
-      try {
-        await deleteEntry(replacesEntryId, userId);
-        invalidateBookCache(userId, chatId);
-      } catch (err) {
-        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "arc", outcome: "failed", reason: "storage" });
-        warn(`regen: failed to delete replaced arc ${replacesEntryId}: ${describeError(err)}`);
-      }
-    }
     publishArcCreated(userId, {
       chatId,
       arcEntryId: arcEntry.id,
@@ -7874,7 +7858,7 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
     const finalVolumeContent = `${volumeOpener}
 
 ${result.content}`;
-    const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries);
+    const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries, false, replacedVolume);
     const failedSupersedes = [];
     for (const arc of selected) {
       try {
@@ -7889,15 +7873,6 @@ ${result.content}`;
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
     invalidateBookCache(userId, chatId);
-    if (replacesEntryId) {
-      try {
-        await deleteEntry(replacesEntryId, userId);
-        invalidateBookCache(userId, chatId);
-      } catch (err) {
-        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "volume", outcome: "failed", reason: "storage" });
-        warn(`regen: failed to delete replaced volume ${replacesEntryId}: ${describeError(err)}`);
-      }
-    }
     if (tier === 3)
       publishVolumeCreated(userId, {
         chatId,

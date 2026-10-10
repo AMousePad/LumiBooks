@@ -725,7 +725,7 @@ async function commitChapter(
   const finalContent = `${opener}\n\n${result.content}`;
   let entry: Awaited<ReturnType<typeof createChapterEntry>>;
   try {
-    entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost);
+    entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost, replacedEntry);
   } catch (err) {
     // The freed ordinal must survive a failed commit or the retried refill
     // falls back to max+1 and jumps out of story order.
@@ -734,16 +734,6 @@ async function commitChapter(
   }
   void recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
   invalidateBookCache(userId, chatId);
-
-  if (replacesEntryId) {
-    try {
-      await deleteEntry(replacesEntryId, userId);
-      invalidateBookCache(userId, chatId);
-    } catch (err) {
-      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "chapter", outcome: "failed", reason: "storage" });
-      warn(`regen: failed to delete replaced chapter ${replacesEntryId}: ${describeError(err)}`);
-    }
-  }
 
   if (profile.hideCoveredMessages && !ghost) {
     try {
@@ -981,7 +971,7 @@ async function commitArc(
   const arcSettings = await loadSettings(userId);
   const arcOpener = buildArcHeader(sceneNumber, sourceChapterEntryIds.length, msgIds.length);
   const finalArcContent = `${arcOpener}\n\n${result.content}`;
-  const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries);
+  const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries, false, replacedArc);
   const failedSupersedes: string[] = [];
   for (const ch of selected) {
     try {
@@ -1001,15 +991,6 @@ async function commitArc(
   }
   void recordDiagnostic(userId, { event: "commit", chatId, entryId: arcEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: arcEntry, meta }]) });
   invalidateBookCache(userId, chatId);
-  if (replacesEntryId) {
-    try {
-      await deleteEntry(replacesEntryId, userId);
-      invalidateBookCache(userId, chatId);
-    } catch (err) {
-      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "arc", outcome: "failed", reason: "storage" });
-      warn(`regen: failed to delete replaced arc ${replacesEntryId}: ${describeError(err)}`);
-    }
-  }
   publishArcCreated(userId, {
     chatId,
     arcEntryId: arcEntry.id,
@@ -1214,7 +1195,7 @@ async function commitVolume(
   const volumeSettings = await loadSettings(userId);
   const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
   const finalVolumeContent = `${volumeOpener}\n\n${result.content}`;
-  const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries);
+  const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries, false, replacedVolume);
   const failedSupersedes: string[] = [];
   for (const arc of selected) {
     try {
@@ -1233,15 +1214,6 @@ async function commitVolume(
   }
   void recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
   invalidateBookCache(userId, chatId);
-  if (replacesEntryId) {
-    try {
-      await deleteEntry(replacesEntryId, userId);
-      invalidateBookCache(userId, chatId);
-    } catch (err) {
-      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "volume", outcome: "failed", reason: "storage" });
-      warn(`regen: failed to delete replaced volume ${replacesEntryId}: ${describeError(err)}`);
-    }
-  }
   if (tier === 3) publishVolumeCreated(userId, {
     chatId,
     volumeEntryId: volumeEntry.id,
