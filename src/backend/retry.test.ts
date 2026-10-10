@@ -2,7 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, HIGHER_TIERS, TIER_NAMES, makeDefaultProfile, normalizeEntryMeta, normalizeProfile } from "../shared";
 import { buildCoverage } from "./coverage";
 import { copyLmbEntries } from "./book-copy";
-import { createHigherFromEntries, drainHigherBacklog, maybeRunArcCheck, getPendingPreviews, acceptPreview, registerPipelineCallbacks } from "./pipeline";
+import { createChapterFromRange, getLastFailure, createHigherFromEntries, drainHigherBacklog, maybeRunArcCheck, getPendingPreviews, acceptPreview, registerPipelineCallbacks } from "./pipeline";
 import { invalidateBookCache, listLmbEntries } from "./world-book";
 import { saveSettings } from "./storage";
 
@@ -77,4 +77,42 @@ test("retry must respect the failed automatic batch and reserved lag", async () 
  await retryLastFailure(chatId, userId, profile, settings());
  const volume = entries.find((e) => e.extensions.lumibooks.tier === 3);
  expect(volume?.extensions.lumibooks.sourceChapterEntryIds.length).toBe(2);
+});
+
+for (const extra of [false, true]) for (const regenerate of [false, true]) test(`retry preserves ${regenerate ? "regeneration target" : "manual chapter selection"} with extra context ${extra}`, async () => {
+ Object.assign((globalThis as any).spindle, {
+   registerWorldInfoInterceptor() {}, registerInterceptor() {}, on() {}, onFrontendMessage() {}, sendToFrontend() {},
+   macros: { async resolve(text: string) { return text; } },
+ });
+ const { retryLastFailure } = await import("./index");
+ registerPipelineCallbacks({ onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {} });
+ const messages = Array.from({ length: 60 }, (_, i) => ({ id: `m${i}`, role: "user", content: `RETRY_SOURCE_${i}_END`, index_in_chat: i, extra: {} }));
+ (globalThis as any).spindle.chat.getMessages = async () => messages;
+ profile.codexEnabled = true; profile.codexExtraContext = extra;
+ profile.lagValue = 50; profile.windowValue = 12;
+ profile.hideCoveredMessages = false;
+ const ids = ["m20", "m22", "m24"];
+ const old = source(1, 20);
+ old.extensions.lumibooks.msgIds = ids;
+ old.extensions.lumibooks.sceneNumber = 67;
+ if (regenerate) entries = [old];
+ await saveSettings(userId, settings());
+ const requests: any[] = [];
+ (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
+   requests.push(req);
+   if (requests.length === 1) throw new Error("temporary model fault");
+   yield { type: "done", content: JSON.stringify({ title: "Retried", content: "Summary.", keywords: [] }) };
+ };
+ expect(await createChapterFromRange(chatId, ids, profile, settings(), userId, regenerate ? { replacesEntryId: old.id } : {})).toBeNull();
+ await retryLastFailure(chatId, userId, profile, settings());
+ const created = entries.find((e) => e.id.startsWith("new-"));
+ expect(created?.extensions.lumibooks.msgIds).toEqual(ids);
+ expect(created?.extensions.lumibooks.ghost).not.toBe(true);
+ expect(requests).toHaveLength(2);
+ expect(requests[1].messages[1].content.match(/RETRY_SOURCE_\d+_END/g)).toEqual(ids.map((id) => `RETRY_SOURCE_${id.slice(1)}_END`));
+ expect(getLastFailure(userId, chatId)).toBeNull();
+ if (regenerate) {
+   expect(entries.some((e) => e.id === old.id)).toBe(false);
+   expect(created.extensions.lumibooks.sceneNumber).toBe(67);
+ }
 });

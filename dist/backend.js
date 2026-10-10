@@ -7319,6 +7319,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
   const ghost = opts.ghost === true;
+  const retrySelection = ghost ? undefined : { sourceMessageIds: window.map((m) => m.id), replacesEntryId };
   nyaaToast(userId, "fire", automation);
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
@@ -7359,7 +7360,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, "chapter", outcome.retries, outcome.err);
+    recordFailure(userId, chatId, "chapter", outcome.retries, outcome.err, retrySelection);
     failToast(userId, "chapter", outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -7380,7 +7381,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
     return entryId;
   } catch (err) {
     warn(`commitChapter failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "chapter", 0, err);
+    recordFailure(userId, chatId, "chapter", 0, err, retrySelection);
     failToast(userId, "chapter", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -7914,7 +7915,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
         cb?.onStateChange(userId, chatId);
         return entryId;
       } catch (err) {
-        recordFailure(userId, chatId, "chapter", 0, err);
+        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId });
         failToast(userId, "chapter", err);
         cb?.onStateChange(userId, chatId);
         return null;
@@ -11538,6 +11539,11 @@ async function collectActiveChapterIds(chatId, userId) {
 }
 async function retryLastFailure(chatId, userId, profile, settings) {
   const last = getLastFailure(userId, chatId);
+  if (last?.kind === "chapter" && last.sourceMessageIds) {
+    await createChapterFromRange(chatId, last.sourceMessageIds, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
+    await maybeRunArcCheck(chatId, profile, settings, userId);
+    return;
+  }
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = TIER_KINDS.indexOf(last.kind) + 1;
     const coverage = await buildCoverage(chatId, userId);

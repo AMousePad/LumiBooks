@@ -407,7 +407,7 @@ async function runWithRetry<T>(
 }
 
 function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown,
-  selection?: Pick<FailureRecord, "sourceEntryIds" | "replacesEntryId">): void {
+  selection?: Pick<FailureRecord, "sourceEntryIds" | "sourceMessageIds" | "replacesEntryId">): void {
   void recordDiagnostic(userId, { event: "failure", chatId, mode: kind, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: retries }, replacesEntryId: selection?.replacesEntryId });
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key)) failureByChat.delete(key);
@@ -546,6 +546,7 @@ async function runChapter(
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
   const ghost = opts.ghost === true;
+  const retrySelection = ghost ? undefined : { sourceMessageIds: window.map((m) => m.id), replacesEntryId };
   nyaaToast(userId, "fire", automation);
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
@@ -582,7 +583,7 @@ async function runChapter(
       cb?.onStateChange(userId, chatId);
       return null;
     }
-    recordFailure(userId, chatId, "chapter", outcome.retries, outcome.err);
+    recordFailure(userId, chatId, "chapter", outcome.retries, outcome.err, retrySelection);
     failToast(userId, "chapter", outcome.err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -605,7 +606,7 @@ async function runChapter(
     return entryId;
   } catch (err) {
     warn(`commitChapter failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "chapter", 0, err);
+    recordFailure(userId, chatId, "chapter", 0, err, retrySelection);
     failToast(userId, "chapter", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -1277,7 +1278,7 @@ export async function acceptPreview(
         cb?.onStateChange(userId, chatId);
         return entryId;
       } catch (err) {
-        recordFailure(userId, chatId, "chapter", 0, err);
+        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId });
         failToast(userId, "chapter", err);
         cb?.onStateChange(userId, chatId);
         return null;

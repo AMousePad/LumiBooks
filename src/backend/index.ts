@@ -490,6 +490,11 @@ export async function retryLastFailure(
   settings: Parameters<typeof createChapterAuto>[2],
 ): Promise<void> {
   const last = getLastFailure(userId, chatId);
+  if (last?.kind === "chapter" && last.sourceMessageIds) {
+    await createChapterFromRange(chatId, last.sourceMessageIds, profile, settings, userId, { replacesEntryId: last.replacesEntryId });
+    await maybeRunArcCheck(chatId, profile, settings, userId);
+    return;
+  }
   if (last && TIER_KINDS.indexOf(last.kind) >= 2) {
     const tier = (TIER_KINDS.indexOf(last.kind) + 1) as HigherTier;
     const coverage = await buildCoverage(chatId, userId);

@@ -67,6 +67,7 @@ export interface FailureRecord {
   retriedTimes: number;
   at: number;
   sourceEntryIds?: string[];
+  sourceMessageIds?: string[];
   replacesEntryId?: string;
 }
 
