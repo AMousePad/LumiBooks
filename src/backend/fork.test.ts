@@ -271,6 +271,30 @@ test("an incomplete root copy disables its new entries when rollback deletion fa
   expect(entries.filter((e) => e.extensions.lumibooks.chatId === parent).every((e) => !e.disabled)).toBe(true);
 });
 
+for (const operation of [rebaseRoot, rebuildRoot, detachRoot]) {
+  test(`${operation.name} disables retired roots if deletion fails`, async () => {
+    summary("old-root", 1, [0, 1]);
+    await rebaseRoot(child, parent, user);
+    const oldIds = new Set((await listLmbEntries(child, user)).map((e) => e.raw.id));
+    (globalThis as any).spindle.world_books.entries.delete = async () => { throw new Error("delete unavailable"); };
+    if (operation === detachRoot) await detachRoot(child, user);
+    else await operation(child, parent, user);
+    expect(entries.filter((e) => oldIds.has(e.id)).every((e) => e.disabled)).toBe(true);
+    const active = (await buildCoverage(child, user)).activeEntries;
+    expect(active).toHaveLength(operation === detachRoot ? 0 : 1);
+    expect(active.every((e) => !oldIds.has(e.raw.id))).toBe(true);
+  });
+}
+
+test("root cleanup reports failure when neither deletion nor disabling succeeds", async () => {
+  summary("old-root", 1, [0, 1]);
+  await rebaseRoot(child, parent, user);
+  const api = (globalThis as any).spindle.world_books.entries;
+  api.delete = async () => { throw new Error("delete unavailable"); };
+  api.update = async () => { throw new Error("update unavailable"); };
+  await expect(detachRoot(child, user)).rejects.toThrow();
+});
+
 test("higher-tier root adoption, rebuilding and detaching preserve the source", async () => {
   summary("chapter", 1, [0, 1, 2, 3]);
   for (let tier = 2; tier <= 7; tier++) summary(`tier-${tier}`, tier, [0, 1, 2, 3], [tier === 2 ? "chapter" : `tier-${tier - 1}`]);

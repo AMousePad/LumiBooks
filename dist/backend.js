@@ -10925,6 +10925,25 @@ function computeNegativeOrder(entries) {
   sorted.forEach((e, i) => order.set(e.raw.id, -(n - i)));
   return order;
 }
+async function retireEntries(entries, userId, chatId) {
+  const failures = [];
+  for (const entry of entries) {
+    try {
+      await deleteEntry(entry.raw.id, userId);
+    } catch (err) {
+      warn(`root cleanup could not delete an entry: ${describeError(err)}`);
+      try {
+        await setEntryDisabled(entry.raw.id, true, userId);
+      } catch (disableError) {
+        failures.push(disableError);
+      }
+    }
+  }
+  invalidateBookCache(userId, chatId);
+  invalidateRootCandidates(userId);
+  if (failures.length)
+    throw new AggregateError(failures, "Some old summaries could not be removed or disabled. Refresh Books before retrying.");
+}
 async function seedRoot(targetChatId, sourceChatId, sourceEntries, existingRoots, userId) {
   const book = await ensureBookForChat(targetChatId, userId);
   const negIdx = computeNegativeOrder(sourceEntries);
@@ -10940,11 +10959,7 @@ async function seedRoot(targetChatId, sourceChatId, sourceEntries, existingRoots
     };
   };
   const idMap = await copyLmbEntries(book.id, sourceEntries, userId, transform);
-  for (const r of existingRoots) {
-    await deleteEntry(r.raw.id, userId).catch((err) => warn(`rebase: failed to drop old root ${r.raw.id}: ${describeError(err)}`));
-  }
-  invalidateBookCache(userId, targetChatId);
-  invalidateRootCandidates(userId);
+  await retireEntries(existingRoots, userId, targetChatId);
   info(`rebased ${targetChatId.slice(0, 8)} onto root from ${sourceChatId.slice(0, 8)} (${idMap.size} entries)`);
   return { count: idMap.size, newIds: new Set(idMap.values()) };
 }
@@ -10982,22 +10997,7 @@ async function rebuildRoot(targetChatId, sourceChatId, userId) {
       return { ok: false, reason: "empty_source" };
     const { count, newIds } = await seedRoot(targetChatId, sourceChatId, sourceEntries, [], userId);
     const after = await listLmbEntries(targetChatId, userId);
-    const survivors = [];
-    for (const e of after) {
-      if (newIds.has(e.raw.id))
-        continue;
-      try {
-        await deleteEntry(e.raw.id, userId);
-      } catch (err) {
-        warn(`rebuild: failed to delete ${e.raw.id}: ${describeError(err)}`);
-        survivors.push(e);
-      }
-    }
-    for (const e of survivors) {
-      await setEntryDisabled(e.raw.id, true, userId).catch(() => {});
-    }
-    invalidateBookCache(userId, targetChatId);
-    invalidateRootCandidates(userId);
+    await retireEntries(after.filter((e) => !newIds.has(e.raw.id)), userId, targetChatId);
     return { ok: true, count };
   } finally {
     inFlight.delete(key);
@@ -11006,13 +11006,7 @@ async function rebuildRoot(targetChatId, sourceChatId, userId) {
 async function detachRoot(targetChatId, userId) {
   const entries = await listLmbEntries(targetChatId, userId);
   const roots = entries.filter((e) => e.meta.isRoot);
-  for (const r of roots) {
-    await deleteEntry(r.raw.id, userId).catch((err) => warn(`detach: failed to delete root ${r.raw.id}: ${describeError(err)}`));
-  }
-  if (roots.length > 0) {
-    invalidateBookCache(userId, targetChatId);
-    invalidateRootCandidates(userId);
-  }
+  await retireEntries(roots, userId, targetChatId);
   return roots.length;
 }
 
