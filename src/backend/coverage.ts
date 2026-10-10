@@ -185,7 +185,7 @@ export function trimLagFromTail(uncoveredTail: ChatMessageDTO[], profile: LMBPro
  * Chapter windows fill from the EARLIEST uncovered gap rather than the
  * contiguous tail, so a hole left by manual selections or deleted summaries gets
  * refilled instead of stranded behind later coverage. A gap bounded by later
- * coverage files at whatever size it has (it can never grow); an open tail
+ * coverage or an exclusion files at whatever size it has; an open tail
  * waits for a full window unless the user explicitly files a partial chapter.
  */
 export function selectUncoveredChapterWindow(
@@ -195,16 +195,17 @@ export function selectUncoveredChapterWindow(
   allowPartial = false,
 ): ChatMessageDTO[] {
   const kept = trimLagFromTail(messages, effProfile);
+  const closesRun = (m: ChatMessageDTO) => coverage.coveredBy.has(m.id) || isExcluded(m);
   let i = 0;
   while (i < kept.length) {
-    while (i < kept.length && coverage.coveredBy.has(kept[i]!.id)) i++;
+    while (i < kept.length && closesRun(kept[i]!)) i++;
     if (i >= kept.length) return [];
     const run: ChatMessageDTO[] = [];
-    let boundedByCoverage = false;
+    let bounded = false;
     while (i < kept.length) {
       const m = kept[i]!;
-      if (coverage.coveredBy.has(m.id)) {
-        boundedByCoverage = true;
+      if (closesRun(m)) {
+        bounded = true;
         break;
       }
       run.push(m);
@@ -212,9 +213,9 @@ export function selectUncoveredChapterWindow(
     }
     // The first reserved message can close the gap without entering its window.
     // Trimming lag must not erase that boundary and strand a short older gap.
-    if (i === kept.length && messages[i] && coverage.coveredBy.has(messages[i]!.id)) boundedByCoverage = true;
+    if (i === kept.length && messages[i] && closesRun(messages[i]!)) bounded = true;
     const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
-    if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue) return [];
+    if (!allowPartial && !bounded && runSize < effProfile.windowValue) return [];
     // A bounded gap with no eligible content (only excluded or system
     // messages) can never file a real summary: scan past it or a backlog drain
     // would pay an LLM call to summarize nothing, or worse stall on it forever.

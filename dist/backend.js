@@ -1880,27 +1880,28 @@ function trimLagFromTail(uncoveredTail, profile) {
 }
 function selectUncoveredChapterWindow(messages, coverage, effProfile, allowPartial = false) {
   const kept = trimLagFromTail(messages, effProfile);
+  const closesRun = (m) => coverage.coveredBy.has(m.id) || isExcluded(m);
   let i = 0;
   while (i < kept.length) {
-    while (i < kept.length && coverage.coveredBy.has(kept[i].id))
+    while (i < kept.length && closesRun(kept[i]))
       i++;
     if (i >= kept.length)
       return [];
     const run = [];
-    let boundedByCoverage = false;
+    let bounded = false;
     while (i < kept.length) {
       const m = kept[i];
-      if (coverage.coveredBy.has(m.id)) {
-        boundedByCoverage = true;
+      if (closesRun(m)) {
+        bounded = true;
         break;
       }
       run.push(m);
       i++;
     }
-    if (i === kept.length && messages[i] && coverage.coveredBy.has(messages[i].id))
-      boundedByCoverage = true;
+    if (i === kept.length && messages[i] && closesRun(messages[i]))
+      bounded = true;
     const runSize = sizeEligible(run, effProfile.windowUnit, effProfile);
-    if (!allowPartial && !boundedByCoverage && runSize < effProfile.windowValue)
+    if (!allowPartial && !bounded && runSize < effProfile.windowValue)
       return [];
     if (runSize === 0)
       continue;
