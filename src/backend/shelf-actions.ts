@@ -3,6 +3,21 @@ import { deleteEntry, invalidateBookCache, listLmbEntries, patchEntryMeta, relea
 import { withCommitMutex } from "./summary-commit";
 import { describeError, warn } from "./runtime";
 
+export async function clearSummaryShelf(chatId: string, userId: string): Promise<number> {
+  return withCommitMutex(userId, chatId, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    const failures: unknown[] = [];
+    let removed = 0;
+    for (const entry of entries) {
+      try { await deleteEntry(entry.raw.id, userId); removed++; }
+      catch (err) { failures.push(err); }
+    }
+    invalidateBookCache(userId, chatId);
+    if (failures.length) throw new AggregateError(failures, `Removed ${removed} summaries, but ${failures.length} could not be deleted. Retry clearing the shelf before rebuilding.`);
+    return removed;
+  });
+}
+
 export async function removeSummaryEntry(chatId: string, entryId: string, userId: string, release = false): Promise<LMBEntry | null> {
   return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);

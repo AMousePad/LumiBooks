@@ -1,4 +1,4 @@
-import { removeSummaryEntry } from "./shelf-actions";
+import { clearSummaryShelf, removeSummaryEntry } from "./shelf-actions";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
@@ -38,7 +38,6 @@ import {
 import {
   applyConstantToAllLmbEntries,
   ensureBookForChat,
-  deleteEntry,
   updateEntry,
   listLmbEntries,
   invalidateBookCache,
@@ -440,23 +439,14 @@ async function handleExternalEntryDeletion(userId: string, bookId: string, isBoo
 /** Delete every LumiBooks-managed entry for a chat (roots and ghosts
  * included) and let its hidden messages back into the prompt. */
 async function wipeBooksEntries(chatId: string, userId: string): Promise<number> {
-  const entries = await listLmbEntries(chatId, userId);
-  let removed = 0;
-  for (const e of entries) {
-    try {
-      await deleteEntry(e.raw.id, userId);
-      removed++;
-    } catch (err) {
-      warn(`wipe books: failed to delete ${e.raw.id}: ${describeError(err)}`);
-    }
+  try {
+    return await clearSummaryShelf(chatId, userId);
+  } finally {
+    // A partially cleared shelf still needs its newly uncovered messages back.
+    const settings = await loadSettings(userId);
+    const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+    await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true);
   }
-  invalidateBookCache(userId, chatId);
-  const settings = await loadSettings(userId);
-  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
-  await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true).catch((err) =>
-    warn(`wipe books: visibility resync failed: ${describeError(err)}`),
-  );
-  return removed;
 }
 
 /** Shared by the profile handlers: when the resulting active profile lacks

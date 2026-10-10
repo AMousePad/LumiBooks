@@ -6,7 +6,7 @@ import { createArcAuto, createArcFromChapters, createHigherFromEntries, drainHig
 import { SummaryTimelineError } from "./binding";
 import { invalidateBookCache, listLmbEntries } from "./world-book";
 import { saveSettings } from "./storage";
-import { removeSummaryEntry } from "./shelf-actions";
+import { clearSummaryShelf, removeSummaryEntry } from "./shelf-actions";
 
 const original = (globalThis as any).spindle;
 const chatId = "higher-test", userId = "higher-user", bookId = "higher-book";
@@ -47,6 +47,18 @@ beforeEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 afterEach(() => { for (const p of getPendingPreviews(userId, chatId)) dropPendingPreview(userId, chatId, p.draftId); });
+
+test("failed shelf clearing reports partial progress and retries the remaining entries", async () => {
+ entries = [source(1, 0), source(1, 1), source(1, 2)];
+ const api = (globalThis as any).spindle.world_books.entries;
+ const remove = api.delete;
+ api.delete = async (id: string) => { if (id === "source-1-1") throw new Error("delete failed"); return remove(id); };
+ await expect(clearSummaryShelf(chatId, userId)).rejects.toThrow("Removed 2 summaries, but 1 could not be deleted");
+ expect(entries.map((e) => e.id)).toEqual(["source-1-1"]);
+ api.delete = remove;
+ expect(await clearSummaryShelf(chatId, userId)).toBe(1);
+ expect(entries).toHaveLength(0);
+});
 
 for (const tier of [2, 6]) for (const release of [false, true]) for (const root of [false, true]) {
  test(`${release ? "releasing" : "deleting"} a compacted tier ${tier} ${root ? "root" : "summary"} preserves descendant coverage`, async () => {

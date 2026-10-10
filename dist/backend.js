@@ -2076,6 +2076,25 @@ function selectedChapterRuns(messages, ids) {
 }
 
 // src/backend/shelf-actions.ts
+async function clearSummaryShelf(chatId, userId) {
+  return withCommitMutex(userId, chatId, async () => {
+    const entries = await listLmbEntries(chatId, userId, true);
+    const failures = [];
+    let removed = 0;
+    for (const entry of entries) {
+      try {
+        await deleteEntry(entry.raw.id, userId);
+        removed++;
+      } catch (err) {
+        failures.push(err);
+      }
+    }
+    invalidateBookCache(userId, chatId);
+    if (failures.length)
+      throw new AggregateError(failures, `Removed ${removed} summaries, but ${failures.length} could not be deleted. Retry clearing the shelf before rebuilding.`);
+    return removed;
+  });
+}
 async function removeSummaryEntry(chatId, entryId, userId, release = false) {
   return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
@@ -11646,21 +11665,13 @@ async function handleExternalEntryDeletion(userId, bookId, isBookDeletion) {
   await pushState(userId, chatId);
 }
 async function wipeBooksEntries(chatId, userId) {
-  const entries = await listLmbEntries(chatId, userId);
-  let removed = 0;
-  for (const e of entries) {
-    try {
-      await deleteEntry(e.raw.id, userId);
-      removed++;
-    } catch (err) {
-      warn(`wipe books: failed to delete ${e.raw.id}: ${describeError(err)}`);
-    }
+  try {
+    return await clearSummaryShelf(chatId, userId);
+  } finally {
+    const settings = await loadSettings(userId);
+    const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+    await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true);
   }
-  invalidateBookCache(userId, chatId);
-  const settings = await loadSettings(userId);
-  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
-  await resyncVisibility(chatId, userId, profile ? profile.hideCoveredMessages : true).catch((err) => warn(`wipe books: visibility resync failed: ${describeError(err)}`));
-  return removed;
 }
 async function cleanupGhostsIfModeOff(userId, chatId, context) {
   const after = await loadSettings(userId);
