@@ -147,13 +147,25 @@ export interface PipelineCallbacks {
 
 let cb: PipelineCallbacks | null = null;
 export function registerPipelineCallbacks(c: PipelineCallbacks): void {
-  cb = c;
+  // Frontend delivery is observational. A disconnected viewer must not strand
+  // a busy operation, turn a saved result into a failure, or trigger a retry.
+  function delivery<A extends unknown[]>(name: string, send: (...args: A) => void): (...args: A) => void {
+    return (...args) => {
+      try { send(...args); }
+      catch (err) { warn(`${name} delivery failed: ${describeError(err)}`); }
+    };
+  }
+  cb = {
+    onBusyChange: delivery("busy status", c.onBusyChange.bind(c)),
+    onToast: delivery("toast", c.onToast.bind(c)),
+    onStateChange: delivery("state", c.onStateChange.bind(c)),
+    onStreamText: delivery("stream viewer", c.onStreamText.bind(c)),
+  };
 }
 
 /** Viewer delivery must never abort generation or trigger a model retry. */
 function pushStreamText(userId: string, chatId: string, kind: BusyKind, snap: StreamSnapshot): void {
-  try { cb?.onStreamText(userId, chatId, kind, snap); }
-  catch (err) { warn(`stream viewer delivery failed: ${describeError(err)}`); }
+  cb?.onStreamText(userId, chatId, kind, snap);
 }
 
 export function setBusy(userId: string, chatId: string, kind: BusyKind, label: string): boolean {

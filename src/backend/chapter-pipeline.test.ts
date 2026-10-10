@@ -53,6 +53,30 @@ afterEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 
+for (const callback of ["onBusyChange", "onStateChange", "onToast"] as const) {
+  test(`failed ${callback} delivery cannot strand or retry a chapter`, async () => {
+    const p = await import("./pipeline");
+    let deliveries = 0;
+    registerPipelineCallbacks({
+      onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {},
+      [callback]() { deliveries++; throw new Error("frontend disconnected"); },
+    });
+    try {
+      expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeTruthy();
+      expect(deliveries).toBeGreaterThan(0);
+      expect(p.getBusy(userId)).toHaveLength(0);
+      expect(requests).toHaveLength(1);
+      expect(entries).toHaveLength(1);
+      expect(await createChapterAuto(chatId, profile, settings(), userId)).toBeTruthy();
+      expect(requests).toHaveLength(2);
+      expect(entries).toHaveLength(2);
+    } finally {
+      registerPipelineCallbacks({ onBusyChange() {}, onStateChange() {}, onToast() {}, onStreamText() {} });
+      p.clearBusy(userId, chatId, "chapter");
+    }
+  });
+}
+
 for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
   entries = [chapter(71, 0, 69), chapter(72, 75, 87)];
   profile.lagValue = 12;

@@ -6998,14 +6998,24 @@ function chatKey(userId, chatId) {
 }
 var cb = null;
 function registerPipelineCallbacks(c) {
-  cb = c;
+  function delivery(name, send) {
+    return (...args) => {
+      try {
+        send(...args);
+      } catch (err) {
+        warn(`${name} delivery failed: ${describeError(err)}`);
+      }
+    };
+  }
+  cb = {
+    onBusyChange: delivery("busy status", c.onBusyChange.bind(c)),
+    onToast: delivery("toast", c.onToast.bind(c)),
+    onStateChange: delivery("state", c.onStateChange.bind(c)),
+    onStreamText: delivery("stream viewer", c.onStreamText.bind(c))
+  };
 }
 function pushStreamText(userId, chatId, kind, snap) {
-  try {
-    cb?.onStreamText(userId, chatId, kind, snap);
-  } catch (err) {
-    warn(`stream viewer delivery failed: ${describeError(err)}`);
-  }
+  cb?.onStreamText(userId, chatId, kind, snap);
 }
 function setBusy(userId, chatId, kind, label) {
   const key = busyKey(userId, chatId, kind);
