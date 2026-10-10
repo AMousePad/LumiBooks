@@ -5554,6 +5554,7 @@ function renderBooksTab(host, state, ctx, send) {
         renderSummaryTransfer(host, state, ctx, send);
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
+        renderDiagnostics(host, state, send);
       }
     });
   };
@@ -6320,6 +6321,17 @@ function renderSummaryTransfer(host, state, ctx, send) {
       reportLocalSummaryTransfer(chatId, "Could not read that lorebook JSON file", "error");
     }
   }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
+  sec.body.appendChild(actions);
+  host.appendChild(sec.wrap);
+}
+function renderDiagnostics(host, state, send) {
+  const sec = section("Private diagnostics");
+  sec.body.appendChild(textNode("Always records recent filing, coverage, regeneration, fork and context decisions for this account. Keeps up to 2,000 events within 4 MiB; older records roll off. Export adds a structural snapshot of this chat.", "lmb-help"));
+  sec.body.appendChild(textNode("Contains timestamps, counts, message numbers and pseudonymous IDs. No chat or summary text, prompts, reasoning, names, credentials or raw errors. Nothing is uploaded automatically. Clear removes saved diagnostics and resets the pseudonyms; recording continues.", "lmb-help"));
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  const chatId = state.activeChatId;
+  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })), makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
   sec.body.appendChild(actions);
   host.appendChild(sec.wrap);
 }
@@ -15209,6 +15221,7 @@ function setup(ctx) {
         transferPanel.deliver(msg.status);
         break;
       case "summary_export_data":
+      case "diagnostics_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
         break;

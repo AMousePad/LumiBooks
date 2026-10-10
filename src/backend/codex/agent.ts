@@ -1,3 +1,4 @@
+import { diagnosticErrorReason, recordDiagnostic } from "../diagnostics";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO, ToolSchemaDTO } from "lumiverse-spindle-types";
@@ -626,6 +627,20 @@ function stageWrite(
  * failed run leaves the codex and cursor untouched for the next attempt.
  */
 export async function runCodexAgent(opts: CodexAgentOptions): Promise<CodexRunResult> {
+  const started = Date.now();
+  void recordDiagnostic(opts.userId, { event: "codex", chatId: opts.chatId, outcome: "started", messageScope: "selected", numbers: { selected: opts.chunk.length },
+    messages: opts.chunk.map((m) => ({ id: m.id, index: m.index_in_chat })) });
+  try {
+    const result = await runCodexAgentInner(opts);
+    void recordDiagnostic(opts.userId, { event: "codex", chatId: opts.chatId, outcome: "success", numbers: { durationMs: Date.now() - started, rounds: result.rounds, changed: result.changedFiles.length, promptTokens: result.usagePromptTokens, completionTokens: result.usageCompletionTokens } });
+    return result;
+  } catch (err) {
+    void recordDiagnostic(opts.userId, { event: "codex", chatId: opts.chatId, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { durationMs: Date.now() - started } });
+    throw err;
+  }
+}
+
+async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResult> {
   const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const useTools = promptCtx.useTools;

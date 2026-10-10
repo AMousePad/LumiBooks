@@ -3589,6 +3589,389 @@ async function mutateSettings(userId, fn) {
     return normalized;
   });
 }
+// spindle.json
+var spindle_default = {
+  identifier: "lumi_books",
+  version: "1.0.0-rc.10",
+  name: "LumiBooks",
+  author: "AMousePad",
+  github: "https://github.com/AMousePad/LumiBooks",
+  homepage: "https://github.com/AMousePad/LumiBooks",
+  description: "Memoria the librarian compresses old chat into chapters and arcs, splicing them back into your prompt where the messages used to be.",
+  permissions: [
+    "world_books",
+    "chats",
+    "chat_mutation",
+    "interceptor",
+    "generation",
+    "memories",
+    "characters",
+    "regex_scripts"
+  ],
+  entry_backend: "dist/backend.js",
+  entry_frontend: "dist/frontend.js",
+  interceptorTimeoutMs: 300000,
+  minimum_lumiverse_version: "1.1.6"
+};
+
+// src/backend/diagnostics.ts
+var DIAGNOSTICS_PATH = "diagnostics.json";
+var DIAGNOSTICS_MAX_BYTES = 4 * 1024 * 1024;
+var DIAGNOSTICS_MAX_EVENTS = 2000;
+var MAX_EVENT_BYTES = 512 * 1024;
+var MAX_ROWS = 4096;
+var MAX_PENDING = 64;
+var encoder2 = new TextEncoder;
+var EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost"];
+var MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"];
+var OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"];
+var REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"];
+var NUMBER_KEYS = ["tier", "attempt", "durationMs", "total", "covered", "uncovered", "excluded", "eligible", "hidden", "selected", "requested", "missing", "entries", "previous", "first", "last", "input", "output", "sourceCount", "changed", "rounds", "promptTokens", "completionTokens", "indexGaps", "duplicateIndexes", "gaps", "overlaps", "rangeMismatches", "missingSources", "lag", "window", "previousCount", "retryCount", "regexOutgoing", "regexIncoming", "arcBatch", "arcLag", "inputCharacters", "outputCharacters", "maxInputTokens", "maxOutputTokens", "temperature", "targetPercent", "targetTokens"];
+var FLAGS = ["automation", "ghost", "regeneration", "previews", "hideCovered", "extraContext", "lagTokens", "windowTokens", "active", "root", "disabled"];
+var ACTIONS = ["save_settings", "save_profile", "save_samplers", "set_active_profile", "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs", "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure", "delete_entry", "release_entry", "regenerate_entry", "update_entry", "resync_hidden", "resync_visibility", "abort_busy", "accept_preview", "discard_preview", "edit_preview", "rebase_root", "rebuild_root", "detach_root", "set_message_excluded", "summary_import", "summary_import_resolve", "codex_update_now", "codex_reset", "codex_rebuild", "codex_tidy"];
+var queues = new Map;
+var pendingTotal = 0;
+var healthByUser = new Map;
+function health(userId) {
+  let value = healthByUser.get(userId);
+  if (!value) {
+    if (healthByUser.size >= 100)
+      healthByUser.delete(healthByUser.keys().next().value);
+    value = { queueDrops: 0, writeFailures: 0 };
+    healthByUser.set(userId, value);
+  }
+  return value;
+}
+function serial(userId, task) {
+  const next = (queues.get(userId) ?? Promise.resolve()).then(task, task);
+  queues.set(userId, next);
+  next.finally(() => {
+    if (queues.get(userId) === next)
+      queues.delete(userId);
+  }).catch(() => {});
+  return next;
+}
+function number(value) {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER ? value : undefined;
+}
+function bool(value) {
+  return typeof value === "boolean" ? value : undefined;
+}
+function choice(value, choices) {
+  return choices.includes(value) ? value : undefined;
+}
+function object(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function size(value) {
+  return encoder2.encode(JSON.stringify(value)).length;
+}
+function project(raw, stored) {
+  const v = object(raw);
+  const event = choice(v.event, EVENTS);
+  const ref = (id) => typeof id === "string" && id.length > 0 && id.length <= 1024 && (!stored || /^r_[a-f0-9]{32}$/.test(id)) ? id : undefined;
+  const chatId = ref(v.chatId);
+  if (!event || !chatId)
+    return null;
+  const numbers = {}, flags = {};
+  for (const key of NUMBER_KEYS) {
+    const n = number(object(v.numbers)[key]);
+    if (n !== undefined)
+      numbers[key] = n;
+  }
+  for (const key of FLAGS) {
+    const b = bool(object(v.flags)[key]);
+    if (b !== undefined)
+      flags[key] = b;
+  }
+  let budget = MAX_ROWS, truncated = v.truncated === true;
+  const take = (value) => {
+    if (!Array.isArray(value))
+      return [];
+    const rows = value.slice(0, Math.max(0, budget));
+    budget -= rows.length;
+    if (rows.length < value.length)
+      truncated = true;
+    return rows;
+  };
+  const messages = take(v.messages).flatMap((raw) => {
+    const m = object(raw), id = ref(m.id), index = number(m.index);
+    return id && index !== undefined ? [{ id, index, position: number(m.position), coveredBy: ref(m.coveredBy), excluded: bool(m.excluded), hidden: bool(m.hidden), selected: bool(m.selected), eligible: bool(m.eligible), empty: bool(m.empty) }] : [];
+  });
+  const entries = take(v.entries).flatMap((raw) => {
+    const e = object(raw), id = ref(e.id), tier = number(e.tier);
+    if (!id || tier === undefined)
+      return [];
+    return [{
+      id,
+      tier,
+      first: number(e.first),
+      last: number(e.last),
+      scene: number(e.scene),
+      active: bool(e.active),
+      root: bool(e.root),
+      ghost: bool(e.ghost),
+      disabled: bool(e.disabled),
+      sourceCount: number(e.sourceCount),
+      sourceEntryCount: number(e.sourceEntryCount),
+      messages: take(e.messages).flatMap((id) => ref(id) ? [ref(id)] : []),
+      sources: take(e.sources).flatMap((id) => ref(id) ? [ref(id)] : [])
+    }];
+  });
+  return {
+    event,
+    chatId,
+    relatedChatId: ref(v.relatedChatId),
+    entryId: ref(v.entryId),
+    replacesEntryId: ref(v.replacesEntryId),
+    mode: choice(v.mode, MODES),
+    outcome: choice(v.outcome, OUTCOMES),
+    reason: choice(v.reason, REASONS),
+    action: choice(v.action, ACTIONS),
+    messageScope: choice(v.messageScope, ["all", "uncovered_and_selected", "selected", "assembled"]),
+    numbers,
+    flags,
+    messages,
+    entries,
+    seq: number(v.seq) ?? 0,
+    at: number(v.at) ?? 0,
+    truncated
+  };
+}
+function empty() {
+  return { schema: 1, salt: crypto.randomUUID().replaceAll("-", ""), next: 1, dropped: 0, events: [] };
+}
+async function read(userId, storage = spindle.userStorage) {
+  const raw = object(await storage.getJson(DIAGNOSTICS_PATH, { fallback: null, userId }));
+  if (raw.schema !== 1 || typeof raw.salt !== "string" || !/^[a-f0-9]{32}$/.test(raw.salt))
+    return empty();
+  const rows = Array.isArray(raw.events) ? raw.events : [];
+  const store = {
+    schema: 1,
+    salt: raw.salt,
+    next: Math.max(1, number(raw.next) ?? 1),
+    dropped: Math.max(0, number(raw.dropped) ?? 0) + Math.max(0, rows.length - DIAGNOSTICS_MAX_EVENTS),
+    events: rows.slice(-DIAGNOSTICS_MAX_EVENTS).flatMap((row) => {
+      const e = project(row, true);
+      return e ? [e] : [];
+    })
+  };
+  bound(store);
+  store.next = Math.max(store.next, ...store.events.map((e) => e.seq + 1));
+  return store;
+}
+function bound(store) {
+  let bytes = size({ ...store, events: [] }) + store.events.reduce((n, e) => n + size(e) + 1, 0);
+  while (store.events.length && (store.events.length > DIAGNOSTICS_MAX_EVENTS || bytes > DIAGNOSTICS_MAX_BYTES - 128)) {
+    bytes -= size(store.events.shift()) + 1;
+    store.dropped++;
+  }
+}
+async function anonymize(event, salt) {
+  const refs = new Map;
+  const ref = (id) => {
+    if (id === undefined)
+      return Promise.resolve(undefined);
+    if (!refs.has(id))
+      refs.set(id, crypto.subtle.digest("SHA-256", encoder2.encode(`${salt}\x00${id}`)).then((hash) => "r_" + [...new Uint8Array(hash).slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("")));
+    return refs.get(id);
+  };
+  const [chatId, relatedChatId, entryId, replacesEntryId, messages, entries] = await Promise.all([
+    ref(event.chatId),
+    ref(event.relatedChatId),
+    ref(event.entryId),
+    ref(event.replacesEntryId),
+    Promise.all((event.messages ?? []).map(async (m) => ({ ...m, id: await ref(m.id), coveredBy: await ref(m.coveredBy) }))),
+    Promise.all((event.entries ?? []).map(async (e) => ({ ...e, id: await ref(e.id), messages: await Promise.all((e.messages ?? []).map(async (id) => await ref(id))), sources: await Promise.all((e.sources ?? []).map(async (id) => await ref(id))) })))
+  ]);
+  return { ...event, chatId, relatedChatId, entryId, replacesEntryId, messages, entries };
+}
+function recordDiagnostic(userId, input) {
+  try {
+    if (pendingTotal >= MAX_PENDING) {
+      health(userId).queueDrops++;
+      return Promise.resolve();
+    }
+    const event = project(input, false);
+    if (!event)
+      return Promise.resolve();
+    event.at = Date.now();
+    const storage = spindle.userStorage;
+    pendingTotal++;
+    return serial(userId, async () => {
+      const store = await read(userId, storage);
+      const safe = await anonymize(event, store.salt);
+      safe.seq = store.next++;
+      if (size(safe) > MAX_EVENT_BYTES) {
+        safe.messages = [];
+        safe.entries = [];
+        safe.truncated = true;
+      }
+      store.events.push(safe);
+      bound(store);
+      await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
+    }).catch(() => {
+      health(userId).writeFailures++;
+    }).finally(() => {
+      pendingTotal--;
+    });
+  } catch {
+    health(userId).writeFailures++;
+    return Promise.resolve();
+  }
+}
+async function exportDiagnostics(userId) {
+  return serial(userId, async () => {
+    const store = await read(userId);
+    return JSON.stringify({
+      format: "lumibooks-diagnostics",
+      schema: 1,
+      version: spindle_default.version,
+      exportedAt: Date.now(),
+      indexBase: 0,
+      maxBytes: DIAGNOSTICS_MAX_BYTES,
+      maxEvents: DIAGNOSTICS_MAX_EVENTS,
+      droppedEvents: store.dropped,
+      queueDropsThisSession: health(userId).queueDrops,
+      writeFailuresThisSession: health(userId).writeFailures,
+      privacy: "No chat text, summaries, prompts, reasoning, names, raw IDs, content hashes, credentials or raw errors. IDs are salted pseudonyms; timestamps, counts, indexes and structural relationships remain.",
+      events: store.events
+    }, null, 2);
+  });
+}
+async function clearDiagnostics(userId) {
+  await serial(userId, async () => {
+    await spindle.userStorage.setJson(DIAGNOSTICS_PATH, empty(), { userId, indent: 0 });
+    healthByUser.delete(userId);
+  });
+}
+function diagnosticErrorReason(error) {
+  const name = error instanceof Error ? error.name : "";
+  switch (name) {
+    case "AbortError":
+    case "AbortedSummarizerError":
+      return "cancelled";
+    case "TimeoutError":
+      return "timeout";
+    case "CodexContextError":
+      return "context_limit";
+    case "CodexValidationError":
+      return "invalid_output";
+    case "ToolProtocolError":
+      return "protocol";
+    case "FatalSummarizerError":
+      return "connection";
+    default:
+      return "unknown";
+  }
+}
+function recordFrontendAction(userId, message, outcome) {
+  const action = choice(message.type, ACTIONS);
+  if (!action || !("chatId" in message) || !message.chatId)
+    return;
+  recordDiagnostic(userId, {
+    event: "action",
+    chatId: message.chatId,
+    action,
+    outcome,
+    entryId: "entryId" in message ? message.entryId : undefined,
+    relatedChatId: "sourceChatId" in message ? message.sourceChatId : undefined,
+    numbers: { requested: "messageIds" in message ? message.messageIds.length : undefined }
+  });
+}
+function diagnosticEntries(entries, activeIds, includeSources = true) {
+  return entries.map((e) => ({
+    id: e.raw.id,
+    tier: e.meta.tier,
+    first: e.meta.firstMsgIdx,
+    last: e.meta.lastMsgIdx,
+    scene: e.meta.sceneNumber,
+    active: activeIds?.has(e.raw.id),
+    root: !!e.meta.isRoot,
+    ghost: !!e.meta.ghost,
+    disabled: !!e.raw.disabled,
+    sourceCount: e.meta.msgIds.length,
+    sourceEntryCount: e.meta.sourceChapterEntryIds?.length ?? 0,
+    messages: includeSources ? e.meta.msgIds : undefined,
+    sources: includeSources ? e.meta.sourceChapterEntryIds : undefined
+  }));
+}
+function recordSelection(userId, chatId, profile, messages, coverage, selected, mode, replacesEntryId) {
+  const selectedIds = new Set(selected.map((m) => m.id));
+  const indexes = new Set;
+  let indexGaps = 0, duplicateIndexes = 0, gaps = 0, inGap = false;
+  for (let i = 0;i < messages.length; i++) {
+    const m = messages[i];
+    if (indexes.has(m.index_in_chat))
+      duplicateIndexes++;
+    indexes.add(m.index_in_chat);
+    indexGaps += Math.max(0, m.index_in_chat - (i ? messages[i - 1].index_in_chat : -1) - 1);
+    const uncovered = !coverage.coveredBy.has(m.id) && isEligibleForCount(m, profile);
+    if (uncovered && !inGap)
+      gaps++;
+    inGap = uncovered;
+  }
+  recordDiagnostic(userId, {
+    event: "selection",
+    chatId,
+    mode,
+    replacesEntryId,
+    messageScope: "uncovered_and_selected",
+    outcome: selected.length ? "success" : "skipped",
+    reason: selected.length ? undefined : "no_window",
+    numbers: {
+      total: messages.length,
+      covered: messages.filter((m) => coverage.coveredBy.has(m.id)).length,
+      selected: selected.length,
+      indexGaps,
+      duplicateIndexes,
+      gaps,
+      lag: profile.lagValue,
+      window: profile.windowValue,
+      previousCount: profile.previousMemoriesCount,
+      retryCount: profile.retryCount,
+      regexOutgoing: profile.regexOutgoingScriptIds.length,
+      regexIncoming: profile.regexIncomingScriptIds.length,
+      arcBatch: profile.arcAfterChapters,
+      arcLag: profile.arcLagChapters
+    },
+    flags: { lagTokens: profile.lagUnit === "tokens", windowTokens: profile.windowUnit === "tokens", previews: profile.showMemoryPreviews, hideCovered: profile.hideCoveredMessages, extraContext: profile.codexEnabled && profile.codexExtraContext },
+    messages: messages.flatMap((m, position) => coverage.coveredBy.has(m.id) && !selectedIds.has(m.id) ? [] : [{ id: m.id, index: m.index_in_chat, position, coveredBy: coverage.coveredBy.get(m.id), excluded: isExcluded(m), hidden: m.extra?.hidden === true, eligible: isEligibleForCount(m, profile), selected: selectedIds.has(m.id), empty: !(m.content || "").trim() }])
+  });
+}
+async function captureDiagnosticSnapshot(userId, chatId) {
+  try {
+    if (!await spindle.chats.get(chatId, userId))
+      throw new Error("Snapshot chat unavailable");
+    const [messages, entries] = await Promise.all([spindle.chat.getMessages(chatId), listLmbEntries(chatId, userId)]);
+    const coverage = await buildCoverage(chatId, userId, entries, true);
+    const indexes = new Map(messages.map((m) => [m.id, m.index_in_chat]));
+    const owners = new Map;
+    let missingSources = 0, rangeMismatches = 0;
+    for (const e of entries) {
+      if (e.meta.isRoot)
+        continue;
+      const live = e.meta.msgIds.flatMap((id) => indexes.has(id) ? [indexes.get(id)] : []);
+      missingSources += e.meta.msgIds.length - live.length;
+      if (live.length && (Math.min(...live) !== e.meta.firstMsgIdx || Math.max(...live) !== e.meta.lastMsgIdx))
+        rangeMismatches++;
+      if (coverage.activeEntries.includes(e))
+        for (const id of e.meta.msgIds)
+          owners.set(id, (owners.get(id) ?? 0) + 1);
+    }
+    await recordDiagnostic(userId, {
+      event: "snapshot",
+      chatId,
+      outcome: "success",
+      messageScope: "all",
+      numbers: { total: messages.length, entries: entries.length, missingSources, rangeMismatches, overlaps: [...owners.values()].filter((n) => n > 1).length },
+      messages: messages.map((m, position) => ({ id: m.id, index: m.index_in_chat, position, coveredBy: coverage.coveredBy.get(m.id), excluded: isExcluded(m), hidden: m.extra?.hidden === true })),
+      entries: diagnosticEntries(entries, new Set(coverage.activeEntries.map((e) => e.raw.id)))
+    });
+  } catch {
+    await recordDiagnostic(userId, { event: "snapshot", chatId, outcome: "failed", reason: "snapshot_unavailable" });
+  }
+}
 
 // src/backend/regex.ts
 var TTL_MS = 5000;
@@ -4553,6 +4936,18 @@ ${a.raw.content}`).join(`
     { role: "system", content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
+  recordDiagnostic(userId, { event: "request", chatId, mode: TIER_KINDS[tier - 1], outcome: "started", numbers: {
+    inputCharacters: built.user.length,
+    outputCharacters: outgoingUser.length,
+    changed: outgoingUser === built.user ? 0 : 1,
+    targetTokens,
+    targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length,
+    regexIncoming: profile.regexIncomingScriptIds.length,
+    maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens,
+    maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens,
+    temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature
+  } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
@@ -4603,6 +4998,18 @@ async function summarizeChapter(profile, customPresets, chatId, messages, previo
     { role: "system", content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
+  recordDiagnostic(userId, { event: "request", chatId, mode: "chapter", outcome: "started", numbers: {
+    inputCharacters: built.user.length,
+    outputCharacters: outgoingUser.length,
+    changed: outgoingUser === built.user ? 0 : 1,
+    targetTokens,
+    targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length,
+    regexIncoming: profile.regexIncomingScriptIds.length,
+    maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens,
+    maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens,
+    temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature
+  } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
@@ -4654,6 +5061,18 @@ ${c.raw.content}`).join(`
     { role: "system", content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
+  recordDiagnostic(userId, { event: "request", chatId, mode: "arc", outcome: "started", numbers: {
+    inputCharacters: built.user.length,
+    outputCharacters: outgoingUser.length,
+    changed: outgoingUser === built.user ? 0 : 1,
+    targetTokens,
+    targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length,
+    regexIncoming: profile.regexIncomingScriptIds.length,
+    maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens,
+    maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens,
+    temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature
+  } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
@@ -5909,6 +6328,7 @@ async function ensureForkAdoption(chatId, userId) {
       if (retryAt.size > 1000)
         retryAt.clear();
       retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
+      recordDiagnostic(userId, { event: "fork", chatId, outcome: "failed", reason: "adoption" });
       warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
     } finally {
       inflight.delete(k);
@@ -5955,6 +6375,7 @@ async function doForkAdoption(forkChatId, userId) {
   const branchedFrom = meta && typeof meta["branched_from"] === "string" ? meta["branched_from"] : null;
   if (!branchedFrom)
     return true;
+  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: "started", reason: "adoption" });
   let shelfSettled = true;
   if (meta?.[FORK_ADOPTED_FLAG] !== forkChatId) {
     const owned = await findBookForChat(forkChatId, userId).catch(() => null);
@@ -5978,6 +6399,7 @@ async function doForkAdoption(forkChatId, userId) {
     }
   }
   const codexSettled = await adoptForkCodex(forkChatId, branchedFrom, userId);
+  recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: shelfSettled && codexSettled ? "success" : "pending", reason: "adoption" });
   return shelfSettled && codexSettled;
 }
 async function adoptForkCodex(forkChatId, branchedFrom, userId) {
@@ -6166,8 +6588,10 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
     };
   };
   const forkTransform = (entry, ctx) => {
-    if (entry.meta.ghost)
+    if (entry.meta.ghost) {
+      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, mode: "ghost", outcome: "skipped" });
       return null;
+    }
     if (entry.meta.isRoot) {
       return {
         msgIds: entry.meta.msgIds.slice(),
@@ -6177,8 +6601,10 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
       };
     }
     const { ids, first, last } = remap(entry.meta.msgIds);
-    if (ids.length !== entry.meta.msgIds.length)
+    if (ids.length !== entry.meta.msgIds.length) {
+      recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, outcome: "skipped", reason: "missing", numbers: { sourceCount: entry.meta.msgIds.length, selected: ids.length } });
       return null;
+    }
     if (entry.meta.tier === 1) {
       if (ids.length === 0)
         return null;
@@ -6217,6 +6643,18 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
   try {
     const idMap = await copyLmbEntries(newBook.id, parentEntries, userId, forkTransform);
     cloned = idMap.size;
+    recordDiagnostic(userId, {
+      event: "fork",
+      chatId: forkChatId,
+      relatedChatId: parentChatId,
+      outcome: "success",
+      numbers: { sourceCount: parentEntries.length, selected: cloned },
+      messages: forkMsgs.map((m, position) => ({ id: m.id, index: m.index_in_chat, position })),
+      entries: parentEntries.flatMap((e) => {
+        const id = idMap.get(e.raw.id);
+        return id ? [{ id, tier: e.meta.tier, sources: [e.raw.id], sourceEntryCount: 1, sourceCount: e.meta.msgIds.length }] : [];
+      })
+    });
     await rebindForkShelf(forkChatId, newBook.id, userId);
   } catch (err) {
     await spindle.world_books.delete(newBook.id, userId).catch(() => {});
@@ -6529,8 +6967,11 @@ function pushStreamText(userId, chatId, kind, snap) {
 }
 function setBusy(userId, chatId, kind, label) {
   const key = busyKey(userId, chatId, kind);
-  if (inflight3.has(key))
+  if (inflight3.has(key)) {
+    recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "skipped", reason: "busy" });
     return false;
+  }
+  recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "started" });
   const entry = { kind, chatId, label, startedAt: Date.now() };
   inflight3.set(key, entry);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
@@ -6552,6 +6993,7 @@ function setBusy(userId, chatId, kind, label) {
 }
 function clearBusy(userId, chatId, kind) {
   const key = busyKey(userId, chatId, kind);
+  recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "finished", numbers: { durationMs: Date.now() - (inflight3.get(key)?.startedAt ?? Date.now()) } });
   inflight3.delete(key);
   aborters.delete(key);
   progressLastPush.delete(key);
@@ -6719,6 +7161,7 @@ function findPendingPreview(userId, chatId, draftId) {
   return (previewsByChat.get(chatKey(userId, chatId)) ?? []).find((p) => p.draftId === draftId) ?? null;
 }
 function dropPendingPreview(userId, chatId, draftId) {
+  recordDiagnostic(userId, { event: "preview", chatId, entryId: draftId, outcome: "removed" });
   const list = previewsByChat.get(chatKey(userId, chatId)) ?? [];
   previewsByChat.set(chatKey(userId, chatId), list.filter((p) => p.draftId !== draftId));
 }
@@ -6737,6 +7180,7 @@ function patchPendingPreview(userId, chatId, draftId, patch) {
   previewsByChat.set(key, list);
 }
 function pushPreview(userId, chatId, preview) {
+  recordDiagnostic(userId, { event: "preview", chatId, entryId: preview.draftId, replacesEntryId: preview.replacesEntryId, mode: preview.kind, outcome: "created", numbers: { sourceCount: preview.sourceMessageIds.length, first: preview.firstMsgIdx, last: preview.lastMsgIdx } });
   const key = chatKey(userId, chatId);
   const existing = previewsByChat.get(key);
   if (existing) {
@@ -6767,6 +7211,7 @@ async function runWithRetry(attempts, fn, onRetry) {
   return { ok: false, err: lastErr, retries: tries - 1 };
 }
 function recordFailure(userId, chatId, kind, retries, err, selection) {
+  recordDiagnostic(userId, { event: "failure", chatId, mode: kind, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: retries }, replacesEntryId: selection?.replacesEntryId });
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key))
     failureByChat.delete(key);
@@ -6815,6 +7260,7 @@ async function createChapterAuto(chatId, profile, settings, userId, automation =
     const includeGhosts = ghost || extraContextActive(profile);
     const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
     const window = selectUncoveredChapterWindow(messages, coverage, effProfile, manual && !ghost);
+    recordSelection(userId, chatId, effProfile, messages, coverage, window, ghost ? "ghost" : manual ? "manual" : "automatic");
     if (window.length === 0)
       return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
@@ -6830,7 +7276,11 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
     if (!messages.length)
       return null;
     const set = new Set(messageIds);
+    const liveIds = new Set(messages.map((m) => m.id));
     const window = messages.filter((m) => set.has(m.id) && !isExcluded(m));
+    const coverage = await buildCoverage(chatId, userId, undefined, extraContextActive(profile));
+    recordSelection(userId, chatId, profile, messages, coverage, window, opts.replacesEntryId ? "regenerate" : "selected", opts.replacesEntryId);
+    recordDiagnostic(userId, { event: "action", chatId, mode: opts.replacesEntryId ? "regenerate" : "selected", numbers: { requested: messageIds.length, selected: window.length, missing: messageIds.filter((id) => !liveIds.has(id)).length } });
     if (window.length === 0)
       return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { replacesEntryId: opts.replacesEntryId });
@@ -6854,6 +7304,17 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
   const previousMemories = selectPreviousChapters(coverage, allMessages, window, profile.previousMemoriesCount, replacesEntryId);
+  recordDiagnostic(userId, {
+    event: "context",
+    chatId,
+    replacesEntryId,
+    mode: "chapter",
+    flags: { automation, ghost, regeneration: !!replacesEntryId },
+    messageScope: "selected",
+    numbers: { previous: previousMemories.length, selected: window.length },
+    messages: window.map((m) => ({ id: m.id, index: m.index_in_chat })),
+    entries: diagnosticEntries(previousMemories)
+  });
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
   const opener = buildChapterHeader(provisionalSceneNumber, window.length);
   const outcome = await runWithRetry(profile.retryCount + 1, async () => {
@@ -6869,6 +7330,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
       aborters.delete(busyKey(userId, chatId, "chapter"));
     }
   }, (n, err) => {
+    recordDiagnostic(userId, { event: "retry", chatId, mode: "chapter", outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`chapter attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", automation);
   });
@@ -6924,6 +7386,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
       throw new Error(allGhost ? "Those messages are already staged as a ghost chapter, it will file on its own" : "All messages in this window were just bound by another chapter");
     }
     if (validWindow.length < window.length) {
+      recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
       window = validWindow;
       firstIdx = window[0].index_in_chat;
       lastIdx = window[window.length - 1].index_in_chat;
@@ -6973,12 +7436,14 @@ ${result.content}`;
         recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
       throw err;
     }
+    recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
     invalidateBookCache(userId, chatId);
     if (replacesEntryId) {
       try {
         await deleteEntry(replacesEntryId, userId);
         invalidateBookCache(userId, chatId);
       } catch (err) {
+        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "chapter", outcome: "failed", reason: "storage" });
         warn(`regen: failed to delete replaced chapter ${replacesEntryId}: ${describeError(err)}`);
       }
     }
@@ -7038,6 +7503,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
   nyaaToast(userId, "arc_fire", automation);
+  recordDiagnostic(userId, { event: "context", chatId, mode: "arc", replacesEntryId, flags: { automation, regeneration: !!replacesEntryId }, numbers: { selected: selected.length }, entries: diagnosticEntries(selected) });
   const totalTurns = selected.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 2, userId);
   const opener = buildArcHeader(provisionalSceneNumber, selected.length, totalTurns);
@@ -7054,6 +7520,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
       aborters.delete(busyKey(userId, chatId, "arc"));
     }
   }, (n, err) => {
+    recordDiagnostic(userId, { event: "retry", chatId, mode: "arc", outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`arc attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", automation);
   });
@@ -7170,12 +7637,14 @@ ${result.content}`;
     if (failedSupersedes.length > 0) {
       cb?.onToast(userId, "warn", `The arc saved but ${failedSupersedes.length} chapter${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`, automation);
     }
+    recordDiagnostic(userId, { event: "commit", chatId, entryId: arcEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: arcEntry, meta }]) });
     invalidateBookCache(userId, chatId);
     if (replacesEntryId) {
       try {
         await deleteEntry(replacesEntryId, userId);
         invalidateBookCache(userId, chatId);
       } catch (err) {
+        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "arc", outcome: "failed", reason: "storage" });
         warn(`regen: failed to delete replaced arc ${replacesEntryId}: ${describeError(err)}`);
       }
     }
@@ -7220,6 +7689,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
   if (tier > 3)
     profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
   nyaaToast(userId, "volume_fire", automation);
+  recordDiagnostic(userId, { event: "context", chatId, mode: TIER_KINDS[tier - 1], replacesEntryId, flags: { automation, regeneration: !!replacesEntryId }, numbers: { selected: selected.length }, entries: diagnosticEntries(selected) });
   const totalTurns = selected.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, tier, userId);
   const opener = tierHeader(tier, provisionalSceneNumber, selected.length, totalTurns);
@@ -7236,6 +7706,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
       aborters.delete(busyKey(userId, chatId, kind));
     }
   }, (n, err) => {
+    recordDiagnostic(userId, { event: "retry", chatId, mode: TIER_KINDS[tier - 1], outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`volume attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", false);
   });
@@ -7352,12 +7823,14 @@ ${result.content}`;
     if (failedSupersedes.length > 0) {
       cb?.onToast(userId, "warn", `The volume saved but ${failedSupersedes.length} arc${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`);
     }
+    recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
     invalidateBookCache(userId, chatId);
     if (replacesEntryId) {
       try {
         await deleteEntry(replacesEntryId, userId);
         invalidateBookCache(userId, chatId);
       } catch (err) {
+        recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "volume", outcome: "failed", reason: "storage" });
         warn(`regen: failed to delete replaced volume ${replacesEntryId}: ${describeError(err)}`);
       }
     }
@@ -7550,6 +8023,7 @@ async function sweepStaleGhosts(chatId, userId) {
       continue;
     try {
       await deleteEntry(g.raw.id, userId);
+      recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "stale" });
       if (typeof g.meta.sceneNumber === "number") {
         recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
       }
@@ -7582,6 +8056,7 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
       if (g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
         try {
           await deleteEntry(g.raw.id, userId);
+          recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "coverage_changed" });
           if (typeof g.meta.sceneNumber === "number") {
             recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
           }
@@ -7599,6 +8074,7 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
         continue;
       try {
         await promoteGhostEntry(g, userId);
+        recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "success", numbers: { lag: profile.lagValue, sourceCount: g.meta.msgIds.length } });
         promoted.push(g);
       } catch (err) {
         warn(`ghost promotion failed for ${g.raw.id}: ${describeError(err)}`);
@@ -7915,6 +8391,7 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
     entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
   }
   const coverage = await buildCoverage(chatId, userId, entriesForCoverage);
+  recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
   if (coverage.activeEntries.length === 0)
     return null;
   const historyMsgs = llmMessages.filter(isAssembledHistory);
@@ -8029,6 +8506,14 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
     if (label !== undefined)
       breakdown.push({ messageIndex: i, name: label });
   }
+  recordDiagnostic(userId, {
+    event: "injection",
+    chatId,
+    outcome: "success",
+    messageScope: "assembled",
+    numbers: { input: llmMessages.length, output: out.length, selected: breakdown.length, covered: plan.filter((p) => p.covered).length },
+    messages: plan.map((p) => ({ id: p.id, index: p.idx, coveredBy: coverage.coveredBy.get(p.id), excluded: p.metadata?.lmb_excluded === true }))
+  });
   return { messages: out, breakdown };
 }
 function formatEntryForInjection(entry) {
@@ -8500,6 +8985,25 @@ function stageWrite(file, args, current, validateOpts, timelineAppendOnly) {
   return { value, errors, lockedKept, lockedFieldsKept, dropMisses, archivedKept, notes: result.notes };
 }
 async function runCodexAgent(opts) {
+  const started = Date.now();
+  recordDiagnostic(opts.userId, {
+    event: "codex",
+    chatId: opts.chatId,
+    outcome: "started",
+    messageScope: "selected",
+    numbers: { selected: opts.chunk.length },
+    messages: opts.chunk.map((m) => ({ id: m.id, index: m.index_in_chat }))
+  });
+  try {
+    const result = await runCodexAgentInner(opts);
+    recordDiagnostic(opts.userId, { event: "codex", chatId: opts.chatId, outcome: "success", numbers: { durationMs: Date.now() - started, rounds: result.rounds, changed: result.changedFiles.length, promptTokens: result.usagePromptTokens, completionTokens: result.usageCompletionTokens } });
+    return result;
+  } catch (err) {
+    recordDiagnostic(opts.userId, { event: "codex", chatId: opts.chatId, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { durationMs: Date.now() - started } });
+    throw err;
+  }
+}
+async function runCodexAgentInner(opts) {
   const { profile, userId, chatId, promptCtx } = opts;
   const conn = await resolveCodexConnection(profile, userId);
   const useTools = promptCtx.useTools;
@@ -10877,6 +11381,7 @@ spindle.on("MESSAGE_SENT", async (payload, hostUserId) => {
   if (!userId)
     return;
   rememberChatUser(p.chatId, userId);
+  recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
 });
 spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
   const p = payload;
@@ -10922,6 +11427,7 @@ spindle.on("MESSAGE_DELETED", async (payload, hostUserId) => {
   if (!userId)
     return;
   rememberChatUser(p.chatId, userId);
+  recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "removed" });
   invalidateBookCache(userId, p.chatId);
   await pushState(userId, p.chatId);
 });
@@ -11058,7 +11564,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
   rememberChatUser(readChatIdFromMessage(msg), userId);
   try {
     await ensureUserFolders(userId);
+    recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "diagnostics_export": {
+        await captureDiagnosticSnapshot(userId, msg.chatId);
+        const content = await exportDiagnostics(userId);
+        send({ type: "diagnostics_export_data", filename: "lumibooks-diagnostics.json", content }, userId);
+        break;
+      }
+      case "diagnostics_clear":
+        await clearDiagnostics(userId);
+        await notify(userId, "success", "Saved diagnostics cleared. Recording continues.");
+        break;
       case "ready":
       case "refresh":
         send({ type: "state_loading" }, userId);
@@ -12178,7 +12695,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
       default:
         debug(userId, `unknown frontend msg type`, msg.type);
     }
+    recordFrontendAction(userId, msg, "finished");
   } catch (err) {
+    recordFrontendAction(userId, msg, "failed");
     const description = describeError(err);
     error(`frontend handler failed: ${description}`);
     if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {

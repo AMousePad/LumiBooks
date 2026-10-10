@@ -37,6 +37,8 @@ import { pickPhrase, type PhraseKind } from "./memoria";
 import { ensureForkAdoption, forkShelfPending } from "./fork";
 import { effectiveProfile, ensureLessons } from "./lessons";
 
+import { diagnosticErrorReason, recordDiagnostic, recordSelection, diagnosticEntries } from "./diagnostics";
+
 type ChatMessageDTO = ChatMessage;
 
 const inflight = new Map<string, BusyEntry>();
@@ -142,7 +144,11 @@ function pushStreamText(userId: string, chatId: string, kind: BusyKind, snap: St
 
 export function setBusy(userId: string, chatId: string, kind: BusyKind, label: string): boolean {
   const key = busyKey(userId, chatId, kind);
-  if (inflight.has(key)) return false;
+  if (inflight.has(key)) {
+    void recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "skipped", reason: "busy" });
+    return false;
+  }
+  void recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "started" });
   const entry: BusyEntry = { kind, chatId, label, startedAt: Date.now() };
   inflight.set(key, entry);
   progressState.set(key, { kind, chars: 0, thinkingChars: 0, userId, chatId });
@@ -164,6 +170,7 @@ export function setBusy(userId: string, chatId: string, kind: BusyKind, label: s
 
 export function clearBusy(userId: string, chatId: string, kind: BusyKind): void {
   const key = busyKey(userId, chatId, kind);
+  void recordDiagnostic(userId, { event: "operation", chatId, mode: kind, outcome: "finished", numbers: { durationMs: Date.now() - (inflight.get(key)?.startedAt ?? Date.now()) } });
   inflight.delete(key);
   aborters.delete(key);
   progressLastPush.delete(key);
@@ -339,6 +346,7 @@ export function findPendingPreview(userId: string, chatId: string, draftId: stri
 }
 
 export function dropPendingPreview(userId: string, chatId: string, draftId: string): void {
+  void recordDiagnostic(userId, { event: "preview", chatId, entryId: draftId, outcome: "removed" });
   const list = previewsByChat.get(chatKey(userId, chatId)) ?? [];
   previewsByChat.set(chatKey(userId, chatId), list.filter((p) => p.draftId !== draftId));
 }
@@ -363,6 +371,7 @@ export function patchPendingPreview(
 }
 
 function pushPreview(userId: string, chatId: string, preview: PendingPreview): void {
+  void recordDiagnostic(userId, { event: "preview", chatId, entryId: preview.draftId, replacesEntryId: preview.replacesEntryId, mode: preview.kind, outcome: "created", numbers: { sourceCount: preview.sourceMessageIds.length, first: preview.firstMsgIdx, last: preview.lastMsgIdx } });
   const key = chatKey(userId, chatId);
   const existing = previewsByChat.get(key);
   if (existing) {
@@ -399,6 +408,7 @@ async function runWithRetry<T>(
 
 function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown,
   selection?: Pick<FailureRecord, "sourceEntryIds" | "replacesEntryId">): void {
+  void recordDiagnostic(userId, { event: "failure", chatId, mode: kind, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: retries }, replacesEntryId: selection?.replacesEntryId });
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key)) failureByChat.delete(key);
   failureByChat.set(key, {
@@ -470,6 +480,7 @@ export async function createChapterAuto(
     const includeGhosts = ghost || extraContextActive(profile);
     const coverage = await buildCoverage(chatId, userId, undefined, includeGhosts);
     const window = selectUncoveredChapterWindow(messages, coverage, effProfile, manual && !ghost);
+    recordSelection(userId, chatId, effProfile, messages, coverage, window, ghost ? "ghost" : manual ? "manual" : "automatic");
     if (window.length === 0) return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { automation, ghost });
   } finally {
@@ -490,7 +501,11 @@ export async function createChapterFromRange(
     const messages = await spindle.chat.getMessages(chatId);
     if (!messages.length) return null;
     const set = new Set(messageIds);
+    const liveIds = new Set(messages.map((m) => m.id));
     const window = messages.filter((m) => set.has(m.id) && !isExcluded(m));
+    const coverage = await buildCoverage(chatId, userId, undefined, extraContextActive(profile));
+    recordSelection(userId, chatId, profile, messages, coverage, window, opts.replacesEntryId ? "regenerate" : "selected", opts.replacesEntryId);
+    void recordDiagnostic(userId, { event: "action", chatId, mode: opts.replacesEntryId ? "regenerate" : "selected", numbers: { requested: messageIds.length, selected: window.length, missing: messageIds.filter((id) => !liveIds.has(id)).length } });
     if (window.length === 0) return null;
     return await runChapter(chatId, profile, settings, userId, messages, window, { replacesEntryId: opts.replacesEntryId });
   } finally {
@@ -535,6 +550,8 @@ async function runChapter(
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, ghost || extraContextActive(profile));
   const previousMemories = selectPreviousChapters(coverage, allMessages, window, profile.previousMemoriesCount, replacesEntryId);
+  void recordDiagnostic(userId, { event: "context", chatId, replacesEntryId, mode: "chapter", flags: { automation, ghost, regeneration: !!replacesEntryId }, messageScope: "selected", numbers: { previous: previousMemories.length, selected: window.length },
+    messages: window.map((m) => ({ id: m.id, index: m.index_in_chat })), entries: diagnosticEntries(previousMemories) });
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
   const opener = buildChapterHeader(provisionalSceneNumber, window.length);
 
@@ -554,6 +571,7 @@ async function runChapter(
       aborters.delete(busyKey(userId, chatId, "chapter"));
     }
   }, (n, err) => {
+    void recordDiagnostic(userId, { event: "retry", chatId, mode: "chapter", outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`chapter attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", automation);
   });
@@ -633,6 +651,7 @@ async function commitChapter(
       : "All messages in this window were just bound by another chapter");
   }
   if (validWindow.length < window.length) {
+    void recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
     window = validWindow;
     firstIdx = window[0]!.index_in_chat;
     lastIdx = window[window.length - 1]!.index_in_chat;
@@ -687,6 +706,7 @@ async function commitChapter(
     if (freedTaken !== null) recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
     throw err;
   }
+  void recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
   invalidateBookCache(userId, chatId);
 
   if (replacesEntryId) {
@@ -694,6 +714,7 @@ async function commitChapter(
       await deleteEntry(replacesEntryId, userId);
       invalidateBookCache(userId, chatId);
     } catch (err) {
+      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "chapter", outcome: "failed", reason: "storage" });
       warn(`regen: failed to delete replaced chapter ${replacesEntryId}: ${describeError(err)}`);
     }
   }
@@ -792,6 +813,7 @@ async function runArc(
   const { replacesEntryId } = opts;
   const automation = opts.automation === true;
   nyaaToast(userId, "arc_fire", automation);
+  void recordDiagnostic(userId, { event: "context", chatId, mode: "arc", replacesEntryId, flags: { automation, regeneration: !!replacesEntryId }, numbers: { selected: selected.length }, entries: diagnosticEntries(selected) });
   const totalTurns = selected.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 2, userId);
   const opener = buildArcHeader(provisionalSceneNumber, selected.length, totalTurns);
@@ -811,6 +833,7 @@ async function runArc(
       aborters.delete(busyKey(userId, chatId, "arc"));
     }
   }, (n, err) => {
+    void recordDiagnostic(userId, { event: "retry", chatId, mode: "arc", outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`arc attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", automation);
   });
@@ -946,12 +969,14 @@ async function commitArc(
       automation,
     );
   }
+  void recordDiagnostic(userId, { event: "commit", chatId, entryId: arcEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: arcEntry, meta }]) });
   invalidateBookCache(userId, chatId);
   if (replacesEntryId) {
     try {
       await deleteEntry(replacesEntryId, userId);
       invalidateBookCache(userId, chatId);
     } catch (err) {
+      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "arc", outcome: "failed", reason: "storage" });
       warn(`regen: failed to delete replaced arc ${replacesEntryId}: ${describeError(err)}`);
     }
   }
@@ -1017,6 +1042,7 @@ async function runVolume(
   const config = profile.higherTiers[tier];
   if (tier > 3) profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
   nyaaToast(userId, "volume_fire", automation);
+  void recordDiagnostic(userId, { event: "context", chatId, mode: TIER_KINDS[tier - 1]!, replacesEntryId, flags: { automation, regeneration: !!replacesEntryId }, numbers: { selected: selected.length }, entries: diagnosticEntries(selected) });
   const totalTurns = selected.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, tier, userId);
   const opener = tierHeader(tier, provisionalSceneNumber, selected.length, totalTurns);
@@ -1036,6 +1062,7 @@ async function runVolume(
       aborters.delete(busyKey(userId, chatId, kind));
     }
   }, (n, err) => {
+    void recordDiagnostic(userId, { event: "retry", chatId, mode: TIER_KINDS[tier - 1]!, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: n } });
     warn(`volume attempt ${n} failed: ${describeError(err)}`);
     nyaaToast(userId, "retry", false);
   });
@@ -1170,12 +1197,14 @@ async function commitVolume(
       `The volume saved but ${failedSupersedes.length} arc${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`,
     );
   }
+  void recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
   invalidateBookCache(userId, chatId);
   if (replacesEntryId) {
     try {
       await deleteEntry(replacesEntryId, userId);
       invalidateBookCache(userId, chatId);
     } catch (err) {
+      void recordDiagnostic(userId, { event: "commit", chatId, entryId: replacesEntryId, mode: "volume", outcome: "failed", reason: "storage" });
       warn(`regen: failed to delete replaced volume ${replacesEntryId}: ${describeError(err)}`);
     }
   }
@@ -1432,6 +1461,7 @@ export async function sweepStaleGhosts(chatId: string, userId: string): Promise<
     if (!stale) continue;
     try {
       await deleteEntry(g.raw.id, userId);
+      void recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "stale" });
       if (typeof g.meta.sceneNumber === "number") {
         recordFreedGhostNumber(userId, chatId, g.meta.msgIds, g.meta.sceneNumber);
       }
@@ -1487,6 +1517,7 @@ export async function promoteGhostChapters(
     if (g.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))) {
       try {
         await deleteEntry(g.raw.id, userId);
+        void recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "removed", reason: "coverage_changed" });
         // Free its ordinal like the sweep path, so if that real coverage is
         // later released a refill over the same span keeps this number.
         if (typeof g.meta.sceneNumber === "number") {
@@ -1505,6 +1536,7 @@ export async function promoteGhostChapters(
     if (!pastLag) continue;
     try {
       await promoteGhostEntry(g, userId);
+      void recordDiagnostic(userId, { event: "ghost", chatId, entryId: g.raw.id, outcome: "success", numbers: { lag: profile.lagValue, sourceCount: g.meta.msgIds.length } });
       promoted.push(g);
     } catch (err) {
       warn(`ghost promotion failed for ${g.raw.id}: ${describeError(err)}`);

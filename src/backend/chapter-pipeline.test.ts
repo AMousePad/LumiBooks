@@ -1,4 +1,5 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { captureDiagnosticSnapshot, exportDiagnostics } from "./diagnostics";
+import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { DEFAULT_SETTINGS, makeDefaultProfile, normalizeEntryMeta } from "../shared";
 import { acceptPreview, createArcFromChapters, createChapterAuto, createChapterFromRange, dryRunChapter, getPendingPreviews, registerPipelineCallbacks } from "./pipeline";
 import { buildCoverage, computeCoverageStats, countCompressibleEligible } from "./coverage";
@@ -22,9 +23,10 @@ beforeEach(async () => {
   messages = Array.from({ length: 100 }, (_, i) => ({ id: `m${i + 1}`, role: "user", content: `RAW_MESSAGE_${i + 1}_END`, index_in_chat: i, extra: {} }));
   profile = { ...makeDefaultProfile("chapter-regression"), retryCount: 0, autoCreateArc: false, hideCoveredMessages: false, codexEnabled: false, lagValue: 0, windowValue: 12 };
   const book = { id: bookId, name: "Test", metadata: { lumibooks_chat_id: chatId } };
+  const diagnosticDisk = new Map<string, unknown>();
   (globalThis as any).spindle = {
     log: { info() {}, warn() {}, error() {} }, rpcPool: { sync() {} },
-    userStorage: { async setJson() {}, async getJson() { return settings(); } },
+    userStorage: { async setJson(path: string, value: unknown) { diagnosticDisk.set(path, structuredClone(value)); }, async getJson(path: string, opts: any) { return structuredClone(diagnosticDisk.get(path) ?? opts?.fallback); } },
     chat: { async getMessages() { return messages; } },
     chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId, chat_world_book_ids: [bookId] } }; }, async update() {} },
     connections: { async list() { return [{ id: "conn", model: "test", is_default: true }]; } },
@@ -44,6 +46,7 @@ beforeEach(async () => {
   invalidateBookCache(userId, chatId);
   await saveSettings(userId, settings());
 });
+afterEach(async () => { await exportDiagnostics(userId); });
 afterAll(() => { (globalThis as any).spindle = original; });
 
 for (const manual of [false, true]) test(`${manual ? "File chapter" : "automation"} fills an older uncovered gap before the newer tail`, async () => {
@@ -152,4 +155,38 @@ test("regenerating chapter 67 includes only preceding memories and preserves its
   expect(saved.msgIds).toEqual(ids);
   expect(saved.sceneNumber).toBe(67);
   expect(entries.some((e) => e.id === "chapter-67")).toBe(false);
+});
+
+
+test("diagnostics trace actual selection, previous context and saved coverage without story text", async () => {
+  entries = [chapter(71, 0, 55)];
+  const id = await createChapterAuto(chatId, profile, settings(), userId);
+  expect(id).toBeTruthy();
+  await captureDiagnosticSnapshot(userId, chatId);
+  const output = await exportDiagnostics(userId);
+  for (const secret of ["RAW_MESSAGE_", "MEMORY_", "A compressed story.", chatId, userId, bookId, "chapter-71"]) expect(output).not.toContain(secret);
+  const events = JSON.parse(output).events;
+  const selection = events.find((e: any) => e.event === "selection");
+  expect(selection.messages.filter((m: any) => m.selected).map((m: any) => m.index)).toEqual(Array.from({ length: 12 }, (_, i) => i + 55));
+  const context = events.find((e: any) => e.event === "context");
+  const committed = events.find((e: any) => e.event === "commit");
+  expect(committed.entries[0].messages).toEqual(context.messages.map((m: any) => m.id));
+  expect(context.entries).toHaveLength(1);
+  expect(events.some((e: any) => e.event === "request")).toBe(true);
+  expect(events.at(-1).event).toBe("snapshot");
+});
+
+test("diagnostic storage failure cannot prevent a chapter from being generated and committed", async () => {
+  const storage = (globalThis as any).spindle.userStorage;
+  const save = storage.setJson;
+  storage.setJson = async (path: string, value: unknown) => {
+    if (path === "diagnostics.json") throw new Error("PRIVATE_SERVER_ERROR");
+    return save(path, value);
+  };
+  const id = await createChapterAuto(chatId, profile, settings(), userId);
+  expect(id).toBeTruthy();
+  const exported = await exportDiagnostics(userId);
+  expect(JSON.parse(exported).writeFailuresThisSession).toBeGreaterThan(0);
+  expect(exported).not.toContain("PRIVATE_SERVER_ERROR");
+  expect(entries.find((e) => e.id === id).extensions.lumibooks.msgIds).toHaveLength(12);
 });

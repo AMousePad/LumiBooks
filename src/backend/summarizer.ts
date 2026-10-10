@@ -1,4 +1,5 @@
-import { TIER_NAMES, type HigherTier } from "../shared";
+import { recordDiagnostic } from "./diagnostics";
+import { TIER_KINDS, TIER_NAMES, type HigherTier } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
@@ -702,6 +703,8 @@ export async function summarizeVolume(
     { role: "user", content: outgoingUser },
   ];
 
+  void recordDiagnostic(userId, { event: "request", chatId, mode: TIER_KINDS[tier - 1]!, outcome: "started", numbers: { inputCharacters: built.user.length, outputCharacters: outgoingUser.length, changed: outgoingUser === built.user ? 0 : 1, targetTokens, targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length, regexIncoming: profile.regexIncomingScriptIds.length, maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens, maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens, temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();
@@ -772,6 +775,8 @@ export async function summarizeChapter(
     { role: "user", content: outgoingUser },
   ];
 
+  void recordDiagnostic(userId, { event: "request", chatId, mode: "chapter", outcome: "started", numbers: { inputCharacters: built.user.length, outputCharacters: outgoingUser.length, changed: outgoingUser === built.user ? 0 : 1, targetTokens, targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length, regexIncoming: profile.regexIncomingScriptIds.length, maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens, maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens, temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();
@@ -843,6 +848,8 @@ export async function summarizeArc(
     { role: "user", content: outgoingUser },
   ];
 
+  void recordDiagnostic(userId, { event: "request", chatId, mode: "arc", outcome: "started", numbers: { inputCharacters: built.user.length, outputCharacters: outgoingUser.length, changed: outgoingUser === built.user ? 0 : 1, targetTokens, targetPercent,
+    regexOutgoing: profile.regexOutgoingScriptIds.length, regexIncoming: profile.regexIncomingScriptIds.length, maxInputTokens: profile.samplers.max_input_tokens ?? SAMPLER_DEFAULTS.max_input_tokens, maxOutputTokens: profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens, temperature: profile.samplers.temperature ?? SAMPLER_DEFAULTS.temperature } });
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();

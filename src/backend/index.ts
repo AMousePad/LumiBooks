@@ -101,6 +101,7 @@ import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
 import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
+import { captureDiagnosticSnapshot, clearDiagnostics, exportDiagnostics, recordFrontendAction, recordDiagnostic } from "./diagnostics";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
 import { invalidateRegexCache } from "./regex";
@@ -332,11 +333,12 @@ spindle.registerInterceptor(async (messages, context) => {
 }, 90);
 
 spindle.on("MESSAGE_SENT", async (payload: unknown, hostUserId?: string) => {
-  const p = payload as { chatId?: string };
+  const p = payload as { chatId?: string; messageId?: string };
   if (!p?.chatId) return;
   const userId = hostUserId ?? resolveUserId(p.chatId);
   if (!userId) return;
   rememberChatUser(p.chatId, userId);
+  void recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
 });
 
 spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => {
@@ -372,11 +374,12 @@ spindle.on("CHAT_SWITCHED", async (payload: unknown, hostUserId?: string) => {
 });
 
 spindle.on("MESSAGE_DELETED", async (payload: unknown, hostUserId?: string) => {
-  const p = payload as { chatId?: string };
+  const p = payload as { chatId?: string; messageId?: string };
   if (!p?.chatId) return;
   const userId = hostUserId ?? resolveUserId(p.chatId);
   if (!userId) return;
   rememberChatUser(p.chatId, userId);
+  void recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "removed" });
   invalidateBookCache(userId, p.chatId);
   await pushState(userId, p.chatId);
 });
@@ -537,7 +540,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
   try {
     await ensureUserFolders(userId);
+    recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "diagnostics_export": {
+        await captureDiagnosticSnapshot(userId, msg.chatId);
+        const content = await exportDiagnostics(userId);
+        send({ type: "diagnostics_export_data", filename: "lumibooks-diagnostics.json", content }, userId);
+        break;
+      }
+      case "diagnostics_clear":
+        await clearDiagnostics(userId);
+        await notify(userId, "success", "Saved diagnostics cleared. Recording continues.");
+        break;
       case "ready":
       case "refresh":
         send({ type: "state_loading" }, userId);
@@ -1741,7 +1755,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
       default:
         debug(userId, `unknown frontend msg type`, (msg as { type?: string }).type);
     }
+    recordFrontendAction(userId, msg, "finished");
   } catch (err) {
+    recordFrontendAction(userId, msg, "failed");
     const description = describeError(err);
     error(`frontend handler failed: ${description}`);
     if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {

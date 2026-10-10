@@ -1,3 +1,4 @@
+import { recordDiagnostic, diagnosticEntries } from "./diagnostics";
 import { TIER_NAMES } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -156,6 +157,7 @@ export async function buildInjection(
       : allEntries.filter((e) => !e.raw.disabled);
   }
   const coverage: CoverageMap = await buildCoverage(chatId, userId, entriesForCoverage);
+  void recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
   if (coverage.activeEntries.length === 0) return null;
 
   const historyMsgs = llmMessages.filter(isAssembledHistory);
@@ -294,6 +296,8 @@ export async function buildInjection(
     if (label !== undefined) breakdown.push({ messageIndex: i, name: label });
   }
 
+  void recordDiagnostic(userId, { event: "injection", chatId, outcome: "success", messageScope: "assembled", numbers: { input: llmMessages.length, output: out.length, selected: breakdown.length, covered: plan.filter((p) => p.covered).length },
+    messages: plan.map((p) => ({ id: p.id, index: p.idx!, coveredBy: coverage.coveredBy.get(p.id), excluded: p.metadata?.lmb_excluded === true })) });
   return { messages: out, breakdown };
 }
 

@@ -183,6 +183,8 @@ export interface FrontendState {
 }
 
 export type FrontendToBackend =
+  | { type: "diagnostics_export"; chatId: string }
+  | { type: "diagnostics_clear"; chatId: string }
   | { type: "ready"; chatId?: string | null }
   | { type: "refresh"; chatId?: string | null }
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }
@@ -275,6 +277,7 @@ export interface DryRunDiagnostic {
 }
 
 export type BackendToFrontend =
+  | { type: "diagnostics_export_data"; filename: string; content: string }
   | { type: "state"; state: FrontendState }
   | { type: "state_loading" }
   | { type: "state_error"; text: string }

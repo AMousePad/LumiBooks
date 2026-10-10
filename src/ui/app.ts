@@ -378,6 +378,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         transferPanel.deliver(msg.status);
         break;
       case "summary_export_data":
+      case "diagnostics_export_data":
       case "codex_backup_data":
         downloadCodexBackup(msg.filename, msg.content);
         break;

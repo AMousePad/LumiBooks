@@ -16,7 +16,7 @@ import { getBusy, shortErrorText } from "./pipeline";
 import { loadSettings } from "./storage";
 import { resyncVisibility } from "./coverage";
 import { describeError, info, warn } from "./runtime";
-
+import { recordDiagnostic } from "./diagnostics";
 
 const FORK_ADOPTED_FLAG = "lumibooks_fork_adopted";
 const CODEX_ADOPTED_FLAG = "lumibooks_codex_fork_adopted";
@@ -58,6 +58,7 @@ export async function ensureForkAdoption(chatId: string, userId: string): Promis
     } catch (err) {
       if (retryAt.size > 1000) retryAt.clear();
       retryAt.set(k, Date.now() + RETRY_BACKOFF_MS);
+      void recordDiagnostic(userId, { event: "fork", chatId, outcome: "failed", reason: "adoption" });
       warn(`fork adoption failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
     } finally {
       inflight.delete(k);
@@ -108,6 +109,7 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
   const meta = chat.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : null;
   const branchedFrom = meta && typeof meta["branched_from"] === "string" ? (meta["branched_from"] as string) : null;
   if (!branchedFrom) return true;
+  void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: "started", reason: "adoption" });
 
   let shelfSettled = true;
   // The host fork copies the parent's metadata wholesale, adoption flags
@@ -138,6 +140,7 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
 
   // Independent of the shelf: a parent can have a codex without a single chapter.
   const codexSettled = await adoptForkCodex(forkChatId, branchedFrom, userId);
+  void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: shelfSettled && codexSettled ? "success" : "pending", reason: "adoption" });
   return shelfSettled && codexSettled;
 }
 
@@ -350,7 +353,10 @@ async function cloneShelfForFork(
     // summary would narrate the abandoned branch) and their msgSigs would no
     // longer align with the remapped msgIds. The fork regenerates them
     // cheaply at the codex lag.
-    if (entry.meta.ghost) return null;
+    if (entry.meta.ghost) {
+      void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, mode: "ghost", outcome: "skipped" });
+      return null;
+    }
     if (entry.meta.isRoot) {
       return {
         msgIds: entry.meta.msgIds.slice(),
@@ -362,7 +368,10 @@ async function cloneShelfForFork(
     const { ids, first, last } = remap(entry.meta.msgIds);
     // Summary prose cannot be trimmed by trimming its coverage. If any of its
     // story belongs to the abandoned branch, let the fork summarize it anew.
-    if (ids.length !== entry.meta.msgIds.length) return null;
+    if (ids.length !== entry.meta.msgIds.length) {
+      void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, entryId: entry.raw.id, outcome: "skipped", reason: "missing", numbers: { sourceCount: entry.meta.msgIds.length, selected: ids.length } });
+      return null;
+    }
     if (entry.meta.tier === 1) {
       if (ids.length === 0) return null;
       return { msgIds: ids, firstMsgIdx: first, lastMsgIdx: last, extra: { chatId: forkChatId } };
@@ -402,6 +411,11 @@ async function cloneShelfForFork(
   try {
     const idMap = await copyLmbEntries(newBook.id, parentEntries, userId, forkTransform);
     cloned = idMap.size;
+    void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: parentChatId, outcome: "success", numbers: { sourceCount: parentEntries.length, selected: cloned },
+      messages: forkMsgs.map((m, position) => ({ id: m.id, index: m.index_in_chat, position })), entries: parentEntries.flatMap((e) => {
+        const id = idMap.get(e.raw.id);
+        return id ? [{ id, tier: e.meta.tier, sources: [e.raw.id], sourceEntryCount: 1, sourceCount: e.meta.msgIds.length }] : [];
+      }) });
     await rebindForkShelf(forkChatId, newBook.id, userId);
   } catch (err) {
     await spindle.world_books.delete(newBook.id, userId).catch(() => {});

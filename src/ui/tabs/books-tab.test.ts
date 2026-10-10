@@ -3,7 +3,7 @@ import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import { normalizeEntryMeta, TIER_NAMES, type SummaryTier } from "../../shared";
 import type { ArcView, FrontendState } from "../../types";
 import { buildFixture } from "../lessons/fixture";
-import { renderBooksTab, resetBooksTabLocal } from "./books-tab";
+import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab } from "./home-tab";
 
 class Element {
@@ -147,4 +147,17 @@ test("Home counts active rooted summaries and omits compacted summaries and ghos
   const labels = walk(host).filter((n) => n.className === "lmb-breakdown-label").map((n) => n.textContent);
   expect(labels).toContain("Arcs (7)");
   expect(labels).toContain("Chapters (7)");
+});
+
+
+test("Advanced exposes always-on diagnostics with separate Export and Clear actions", () => {
+  setBooksSubtab("continuity");
+  const current = state(), sent: any[] = [], host = new Element("div");
+  renderBooksTab(host as any, current, {} as any, (msg) => sent.push(msg));
+  expect(host.textContent).toContain("Private diagnostics");
+  expect(host.textContent).toContain("Nothing is uploaded automatically");
+  expect(host.textContent).toContain("4 MiB");
+  walk(host).find((e) => e.tagName === "button" && e.textContent === "Export diagnostics")!.dispatch("click");
+  walk(host).find((e) => e.tagName === "button" && e.textContent === "Clear diagnostics")!.dispatch("click");
+  expect(sent).toEqual([{ type: "diagnostics_export", chatId: current.activeChatId }, { type: "diagnostics_clear", chatId: current.activeChatId }]);
 });
