@@ -26,7 +26,7 @@ beforeEach(async () => {
   const diagnosticDisk = new Map<string, unknown>();
   (globalThis as any).spindle = {
     log: { info() {}, warn() {}, error() {} }, rpcPool: { sync() {} },
-    userStorage: { async setJson(path: string, value: unknown) { diagnosticDisk.set(path, structuredClone(value)); }, async getJson(path: string, opts: any) { return structuredClone(diagnosticDisk.get(path) ?? opts?.fallback); } },
+    userStorage: { async exists(path: string) { return diagnosticDisk.has(path); }, async read(path: string) { return JSON.stringify(diagnosticDisk.get(path)); }, async setJson(path: string, value: unknown) { diagnosticDisk.set(path, structuredClone(value)); }, async getJson(path: string, opts: any) { return structuredClone(diagnosticDisk.get(path) ?? opts?.fallback); } },
     chat: { async getMessages() { return messages; } },
     chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId, chat_world_book_ids: [bookId] } }; }, async update() {} },
     connections: { async list() { return [{ id: "conn", model: "test", is_default: true }]; } },

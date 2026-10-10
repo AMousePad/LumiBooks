@@ -194,6 +194,7 @@ export interface LMBSettings {
   activeProfileId: string;
   customPresets: CustomPreset[];
   debugLog: boolean;
+  localLogsDisabled: boolean;
   forceConstantEntries: boolean;
   showAutomationToasts: boolean;
   /** "Don't show again" for the tool-calling fallback modal. */
@@ -334,6 +335,7 @@ export const DEFAULT_SETTINGS: LMBSettings = {
   activeProfileId: "default",
   customPresets: [],
   debugLog: false,
+  localLogsDisabled: false,
   forceConstantEntries: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false,
@@ -366,6 +368,7 @@ export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined):
     activeProfileId,
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
+    localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
     forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
     suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt,

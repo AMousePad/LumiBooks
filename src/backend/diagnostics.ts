@@ -5,6 +5,7 @@ import type { FrontendToBackend } from "../types";
 import type { LMBProfile } from "../shared";
 import { buildCoverage, isEligibleForCount, isExcluded, type ChatMessage, type CoverageMap } from "./coverage";
 import { listLmbEntries, type LMBEntry } from "./world-book";
+import { loadSettings } from "./storage";
 
 export const DIAGNOSTICS_PATH = "diagnostics.json";
 export const DIAGNOSTICS_MAX_BYTES = 10_000_000;
@@ -165,6 +166,7 @@ export function recordDiagnostic(userId: string, input: DiagnosticInput): Promis
     const storage = spindle.userStorage;
     pendingTotal++;
     return serial(userId, async () => {
+      if ((await loadSettings(userId)).localLogsDisabled) return;
       const store = await read(userId, storage);
       const safe = await anonymize(event, store.salt);
       safe.seq = store.next++;
@@ -173,6 +175,7 @@ export function recordDiagnostic(userId: string, input: DiagnosticInput): Promis
       bound(store, userId);
       // The host defaults to pretty JSON; request compact output so the byte
       // budget measures the actual persisted representation.
+      if ((await loadSettings(userId)).localLogsDisabled) return;
       await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
     }).catch(() => { health(userId).writeFailures++; }).finally(() => { pendingTotal--; });
   } catch { health(userId).writeFailures++; return Promise.resolve(); }
@@ -247,6 +250,7 @@ export function recordSelection(userId: string, chatId: string, profile: LMBProf
 /** Export includes a fresh structural snapshot even if the bug preceded logging. */
 export async function captureDiagnosticSnapshot(userId: string, chatId: string): Promise<void> {
   try {
+    if ((await loadSettings(userId)).localLogsDisabled) return;
     if (!await spindle.chats.get(chatId, userId)) throw new Error("Snapshot chat unavailable");
     const [messages, entries] = await Promise.all([spindle.chat.getMessages(chatId), listLmbEntries(chatId, userId)]);
     const coverage = await buildCoverage(chatId, userId, entries, true);

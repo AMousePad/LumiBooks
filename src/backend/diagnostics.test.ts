@@ -1,5 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic } from "./diagnostics";
+import { captureDiagnosticSnapshot, clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic } from "./diagnostics";
+import { DEFAULT_SETTINGS, normalizeSettings, SETTINGS_PATH } from "../shared";
+import { patchSettings } from "./storage";
 
 const original = (globalThis as any).spindle;
 let disk: Map<string, any>;
@@ -9,6 +11,8 @@ beforeEach(() => {
   disk = new Map();
   diskBytes = new Map();
   (globalThis as any).spindle = { userStorage: {
+    async exists(path: string, userId: string) { return disk.has(`${userId}/${path}`); },
+    async read(path: string, userId: string) { return JSON.stringify(disk.get(`${userId}/${path}`)); },
     async getJson(path: string, opts: any) { return structuredClone(disk.get(`${opts.userId}/${path}`) ?? opts.fallback); },
     async setJson(path: string, value: any, opts: any) {
       const serialized = JSON.stringify(value, null, opts?.indent ?? 2);
@@ -18,6 +22,34 @@ beforeEach(() => {
   } };
 });
 afterAll(() => { (globalThis as any).spindle = original; });
+
+test("local logging defaults on and respects persisted per-account opt-out, clear and re-enable", async () => {
+  expect(normalizeSettings({}).localLogsDisabled).toBe(false);
+  disk.set(`opt-out-user/${SETTINGS_PATH}`, { ...DEFAULT_SETTINGS, localLogsDisabled: true });
+  const input = { event: "operation" as const, chatId: "chat" };
+  await recordDiagnostic("opt-out-user", input);
+  expect(disk.has(key("opt-out-user"))).toBe(false);
+  await recordDiagnostic("other-user", input);
+  expect(JSON.parse(await exportDiagnostics("other-user")).events).toHaveLength(1);
+  await patchSettings("opt-out-user", { localLogsDisabled: false });
+  await recordDiagnostic("opt-out-user", input);
+  const saved = JSON.stringify(disk.get(key("opt-out-user")));
+  await patchSettings("opt-out-user", { localLogsDisabled: true });
+  await recordDiagnostic("opt-out-user", input);
+  let snapshotReads = 0;
+  (globalThis as any).spindle.chats = { get() { snapshotReads++; throw new Error("Must not inspect chat while opted out"); } };
+  await captureDiagnosticSnapshot("opt-out-user", "chat");
+  expect(snapshotReads).toBe(0);
+  expect(JSON.stringify(disk.get(key("opt-out-user")))).toBe(saved);
+  expect(JSON.parse(await exportDiagnostics("opt-out-user")).events).toHaveLength(1);
+  await clearDiagnostics("opt-out-user");
+  await recordDiagnostic("opt-out-user", input);
+  expect(JSON.parse(await exportDiagnostics("opt-out-user")).events).toEqual([]);
+  expect(disk.get(`opt-out-user/${SETTINGS_PATH}`).localLogsDisabled).toBe(true);
+  await patchSettings("opt-out-user", { localLogsDisabled: false });
+  await recordDiagnostic("opt-out-user", input);
+  expect(JSON.parse(await exportDiagnostics("opt-out-user")).events).toHaveLength(1);
+});
 
 test("failure categories never use provider text or arbitrary error names", () => {
   const error = new Error("PRIVATE_RESPONSE");

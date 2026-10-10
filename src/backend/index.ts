@@ -550,7 +550,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "diagnostics_clear":
         await clearDiagnostics(userId);
-        await notify(userId, "success", "Saved diagnostics cleared. Recording continues.");
+        await notify(userId, "success", "Saved diagnostics cleared.");
         break;
       case "ready":
       case "refresh":

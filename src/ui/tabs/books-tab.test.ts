@@ -15,6 +15,7 @@ class Element {
   attributes: Record<string, string> = {};
   value = "";
   disabled = false;
+  checked = false;
   private text = "";
   private listeners = new Map<string, ((event: { preventDefault(): void }) => void)[]>();
   constructor(readonly tagName: string) {}
@@ -150,13 +151,26 @@ test("Home counts active rooted summaries and omits compacted summaries and ghos
 });
 
 
-test("Advanced exposes always-on diagnostics with separate Export and Clear actions", () => {
+test("Advanced exposes diagnostics opt-out with separate Export and Clear actions", () => {
   setBooksSubtab("continuity");
   const current = state(), sent: any[] = [], host = new Element("div");
   renderBooksTab(host as any, current, {} as any, (msg) => sent.push(msg));
   expect(host.textContent).toContain("Private diagnostics");
   expect(host.textContent).toContain("No automatic uploads");
   expect(host.textContent).toContain("as many events as fit in 10 MB");
+  const optOut = walk(host).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
+  const toggle = walk(optOut).find((e) => e.tagName === "input")!;
+  expect(toggle.checked).toBe(false);
+  toggle.checked = true;
+  toggle.dispatch("change");
+  expect(sent.pop()).toEqual({ type: "save_settings", chatId: current.activeChatId, patch: { localLogsDisabled: true } });
+  current.settings.localLogsDisabled = true;
+  const disabledHost = render(current);
+  const disabledToggle = walk(disabledHost).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
+  expect(walk(disabledToggle).find((e) => e.tagName === "input")!.checked).toBe(true);
+  toggle.checked = false;
+  toggle.dispatch("change");
+  expect(sent.pop()).toEqual({ type: "save_settings", chatId: current.activeChatId, patch: { localLogsDisabled: false } });
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Export diagnostics")!.dispatch("click");
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Clear diagnostics")!.dispatch("click");
   expect(sent).toEqual([{ type: "diagnostics_export", chatId: current.activeChatId }, { type: "diagnostics_clear", chatId: current.activeChatId }]);

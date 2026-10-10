@@ -768,6 +768,7 @@ var DEFAULT_SETTINGS = {
   activeProfileId: "default",
   customPresets: [],
   debugLog: false,
+  localLogsDisabled: false,
   forceConstantEntries: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false
@@ -792,6 +793,7 @@ function normalizeSettings(raw) {
     activeProfileId,
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
+    localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
     forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
     suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt
@@ -3821,6 +3823,8 @@ function recordDiagnostic(userId, input) {
     const storage = spindle.userStorage;
     pendingTotal++;
     return serial(userId, async () => {
+      if ((await loadSettings(userId)).localLogsDisabled)
+        return;
       const store = await read(userId, storage);
       const safe = await anonymize(event, store.salt);
       safe.seq = store.next++;
@@ -3831,6 +3835,8 @@ function recordDiagnostic(userId, input) {
       }
       store.events.push(safe);
       bound(store, userId);
+      if ((await loadSettings(userId)).localLogsDisabled)
+        return;
       await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
     }).catch(() => {
       health(userId).writeFailures++;
@@ -3950,6 +3956,8 @@ function recordSelection(userId, chatId, profile, messages, coverage, selected, 
 }
 async function captureDiagnosticSnapshot(userId, chatId) {
   try {
+    if ((await loadSettings(userId)).localLogsDisabled)
+      return;
     if (!await spindle.chats.get(chatId, userId))
       throw new Error("Snapshot chat unavailable");
     const [messages, entries] = await Promise.all([spindle.chat.getMessages(chatId), listLmbEntries(chatId, userId)]);
@@ -11583,7 +11591,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "diagnostics_clear":
         await clearDiagnostics(userId);
-        await notify(userId, "success", "Saved diagnostics cleared. Recording continues.");
+        await notify(userId, "success", "Saved diagnostics cleared.");
         break;
       case "ready":
       case "refresh":

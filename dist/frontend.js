@@ -3621,6 +3621,7 @@ var DEFAULT_SETTINGS = {
   activeProfileId: "default",
   customPresets: [],
   debugLog: false,
+  localLogsDisabled: false,
   forceConstantEntries: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false
@@ -6326,8 +6327,13 @@ function renderSummaryTransfer(host, state, ctx, send) {
 }
 function renderDiagnostics(host, state, send) {
   const sec = section("Private diagnostics");
-  sec.body.appendChild(textNode("Always on, per account: filing, coverage, regeneration, fork and context decisions. Keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot.", "lmb-help"));
-  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms; recording continues.", "lmb-help"));
+  sec.body.appendChild(checkbox({
+    checked: state.settings.localLogsDisabled,
+    label: "Turn off local logs. This is not recommended",
+    onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } })
+  }));
+  sec.body.appendChild(textNode("On by default, per account: filing, coverage, regeneration, fork and context decisions. Keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records for export or clearing.", "lmb-help"));
+  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   const chatId = state.activeChatId;
