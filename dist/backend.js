@@ -4607,6 +4607,8 @@ class AbortedSummarizerError extends Error {
   }
 }
 async function consumeGenerationStream(makeStream, options) {
+  if (options.externalSignal.aborted)
+    throw new AbortedSummarizerError;
   const controller = new AbortController;
   let firstTokenSeen = false;
   let ttftFired = false;
@@ -4634,8 +4636,19 @@ async function consumeGenerationStream(makeStream, options) {
   let aggregated = "";
   let thinkingChars = 0;
   let usage;
+  const assertRunning = () => {
+    if (externalAborted)
+      throw new AbortedSummarizerError;
+    if (ttftFired && options.firstTokenTimeoutMs !== null) {
+      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+    }
+    if (deadlineFired && options.overallDeadlineMs !== null) {
+      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
+    }
+  };
   try {
     for await (const chunk of makeStream(controller.signal)) {
+      assertRunning();
       if (chunk.type === "token" || chunk.type === "reasoning") {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
@@ -4653,8 +4666,6 @@ async function consumeGenerationStream(makeStream, options) {
         continue;
       }
       if (chunk.type === "done") {
-        if (externalAborted)
-          throw new AbortedSummarizerError;
         if (chunk.content)
           aggregated = chunk.content;
         usage = chunk.usage;
@@ -4670,21 +4681,13 @@ async function consumeGenerationStream(makeStream, options) {
         return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
       }
     }
-    if (externalAborted)
-      throw new AbortedSummarizerError;
+    assertRunning();
     if (options.salvagePartial && aggregated.trim()) {
       return { content: aggregated, toolCalls: [], usage };
     }
     throw new Error("The stream ended before completing");
   } catch (err) {
-    if (externalAborted)
-      throw new AbortedSummarizerError;
-    if (ttftFired && options.firstTokenTimeoutMs !== null) {
-      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
-    }
-    if (deadlineFired && options.overallDeadlineMs !== null) {
-      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
-    }
+    assertRunning();
     throw err;
   } finally {
     if (ttftTimer)

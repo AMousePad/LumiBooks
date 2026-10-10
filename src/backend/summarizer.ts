@@ -233,11 +233,12 @@ export async function consumeGenerationStream(
   makeStream: (signal: AbortSignal) => AsyncGenerator<import("lumiverse-spindle-types").StreamChunkDTO, void, void>,
   options: ConsumeStreamOptions,
 ): Promise<ConsumedStream> {
+  if (options.externalSignal.aborted) throw new AbortedSummarizerError();
   const controller = new AbortController();
   let firstTokenSeen = false;
   let ttftFired = false;
   let deadlineFired = false;
-  let externalAborted = options.externalSignal.aborted;
+  let externalAborted: boolean = options.externalSignal.aborted;
   const onExternalAbort = (): void => {
     externalAborted = true;
     controller.abort();
@@ -264,8 +265,21 @@ export async function consumeGenerationStream(
   let thinkingChars = 0;
   let usage: StreamedGeneration["usage"];
 
+  const assertRunning = (): void => {
+    if (externalAborted) throw new AbortedSummarizerError();
+    if (ttftFired && options.firstTokenTimeoutMs !== null) {
+      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+    }
+    if (deadlineFired && options.overallDeadlineMs !== null) {
+      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
+    }
+  };
+
   try {
     for await (const chunk of makeStream(controller.signal)) {
+      // Providers may finish normally or yield buffered chunks after abort.
+      // Neither late output nor partial recovery can override cancellation.
+      assertRunning();
       if (chunk.type === "token" || chunk.type === "reasoning") {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
@@ -282,7 +296,6 @@ export async function consumeGenerationStream(
         continue;
       }
       if (chunk.type === "done") {
-        if (externalAborted) throw new AbortedSummarizerError();
         if (chunk.content) aggregated = chunk.content;
         usage = chunk.usage;
         // Tool-call payloads never stream as tokens; without counting them a
@@ -297,19 +310,13 @@ export async function consumeGenerationStream(
         return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
       }
     }
-    if (externalAborted) throw new AbortedSummarizerError();
+    assertRunning();
     if (options.salvagePartial && aggregated.trim()) {
       return { content: aggregated, toolCalls: [], usage };
     }
     throw new Error("The stream ended before completing");
   } catch (err) {
-    if (externalAborted) throw new AbortedSummarizerError();
-    if (ttftFired && options.firstTokenTimeoutMs !== null) {
-      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
-    }
-    if (deadlineFired && options.overallDeadlineMs !== null) {
-      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
-    }
+    assertRunning();
     throw err;
   } finally {
     if (ttftTimer) clearTimeout(ttftTimer);
