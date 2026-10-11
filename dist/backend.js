@@ -3436,7 +3436,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -3455,7 +3455,7 @@ var spindle_default = {
   entry_backend: "dist/backend.js",
   entry_frontend: "dist/frontend.js",
   interceptorTimeoutMs: 300000,
-  minimum_lumiverse_version: "1.1.6"
+  minimum_lumiverse_version: "1.2.5"
 };
 
 // src/backend/diagnostics.ts
