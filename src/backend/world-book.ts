@@ -3,6 +3,9 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { WorldBookDTO, WorldBookEntryDTO } from "lumiverse-spindle-types";
 import type { LMBEntryMeta } from "../shared";
 import { EXTENSION_KEY, WORLD_BOOK_NAME_PREFIX, bookNameFor, codexBookNameFor, normalizeEntryMeta } from "../shared";
+import { activationFlags } from "../activation";
+import { loadSettings } from "./storage";
+import { withCommitMutex } from "./summary-commit";
 import { describeError, error, warn } from "./runtime";
 
 const PAGE_LIMIT = 200;
@@ -301,24 +304,20 @@ const NAME_SYNC_TTL_MS = 60_000;
 /** Managed book names follow the chat name, so renames (fork-time ones
  * included) propagate to the shelf and codex books. */
 async function syncManagedBookNames(chatId: string, chatName: string | null, shelfBookId: string, userId: string): Promise<void> {
-  const key = cacheKey(userId, chatId);
+  await syncManagedBookName(chatId, shelfBookId, bookNameFor(chatName, chatId), userId);
+  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
+  if (codexBookId) await syncManagedBookName(chatId, codexBookId, codexBookNameFor(chatName, chatId), userId);
+}
+
+async function syncManagedBookName(chatId: string, bookId: string, name: string, userId: string): Promise<void> {
+  const key = `${cacheKey(userId, chatId)}::${bookId}`;
+  if (!(await loadSettings(userId)).followChatNames) { nameSyncAt.delete(key); return; }
   const last = nameSyncAt.get(key);
   if (last && Date.now() - last < NAME_SYNC_TTL_MS) return;
   if (nameSyncAt.size > 500) nameSyncAt.clear();
   nameSyncAt.set(key, Date.now());
-  const wantedShelf = bookNameFor(chatName, chatId);
-  const shelf = await spindle.world_books.get(shelfBookId, userId).catch(() => null);
-  if (shelf && (shelf.name || "") !== wantedShelf) {
-    await spindle.world_books.update(shelfBookId, { name: wantedShelf }, userId);
-  }
-  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
-  if (codexBookId) {
-    const wantedCodex = codexBookNameFor(chatName, chatId);
-    const codexBook = await spindle.world_books.get(codexBookId, userId).catch(() => null);
-    if (codexBook && (codexBook.name || "") !== wantedCodex) {
-      await spindle.world_books.update(codexBookId, { name: wantedCodex }, userId);
-    }
-  }
+  const book = await spindle.world_books.get(bookId, userId);
+  if (book && (book.name || "") !== name) await spindle.world_books.update(bookId, { name }, userId);
 }
 
 /** Short-lived entries cache: the injection interceptor runs on every
@@ -361,7 +360,6 @@ export async function createChapterEntry(
   comment: string,
   userId: string,
   keys: string[] = [],
-  constant: boolean = true,
   disabled: boolean = false,
   replacement?: LMBEntry,
 ): Promise<WorldBookEntryDTO> {
@@ -369,10 +367,9 @@ export async function createChapterEntry(
       content,
       comment,
       disabled,
-      constant,
+      ...activationFlags((await loadSettings(userId)).summaryActivationMode),
       key: keys,
       keysecondary: [],
-      vectorized: false,
       extensions: {
         ...(replacement?.raw.extensions ?? {}),
         [EXTENSION_KEY]: meta,
@@ -385,24 +382,30 @@ export async function createChapterEntry(
     : spindle.world_books.entries.create(bookId, payload, userId);
 }
 
-export async function applyConstantToAllLmbEntries(userId: string, constant: boolean): Promise<number> {
+export async function applySummaryActivation(userId: string): Promise<{ updated: number; failed: number }> {
   const books = await listAllBooks(userId);
   let updated = 0;
+  let failed = 0;
   for (const book of books) {
     const meta = book.metadata as Record<string, unknown> | undefined;
     if (!meta || typeof meta["lumibooks_chat_id"] !== "string") continue;
-    const entries = await listAllEntries(book.id, userId).catch(() => [] as WorldBookEntryDTO[]);
-    for (const entry of entries) {
-      const ext = (entry.extensions || {}) as Record<string, unknown>;
-      if (!ext[EXTENSION_KEY]) continue;
-      if (entry.constant === constant) continue;
-      try {
-        await spindle.world_books.entries.update(entry.id, { constant }, userId);
-        updated++;
-      } catch (_) { void _; }
-    }
+    const chatId = meta["lumibooks_chat_id"] as string;
+    await withCommitMutex(userId, chatId, async () => {
+      const flags = activationFlags((await loadSettings(userId)).summaryActivationMode);
+      const entries = await listAllEntries(book.id, userId);
+      for (const entry of entries) {
+        const ext = (entry.extensions || {}) as Record<string, unknown>;
+        if (!ext[EXTENSION_KEY]) continue;
+        if (entry.constant === flags.constant && (entry.vectorized ?? false) === flags.vectorized) continue;
+        try {
+          await spindle.world_books.entries.update(entry.id, flags, userId);
+          updated++;
+        } catch { failed++; }
+      }
+    }).catch(() => { failed++; });
+    invalidateBookCache(userId, chatId);
   }
-  return updated;
+  return { updated, failed };
 }
 
 export async function updateEntry(
@@ -576,6 +579,8 @@ function bindCodexBookToChat(chatId: string, bookId: string, userId: string): Pr
       : [];
     const alreadyBound = existing.includes(bookId);
     const alreadyClaimed = md[CODEX_BOOK_CLAIM_KEY] === bookId;
+    await syncManagedBookName(chatId, bookId, codexBookNameFor(chat.name ?? null, chatId), userId)
+      .catch((err) => warn(`Codex book name sync failed: ${describeError(err)}`));
     if (alreadyBound && alreadyClaimed) return;
     await spindle.chats.update(
       chatId,

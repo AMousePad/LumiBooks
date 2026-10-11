@@ -44,8 +44,12 @@ You can edit the records yourself in the new and beautiful glass UI.
 
 The codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host's native lorebook activation decides what enters the prompt:
 
-- **Entities, world topics, and secrets** are keyword-triggered entries. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically).
+- **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse's lorebook search.
 - **Timeline and threads** are constant entries as keyword matching doesn't make as much sense here.
+
+Vector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.
+
+Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
 
 The mirror book is rewritten by LumiBooks often, so don't edit it by hand. Edit records in the Codex tab (or the JSON files) instead.
 

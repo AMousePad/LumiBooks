@@ -210,7 +210,7 @@ export type FrontendToBackend =
   | { type: "update_entry"; chatId: string; entryId: string; patch: { content?: string; comment?: string } }
   | { type: "resync_hidden"; chatId: string }
   | { type: "resync_visibility"; chatId: string }
-  | { type: "set_force_constant"; value: boolean; chatId?: string | null }
+  | { type: "set_summary_activation"; mode: import("./activation").ActivationMode; chatId?: string | null }
   | { type: "abort_busy"; chatId: string; kind: SummaryKind | "codex" }
   | { type: "dry_run_chapter"; chatId: string }
   | { type: "dry_run_arc"; chatId: string }

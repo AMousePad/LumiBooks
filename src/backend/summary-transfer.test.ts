@@ -14,6 +14,7 @@ beforeEach(() => {
   entries = [0, 1].map((i) => ({ id: `chapter-${i}`, world_book_id: "source-book", content: `Exact summary ${i}`, comment: `Chapter ${i + 1}`, disabled: false,
     extensions: { lumibooks: normalizeEntryMeta({ tier: 1, chatId: "source", msgIds: [`source-${i * 2}`, `source-${i * 2 + 1}`], firstMsgIdx: i * 2, lastMsgIdx: i * 2 + 1 }) } }));
   (globalThis as any).spindle = {
+    userStorage: { async exists() { return false; } },
     sendToFrontend(m: any) { sent.push(m); }, log: { info() {}, warn() {}, error() {} },
     chat: { async getMessages(id: string) { return structuredClone(chats.get(id) ?? []); } },
     chats: { async get(id: string) { return { id, metadata: { lumibooks_book_id: `${id}-book`, chat_world_book_ids: [`${id}-book`] } }; }, async update() {} },

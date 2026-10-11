@@ -19,6 +19,12 @@ construction are real. The model is a local deterministic HTTP SSE provider
 that captures requests and can fail or delay responses. No paid model calls or
 private chats are needed.
 
+The embedding provider is also a local deterministic fixture. Vector scenarios
+exercise actual indexing, semantic retrieval without keyword matches, top-K,
+Codex edits and file switches, mode changes, provider failure, empty queries,
+worker restart, fork ownership, summary capture/regeneration, custom book names,
+and diagnostics privacy. Use `--vectors-only` to run just these scenarios.
+
 Coverage includes deleted message indexes; manual and automatic filing;
 chapter/arc regeneration; all-hidden prompt injection; fork ownership and source
 remapping; nested deletion and coverage repair; provider failure/retry;

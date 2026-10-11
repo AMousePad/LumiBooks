@@ -2188,6 +2188,14 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   border: 1px solid var(--lmb-hairline);
   border-radius: var(--lmb-r-lg);
 }
+.lmb-activation { border: 0; padding: 0; margin: 0; min-width: 0; }
+.lmb-activation legend { margin-bottom: 6px; }
+.lmb-activation-options { display: flex; flex-wrap: wrap; gap: 3px; }
+.lmb-activation-options label { position: relative; flex: 1 1 auto; cursor: pointer; }
+.lmb-activation-options input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.lmb-activation-label { display: block; text-align: center; padding: 8px 10px; border: 1px solid var(--lmb-frame-faint); border-radius: 6px; }
+.lmb-activation-options input:checked + .lmb-activation-label { background: var(--lmb-frame-faint); color: var(--lmb-ink); border-color: currentColor; }
+.lmb-activation-options input:focus-visible + .lmb-activation-label { outline: 2px solid currentColor; outline-offset: 2px; }
 .lmb-sampler-switch button {
   flex: 1;
   background: transparent;
@@ -3602,7 +3610,7 @@ function makeDefaultProfile(id, name) {
     codexLoreLimitTokens: 25000,
     codexStorySoFarCount: 5,
     codexRelationsTable: true,
-    codexForceConstant: false,
+    codexActivationMode: "keywords",
     codexInjectionPosition: "lorebook",
     codexInjectionDepth: 4,
     codexThorough: true,
@@ -3622,7 +3630,8 @@ var DEFAULT_SETTINGS = {
   customPresets: [],
   debugLog: false,
   localLogsDisabled: false,
-  forceConstantEntries: true,
+  summaryActivationMode: "always",
+  followChatNames: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false
 };
@@ -9807,6 +9816,37 @@ function renderSecrets(host, parsed, state, ctx, send) {
   host.appendChild(secrets.wrap);
 }
 
+// src/ui/activation-control.ts
+function activationControl(label, value, onChange) {
+  const group = document.createElement("fieldset");
+  group.className = "lmb-activation";
+  const legend = document.createElement("legend");
+  legend.textContent = label;
+  group.append(legend);
+  const row = document.createElement("div");
+  row.className = "lmb-activation-options";
+  const name = `activation-${crypto.randomUUID()}`;
+  for (const [mode, title] of [["always", "Always"], ["keywords", "Keywords"], ["vector", "Vector + keywords"]]) {
+    const option = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = name;
+    input.value = mode;
+    input.checked = value === mode;
+    input.addEventListener("change", () => {
+      if (input.checked)
+        onChange(mode);
+    });
+    option.append(input, textNode(title, "lmb-activation-label"));
+    row.append(option);
+  }
+  group.append(row);
+  return group;
+}
+function vectorSetupHint() {
+  return textNode("Vector recall needs a tested embedding connection and lorebook vectorization enabled in Lumiverse. Indexing runs in the background. Until ready, or if retrieval fails, only keyword matches activate. Embeddings use the provider configured in Lumiverse.", "lmb-field-hint");
+}
+
 // src/ui/tabs/profile-tab.ts
 var PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", "Defaults");
 var CODEX_LAG_TOKENS_DEFAULT = 2000;
@@ -9893,12 +9933,10 @@ function renderCodexSettings(host, state, profile, patch) {
   loreHint.className = "lmb-field-hint";
   loreHint.textContent = "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
   fields.appendChild(loreHint);
-  fields.appendChild(checkbox({
-    checked: profile.codexForceConstant,
-    label: "Always inject codex records",
-    hint: "Inject every enabled record each turn. Otherwise timeline and threads are constant; other records activate by keywords.",
-    onChange: (v) => patch({ codexForceConstant: v })
-  }));
+  fields.appendChild(activationControl("Codex recall", profile.codexActivationMode, (codexActivationMode) => patch({ codexActivationMode })));
+  fields.appendChild(textNode("The active profile sets recall for enabled records across all chats. Timeline and threads always remain included. Other records can always activate, match keywords, or also match by meaning.", "lmb-field-hint"));
+  if (profile.codexActivationMode === "vector")
+    fields.appendChild(vectorSetupHint());
   fields.appendChild(labelled("Codex placement", select({
     value: profile.codexInjectionPosition,
     options: [{ value: "lorebook", label: "Lorebook (before)" }, { value: "depth", label: "At history depth" }, { value: "after_history", label: "After chat history" }],
@@ -11158,12 +11196,19 @@ function renderGlobalSettings(host, state, send) {
     hint: "When off, Memoria's background runs stay quiet. Errors and your own actions still toast.",
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId })
   }));
-  sec.body.appendChild(lessonMark(checkbox({
-    checked: state.settings.forceConstantEntries,
-    label: "Force constant entries",
-    hint: "When on, every LumiBooks lorebook entry (current and future) is marked constant so it activates without keyword matching. Toggling re-flips every existing LumiBooks entry across all chats.",
-    onChange: (v) => send({ type: "set_force_constant", value: v, chatId: state.activeChatId })
-  }), "tuning.every.constant"));
+  sec.body.appendChild(lessonMark(activationControl("Summary recall", state.settings.summaryActivationMode, (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId })), "tuning.every.constant"));
+  const hint = document.createElement("div");
+  hint.className = "lmb-field-hint";
+  hint.textContent = "Applies to existing and future chapter and higher-tier summaries across all chats. Filing and hidden-message coverage stay the same; Keywords and Vector recall include only matching memories. With no visible recent text, vector recall falls back to keywords.";
+  sec.body.appendChild(hint);
+  if (state.settings.summaryActivationMode === "vector")
+    sec.body.appendChild(vectorSetupHint());
+  sec.body.appendChild(checkbox({
+    checked: state.settings.followChatNames,
+    label: "Lorebook names follow chat names",
+    hint: "Turn off to rename your Books and Codex lorebooks manually in Lumiverse. Turning on restores chat-based names when each shelf next syncs.",
+    onChange: (followChatNames) => send({ type: "save_settings", patch: { followChatNames }, chatId: state.activeChatId })
+  }));
   host.appendChild(sec.wrap);
 }
 
@@ -11929,7 +11974,7 @@ var COURSE_CODEX = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all \uD83D\uDCAA. Each record becomes an entry in a lorebook I manage for you. The timeline and threads are constant entries, and the others activate by keyword."
+          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all \uD83D\uDCAA. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse."
         },
         {
           kind: "quiz",

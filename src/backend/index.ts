@@ -36,7 +36,7 @@ import {
   skipCourseSeal,
 } from "./lessons";
 import {
-  applyConstantToAllLmbEntries,
+  applySummaryActivation,
   ensureBookForChat,
   listLmbEntries,
   invalidateBookCache,
@@ -555,6 +555,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "save_settings":
         await patchSettings(userId, msg.patch);
+        if ("profiles" in msg.patch || "activeProfileId" in msg.patch) await syncProfileSettings(userId);
+        if ("summaryActivationMode" in msg.patch) {
+          const { failed } = await applySummaryActivation(userId);
+          if (failed) await notify(userId, "warn", `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`);
+        }
         await pushState(userId, msg.chatId);
         break;
 
@@ -606,7 +611,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
         }
-        if (id === activeBefore && ["codexForceConstant", "codexInjectionPosition", "codexInjectionDepth"].some((key) => key in incoming)) {
+        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth"].some((key) => key in incoming)) {
           await syncProfileSettings(userId);
         }
         // The effective-mode off transition (extra toggle OR codex disable)
@@ -988,16 +993,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
 
-      case "set_force_constant": {
-        await patchSettings(userId, { forceConstantEntries: msg.value });
-        const updated = await applyConstantToAllLmbEntries(userId, msg.value).catch((err) => {
-          warn(`applyConstantToAllLmbEntries failed: ${describeError(err)}`);
-          return 0;
-        });
-        const text = updated === 0
-          ? `Future entries will be ${msg.value ? "constant" : "keyword-triggered"}`
-          : `Memoria flipped ${updated} entr${updated === 1 ? "y" : "ies"} to ${msg.value ? "constant" : "keyword-triggered"}`;
-        await notify(userId, "info", text);
+      case "set_summary_activation": {
+        await patchSettings(userId, { summaryActivationMode: msg.mode });
+        const { updated, failed } = await applySummaryActivation(userId);
+        await notify(userId, failed ? "warn" : "info", failed
+          ? `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`
+          : `Summary recall saved; ${updated} entries updated.`);
         await pushState(userId, msg.chatId);
         break;
       }

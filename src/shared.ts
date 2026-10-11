@@ -1,4 +1,5 @@
 import { isCodexTemplateKey, type CodexTemplateKey } from "./prompts/codex/registry";
+import { normalizeActivationMode, type ActivationMode } from "./activation";
 
 export const EXTENSION_ID = "lumi_books" as const;
 export const EXTENSION_KEY = "lumibooks" as const;
@@ -152,7 +153,7 @@ export interface LMBProfile {
   /** Chapter summaries extra-context mode hands the agent as story-so-far. */
   codexStorySoFarCount: number;
   codexRelationsTable: boolean;
-  codexForceConstant: boolean;
+  codexActivationMode: ActivationMode;
   codexInjectionPosition: "lorebook" | "depth" | "after_history";
   codexInjectionDepth: number;
   codexThorough: boolean;
@@ -195,7 +196,8 @@ export interface LMBSettings {
   customPresets: CustomPreset[];
   debugLog: boolean;
   localLogsDisabled: boolean;
-  forceConstantEntries: boolean;
+  summaryActivationMode: ActivationMode;
+  followChatNames: boolean;
   showAutomationToasts: boolean;
   /** "Don't show again" for the tool-calling fallback modal. */
   suppressToolCallingPrompt: boolean;
@@ -315,7 +317,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexLoreLimitTokens: 25000,
     codexStorySoFarCount: 5,
     codexRelationsTable: true,
-    codexForceConstant: false,
+    codexActivationMode: "keywords",
     codexInjectionPosition: "lorebook",
     codexInjectionDepth: 4,
     codexThorough: true,
@@ -336,7 +338,8 @@ export const DEFAULT_SETTINGS: LMBSettings = {
   customPresets: [],
   debugLog: false,
   localLogsDisabled: false,
-  forceConstantEntries: true,
+  summaryActivationMode: "always",
+  followChatNames: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false,
 };
@@ -369,7 +372,9 @@ export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined):
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
-    forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
+    summaryActivationMode: normalizeActivationMode(v.summaryActivationMode,
+      (v as { forceConstantEntries?: boolean }).forceConstantEntries === false ? "keywords" : "always"),
+    followChatNames: v.followChatNames !== false,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
     suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt,
   };
@@ -440,7 +445,8 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexLoreLimitPercent: clampInt(v.codexLoreLimitPercent, 1, 100, base.codexLoreLimitPercent),
     codexLoreLimitTokens: clampInt(v.codexLoreLimitTokens, 0, 1000000, base.codexLoreLimitTokens),
     codexStorySoFarCount: clampInt(v.codexStorySoFarCount, 0, 50, base.codexStorySoFarCount),
-    codexForceConstant: v.codexForceConstant === true,
+    codexActivationMode: normalizeActivationMode(v.codexActivationMode,
+      (v as { codexForceConstant?: boolean }).codexForceConstant === true ? "always" : "keywords"),
     codexInjectionPosition: v.codexInjectionPosition === "depth" || v.codexInjectionPosition === "after_history" ? v.codexInjectionPosition : "lorebook",
     codexInjectionDepth: clampInt(v.codexInjectionDepth, 0, 10000, base.codexInjectionDepth),
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,

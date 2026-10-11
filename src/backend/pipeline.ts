@@ -749,7 +749,7 @@ async function commitChapter(
   const finalContent = `${opener}\n\n${result.content}`;
   let entry: Awaited<ReturnType<typeof createChapterEntry>>;
   try {
-    entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost, replacedEntry);
+    entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], ghost, replacedEntry);
   } catch (err) {
     // The freed ordinal must survive a failed commit or the retried refill
     // falls back to max+1 and jumps out of story order.
@@ -995,10 +995,9 @@ async function commitArc(
   };
   const baseComment = meta.title ?? `Arc - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
   const comment = `${isRootArc ? "[Root] " : ""}Arc #${sceneNumber} - ${baseComment}`;
-  const arcSettings = await loadSettings(userId);
   const arcOpener = buildArcHeader(sceneNumber, sourceChapterEntryIds.length, msgIds.length);
   const finalArcContent = `${arcOpener}\n\n${result.content}`;
-  const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries, false, replacedArc);
+  const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], false, replacedArc);
   const failedSupersedes: string[] = [];
   for (const ch of selected) {
     try {
@@ -1222,10 +1221,9 @@ async function commitVolume(
   };
   const baseComment = meta.title ?? `Volume - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
   const comment = `${isRootVolume ? "[Root] " : ""}${TIER_NAMES[tier - 1]} #${sceneNumber} - ${baseComment}`;
-  const volumeSettings = await loadSettings(userId);
   const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
   const finalVolumeContent = `${volumeOpener}\n\n${result.content}`;
-  const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries, false, replacedVolume);
+  const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], false, replacedVolume);
   const failedSupersedes: string[] = [];
   for (const arc of selected) {
     try {

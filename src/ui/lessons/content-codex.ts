@@ -35,7 +35,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes an entry in a lorebook I manage for you. The timeline and threads are constant entries, and the others activate by keyword.",
+          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
         },
         {
           kind: "quiz",

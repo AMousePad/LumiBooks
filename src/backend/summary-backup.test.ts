@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { importSummaryLorebook, parseSummaryLorebook, summaryLorebook } from "./summary-backup";
 import { buildCoverage } from "./coverage";
-import { normalizeEntryMeta } from "../shared";
+import { DEFAULT_SETTINGS, normalizeEntryMeta } from "../shared";
 import type { LMBEntry } from "./world-book";
 const entry = (id: string, tier: number, sources: string[] = []) => ({
  raw: { id, content: "Keep this exact prose.", comment: "Summary", disabled: false },
@@ -30,6 +30,7 @@ for (const fail of [false, true]) test(`root import ${fail ? "rolls back partial
  const rows: any[] = [];
  const book = { id: "import-book", metadata: { lumibooks_chat_id: chatId } };
  (globalThis as any).spindle = {
+  userStorage: { async exists() { return true; }, async read() { return JSON.stringify({ ...DEFAULT_SETTINGS, summaryActivationMode: "vector" }); } },
   log: { warn() {}, error() {}, info() {} },
   chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: book.id, chat_world_book_ids: [book.id] } }; }, async update() {} },
   world_books: { async get() { return book; }, async list() { return { data: [book], total: 1 }; }, entries: {
@@ -44,6 +45,7 @@ for (const fail of [false, true]) test(`root import ${fail ? "rolls back partial
   else {
    expect(await importSummaryLorebook(chatId, userId, raw)).toBe(2);
    expect(rows.map((r) => r.content)).toEqual(["Precise timeline.", "Second summary."]);
+   expect(rows.every((r) => r.vectorized && !r.constant)).toBe(true);
    const all = rows.map((raw) => ({ raw, meta: raw.extensions.lumibooks }));
    expect(all.every((e) => e.meta.isRoot && e.meta.firstMsgIdx < 0 && e.meta.msgIds.length === 0)).toBe(true);
    expect((await buildCoverage(chatId, userId, all)).coveredBy.size).toBe(0);

@@ -1,4 +1,5 @@
 import { loadSettings } from "../storage";
+import { activationFlags } from "../../activation";
 import type { LMBProfile } from "../../shared";
 import { listCodexChatIds } from "./store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
@@ -12,6 +13,7 @@ import { renderCodexRecords } from "./prompt";
 import { codexPresence, loadCodex, loadCursor } from "./store";
 import { ensureCodexBookForChat, findCodexBookForChat, listAllEntries } from "../world-book";
 import { describeError, warn } from "../runtime";
+import { recordDiagnostic } from "../diagnostics";
 
 /** Identity payload stored on every synced entry. */
 interface CodexEntryMeta {
@@ -171,7 +173,6 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
             ...placement,
             key: rec.keys,
             keysecondary: [],
-            vectorized: false,
             extensions: { [CODEX_ENTRY_EXTENSION_KEY]: meta },
           },
           userId,
@@ -186,6 +187,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       cur.raw.content !== rec.content
       || (cur.raw.comment || "") !== rec.comment
       || cur.raw.constant !== placement.constant
+      || (cur.raw.vectorized ?? false) !== placement.vectorized
       || cur.raw.position !== placement.position
       || cur.raw.depth !== placement.depth
       || cur.raw.role !== placement.role
@@ -225,6 +227,9 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       `${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"} could not be removed and may still inject`,
     );
   }
+  void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
+    numbers: { entries: desired.length },
+    flags: { vector: profile.codexActivationMode === "vector", constant: profile.codexActivationMode === "always" } });
 }
 
 /** Delete every synced codex entry for a chat (wipe, reset, rebuild). */
@@ -253,7 +258,7 @@ export type { CodexRecordRender };
 
 /** Host lorebook position 4 uses history depth; zero follows the last turn. */
 export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
-  return { constant: profile.codexForceConstant || constant,
+  return { ...activationFlags(profile.codexActivationMode, constant),
     position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
     role: "system" };

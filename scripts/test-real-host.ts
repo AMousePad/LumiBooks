@@ -8,6 +8,7 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS, makeDefaultProfile } from "../src/shared";
+import { embeddingFixture, embeddingResponse, runVectorScenarios } from "./vector-host-scenarios";
 
 const repo = resolve(import.meta.dir, "..");
 const host = resolve(process.argv[2] || "../Lumiverse");
@@ -39,6 +40,7 @@ let releaseProvider: (() => void) | undefined;
 const provider = Bun.serve({ hostname: "127.0.0.1", port: 18761, async fetch(req) {
   if (req.method === "GET") return Response.json({ data: [{ id: "integration-test" }] });
   const body = await req.json();
+  if (new URL(req.url).pathname.endsWith("/embeddings")) return embeddingResponse(body);
   requests.push(body);
   if (providerMode === "pause") await new Promise<void>((r) => { releaseProvider = r; });
   if (providerMode === "fail") return new Response("Synthetic provider failure", { status: 503 });
@@ -118,6 +120,8 @@ try {
   const chatId = chat.id;
   const profile = { ...makeDefaultProfile("default", "Integration"), connectionId: connection.id, autoCreate: false, autoCreateChapter: false, autoCreateArc: false, codexEnabled: false, codexExtraContext: false, retryCount: 0, lagValue: 0, windowValue: 12 };
   await action({ type: "save_settings", chatId, patch: { ...DEFAULT_SETTINGS, profiles: [profile] } });
+  let diagnostics: unknown = null;
+  if (!process.argv.includes("--vectors-only")) {
   const messages = [];
   for (let i = 0; i < 53; i++) messages.push(await api(`/api/v1/chats/${chatId}/messages`, "POST", { name: i % 2 ? "Assistant" : "User", is_user: i % 2 === 0, content: `PRIVATE_CHAT_MARKER_${i}_END` }));
   for (const message of messages.slice(0, 5)) await api(`/api/v1/chats/${chatId}/messages/${message.id}`, "DELETE");
@@ -360,6 +364,9 @@ try {
   assert(afterClear.events.length > 0);
   assert.notEqual(afterClear.events.find((e: any) => e.event === "snapshot").chatId, resumed.events.find((e: any) => e.event === "snapshot" && e.entries?.length)?.chatId);
   pass("clearing diagnostics empties saved records, preserves opt-out and coverage, and resets pseudonyms");
+  diagnostics = { bytes: new TextEncoder().encode(saturatedExport).length, retained: saturated.events.length, evicted: saturated.droppedEvents, queueDrops: saturated.queueDropsThisSession, writeFailures: saturated.writeFailuresThisSession };
+  }
+  await runVectorScenarios({ api, action, response, until, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
   await Bun.write(join(runDir, "checkpoint.json"), JSON.stringify({ chatId, connectionId: connection.id, characterId: character.id, extensionId, results }, null, 2));
   const revision = (directory: string) => Bun.spawnSync(["git", "-C", directory, "rev-parse", "HEAD"]).stdout.toString().trim();
   await Bun.write(join(runDir, "report.json"), JSON.stringify({
@@ -367,7 +374,7 @@ try {
     hostRevision: revision(host), extensionRevision: revision(repo),
     backendSha256: new Bun.CryptoHasher("sha256").update(await Bun.file(join(repo, "dist/backend.js")).arrayBuffer()).digest("hex"),
     frontendSha256: new Bun.CryptoHasher("sha256").update(await Bun.file(join(repo, "dist/frontend.js")).arrayBuffer()).digest("hex"),
-    diagnostics: { bytes: new TextEncoder().encode(saturatedExport).length, retained: saturated.events.length, evicted: saturated.droppedEvents, queueDrops: saturated.queueDropsThisSession, writeFailures: saturated.writeFailuresThisSession },
+    diagnostics, embeddingRequests: embeddingFixture.requests,
     model: "deterministic local HTTP SSE provider; no live model", browserChecks: "Run separately; not implied by this script",
   }, null, 2));
   console.log(`HOST REPORT: ${runDir}`);

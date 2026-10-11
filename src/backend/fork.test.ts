@@ -16,7 +16,7 @@ const user = "fork-user";
 let sequence = 0, serial = 0, parent: string, child: string;
 let chats = new Map<string, any>(), books = new Map<string, any>(), disk = new Map<string, any>();
 let entries: any[] = [], messages = new Map<string, any[]>();
-const profile = { ...makeDefaultProfile("fork-profile", "Fork"), hideCoveredMessages: false, codexForceConstant: true, codexInjectionPosition: "depth" as const, codexInjectionDepth: 3 };
+const profile = { ...makeDefaultProfile("fork-profile", "Fork"), hideCoveredMessages: false, codexActivationMode: "always" as const, codexInjectionPosition: "depth" as const, codexInjectionDepth: 3 };
 
 beforeEach(async () => {
   parent = `parent-${++sequence}`; child = `child-${sequence}`; serial = 0;
@@ -426,7 +426,7 @@ for (const failFirst of [false, true]) test(`opening an existing rooted timeline
 test("profile changes resync parent and fork books without merging their ownership", async () => {
   await ensureForkAdoption(child, user);
   const childBook = chats.get(child).metadata.lumibooks_codex_book_id;
-  const next = { ...profile, codexForceConstant: false, codexInjectionPosition: "after_history" as const };
+  const next = { ...profile, codexActivationMode: "keywords" as const, codexInjectionPosition: "after_history" as const };
   await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [next], activeProfileId: next.id });
   expect(await syncCodexProfiles(user)).toEqual([]);
   for (const id of [parent, child]) {

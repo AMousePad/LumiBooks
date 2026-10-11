@@ -614,6 +614,14 @@ function codexTemplateText(key, overrides) {
   return BY_KEY.get(key).defaultText;
 }
 
+// src/activation.ts
+function normalizeActivationMode(value, fallback) {
+  return value === "always" || value === "keywords" || value === "vector" ? value : fallback;
+}
+function activationFlags(mode, pinned = false) {
+  return { constant: pinned || mode === "always", vectorized: !pinned && mode === "vector" };
+}
+
 // src/shared.ts
 var EXTENSION_ID = "lumi_books";
 var EXTENSION_KEY = "lumibooks";
@@ -749,7 +757,7 @@ function makeDefaultProfile(id, name) {
     codexLoreLimitTokens: 25000,
     codexStorySoFarCount: 5,
     codexRelationsTable: true,
-    codexForceConstant: false,
+    codexActivationMode: "keywords",
     codexInjectionPosition: "lorebook",
     codexInjectionDepth: 4,
     codexThorough: true,
@@ -769,7 +777,8 @@ var DEFAULT_SETTINGS = {
   customPresets: [],
   debugLog: false,
   localLogsDisabled: false,
-  forceConstantEntries: true,
+  summaryActivationMode: "always",
+  followChatNames: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false
 };
@@ -794,7 +803,8 @@ function normalizeSettings(raw) {
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
-    forceConstantEntries: typeof v.forceConstantEntries === "boolean" ? v.forceConstantEntries : fallback.forceConstantEntries,
+    summaryActivationMode: normalizeActivationMode(v.summaryActivationMode, v.forceConstantEntries === false ? "keywords" : "always"),
+    followChatNames: v.followChatNames !== false,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
     suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt
   };
@@ -856,7 +866,7 @@ function normalizeProfile(raw) {
     codexLoreLimitPercent: clampInt(v.codexLoreLimitPercent, 1, 100, base.codexLoreLimitPercent),
     codexLoreLimitTokens: clampInt(v.codexLoreLimitTokens, 0, 1e6, base.codexLoreLimitTokens),
     codexStorySoFarCount: clampInt(v.codexStorySoFarCount, 0, 50, base.codexStorySoFarCount),
-    codexForceConstant: v.codexForceConstant === true,
+    codexActivationMode: normalizeActivationMode(v.codexActivationMode, v.codexForceConstant === true ? "always" : "keywords"),
     codexInjectionPosition: v.codexInjectionPosition === "depth" || v.codexInjectionPosition === "after_history" ? v.codexInjectionPosition : "lorebook",
     codexInjectionDepth: clampInt(v.codexInjectionDepth, 0, 1e4, base.codexInjectionDepth),
     codexRelationsTable: typeof v.codexRelationsTable === "boolean" ? v.codexRelationsTable : base.codexRelationsTable,
@@ -1154,6 +1164,144 @@ function describeError(err) {
   }
 }
 
+// src/backend/storage.ts
+var warnedNewerForUser = new Set;
+var writeLocks = new Map;
+var SETTINGS_CACHE_TTL_MS = 2000;
+var settingsCache = new Map;
+function cacheSettings(userId, data) {
+  settingsCache.set(userId, { at: Date.now(), data });
+}
+function withSettingsLock(userId, fn) {
+  const prev = writeLocks.get(userId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  writeLocks.set(userId, next.catch(() => {}));
+  return next;
+}
+var migrationInflight = new Map;
+function migrateSettings(userId, raw, fromVersion) {
+  const running = migrationInflight.get(userId);
+  if (running)
+    return running;
+  const p = (async () => {
+    const migratedPresets = [];
+    const flipped = {
+      ...raw,
+      profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => {
+        const next = { ...prof };
+        if (fromVersion < 4) {
+          next.codexThorough = true;
+          next.codexExtraContext = true;
+        }
+        if (fromVersion < 5 && (next.codexWindowUnit === "messages" || next.codexWindowUnit === undefined) && next.codexWindowValue === 30) {
+          next.codexWindowValue = 20;
+        }
+        if (fromVersion < 6) {
+          next.codexUseTools = false;
+        }
+        if (fromVersion < 7) {
+          const legacy = next["codexDirectivesOverride"];
+          if (typeof legacy === "string" && legacy.trim()) {
+            const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
+            migratedPresets.push({
+              key,
+              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
+              prompt: legacy,
+              category: "codex",
+              createdAt: Date.now()
+            });
+            next.codexPresetKey = key;
+          }
+          delete next["codexDirectivesOverride"];
+        }
+        return next;
+      }),
+      customPresets: [...Array.isArray(raw.customPresets) ? raw.customPresets : [], ...migratedPresets]
+    };
+    const normalized = normalizeSettings(flipped);
+    try {
+      await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
+      warn(`settings migrated v${fromVersion} -> v${STORAGE_VERSION}`);
+    } catch (err) {
+      warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
+    }
+    cacheSettings(userId, normalized);
+    return normalized;
+  })().finally(() => migrationInflight.delete(userId));
+  migrationInflight.set(userId, p);
+  return p;
+}
+async function loadSettings(userId) {
+  const cached = settingsCache.get(userId);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
+    return cached.data;
+  return withSettingsLock(userId, () => loadSettingsUnlocked(userId));
+}
+async function loadSettingsUnlocked(userId) {
+  const cached = settingsCache.get(userId);
+  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
+    return cached.data;
+  const exists = await spindle.userStorage.exists(SETTINGS_PATH, userId);
+  let raw = null;
+  if (exists) {
+    const text = await spindle.userStorage.read(SETTINGS_PATH, userId);
+    try {
+      raw = JSON.parse(text);
+    } catch (err) {
+      warn(`settings.json is corrupt, using defaults until the next save: ${describeError(err)}`);
+      raw = null;
+    }
+  }
+  const diskVersion = diskVersionFor(raw);
+  if (diskVersion > STORAGE_VERSION && !warnedNewerForUser.has(userId)) {
+    warnedNewerForUser.add(userId);
+    warn(`settings on disk are v${diskVersion}, this build understands v${STORAGE_VERSION}`);
+  }
+  if (raw && diskVersion < STORAGE_VERSION) {
+    return migrateSettings(userId, raw, diskVersion);
+  }
+  const normalized = normalizeSettings(raw);
+  cacheSettings(userId, normalized);
+  return normalized;
+}
+async function patchSettings(userId, patch) {
+  return withSettingsLock(userId, async () => {
+    const current = await loadSettingsUnlocked(userId);
+    const next = { ...current, ...patch };
+    const normalized = normalizeSettings(next);
+    await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
+    cacheSettings(userId, normalized);
+    return normalized;
+  });
+}
+async function mutateSettings(userId, fn) {
+  return withSettingsLock(userId, async () => {
+    const current = await loadSettingsUnlocked(userId);
+    const next = await fn(current);
+    const normalized = normalizeSettings(next);
+    await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
+    cacheSettings(userId, normalized);
+    return normalized;
+  });
+}
+
+// src/backend/summary-commit.ts
+var commitChain = new Map;
+function withCommitMutex(userId, chatId, fn) {
+  const key = JSON.stringify([userId, chatId]);
+  const previous = commitChain.get(key) ?? Promise.resolve();
+  const result = previous.then(fn, fn);
+  const guarded = result.catch(() => {
+    return;
+  });
+  commitChain.set(key, guarded);
+  guarded.then(() => {
+    if (commitChain.get(key) === guarded)
+      commitChain.delete(key);
+  });
+  return result;
+}
+
 // src/backend/world-book.ts
 var PAGE_LIMIT = 200;
 var BOOK_INDEX_CACHE_TTL_MS = 4000;
@@ -1376,26 +1524,26 @@ async function reassertChatBinding(chatId, userId) {
 var nameSyncAt = new Map;
 var NAME_SYNC_TTL_MS = 60000;
 async function syncManagedBookNames(chatId, chatName, shelfBookId, userId) {
-  const key = cacheKey(userId, chatId);
+  await syncManagedBookName(chatId, shelfBookId, bookNameFor(chatName, chatId), userId);
+  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
+  if (codexBookId)
+    await syncManagedBookName(chatId, codexBookId, codexBookNameFor(chatName, chatId), userId);
+}
+async function syncManagedBookName(chatId, bookId, name, userId) {
+  const key = `${cacheKey(userId, chatId)}::${bookId}`;
+  if (!(await loadSettings(userId)).followChatNames) {
+    nameSyncAt.delete(key);
+    return;
+  }
   const last = nameSyncAt.get(key);
   if (last && Date.now() - last < NAME_SYNC_TTL_MS)
     return;
   if (nameSyncAt.size > 500)
     nameSyncAt.clear();
   nameSyncAt.set(key, Date.now());
-  const wantedShelf = bookNameFor(chatName, chatId);
-  const shelf = await spindle.world_books.get(shelfBookId, userId).catch(() => null);
-  if (shelf && (shelf.name || "") !== wantedShelf) {
-    await spindle.world_books.update(shelfBookId, { name: wantedShelf }, userId);
-  }
-  const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
-  if (codexBookId) {
-    const wantedCodex = codexBookNameFor(chatName, chatId);
-    const codexBook = await spindle.world_books.get(codexBookId, userId).catch(() => null);
-    if (codexBook && (codexBook.name || "") !== wantedCodex) {
-      await spindle.world_books.update(codexBookId, { name: wantedCodex }, userId);
-    }
-  }
+  const book = await spindle.world_books.get(bookId, userId);
+  if (book && (book.name || "") !== name)
+    await spindle.world_books.update(bookId, { name }, userId);
 }
 var ENTRIES_CACHE_TTL_MS = 4000;
 var ENTRIES_CACHE_CAP = 300;
@@ -1430,15 +1578,14 @@ async function listLmbEntries(chatId, userId, fresh = false) {
   }
   return out;
 }
-async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], constant = true, disabled = false, replacement) {
+async function createChapterEntry(bookId, meta, content, comment, userId, keys = [], disabled = false, replacement) {
   const payload = {
     content,
     comment,
     disabled,
-    constant,
+    ...activationFlags((await loadSettings(userId)).summaryActivationMode),
     key: keys,
     keysecondary: [],
-    vectorized: false,
     extensions: {
       ...replacement?.raw.extensions ?? {},
       [EXTENSION_KEY]: meta
@@ -1446,27 +1593,37 @@ async function createChapterEntry(bookId, meta, content, comment, userId, keys =
   };
   return replacement ? spindle.world_books.entries.update(replacement.raw.id, payload, userId) : spindle.world_books.entries.create(bookId, payload, userId);
 }
-async function applyConstantToAllLmbEntries(userId, constant) {
+async function applySummaryActivation(userId) {
   const books = await listAllBooks(userId);
   let updated = 0;
+  let failed = 0;
   for (const book of books) {
     const meta = book.metadata;
     if (!meta || typeof meta["lumibooks_chat_id"] !== "string")
       continue;
-    const entries = await listAllEntries(book.id, userId).catch(() => []);
-    for (const entry of entries) {
-      const ext = entry.extensions || {};
-      if (!ext[EXTENSION_KEY])
-        continue;
-      if (entry.constant === constant)
-        continue;
-      try {
-        await spindle.world_books.entries.update(entry.id, { constant }, userId);
-        updated++;
-      } catch (_) {}
-    }
+    const chatId = meta["lumibooks_chat_id"];
+    await withCommitMutex(userId, chatId, async () => {
+      const flags = activationFlags((await loadSettings(userId)).summaryActivationMode);
+      const entries = await listAllEntries(book.id, userId);
+      for (const entry of entries) {
+        const ext = entry.extensions || {};
+        if (!ext[EXTENSION_KEY])
+          continue;
+        if (entry.constant === flags.constant && (entry.vectorized ?? false) === flags.vectorized)
+          continue;
+        try {
+          await spindle.world_books.entries.update(entry.id, flags, userId);
+          updated++;
+        } catch {
+          failed++;
+        }
+      }
+    }).catch(() => {
+      failed++;
+    });
+    invalidateBookCache(userId, chatId);
   }
-  return updated;
+  return { updated, failed };
 }
 async function updateEntry(entryId, patch, userId) {
   return spindle.world_books.entries.update(entryId, patch, userId);
@@ -1602,6 +1759,7 @@ function bindCodexBookToChat(chatId, bookId, userId) {
     const existing = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
     const alreadyBound = existing.includes(bookId);
     const alreadyClaimed = md[CODEX_BOOK_CLAIM_KEY] === bookId;
+    await syncManagedBookName(chatId, bookId, codexBookNameFor(chat.name ?? null, chatId), userId).catch((err) => warn(`Codex book name sync failed: ${describeError(err)}`));
     if (alreadyBound && alreadyClaimed)
       return;
     await spindle.chats.update(chatId, {
@@ -1712,23 +1870,6 @@ async function listRootCandidates(userId) {
   }
   rootCandidatesCache.set(userId, { at: Date.now(), data: out });
   return out;
-}
-
-// src/backend/summary-commit.ts
-var commitChain = new Map;
-function withCommitMutex(userId, chatId, fn) {
-  const key = JSON.stringify([userId, chatId]);
-  const previous = commitChain.get(key) ?? Promise.resolve();
-  const result = previous.then(fn, fn);
-  const guarded = result.catch(() => {
-    return;
-  });
-  commitChain.set(key, guarded);
-  guarded.then(() => {
-    if (commitChain.get(key) === guarded)
-      commitChain.delete(key);
-  });
-  return result;
 }
 
 // src/backend/coverage.ts
@@ -2231,10 +2372,9 @@ async function createClone(bookId, source, meta, userId, commentOverride) {
     content: source.content,
     comment: commentOverride ?? source.comment,
     disabled: source.disabled,
-    constant: source.constant,
+    ...activationFlags((await loadSettings(userId)).summaryActivationMode),
     key: source.key ?? [],
     keysecondary: source.keysecondary ?? [],
-    vectorized: source.vectorized ?? false,
     extensions: { ...ext, [EXTENSION_KEY]: meta }
   }, userId);
 }
@@ -3231,127 +3371,6 @@ async function clearCodexStaleFlags(chatId, userId) {
   });
 }
 
-// src/backend/storage.ts
-var warnedNewerForUser = new Set;
-var writeLocks = new Map;
-var SETTINGS_CACHE_TTL_MS = 2000;
-var settingsCache = new Map;
-function cacheSettings(userId, data) {
-  settingsCache.set(userId, { at: Date.now(), data });
-}
-function withSettingsLock(userId, fn) {
-  const prev = writeLocks.get(userId) ?? Promise.resolve();
-  const next = prev.then(fn, fn);
-  writeLocks.set(userId, next.catch(() => {}));
-  return next;
-}
-var migrationInflight = new Map;
-function migrateSettings(userId, raw, fromVersion) {
-  const running = migrationInflight.get(userId);
-  if (running)
-    return running;
-  const p = (async () => {
-    const migratedPresets = [];
-    const flipped = {
-      ...raw,
-      profiles: (Array.isArray(raw.profiles) ? raw.profiles : []).map((prof) => {
-        const next = { ...prof };
-        if (fromVersion < 4) {
-          next.codexThorough = true;
-          next.codexExtraContext = true;
-        }
-        if (fromVersion < 5 && (next.codexWindowUnit === "messages" || next.codexWindowUnit === undefined) && next.codexWindowValue === 30) {
-          next.codexWindowValue = 20;
-        }
-        if (fromVersion < 6) {
-          next.codexUseTools = false;
-        }
-        if (fromVersion < 7) {
-          const legacy = next["codexDirectivesOverride"];
-          if (typeof legacy === "string" && legacy.trim()) {
-            const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
-            migratedPresets.push({
-              key,
-              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
-              prompt: legacy,
-              category: "codex",
-              createdAt: Date.now()
-            });
-            next.codexPresetKey = key;
-          }
-          delete next["codexDirectivesOverride"];
-        }
-        return next;
-      }),
-      customPresets: [...Array.isArray(raw.customPresets) ? raw.customPresets : [], ...migratedPresets]
-    };
-    const normalized = normalizeSettings(flipped);
-    try {
-      await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
-      warn(`settings migrated v${fromVersion} -> v${STORAGE_VERSION}`);
-    } catch (err) {
-      warn(`settings v${STORAGE_VERSION} migration write failed, will retry: ${describeError(err)}`);
-    }
-    cacheSettings(userId, normalized);
-    return normalized;
-  })().finally(() => migrationInflight.delete(userId));
-  migrationInflight.set(userId, p);
-  return p;
-}
-async function loadSettings(userId) {
-  const cached = settingsCache.get(userId);
-  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
-    return cached.data;
-  return withSettingsLock(userId, () => loadSettingsUnlocked(userId));
-}
-async function loadSettingsUnlocked(userId) {
-  const cached = settingsCache.get(userId);
-  if (cached && Date.now() - cached.at < SETTINGS_CACHE_TTL_MS)
-    return cached.data;
-  const exists = await spindle.userStorage.exists(SETTINGS_PATH, userId);
-  let raw = null;
-  if (exists) {
-    const text = await spindle.userStorage.read(SETTINGS_PATH, userId);
-    try {
-      raw = JSON.parse(text);
-    } catch (err) {
-      warn(`settings.json is corrupt, using defaults until the next save: ${describeError(err)}`);
-      raw = null;
-    }
-  }
-  const diskVersion = diskVersionFor(raw);
-  if (diskVersion > STORAGE_VERSION && !warnedNewerForUser.has(userId)) {
-    warnedNewerForUser.add(userId);
-    warn(`settings on disk are v${diskVersion}, this build understands v${STORAGE_VERSION}`);
-  }
-  if (raw && diskVersion < STORAGE_VERSION) {
-    return migrateSettings(userId, raw, diskVersion);
-  }
-  const normalized = normalizeSettings(raw);
-  cacheSettings(userId, normalized);
-  return normalized;
-}
-async function patchSettings(userId, patch) {
-  return withSettingsLock(userId, async () => {
-    const current = await loadSettingsUnlocked(userId);
-    const next = { ...current, ...patch };
-    const normalized = normalizeSettings(next);
-    await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
-    cacheSettings(userId, normalized);
-    return normalized;
-  });
-}
-async function mutateSettings(userId, fn) {
-  return withSettingsLock(userId, async () => {
-    const current = await loadSettingsUnlocked(userId);
-    const next = await fn(current);
-    const normalized = normalizeSettings(next);
-    await spindle.userStorage.setJson(SETTINGS_PATH, normalized, { indent: 2, userId });
-    cacheSettings(userId, normalized);
-    return normalized;
-  });
-}
-
 // src/prompts/fill.ts
 function fillPrompt(template, vars) {
   return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
@@ -3393,7 +3412,7 @@ var MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter"
 var OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"];
 var REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"];
 var NUMBER_KEYS = ["tier", "attempt", "durationMs", "total", "covered", "uncovered", "excluded", "eligible", "hidden", "selected", "requested", "missing", "entries", "previous", "first", "last", "input", "output", "sourceCount", "changed", "rounds", "promptTokens", "completionTokens", "indexGaps", "duplicateIndexes", "gaps", "overlaps", "rangeMismatches", "missingSources", "lag", "window", "previousCount", "retryCount", "regexOutgoing", "regexIncoming", "arcBatch", "arcLag", "inputCharacters", "outputCharacters", "maxInputTokens", "maxOutputTokens", "temperature", "targetPercent", "targetTokens"];
-var FLAGS = ["automation", "ghost", "regeneration", "previews", "hideCovered", "extraContext", "lagTokens", "windowTokens", "active", "root", "disabled"];
+var FLAGS = ["automation", "ghost", "regeneration", "previews", "hideCovered", "extraContext", "lagTokens", "windowTokens", "active", "root", "disabled", "vector", "constant"];
 var ACTIONS = ["save_settings", "save_profile", "save_samplers", "set_active_profile", "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs", "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure", "delete_entry", "release_entry", "regenerate_entry", "update_entry", "resync_hidden", "resync_visibility", "abort_busy", "accept_preview", "discard_preview", "edit_preview", "rebase_root", "rebuild_root", "detach_root", "set_message_excluded", "summary_import", "summary_import_resolve", "codex_update_now", "codex_reset", "codex_rebuild", "codex_tidy"];
 var queues = new Map;
 var pendingTotal = 0;
@@ -5830,7 +5849,6 @@ async function doSync(chatId, userId, relationsTableFallback) {
           ...placement,
           key: rec.keys,
           keysecondary: [],
-          vectorized: false,
           extensions: { [CODEX_ENTRY_EXTENSION_KEY]: meta }
         }, userId);
       } catch (err) {
@@ -5839,7 +5857,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
       }
       continue;
     }
-    const changed = cur.raw.content !== rec.content || (cur.raw.comment || "") !== rec.comment || cur.raw.constant !== placement.constant || cur.raw.position !== placement.position || cur.raw.depth !== placement.depth || cur.raw.role !== placement.role || cur.raw.disabled !== disabled || !sameKeys(cur.raw.key ?? [], rec.keys) || cur.meta.file !== rec.file;
+    const changed = cur.raw.content !== rec.content || (cur.raw.comment || "") !== rec.comment || cur.raw.constant !== placement.constant || (cur.raw.vectorized ?? false) !== placement.vectorized || cur.raw.position !== placement.position || cur.raw.depth !== placement.depth || cur.raw.role !== placement.role || cur.raw.disabled !== disabled || !sameKeys(cur.raw.key ?? [], rec.keys) || cur.meta.file !== rec.file;
     if (!changed)
       continue;
     const ext = cur.raw.extensions || {};
@@ -5868,6 +5886,13 @@ async function doSync(chatId, userId, relationsTableFallback) {
   if (failedDeletes > 0) {
     throw new Error(`${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"} could not be removed and may still inject`);
   }
+  recordDiagnostic(userId, {
+    event: "codex",
+    chatId,
+    outcome: "success",
+    numbers: { entries: desired.length },
+    flags: { vector: profile.codexActivationMode === "vector", constant: profile.codexActivationMode === "always" }
+  });
 }
 function wipeCodexEntries(chatId, userId) {
   return withSyncLock(userId, chatId, () => doWipe(chatId, userId));
@@ -5891,7 +5916,7 @@ async function doWipe(chatId, userId) {
 }
 function codexEntryPlacement(profile, constant) {
   return {
-    constant: profile.codexForceConstant || constant,
+    ...activationFlags(profile.codexActivationMode, constant),
     position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
     role: "system"
@@ -6862,7 +6887,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
 ${result.content}`;
     let entry;
     try {
-      entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], settings.forceConstantEntries, ghost, replacedEntry);
+      entry = await createChapterEntry(book.id, meta, finalContent, comment, userId, result.keywords ?? [], ghost, replacedEntry);
     } catch (err) {
       if (freedTaken !== null)
         recordFreedGhostNumber(userId, chatId, msgIds, freedTaken);
@@ -7052,12 +7077,11 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
     };
     const baseComment = meta.title ?? `Arc - msgs ${firstIdx + 1}-${lastIdx + 1}`;
     const comment = `${isRootArc ? "[Root] " : ""}Arc #${sceneNumber} - ${baseComment}`;
-    const arcSettings = await loadSettings(userId);
     const arcOpener = buildArcHeader(sceneNumber, sourceChapterEntryIds.length, msgIds.length);
     const finalArcContent = `${arcOpener}
 
 ${result.content}`;
-    const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], arcSettings.forceConstantEntries, false, replacedArc);
+    const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], false, replacedArc);
     const failedSupersedes = [];
     for (const ch of selected) {
       try {
@@ -7239,12 +7263,11 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
     };
     const baseComment = meta.title ?? `Volume - msgs ${firstIdx + 1}-${lastIdx + 1}`;
     const comment = `${isRootVolume ? "[Root] " : ""}${TIER_NAMES[tier - 1]} #${sceneNumber} - ${baseComment}`;
-    const volumeSettings = await loadSettings(userId);
     const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
     const finalVolumeContent = `${volumeOpener}
 
 ${result.content}`;
-    const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], volumeSettings.forceConstantEntries, false, replacedVolume);
+    const volumeEntry = await createChapterEntry(book.id, meta, finalVolumeContent, comment, userId, result.keywords ?? [], false, replacedVolume);
     const failedSupersedes = [];
     for (const arc of selected) {
       try {
@@ -8358,7 +8381,7 @@ async function commitImportedSummaries(chatId, userId, rows, links) {
         connectionId: "",
         createdAt: Date.now(),
         title: row.comment
-      }, row.content, comment, userId, row.keys, true);
+      }, row.content, comment, userId, row.keys);
       created.push(entry.id);
     }
   } catch (err) {
@@ -10610,17 +10633,17 @@ function invalidateCodexInjectionCache(chatId, contentChanged = true) {
 async function getCodexTokenCounts(chatId, userId, profile) {
   const epoch = tokenCountEpochs.get(userId) ?? 0;
   const cached = fileTokensCache.get(chatId);
-  if (cached && cached.userId === userId && cached.forceConstant === profile.codexForceConstant && Date.now() - cached.at < INJECTION_CACHE_TTL_MS)
+  if (cached && cached.userId === userId && cached.forceConstant === (profile.codexActivationMode === "always") && Date.now() - cached.at < INJECTION_CACHE_TTL_MS)
     return cached.counts;
   let counts = { files: {}, constant: 0, approximate: false };
   if (await codexPresence(chatId, userId) === "present") {
     const cursor = await loadCursor(chatId, userId);
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: cursor.relationsTableMode ?? profile.codexRelationsTable });
-    counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexForceConstant);
+    counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexActivationMode === "always");
     counts.approximate ||= problems.length > 0;
   }
   if (epoch === (tokenCountEpochs.get(userId) ?? 0)) {
-    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexActivationMode === "always", counts });
   }
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value;
@@ -11809,6 +11832,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       case "save_settings":
         await patchSettings(userId, msg.patch);
+        if ("profiles" in msg.patch || "activeProfileId" in msg.patch)
+          await syncProfileSettings(userId);
+        if ("summaryActivationMode" in msg.patch) {
+          const { failed } = await applySummaryActivation(userId);
+          if (failed)
+            await notify(userId, "warn", `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`);
+        }
         await pushState(userId, msg.chatId);
         break;
       case "save_profile": {
@@ -11854,7 +11884,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
         }
-        if (id === activeBefore && ["codexForceConstant", "codexInjectionPosition", "codexInjectionDepth"].some((key) => (key in incoming))) {
+        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth"].some((key) => (key in incoming))) {
           await syncProfileSettings(userId);
         }
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
@@ -12220,14 +12250,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         setStreamWatcher(userId, msg.chatId, msg.kind, msg.on);
         break;
       }
-      case "set_force_constant": {
-        await patchSettings(userId, { forceConstantEntries: msg.value });
-        const updated = await applyConstantToAllLmbEntries(userId, msg.value).catch((err) => {
-          warn(`applyConstantToAllLmbEntries failed: ${describeError(err)}`);
-          return 0;
-        });
-        const text = updated === 0 ? `Future entries will be ${msg.value ? "constant" : "keyword-triggered"}` : `Memoria flipped ${updated} entr${updated === 1 ? "y" : "ies"} to ${msg.value ? "constant" : "keyword-triggered"}`;
-        await notify(userId, "info", text);
+      case "set_summary_activation": {
+        await patchSettings(userId, { summaryActivationMode: msg.mode });
+        const { updated, failed } = await applySummaryActivation(userId);
+        await notify(userId, failed ? "warn" : "info", failed ? `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.` : `Summary recall saved; ${updated} entries updated.`);
         await pushState(userId, msg.chatId);
         break;
       }

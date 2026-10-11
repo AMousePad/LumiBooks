@@ -137,7 +137,7 @@ async function commitImportedSummaries(chatId: string, userId: string, rows: Imp
         lastMsgIdx: isRoot ? at : links!.messages[indices.at(-1)!]!.index_in_chat, tokenCountInput: 0,
         tokenCountOutput: approximateTokensFromChars(row.content.length),
         model: "", connectionId: "", createdAt: Date.now(), title: row.comment,
-      }, row.content, comment, userId, row.keys, true);
+      }, row.content, comment, userId, row.keys);
       created.push(entry.id);
     }
   } catch (err) {

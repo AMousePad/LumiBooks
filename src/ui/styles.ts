@@ -1499,6 +1499,14 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
   border: 1px solid var(--lmb-hairline);
   border-radius: var(--lmb-r-lg);
 }
+.lmb-activation { border: 0; padding: 0; margin: 0; min-width: 0; }
+.lmb-activation legend { margin-bottom: 6px; }
+.lmb-activation-options { display: flex; flex-wrap: wrap; gap: 3px; }
+.lmb-activation-options label { position: relative; flex: 1 1 auto; cursor: pointer; }
+.lmb-activation-options input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.lmb-activation-label { display: block; text-align: center; padding: 8px 10px; border: 1px solid var(--lmb-frame-faint); border-radius: 6px; }
+.lmb-activation-options input:checked + .lmb-activation-label { background: var(--lmb-frame-faint); color: var(--lmb-ink); border-color: currentColor; }
+.lmb-activation-options input:focus-visible + .lmb-activation-label { outline: 2px solid currentColor; outline-offset: 2px; }
 .lmb-sampler-switch button {
   flex: 1;
   background: transparent;

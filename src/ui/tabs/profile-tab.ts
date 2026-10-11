@@ -22,6 +22,7 @@ import {
   textNode,
 } from "../components";
 import { promptForString } from "../modals";
+import { activationControl, vectorSetupHint } from "../activation-control";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 
 /* Section renderers below are composed into subtab panes by tuning-tab.ts. */
@@ -117,11 +118,10 @@ export function renderCodexSettings(
     "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
   fields.appendChild(loreHint);
 
-  fields.appendChild(checkbox({
-    checked: profile.codexForceConstant, label: "Always inject codex records",
-    hint: "Inject every enabled record each turn. Otherwise timeline and threads are constant; other records activate by keywords.",
-    onChange: (v) => patch({ codexForceConstant: v }),
-  }));
+  fields.appendChild(activationControl("Codex recall", profile.codexActivationMode,
+    (codexActivationMode) => patch({ codexActivationMode })));
+  fields.appendChild(textNode("The active profile sets recall for enabled records across all chats. Timeline and threads always remain included. Other records can always activate, match keywords, or also match by meaning.", "lmb-field-hint"));
+  if (profile.codexActivationMode === "vector") fields.appendChild(vectorSetupHint());
   fields.appendChild(labelled("Codex placement", select({
     value: profile.codexInjectionPosition,
     options: [{ value: "lorebook", label: "Lorebook (before)" }, { value: "depth", label: "At history depth" }, { value: "after_history", label: "After chat history" }],

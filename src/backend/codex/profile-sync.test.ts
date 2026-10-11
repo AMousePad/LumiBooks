@@ -59,12 +59,36 @@ beforeEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 
+test("recall modes survive record edits and preserve IDs, keywords and disabled files", async () => {
+  const { syncCodexEntries } = await import("./sync");
+  const ids = new Map<string, string>();
+  for (const mode of ["keywords", "vector", "always", "vector", "keywords"] as const) {
+    profile.codexActivationMode = mode;
+    await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
+    await syncCodexEntries(chat, user);
+    for (const entry of entries) {
+      const record = entry.extensions.lumibooks_codex.record;
+      if (ids.has(record)) expect(entry.id).toBe(ids.get(record));
+      else ids.set(record, entry.id);
+      expect(entry.constant).toBe(mode === "always");
+      expect(entry.vectorized).toBe(mode === "vector");
+    }
+    const weather = entries.find((e) => e.content.includes("Weather"));
+    expect(weather.key).toContain("Weather");
+    expect(weather.disabled).toBe(false);
+    expect(entries.find((e) => e.content.includes("Keep this secret."))?.disabled).toBe(true);
+    data.set(`codex/${chat}/world.json`, world(mode.length * 100));
+    await syncCodexEntries(chat, user);
+    expect(entries.find((e) => e.id === weather.id)?.vectorized).toBe(mode === "vector");
+  }
+});
+
 test("a corrupt old chat must not prevent resyncing healthy chats", async () => {
   const { syncCodexProfiles } = await import("./sync");
   (globalThis as any).spindle.userStorage.list = async () => ["codex/broken/cursor.json", `codex/${chat}/cursor.json`];
   data.set("codex/broken/cursor.json", emptyCursor());
   data.set("codex/broken/world.json", { entries: [{ topic: "invalid", facts: [] }] });
-  profile.codexForceConstant = true;
+  profile.codexActivationMode = "always";
   await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
   const failures = await syncCodexProfiles(user);
   expect(failures).toHaveLength(1);
@@ -75,7 +99,7 @@ test("a corrupt old chat must not prevent resyncing healthy chats", async () => 
 
 test("category switches refresh injection counts without invalidating cached file contents", async () => {
   const { setCodexFileState, getCodexRevision, getCodexTokenCounts, invalidateCodexInjectionCache } = await import("./index");
-  profile.codexForceConstant = true;
+  profile.codexActivationMode = "always";
   await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
   invalidateCodexInjectionCache(chat);
   const revision = getCodexRevision(chat);

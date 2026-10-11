@@ -3,6 +3,8 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
 import type { LMBEntryMeta } from "../shared";
 import { EXTENSION_KEY } from "../shared";
+import { activationFlags } from "../activation";
+import { loadSettings } from "./storage";
 import type { LMBEntry } from "./world-book";
 import { describeError, warn } from "./runtime";
 
@@ -142,10 +144,9 @@ async function createClone(
       content: source.content,
       comment: commentOverride ?? source.comment,
       disabled: source.disabled,
-      constant: source.constant,
+      ...activationFlags((await loadSettings(userId)).summaryActivationMode),
       key: source.key ?? [],
       keysecondary: source.keysecondary ?? [],
-      vectorized: source.vectorized ?? false,
       extensions: { ...ext, [EXTENSION_KEY]: meta },
     },
     userId,

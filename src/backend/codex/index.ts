@@ -1144,17 +1144,17 @@ export function invalidateCodexInjectionCache(chatId?: string, contentChanged = 
 export async function getCodexTokenCounts(chatId: string, userId: string, profile: LMBProfile): Promise<CodexTokenCounts> {
   const epoch = tokenCountEpochs.get(userId) ?? 0;
   const cached = fileTokensCache.get(chatId);
-  if (cached && cached.userId === userId && cached.forceConstant === profile.codexForceConstant && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
+  if (cached && cached.userId === userId && cached.forceConstant === (profile.codexActivationMode === "always") && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
   let counts: CodexTokenCounts = { files: {}, constant: 0, approximate: false };
   if ((await codexPresence(chatId, userId)) === "present") {
     const cursor = await loadCursor(chatId, userId);
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: cursor.relationsTableMode ?? profile.codexRelationsTable });
-    counts = await measureCodexTokens(bundle, userId, cursor.fileStates, profile.codexForceConstant);
+    counts = await measureCodexTokens(bundle, userId, cursor.fileStates, (profile.codexActivationMode === "always"));
     counts.approximate ||= problems.length > 0;
   }
   // An in-flight count from the previous model must not repopulate the cache.
   if (epoch === (tokenCountEpochs.get(userId) ?? 0)) {
-    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: profile.codexForceConstant, counts });
+    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: (profile.codexActivationMode === "always"), counts });
   }
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value as string | undefined;

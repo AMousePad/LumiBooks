@@ -15,6 +15,7 @@ import {
   renderSamplersSwitch,
 } from "./profile-tab";
 import { renderPromptsPane } from "./prompts-tab";
+import { activationControl, vectorSetupHint } from "../activation-control";
 
 type TuningSubtab = "profile" | "settings" | "prompts";
 
@@ -168,12 +169,19 @@ function renderGlobalSettings(
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId }),
   }));
 
-  sec.body.appendChild(lessonMark(checkbox({
-    checked: state.settings.forceConstantEntries,
-    label: "Force constant entries",
-    hint: "When on, every LumiBooks lorebook entry (current and future) is marked constant so it activates without keyword matching. Toggling re-flips every existing LumiBooks entry across all chats.",
-    onChange: (v) => send({ type: "set_force_constant", value: v, chatId: state.activeChatId }),
-  }), "tuning.every.constant"));
+  sec.body.appendChild(lessonMark(activationControl("Summary recall", state.settings.summaryActivationMode,
+    (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId })), "tuning.every.constant"));
+  const hint = document.createElement("div");
+  hint.className = "lmb-field-hint";
+  hint.textContent = "Applies to existing and future chapter and higher-tier summaries across all chats. Filing and hidden-message coverage stay the same; Keywords and Vector recall include only matching memories. With no visible recent text, vector recall falls back to keywords.";
+  sec.body.appendChild(hint);
+  if (state.settings.summaryActivationMode === "vector") sec.body.appendChild(vectorSetupHint());
+  sec.body.appendChild(checkbox({
+    checked: state.settings.followChatNames,
+    label: "Lorebook names follow chat names",
+    hint: "Turn off to rename your Books and Codex lorebooks manually in Lumiverse. Turning on restores chat-based names when each shelf next syncs.",
+    onChange: (followChatNames) => send({ type: "save_settings", patch: { followChatNames }, chatId: state.activeChatId }),
+  }));
 
   host.appendChild(sec.wrap);
 }
