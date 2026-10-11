@@ -40,12 +40,14 @@ export async function buildCoverage(
   userId: string,
   preloadedEntries?: LMBEntry[],
   includeGhosts = false,
+  selectedEntryIds?: ReadonlySet<string>,
 ): Promise<CoverageMap> {
   const allEntries = preloadedEntries ?? (await listLmbEntries(chatId, userId));
   // Ghost chapters are disabled entries (never injected, never hiding), but
   // chapter *generation* must treat them as covering so their span isn't
   // summarized twice. Callers on the injection/hiding path leave includeGhosts off.
-  const entries = allEntries.filter((e) => !e.raw.disabled || (includeGhosts && e.meta.ghost === true));
+  const entries = allEntries.filter((e) => (!selectedEntryIds || selectedEntryIds.has(e.raw.id))
+    && (!e.raw.disabled || (includeGhosts && e.meta.ghost === true)));
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);

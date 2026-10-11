@@ -156,7 +156,10 @@ export async function buildInjection(
       ? allEntries.filter((e) => activatedIds.has(e.raw.id))
       : allEntries.filter((e) => !e.raw.disabled);
   }
-  const coverage: CoverageMap = await buildCoverage(chatId, userId, entriesForCoverage);
+  // Activation selects candidates; the complete graph still resolves their
+  // ancestry when an intermediate arc was not retrieved with its volume.
+  const coverage: CoverageMap = await buildCoverage(chatId, userId, allEntries, false,
+    new Set(entriesForCoverage.map((entry) => entry.raw.id)));
   void recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
   if (coverage.activeEntries.length === 0) return null;
 

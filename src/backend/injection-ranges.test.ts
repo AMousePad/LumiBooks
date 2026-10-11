@@ -39,6 +39,24 @@ test("hidden summaries with old offset ranges inject at their live host position
   expect(result?.messages?.map((m) => m.content)).toEqual(["RAW_5", "SUMMARY", "RAW_7", "RAW_8"]);
 });
 
+test("retrieved ancestors suppress descendants through an unselected intermediate arc", async () => {
+  summary(["m1"], 6, 6);
+  for (const [id, tier, sources] of [["arc", 2, ["summary"]], ["volume", 3, ["arc"]]] as const) {
+    entries.push({ ...entries[0], id, content: id.toUpperCase(), extensions: { lumibooks:
+      normalizeEntryMeta({ tier, chatId, msgIds: ["m1"], firstMsgIdx: 6, lastMsgIdx: 6, sourceChapterEntryIds: [...sources] }) } });
+  }
+  const result = await buildInjection(chatId, assembled(), userId, {
+    worldInfoActivationCapture: true, capturedWorldInfo: [{ id: "summary" }, { id: "volume" }],
+  });
+  expect(result?.messages?.map((m) => m.content)).toEqual(["RAW_5", "VOLUME", "RAW_7", "RAW_8"]);
+  // An unselected ancestor must not suppress a retrieved chapter either.
+  const chapterOnly = await buildInjection(chatId, assembled(), userId, {
+    worldInfoActivationCapture: true, capturedWorldInfo: [{ id: "summary" }],
+  });
+  expect(chapterOnly?.messages?.map((m) => m.content)).toEqual(["RAW_5", "SUMMARY", "RAW_7", "RAW_8"]);
+  expect(await buildInjection(chatId, assembled(), userId, { worldInfoActivationCapture: true, capturedWorldInfo: [] })).toBeNull();
+});
+
 test("a partially hidden selection injects after its last source, not its last visible source", async () => {
   summary(["m0", "m2"], 5, 7);
   messages[2].extra.hidden = true;

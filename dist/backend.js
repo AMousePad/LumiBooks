@@ -1750,9 +1750,9 @@ function withLiveMessageRanges(entries, messages) {
     return { ...entry, meta: { ...entry.meta, firstMsgIdx: first, lastMsgIdx: last } };
   });
 }
-async function buildCoverage(chatId, userId, preloadedEntries, includeGhosts = false) {
+async function buildCoverage(chatId, userId, preloadedEntries, includeGhosts = false, selectedEntryIds) {
   const allEntries = preloadedEntries ?? await listLmbEntries(chatId, userId);
-  const entries = allEntries.filter((e) => !e.raw.disabled || includeGhosts && e.meta.ghost === true);
+  const entries = allEntries.filter((e) => (!selectedEntryIds || selectedEntryIds.has(e.raw.id)) && (!e.raw.disabled || includeGhosts && e.meta.ghost === true));
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);
@@ -8615,7 +8615,7 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
     const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
     entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
   }
-  const coverage = await buildCoverage(chatId, userId, entriesForCoverage);
+  const coverage = await buildCoverage(chatId, userId, allEntries, false, new Set(entriesForCoverage.map((entry) => entry.raw.id)));
   recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
   if (coverage.activeEntries.length === 0)
     return null;
