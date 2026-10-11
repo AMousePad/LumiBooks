@@ -2279,6 +2279,64 @@ async function removeSummaryEntry(chatId, entryId, userId, release = false) {
   });
 }
 
+// src/prompt-breakdown.ts
+function normalizeBreakdown(raw, chatHistoryTokens = 0) {
+  const entries = Array.isArray(raw["entries"]) ? raw["entries"] : null;
+  if (!entries)
+    return null;
+  const clean = [];
+  for (const e of entries) {
+    if (!e || typeof e !== "object")
+      continue;
+    const tokens = typeof e["tokens"] === "number" ? e["tokens"] : 0;
+    clean.push({
+      name: typeof e["name"] === "string" ? e["name"] : "?",
+      type: typeof e["type"] === "string" ? e["type"] : "utility",
+      tokens,
+      extensionName: typeof e["extensionName"] === "string" ? e["extensionName"] : undefined
+    });
+  }
+  if (chatHistoryTokens > 0 && !clean.some((e) => e.type === "chat_history")) {
+    clean.unshift({ name: "Assembled transcript", type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
+  }
+  const summed = clean.reduce((a, e) => a + e.tokens, 0);
+  return {
+    entries: clean,
+    totalTokens: typeof raw["totalTokens"] === "number" ? raw["totalTokens"] : summed,
+    maxContext: typeof raw["maxContext"] === "number" ? raw["maxContext"] : 0,
+    model: typeof raw["model"] === "string" ? raw["model"] : undefined,
+    presetName: typeof raw["presetName"] === "string" ? raw["presetName"] : undefined
+  };
+}
+
+// src/backend/prompt-breakdown.ts
+async function loadPromptBreakdown(request, userId) {
+  const generate = spindle.generate;
+  if (typeof generate.getBreakdown !== "function") {
+    throw new Error("The Prompt panel requires a Lumiverse update with the Spindle prompt-breakdown API.");
+  }
+  if (request.mode === "auto") {
+    for (const messageId of request.messageIds.slice(-15).reverse()) {
+      const saved = await generate.getBreakdown(messageId, userId);
+      if (!saved)
+        continue;
+      const d = normalizeBreakdown(saved, typeof saved.chatHistoryTokens === "number" ? saved.chatHistoryTokens : 0);
+      if (d)
+        return { d, source: "fire" };
+    }
+  }
+  const preview = await generate.dryRun({ chatId: request.chatId }, userId);
+  const d = normalizeBreakdown({
+    entries: preview.tokenCount?.breakdown ?? [],
+    totalTokens: preview.tokenCount?.total_tokens,
+    maxContext: preview.contextClipStats?.maxContext ?? 0,
+    model: preview.model
+  }, preview.chatHistoryTokens ?? 0);
+  if (!d || d.entries.length === 0)
+    throw new Error("Dry run returned no breakdown.");
+  return { d, source: "dry" };
+}
+
 // src/backend/book-copy.ts
 async function copyLmbEntries(targetBookId, sourceEntries, userId, transform) {
   const createdIds = [];
@@ -11813,6 +11871,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "prompt_breakdown":
+        send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, result: await loadPromptBreakdown(msg, userId) }, userId);
+        break;
       case "diagnostics_export": {
         await captureDiagnosticSnapshot(userId, msg.chatId);
         const content = await exportDiagnostics(userId);
@@ -12895,6 +12956,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
   } catch (err) {
     recordFrontendAction(userId, msg, "failed");
     const description = describeError(err);
+    if (msg.type === "prompt_breakdown") {
+      send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, error: description }, userId);
+      return;
+    }
     error(`frontend handler failed: ${description}`);
     if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {
       send({ type: "summary_transfer_status", status: { id: getSummaryTransfer(userId, msg.chatId)?.id ?? "local", chatId: msg.chatId, stage: "error", text: description } }, userId);

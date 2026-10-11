@@ -7,6 +7,13 @@ bun run build
 bun run test:host G:\mousepad_git\Lumiverse
 ```
 
+The prompt-panel migration requires the Lumiverse commits exposing
+`generate.getBreakdown()` and the dry-run history/context fields. Use
+`--prompt-only` for its three integration scenarios: preview parity with the
+host's assembly, saved-snapshot lookup, and correlated errors. These scenarios
+also run with the other suites. Before release, set `minimum_lumiverse_version`
+to the first published Lumiverse version containing both API additions.
+
 The script installs the current `dist` bundles into a new directory under
 `local/real-host/<timestamp>/`, grants their declared permissions in that test
 instance, and boots Lumiverse. It uses ports 18760 (host) and 18761 (model fixture).

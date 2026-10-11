@@ -1,4 +1,5 @@
 import { clearSummaryShelf, editSummaryEntry, removeSummaryEntry } from "./shelf-actions";
+import { loadPromptBreakdown } from "./prompt-breakdown";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
@@ -535,6 +536,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "prompt_breakdown":
+        send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, result: await loadPromptBreakdown(msg, userId) }, userId);
+        break;
       case "diagnostics_export": {
         await captureDiagnosticSnapshot(userId, msg.chatId);
         const content = await exportDiagnostics(userId);
@@ -1687,6 +1691,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
   } catch (err) {
     recordFrontendAction(userId, msg, "failed");
     const description = describeError(err);
+    if (msg.type === "prompt_breakdown") {
+      send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, error: description }, userId);
+      return;
+    }
     error(`frontend handler failed: ${description}`);
     if (msg.type === "summary_import" || msg.type === "summary_export" || msg.type === "summary_import_resolve") {
       send({ type: "summary_transfer_status", status: { id: getSummaryTransfer(userId, msg.chatId)?.id ?? "local", chatId: msg.chatId, stage: "error", text: description } }, userId);

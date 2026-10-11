@@ -184,6 +184,7 @@ export interface FrontendState {
 }
 
 export type FrontendToBackend =
+  | import("./prompt-breakdown").PromptBreakdownRequest
   | { type: "diagnostics_export"; chatId: string }
   | { type: "diagnostics_clear"; chatId: string }
   | { type: "ready"; chatId?: string | null }
@@ -278,6 +279,7 @@ export interface DryRunDiagnostic {
 }
 
 export type BackendToFrontend =
+  | import("./prompt-breakdown").PromptBreakdownResponse
   | { type: "diagnostics_export_data"; filename: string; content: string }
   | { type: "state"; state: FrontendState }
   | { type: "state_loading" }

@@ -15,9 +15,9 @@
     "memories",
     "characters",
     "regex_scripts"
-  ],  
+  ],
   "entry_backend": "dist/backend.js",
   "entry_frontend": "dist/frontend.js",
   "interceptorTimeoutMs": 300000,
-  "minimum_lumiverse_version": "1.1.6"
+  "minimum_lumiverse_version": "1.2.5"
 }

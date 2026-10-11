@@ -3,7 +3,8 @@ import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../typ
 import { ICON_SVG, STYLES } from "./styles";
 import { makeButton, preserveScroll, scrollPaneTop, showToast } from "./components";
 import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
-import { deliverStreamText, renderHomeTab, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
+import { deliverStreamText, renderHomeTab, resetHomeTabLocal, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
+import { deliverPromptBreakdown } from "./prompt-breakdown";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
 import { codexWantsRefresh, deliverCodexFiles, deliverCodexFileState, downloadCodexBackup, renderCodexTab } from "./tabs/codex-tab";
 import { renderTuningTab } from "./tabs/tuning-tab";
@@ -283,6 +284,9 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   const unsub = ctx.onBackendMessage((raw) => {
     const msg = raw as BackendToFrontend;
     switch (msg.type) {
+      case "prompt_breakdown":
+        deliverPromptBreakdown(msg);
+        break;
       case "state":
         clearLoadTimer();
         handshakeRetries = 0;
@@ -424,6 +428,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
 
   return () => {
     disposed = true;
+    resetHomeTabLocal();
     clearLoadTimer();
     try { if (engine.isActive()) engine.exit(); } catch (_) { void _; }
     try { unsub(); } catch (_) { void _; }

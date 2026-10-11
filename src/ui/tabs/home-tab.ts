@@ -1,3 +1,5 @@
+import type { HostBreakdown, HostBreakdownEntry } from "../../prompt-breakdown";
+import { requestPromptBreakdown, clearPromptRequests } from "../prompt-breakdown";
 import { TIER_NAMES, TIER_KINDS, type SummaryKind } from "../../shared";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { ArcView, ChapterView, FrontendState, FrontendToBackend, PendingPreview } from "../../types";
@@ -160,7 +162,7 @@ export function renderHomeTab(
   }
 
   renderOverview(host, state, send);
-  renderPromptPanel(host, state);
+  renderPromptPanel(host, state, send);
   renderFailure(host, state, send);
   renderPreviews(host, state, send);
   renderActions(host, state, send);
@@ -170,25 +172,7 @@ export function renderHomeTab(
 /* The full prompt the host actually fired, read from Lumiverse's stored
  * per-message breakdowns (same data Loom's context meter uses), with a
  * dry-run simulation as fallback so there is never an N/A state: forks and
- * fresh chats have no stored fire, so we fire a dry one. Same-origin fetches
- * ride the page session. */
-
-interface HostBreakdownEntry {
-  name: string;
-  type: string;
-  tokens: number;
-  extensionName?: string;
-  /** Rebuilt from the host's chatHistoryTokens scalar; no real entries. */
-  synthetic?: boolean;
-}
-
-interface HostBreakdown {
-  entries: HostBreakdownEntry[];
-  totalTokens: number;
-  maxContext: number;
-  model?: string;
-  presetName?: string;
-}
+ * fresh chats have no stored fire, so we preview one through Spindle. */
 
 /** Mirrors Lumiverse's own grouping so this panel and Loom's meter agree. */
 const HOST_GROUPS: { id: string; label: string; color: string }[] = [
@@ -214,6 +198,8 @@ const HOST_TYPE_TO_GROUP: Record<string, string> = {
   append: "lumiverse",
 };
 
+let promptRevision = 0;
+let redrawPrompt: (() => void) | null = null;
 const promptCache = {
   chatId: null as string | null,
   newestMsgId: null as string | null,
@@ -225,82 +211,8 @@ const promptCache = {
   expanded: new Set<string>(),
 };
 
-function normalizeBreakdown(raw: Record<string, unknown>, chatHistoryTokens = 0): HostBreakdown | null {
-  const entries = Array.isArray(raw["entries"]) ? raw["entries"] : null;
-  if (!entries) return null;
-  const clean: HostBreakdownEntry[] = [];
-  for (const e of entries as Record<string, unknown>[]) {
-    if (!e || typeof e !== "object") continue;
-    const tokens = typeof e["tokens"] === "number" ? e["tokens"] : 0;
-    clean.push({
-      name: typeof e["name"] === "string" ? e["name"] : "?",
-      type: typeof e["type"] === "string" ? e["type"] : "utility",
-      tokens,
-      extensionName: typeof e["extensionName"] === "string" ? e["extensionName"] : undefined,
-    });
-  }
-  // The host strips chat_history entries and reports their sum separately.
-  if (chatHistoryTokens > 0 && !clean.some((e) => e.type === "chat_history")) {
-    clean.unshift({ name: "Assembled transcript", type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
-  }
-  const summed = clean.reduce((a, e) => a + e.tokens, 0);
-  return {
-    entries: clean,
-    totalTokens: typeof raw["totalTokens"] === "number" ? (raw["totalTokens"] as number) : summed,
-    maxContext: typeof raw["maxContext"] === "number" ? (raw["maxContext"] as number) : 0,
-    model: typeof raw["model"] === "string" ? (raw["model"] as string) : undefined,
-    presetName: typeof raw["presetName"] === "string" ? (raw["presetName"] as string) : undefined,
-  };
-}
-
-/** Newest stored fire, walking back over recent messages (stored breakdowns
- * are keyed by generated message id; user messages 404 harmlessly). */
-async function fetchStoredBreakdown(messages: { id: string }[]): Promise<HostBreakdown | null> {
-  const recent = messages.slice(-15).reverse();
-  for (const m of recent) {
-    const res = await fetch(`/api/v1/generate/breakdown/${encodeURIComponent(m.id)}`, { credentials: "same-origin" });
-    if (res.status === 404) continue;
-    if (!res.ok) throw new Error(`breakdown fetch failed (${res.status})`);
-    const j = await res.json() as Record<string, unknown>;
-    const historyTokens = typeof j["chatHistoryTokens"] === "number" ? (j["chatHistoryTokens"] as number) : 0;
-    const data = normalizeBreakdown(j, historyTokens);
-    if (data) return data;
-  }
-  return null;
-}
-
-/** Simulate the next fire through the host's real assembly pipeline. */
-async function fetchDryRun(chatId: string): Promise<HostBreakdown> {
-  const res = await fetch(`/api/v1/generate/dry-run`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId }),
-  });
-  if (!res.ok) throw new Error(`dry run failed (${res.status})`);
-  const j = await res.json() as Record<string, unknown>;
-  const tc = j["tokenCount"] as Record<string, unknown> | undefined;
-  // max_context_length is stripped from dry-run parameters; contextClipStats keeps it.
-  const clip = j["contextClipStats"] as Record<string, unknown> | undefined;
-  const params = j["parameters"] as Record<string, unknown> | undefined;
-  const maxContext = clip && typeof clip["maxContext"] === "number" && clip["maxContext"] > 0
-    ? (clip["maxContext"] as number)
-    : params && typeof params["max_context_length"] === "number"
-      ? (params["max_context_length"] as number)
-      : 0;
-  const historyTokens = typeof j["chatHistoryTokens"] === "number" ? (j["chatHistoryTokens"] as number) : 0;
-  const data = normalizeBreakdown({
-    entries: tc?.["breakdown"] ?? [],
-    totalTokens: tc?.["total_tokens"],
-    maxContext,
-    model: j["model"],
-  }, historyTokens);
-  if (!data || data.entries.length === 0) throw new Error("dry run returned no breakdown");
-  return data;
-}
-
-/** Static stand-in for the lesson sandbox. The real panel fetches host
- * endpoints that a fixture chat id must never reach. */
+/** Static stand-in for the lesson sandbox. The real panel calls host
+ * APIs that a fixture chat id must never reach. */
 function renderLessonPromptPanel(body: HTMLElement): void {
   const groups: { label: string; color: string; tokens: number }[] = [
     { label: "Prompt blocks", color: "#8a7fb0", tokens: 2400 },
@@ -360,7 +272,7 @@ function renderLessonPromptPanel(body: HTMLElement): void {
   body.appendChild(textNode("Simulated example, the live panel reads your host's real prompt.", "lmb-help"));
 }
 
-function renderPromptPanel(host: HTMLElement, state: FrontendState): void {
+function renderPromptPanel(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
   const chatId = state.activeChatId;
   if (!chatId) return;
   const sec = section("The Prompt");
@@ -377,7 +289,8 @@ function renderPromptPanel(host: HTMLElement, state: FrontendState): void {
   const newestMsgId = state.messages.length ? state.messages[state.messages.length - 1]!.id : null;
   const chatChanged = promptCache.chatId !== chatId;
   const newFire = !chatChanged && promptCache.newestMsgId !== newestMsgId;
-  if (chatChanged) {
+  if (chatChanged || newFire) {
+    ++promptRevision;
     promptCache.chatId = chatId;
     promptCache.data = null;
     promptCache.source = null;
@@ -392,30 +305,29 @@ function renderPromptPanel(host: HTMLElement, state: FrontendState): void {
     body.replaceChildren();
     drawPromptContent(body, state, load);
   };
+  redrawPrompt = redraw;
 
   const load = (mode: "auto" | "dry"): void => {
     if (promptCache.loading) return;
     promptCache.loading = true;
     promptCache.error = null;
     redraw();
-    (async () => {
-      if (mode === "dry") return fetchDryRun(chatId).then((d) => ({ d, source: "dry" as const }));
-      const stored = await fetchStoredBreakdown(state.messages);
-      if (stored) return { d: stored, source: "fire" as const };
-      const dry = await fetchDryRun(chatId);
-      return { d: dry, source: "dry" as const };
-    })()
+    const revision = ++promptRevision;
+    requestPromptBreakdown(send, { chatId, messageIds: state.messages.slice(-15).map(m => m.id), mode })
       .then(({ d, source }) => {
+        if (revision !== promptRevision) return;
         promptCache.data = d;
         promptCache.source = source;
         promptCache.at = Date.now();
       })
       .catch((err) => {
+        if (revision !== promptRevision) return;
         promptCache.error = err instanceof Error ? err.message : String(err);
       })
       .finally(() => {
+        if (revision !== promptRevision) return;
         promptCache.loading = false;
-        redraw();
+        redrawPrompt?.();
       });
   };
 
@@ -1098,6 +1010,9 @@ function addRow(grid: HTMLElement, label: string, value: string): void {
 
 /** Lesson-stage exit hook: the fixture chat polluted this module's caches. */
 export function resetHomeTabLocal(): void {
+  ++promptRevision;
+  redrawPrompt = null;
+  clearPromptRequests();
   inflightBusyLabels.clear();
   streamWatch = null;
   streamEls = null;

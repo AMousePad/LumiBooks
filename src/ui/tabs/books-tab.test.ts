@@ -4,9 +4,11 @@ import { normalizeEntryMeta, TIER_NAMES, type SummaryTier } from "../../shared";
 import type { ArcView, FrontendState } from "../../types";
 import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
-import { renderHomeTab } from "./home-tab";
+import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
+import { deliverPromptBreakdown } from "../prompt-breakdown";
 
 class Element {
+  isConnected = true;
   children: Element[] = [];
   parentElement: Element | null = null;
   className = "";
@@ -55,6 +57,7 @@ beforeEach(() => {
   resetBooksTabLocal();
 });
 afterEach(() => {
+  resetHomeTabLocal();
   resetBooksTabLocal();
   for (const [key, descriptor] of originals) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -148,6 +151,32 @@ test("Home counts active rooted summaries and omits compacted summaries and ghos
   const labels = walk(host).filter((n) => n.className === "lmb-breakdown-label").map((n) => n.textContent);
   expect(labels).toContain("Arcs (7)");
   expect(labels).toContain("Chapters (7)");
+});
+
+test("prompt replies update a rerendered panel and cannot overwrite a newer chat", async () => {
+  const data = state(), sent: any[] = [], host = new Element("host");
+  data.activeChatId = "chat-a";
+  const renderHome = () => renderHomeTab(host as any, data, {} as any, msg => sent.push(msg));
+  const reply = (request: any, model: string) => deliverPromptBreakdown({ ...request,
+    result: { source: "fire", d: { entries: [], totalTokens: 0, maxContext: 0, model } } });
+  const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+  renderHome();
+  renderHome();
+  expect(sent).toHaveLength(1);
+  reply(sent[0], "CURRENT_MODEL");
+  await flush();
+  expect(host.textContent).toContain("CURRENT_MODEL");
+  data.activeChatId = "chat-b";
+  renderHome();
+  data.activeChatId = "chat-c";
+  renderHome();
+  reply(sent[2], "NEW_MODEL");
+  await flush();
+  reply(sent[1], "STALE_MODEL");
+  await flush();
+  renderHome();
+  expect(host.textContent).toContain("NEW_MODEL");
+  expect(host.textContent).not.toContain("STALE_MODEL");
 });
 
 
