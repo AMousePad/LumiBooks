@@ -6,6 +6,7 @@ import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
+import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal, setCodexSubtab, setCodexExpandedEntity } from "./codex-tab";
 
 class Element {
   isConnected = true;
@@ -21,9 +22,10 @@ class Element {
   private text = "";
   private listeners = new Map<string, ((event: { preventDefault(): void }) => void)[]>();
   constructor(readonly tagName: string) {}
+  get firstElementChild(): Element | null { return this.children[0] ?? null; }
   get textContent(): string { return this.text + this.children.map((c) => c.textContent).join(""); }
   set textContent(value: string) { this.text = value; this.children = []; }
-  classList = { add: (name: string) => { this.className += ` ${name}`; } };
+  classList = { add: (name: string) => { this.className += ` ${name}`; }, toggle: (_name: string, _force?: boolean) => {} };
   appendChild(child: Element): Element { child.parentElement = this; this.children.push(child); return child; }
   append(...children: Element[]): void { children.forEach((c) => this.appendChild(c)); }
   replaceChildren(): void { this.children = []; this.text = ""; }
@@ -57,6 +59,7 @@ beforeEach(() => {
   resetBooksTabLocal();
 });
 afterEach(() => {
+  resetCodexTabLocal();
   resetHomeTabLocal();
   resetBooksTabLocal();
   for (const [key, descriptor] of originals) {
@@ -203,4 +206,46 @@ test("Advanced exposes diagnostics opt-out with separate Export and Clear action
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Export diagnostics")!.dispatch("click");
   walk(host).find((e) => e.tagName === "button" && e.textContent === "Clear diagnostics")!.dispatch("click");
   expect(sent).toEqual([{ type: "diagnostics_export", chatId: current.activeChatId }, { type: "diagnostics_clear", chatId: current.activeChatId }]);
+});
+
+function customEntityEditor() {
+  resetCodexTabLocal();
+  const data = state(), host = new Element("host"), sent: any[] = [];
+  data.activeChatId = "custom-fields-chat";
+  data.lessons.codex.status = "done";
+  data.activeProfile.codexEnabled = true;
+  renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+  deliverCodexFiles(data.activeChatId, { characters: JSON.stringify({ entities: [{
+    id: "char:test", name: "Test", age: 20, occupation: "Captain", favorites: ["tea, coffee", "books"],
+    lockedFields: ["age"], noInject: true,
+  }] }) }, data.codexRevision);
+  setCodexSubtab("entities");
+  setCodexExpandedEntity("char:test");
+  renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+  walk(host).find(n => n.tagName === "button" && n.textContent === "Edit sheet")!.dispatch("click");
+  const input = (label: string) => {
+    const wrapper = walk(host).find(n => n.className === "lmb-field" && n.firstElementChild?.textContent.startsWith(label));
+    return wrapper?.children.find(n => n.tagName === "input" || n.tagName === "textarea")!;
+  };
+  const save = () => walk(host).find(n => n.tagName === "button" && n.textContent === "Save")!.dispatch("click");
+  return { host, sent, input, save };
+}
+
+test("Codex Edit sheet exposes LLM fields and preserves their values and locks on save", () => {
+  const { sent, input, save } = customEntityEditor();
+  expect(input("age").value).toBe("20");
+  input("age").value = "21"; input("age").dispatch("input");
+  input("occupation").value = "Admiral"; input("occupation").dispatch("input");
+  expect(input("favorites").value).toBe("tea, coffee\nbooks");
+  save();
+  const saved = sent.find(m => m.type === "codex_write_file");
+  expect(JSON.parse(saved.content).entities[0]).toMatchObject({ age: 21, occupation: "Admiral", favorites: ["tea, coffee", "books"], lockedFields: ["age"], noInject: true });
+});
+
+test("Codex rejects invalid numeric custom fields without sending a save", () => {
+  const { host, sent, input, save } = customEntityEditor();
+  input("age").value = "twenty"; input("age").dispatch("input");
+  save();
+  expect(host.textContent).toContain("age must be a valid number");
+  expect(sent.some(m => m.type === "codex_write_file")).toBe(false);
 });

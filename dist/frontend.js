@@ -7375,6 +7375,45 @@ class CodexFileStateChanges {
   }
 }
 
+// src/ui/codex-extra-fields.ts
+function draftExtraFields(entity, known) {
+  return Object.entries(entity).flatMap(([key, value]) => {
+    if (known.has(key) || key === "__proto__")
+      return [];
+    if (typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) {
+      return [{ key, type: typeof value, value: String(value) }];
+    }
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      return [{ key, type: "list", value: value.join(`
+`) }];
+    }
+    return [];
+  });
+}
+function applyExtraFields(entity, fields) {
+  for (const field of fields) {
+    if (field.key === "__proto__")
+      continue;
+    const value = field.value.trim();
+    if (!value) {
+      delete entity[field.key];
+      continue;
+    }
+    if (field.type === "number") {
+      const number = Number(value);
+      if (!Number.isFinite(number))
+        throw new Error(`${field.key} must be a valid number.`);
+      entity[field.key] = number;
+    } else if (field.type === "list") {
+      entity[field.key] = value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    } else if (field.type === "boolean") {
+      entity[field.key] = value === "true";
+    } else {
+      entity[field.key] = value;
+    }
+  }
+}
+
 // src/ui/tabs/codex-tab.ts
 var fileStateChanges = new CodexFileStateChanges;
 function deliverCodexFileState(chatId, file, seq, error) {
@@ -8265,7 +8304,7 @@ function makeDraft(group, e) {
     fields[f] = str(e[f]);
   for (const f of ENTITY_LIST_FIELDS)
     fields[f] = strArray(e[f]).join(", ");
-  return { group, id: str(e["id"]), fields, lockedFields: new Set(entityLockedFields(e)), saving: false };
+  return { group, id: str(e["id"]), fields, extras: draftExtraFields(e, ENTITY_KNOWN), lockedFields: new Set(entityLockedFields(e)), saving: false };
 }
 function renderEntityCard(group, e, parsed, state, ctx, send) {
   const card = document.createElement("div");
@@ -8316,7 +8355,7 @@ function renderEntityCard(group, e, parsed, state, ctx, send) {
       continue;
     if (typeof v === "string" && v)
       addKv(k, v);
-    else if (typeof v === "number")
+    else if (typeof v === "number" || typeof v === "boolean")
       addKv(k, String(v));
     else if (Array.isArray(v))
       addKv(k, strArray(v).join(" · "));
@@ -8377,7 +8416,7 @@ function renderEntityForm(draft, state, send) {
   };
   const lockableWrap = (key, label) => {
     const w = fieldWrap(label);
-    if (!LOCKABLE_FIELDS.has(key))
+    if (!LOCKABLE_FIELDS.has(key) && !draft.extras.some((extra) => extra.key === key))
       return w;
     const lbl = w.firstElementChild;
     const btn = document.createElement("button");
@@ -8435,6 +8474,23 @@ function renderEntityForm(draft, state, send) {
     w.appendChild(input);
     form.appendChild(w);
   }
+  for (const extra of draft.extras) {
+    const label = extra.type === "list" ? `${extra.key} (one per line)` : extra.key;
+    const w = lockableWrap(extra.key, label);
+    const input = extra.type === "list" || extra.type === "string" ? textArea({ value: extra.value, rows: 2 }) : extra.type === "boolean" ? select({ value: extra.value, options: [{ value: "true", label: "true" }, { value: "false", label: "false" }], onChange: (value) => {
+      extra.value = value;
+    } }) : textInput({ value: extra.value });
+    if (extra.type === "number")
+      input.inputMode = "decimal";
+    input.addEventListener("input", () => {
+      extra.value = input.value;
+    });
+    w.appendChild(input);
+    form.appendChild(w);
+  }
+  const fieldError = textNode("", "lmb-help");
+  fieldError.setAttribute("role", "alert");
+  form.appendChild(fieldError);
   card.appendChild(form);
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
@@ -8444,7 +8500,13 @@ function renderEntityForm(draft, state, send) {
     const parsed = cache.parsed;
     if (!parsed)
       return;
-    const entity = buildEntityFromDraft(draft, parsed);
+    let entity;
+    try {
+      entity = buildEntityFromDraft(draft, parsed);
+    } catch (error) {
+      fieldError.textContent = error instanceof Error ? error.message : String(error);
+      return;
+    }
     if (!entity) {
       showToast("warn", "The entity needs a name");
       return;
@@ -8490,6 +8552,7 @@ function buildEntityFromDraft(draft, parsed) {
   }
   out["id"] = draft.id;
   out["name"] = name;
+  applyExtraFields(out, draft.extras);
   for (const f of [...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS]) {
     const v = (draft.fields[f] ?? "").trim();
     if (v)
@@ -8500,7 +8563,7 @@ function buildEntityFromDraft(draft, parsed) {
     if (items.length)
       out[f] = items;
   }
-  const locks = [...draft.lockedFields].filter((f) => LOCKABLE_FIELDS.has(f));
+  const locks = [...draft.lockedFields].filter((f) => LOCKABLE_FIELDS.has(f) || draft.extras.some((extra) => extra.key === f) && Object.hasOwn(out, f));
   if (locks.length)
     out["lockedFields"] = locks;
   return out;

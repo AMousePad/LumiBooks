@@ -32,6 +32,7 @@ import { confirmDelete, requestCodexRebuild, requestCodexTidy, requestCodexUpdat
 import { renderContinuitySection } from "../continuity";
 import { renderCodexTabLock } from "../lessons/seal";
 import { CodexFileStateChanges } from "../codex-file-state";
+import { applyExtraFields, draftExtraFields, type ExtraFieldDraft } from "../codex-extra-fields";
 
 const fileStateChanges = new CodexFileStateChanges();
 export function deliverCodexFileState(chatId: string, file: string, seq: number, error?: string): "on" | "noInject" | "frozen" | null {
@@ -165,6 +166,7 @@ interface EntityDraft {
   /** Entity id being edited; also used for entities not yet acked. */
   id: string;
   fields: Record<string, string>;
+  extras: ExtraFieldDraft[];
   /** Per-field locks: the agent sees "Locked, do not edit" for these. */
   lockedFields: Set<string>;
   saving: boolean;
@@ -1136,7 +1138,7 @@ function makeDraft(group: EntityGroup, e: Record<string, unknown>): EntityDraft 
   for (const f of ENTITY_TEXT_FIELDS) fields[f] = str(e[f]);
   for (const f of ENTITY_LONG_FIELDS) fields[f] = str(e[f]);
   for (const f of ENTITY_LIST_FIELDS) fields[f] = strArray(e[f]).join(", ");
-  return { group, id: str(e["id"]), fields, lockedFields: new Set(entityLockedFields(e)), saving: false };
+  return { group, id: str(e["id"]), fields, extras: draftExtraFields(e, ENTITY_KNOWN), lockedFields: new Set(entityLockedFields(e)), saving: false };
 }
 
 function renderEntityCard(
@@ -1189,7 +1191,7 @@ function renderEntityCard(
   for (const [k, v] of Object.entries(e)) {
     if (ENTITY_KNOWN.has(k)) continue;
     if (typeof v === "string" && v) addKv(k, v);
-    else if (typeof v === "number") addKv(k, String(v));
+    else if (typeof v === "number" || typeof v === "boolean") addKv(k, String(v));
     else if (Array.isArray(v)) addKv(k, strArray(v).join(" · "));
   }
   card.appendChild(kv);
@@ -1258,7 +1260,7 @@ function renderEntityForm(
   // agent reads "Locked, do not edit" in its place and its writes revert.
   const lockableWrap = (key: string, label: string): HTMLElement => {
     const w = fieldWrap(label);
-    if (!LOCKABLE_FIELDS.has(key)) return w;
+    if (!LOCKABLE_FIELDS.has(key) && !draft.extras.some(extra => extra.key === key)) return w;
     const lbl = w.firstElementChild as HTMLElement;
     const btn = document.createElement("button");
     btn.type = "button";
@@ -1319,6 +1321,22 @@ function renderEntityForm(
     w.appendChild(input);
     form.appendChild(w);
   }
+  for (const extra of draft.extras) {
+    const label = extra.type === "list" ? `${extra.key} (one per line)` : extra.key;
+    const w = lockableWrap(extra.key, label);
+    const input = extra.type === "list" || extra.type === "string"
+      ? textArea({ value: extra.value, rows: 2 })
+      : extra.type === "boolean"
+        ? select({ value: extra.value, options: [{ value: "true", label: "true" }, { value: "false", label: "false" }], onChange: value => { extra.value = value; } })
+        : textInput({ value: extra.value });
+    if (extra.type === "number") (input as HTMLInputElement).inputMode = "decimal";
+    input.addEventListener("input", () => { extra.value = input.value; });
+    w.appendChild(input);
+    form.appendChild(w);
+  }
+  const fieldError = textNode("", "lmb-help");
+  fieldError.setAttribute("role", "alert");
+  form.appendChild(fieldError);
   card.appendChild(form);
 
   const actions = document.createElement("div");
@@ -1327,7 +1345,12 @@ function renderEntityForm(
     if (draft.saving) return;
     const parsed = cache.parsed;
     if (!parsed) return;
-    const entity = buildEntityFromDraft(draft, parsed);
+    let entity: Record<string, unknown> | null;
+    try { entity = buildEntityFromDraft(draft, parsed); }
+    catch (error) {
+      fieldError.textContent = error instanceof Error ? error.message : String(error);
+      return;
+    }
     if (!entity) {
       showToast("warn", "The entity needs a name");
       return;
@@ -1365,7 +1388,7 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
   if (!name) return null;
   const orig = parsed[draft.group].find((x) => str(x["id"]) === draft.id);
   const out: Record<string, unknown> = {};
-  // Unknown extra fields the agent added (e.g. "age") survive untouched.
+  // Preserve fields outside this draft, then apply the editable primitive extras.
   if (orig) {
     for (const [k, v] of Object.entries(orig)) {
       if (!ENTITY_KNOWN.has(k)) out[k] = v;
@@ -1375,6 +1398,7 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
   }
   out["id"] = draft.id;
   out["name"] = name;
+  applyExtraFields(out, draft.extras);
   for (const f of [...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS]) {
     const v = (draft.fields[f] ?? "").trim();
     if (v) out[f] = v;
@@ -1386,7 +1410,7 @@ function buildEntityFromDraft(draft: EntityDraft, parsed: ParsedCodex): Record<s
       .filter(Boolean);
     if (items.length) out[f] = items;
   }
-  const locks = [...draft.lockedFields].filter((f) => LOCKABLE_FIELDS.has(f));
+  const locks = [...draft.lockedFields].filter((f) => LOCKABLE_FIELDS.has(f) || (draft.extras.some(extra => extra.key === f) && Object.hasOwn(out, f)));
   if (locks.length) out["lockedFields"] = locks;
   return out;
 }
