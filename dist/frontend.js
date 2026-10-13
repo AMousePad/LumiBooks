@@ -777,6 +777,14 @@ var STYLES = `
 }
 
 /* ------------------------------------------------------------------ root */
+/* Match only the host panel containing our mounted drawer root. Preserve
+   the host's bottom safe-area and keyboard inset. */
+:has(> div > [data-spindle-drawer-tab] > .lmb-root) {
+  padding-top: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 .lmb-root {
   display: flex;
   flex-direction: column;
