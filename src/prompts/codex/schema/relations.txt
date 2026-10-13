@@ -11,21 +11,15 @@ rival, kin), character-thing (owns, seeks, guards), character-location (at,
 rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
 tempted to mention another entity, that connection belongs here instead.
 Prefer ONE group row whenever a fact is genuinely shared by several entities
-(a faction, a pact, a household, a shared secret): it replaces a pile of
+(a faction, a pact, a household): it replaces a pile of
 redundant pairs and keeps future edits to one row. Use a pair only when the
 relationship is purely binary or directional a->b (two pair rows when the two
 sides differ). Never store how one member individually feels about another
 inside a group row - that stance is its own pair.
 
 Relations coverage (mandatory):
-- The table is the story's FULL web, never a hub around one protagonist. Encode
-  every standing connection the story establishes between ANY two entities,
-  however minor. Side characters' links to each other, to places, and to things
-  matter as much as their links to the lead - if two entities are related in any
-  way at all, that relation belongs in the table.
-- Every named character should end up tied to MULTIPLE other entities
-  (characters, locations, things). A character with a single row is usually an
-  under-recorded character: sweep the story for their other connections.
+- Include established, durable, plot-relevant connections between side
+  characters, places, and things as well as the lead. No minimum per entity.
 - Write "state" to survive the story moving on: name the standing arrangement
   ("owes her a life debt", "banned from the guildhall"), not the scene of the
   moment ("currently arguing in the kitchen"). Anchor pivotal shifts in

@@ -16,9 +16,8 @@ fields, never in the keywords list.
 Relationships live in each entity's "ties"
 list as short present-tense notes - to other characters, to things, and to
 places alike. Do NOT write relations.json, it is disabled.
-Ties coverage (mandatory): record the story's FULL web, never a hub around one
-protagonist - every standing connection an entity has, to side characters,
-places, and things alike, so each named character carries several ties. Phrase
+Ties coverage: include established, durable, plot-relevant connections to side
+characters, places, and things as well as the lead. No minimum per entity. Phrase
 ties as standing arrangements that survive scene changes ("owes her a life
 debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
 outdated: a stale tie is an error, never leave one standing.

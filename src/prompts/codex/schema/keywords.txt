@@ -1,7 +1,7 @@
-Retrieval keywords (mandatory, hard limit 12):
+Retrieval keywords (hard limit 12):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-12 tags. Each record is a separate lorebook entry that only enters the prompt
-when the recent story mentions one of its keywords. Anything past 12 is DISCARDED
+usually 4-12 supported tags; use fewer when appropriate, never filler to meet a minimum.
+Keywords help retrieve each record's lorebook entry. Anything past 12 is DISCARDED
 by the app, so a bloated list does not help retrieval, it just wastes your output.
 Rules:
 - ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no

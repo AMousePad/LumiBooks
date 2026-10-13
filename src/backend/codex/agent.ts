@@ -103,7 +103,7 @@ function codexTools(activeFiles: readonly CodexFileKey[], sequential: boolean): 
         set: {
           type: "array",
           items: { type: "object" },
-          description: "Rows to add or replace, each complete on its own, keyed by entity id or rid. Only rows that actually changed.",
+          description: "Only new or changed rows, each complete on its own. Keep the existing entity id or rid when updating; omit rid only for a new record. Omit unchanged rows even if the story mentions them again.",
         },
         drop: {
           type: "array",
@@ -138,7 +138,7 @@ function codexTools(activeFiles: readonly CodexFileKey[], sequential: boolean): 
   tools.push({
     name: "codex_skip",
     description:
-      "Declare that the listed files need no change from this material. List several at once when several are genuinely unaffected. Skipping a file the story did change loses that information permanently.",
+      "Mark unchanged files complete while preserving their contents. Skip a file even if the story mentions it again, when it needs no additions, corrections, or removals. You may skip all files and call codex_done without writing anything.",
     parameters: {
       type: "object",
       properties: {
@@ -979,7 +979,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
     const lockedNote = (o: WriteOutcome): string => {
       const bits: string[] = [];
       if (o.lockedKept?.length) bits.push(`locked, left untouched: ${o.lockedKept.join(", ")} - do not resend them`);
-      if (o.lockedFieldsKept?.length) bits.push(`locked fields restored to the user's values on: ${o.lockedFieldsKept.join(", ")} - never write those fields`);
+      if (o.lockedFieldsKept?.length) bits.push(`locked fields restored to the user's values on: ${o.lockedFieldsKept.join(", ")}`);
       if (o.dropMisses?.length) bits.push(`already absent, drop was a no-op: ${o.dropMisses.join(", ")}`);
       if (o.archivedKept?.length) bits.push(`resolved and archived, left alone: ${o.archivedKept.join(", ")} - never resend them`);
       if (o.trimmed?.length) bits.push(`${o.trimmed.join("; ")} - send only the few strongest keywords next time`);

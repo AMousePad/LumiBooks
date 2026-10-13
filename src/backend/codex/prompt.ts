@@ -252,7 +252,7 @@ export function buildCodexUltraMessage(
   }
   parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
-    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+    parts.push(`<<STORY (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
   if (tailTranscript) {
     parts.push("<<NEWEST STORY TURNS (raw)>>");
@@ -285,7 +285,7 @@ export function buildCodexReconcileMessage(
   }
   parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
-    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+    parts.push(`<<STORY (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
   if (tailTranscript) {
     parts.push("<<NEWEST STORY TURNS (raw)>>");
@@ -327,7 +327,7 @@ export function buildCodexRefreshMessage(
   }
   parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
-    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+    parts.push(`<<STORY (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
   if (tailTranscript) {
     parts.push("<<NEWEST STORY TURNS (raw)>>");
@@ -367,7 +367,7 @@ export function buildCodexRebuildMessage(
   }
   parts.push(...currentCodexParts(bundle, ctx));
   if (books.length) {
-    parts.push(`<<STORY SO FAR (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
+    parts.push(`<<STORY (filed summaries, oldest first)>>\n${books.join("\n\n")}`);
   }
   if (tailTranscript) {
     parts.push("<<NEWEST STORY TURNS (raw)>>");

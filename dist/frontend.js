@@ -2910,22 +2910,19 @@ function showToast(tone, text) {
 // src/prompts/codex/directives.txt
 var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story bible of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
 
-You see a WINDOW, not the whole story:
+For normal updates, you see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
 - Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
-- Only correct a record the visible material actually contradicts.
 - One exception: a record that breaks the schema rules is always yours to fix,
   whether or not the visible turns mention it. Malformed is not the same as
   unfamiliar.
 - A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
 - Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
 
-Work through three passes in your scratchpad (see the output protocol) or in your head before writing anything:
+For normal updates, work through three passes in your scratchpad (see the output protocol) or in your head before writing anything:
 1. UPDATE - walk the sections one by one (characters, locations, things, relations, timeline, threads, world, knowledge) and ask of each: what do the new turns add or change here? Patch every record they outdate and add everything new and durable. Be exhaustive. A concept the story established that never lands in the codex is a permanent loss.
 2. SWEEP - re-read every record the new turns touch on and verify nothing stale survived. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it. Absence from the visible turns is NOT staleness.
 3. COMPRESS - tighten the wording of everything you are about to write. Terse phrases beat sentences, no filler words. Compression trims wording, never content: dropping a durable fact to save tokens is failure, and so is padding a record with prose.
-
-Then emit ALL of your edits as ONE batch of writes. The three passes shape what you write, they are not three separate replies.
 
 Completeness bar (the ledger standard):
 - Every plot-relevant character, location, and thing has a sheet, and each sheet carries its durable facts in detail, not a summary line. A name alone is not enough: a person or place the story merely mentions in passing does not get a sheet.
@@ -2935,15 +2932,14 @@ Completeness bar (the ledger standard):
 - Every rule of the world and every who-knows-what gap that shapes the plot is recorded.
 - When in doubt whether something is durable enough to record: leave it out. The codex holds the small set of things the story cannot be understood without, not everything it has mentioned.
 
-Snapshot rules (absolute):
+Snapshot rules:
 - The codex describes the present. When something previously defined is seen to change in the given snippet, REPLACE the old text entirely. Be aware that there may be information in the codex describing facts that are not seen or talked about in the given snippet. You may leave those intact as they are likely a past event that did not change.
 - Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.
-- Story history is not residue. Key past events belong in timeline.json, and a relation's "history" list may hold pivotal shifts as story facts. Everywhere else: present tense only.
+- Story history is not edit residue. Past events belong on the timeline; secrets may concern past events.
 - Record only what is durable. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.
-- One fact lives in ONE place. Never duplicate information across records or files: anything tying two or more entities together belongs in relations, not on their sheets, and world-level truths belong in world.json, not repeated on every sheet they touch. Tight separation of concerns keeps every future edit small.
+- Follow each schema's ownership rules. Repeat only the identifying context needed to express a relationship or knowledge gap.
 - Omit empty optional fields entirely if you are not adding to them.
-
-IMPORTANT absolute requirement: Avoid adding any new entities, relations, lore, secrets, and timeline segments unless absolutely required, (usually it isn't required as most additions are not significant enough to record permanently), instead prioritize rewriting existing entries slightly to remove stale content. Try and keep deletions and additions similar in volume so the codex does not grow in size unless absolutely required.`;
+`;
 
 // src/prompts/codex/schema/entities-table.txt
 var entities_table_default = `{{ENTITY_FILES}}
@@ -2981,12 +2977,12 @@ fields, never in the keywords list.
 Relationships live in each entity's "ties"
 list as short present-tense notes - to other characters, to things, and to
 places alike. Do NOT write relations.json, it is disabled.
-Ties coverage (mandatory): record the story's FULL web, never a hub around one
-protagonist - every standing connection an entity has, to side characters,
-places, and things alike, so each named character carries several ties. Phrase
+Ties coverage: include established, durable, plot-relevant connections to side
+characters, places, and things as well as the lead. No minimum per entity. Phrase
 ties as standing arrangements that survive scene changes ("owes her a life
 debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
-outdated: a stale tie is an error, never leave one standing.`;
+outdated: a stale tie is an error, never leave one standing.
+`;
 
 // src/prompts/codex/schema/relations.txt
 var relations_default = `relations.json
@@ -3002,21 +2998,15 @@ rival, kin), character-thing (owns, seeks, guards), character-location (at,
 rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
 tempted to mention another entity, that connection belongs here instead.
 Prefer ONE group row whenever a fact is genuinely shared by several entities
-(a faction, a pact, a household, a shared secret): it replaces a pile of
+(a faction, a pact, a household): it replaces a pile of
 redundant pairs and keeps future edits to one row. Use a pair only when the
 relationship is purely binary or directional a->b (two pair rows when the two
 sides differ). Never store how one member individually feels about another
 inside a group row - that stance is its own pair.
 
 Relations coverage (mandatory):
-- The table is the story's FULL web, never a hub around one protagonist. Encode
-  every standing connection the story establishes between ANY two entities,
-  however minor. Side characters' links to each other, to places, and to things
-  matter as much as their links to the lead - if two entities are related in any
-  way at all, that relation belongs in the table.
-- Every named character should end up tied to MULTIPLE other entities
-  (characters, locations, things). A character with a single row is usually an
-  under-recorded character: sweep the story for their other connections.
+- Include established, durable, plot-relevant connections between side
+  characters, places, and things as well as the lead. No minimum per entity.
 - Write "state" to survive the story moving on: name the standing arrangement
   ("owes her a life debt", "banned from the guildhall"), not the scene of the
   moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
@@ -3024,7 +3014,8 @@ Relations coverage (mandatory):
 - Keep every row CURRENT. Each pass, re-check the rows touching the entities in
   the new turns and rewrite any state the story has outdated (demote the old
   state to "history" only when the shift is pivotal). A row that no longer holds
-  is stale data: correct it, never leave it standing.`;
+  is stale data: correct it, never leave it standing.
+`;
 
 // src/prompts/codex/schema/timeline.txt
 var timeline_default = `timeline.json
@@ -3083,10 +3074,10 @@ text instead: "the household staff", "everyone at court", not "char:the staff".
 Inventing a ref for something that has no sheet is the one error to avoid here.`;
 
 // src/prompts/codex/schema/keywords.txt
-var keywords_default = `Retrieval keywords (mandatory, hard limit 12):
+var keywords_default = `Retrieval keywords (hard limit 12):
 Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-4-12 tags. Each record is a separate lorebook entry that only enters the prompt
-when the recent story mentions one of its keywords. Anything past 12 is DISCARDED
+usually 4-12 supported tags; use fewer when appropriate, never filler to meet a minimum.
+Keywords help retrieve each record's lorebook entry. Anything past 12 is DISCARDED
 by the app, so a bloated list does not help retrieval, it just wastes your output.
 Rules:
 - ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
@@ -3110,10 +3101,12 @@ timeline.json and threads.json need no keywords, they are always in the prompt.
 `;
 
 // src/prompts/codex/protocol/patch-rules.txt
-var patch_rules_default = `- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.
+var patch_rules_default = `- "set": only new or changed rows, each COMPLETE on its own. To update an existing row, keep its exact entity "id" or "rid". Omit "rid" only for a new record that is not already represented in the file. Every untouched row survives without being resent.
+- Compare against the current codex before writing. Repeating or paraphrasing an already-established fact is not a change. Changes in truth, certainty, or who knows it update the existing row, not a new copy.
 - "drop": keys (ids or rids) of rows to delete.
 - "seeds": threads.json only, replaces the whole seeds list when provided.
-- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.`;
+- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.
+`;
 
 // src/prompts/codex/protocol/tools.txt
 var tools_default = `Tools:
@@ -3122,18 +3115,15 @@ var tools_default = `Tools:
 - codex_skip(files, reason): declare that the listed files need no change from this material.
 - codex_done(note): call when the codex is current.
 
-You must account for EVERY file. Each file is either written with codex_write or named in a codex_skip, and codex_done is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
+You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, skip all of them and call codex_done without any codex_write calls. codex_done is refused while any file is unaccounted for.
 
 Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
 
-Emit ALL of your codex_write calls plus codex_done together in a single response - they run as one batch. Example batch (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
-  codex_write(file: "relations", set: [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ])
-  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
-  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
-  codex_done(note: "recorded Mara's flight and the locket's origin")
+Emit all codex_write and codex_skip calls plus codex_done together in a single response - they run as one batch.
 
 Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
-A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.`;
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
+`;
 
 // src/prompts/codex/protocol/tools-sequential.txt
 var tools_sequential_default = `Tools:
@@ -3144,13 +3134,13 @@ var tools_sequential_default = `Tools:
 
 You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
 
-Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one response. If all files are unchanged, skip all of them and call codex_done without any codex_write calls.
 
-Take them one file at a time. Write a single file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
+Take changed files one at a time. Write a single changed file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
 
 Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
 
-Example response (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+Example response (shape only):
   codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
 
 Example of finishing up, once everything else is already written:
@@ -3173,27 +3163,20 @@ After the optional <think> block, respond with exactly ONE JSON object and nothi
 - "skip": the files that need no change from this material.
 - Set "done": true when the codex is current.
 
-You must account for EVERY file. Each file is either written in "writes" or named in "skip", and "done" is refused while any file is unaccounted for. Skipping is for files this material genuinely does not touch: a skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently.
-
-Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
-<think>UPDATE - characters: none changed. relations: Mara moved to the docks, r2 outdated. timeline: her flight is a major event. knowledge: the locket's origin was revealed. SWEEP - r2 still claims the attic, rewrite it. COMPRESS - fold the two hideout phrases into one.</think>
-{ "writes": [
-  { "file": "relations", "set": [ { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:docks", "kind": "at", "state": "hiding among the fishing boats since day 14" } ] },
-  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] },
-  { "file": "knowledge", "set": [ { "fact": "The silver locket was stolen from the duke's vault", "knownBy": ["char:elias"], "keywords": ["locket", "vault", "theft"] } ] }
-], "skip": ["characters", "locations", "things", "threads", "world"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true. "done" is refused while any file is unaccounted for.
 
 No prose outside the <think> block and the JSON object.
-A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.`;
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
+`;
 
 // src/prompts/codex/protocol/json-sequential.txt
 var json_sequential_default = `Output protocol (JSON only, no tools):
 
 You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
 
-Take them one file at a time. Put a SINGLE file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
+Take changed files one at a time. Put a SINGLE changed file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
 
-Skipping is for files this material genuinely does not touch. A skipped file keeps whatever it already holds, so skipping one the story did change loses that information permanently. Most first passes over new story material change most files.
+Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one reply. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true.
 
 Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
 
@@ -3204,7 +3187,7 @@ After the optional <think> block, respond with exactly ONE JSON object and nothi
 - "skip": the files that need no change from this material.
 - "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
 
-Example reply (shape only, your rows should be far more detailed, probably 100-1000s of times more detailed!):
+Example reply (shape only):
 <think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
 { "writes": [
   { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
@@ -3222,7 +3205,8 @@ var update_default = `<<TASK>>
 The story material ends above. Update the codex now: walk the three passes in your scratchpad or head (UPDATE every outdated or missing record section by section, SWEEP what the new turns contradict, COMPRESS your wording), then emit the complete batch of writes. Be comprehensive. This ledger is the story's only durable memory, and anything you leave unrecorded is lost.`;
 
 // src/prompts/codex/passes/verify.txt
-var verify_default = "Verification pass: sweep every file for stale claims the new turns contradict, compress any row that carries bloat, and drop any row the story invalidated.";
+var verify_default = `Verification pass: correct stale claims the new turns contradict and compress any row that carries bloat, within each file's edit restrictions.
+`;
 
 // src/prompts/codex/passes/tidy.txt
 var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files into fewer, cohesive records: consolidate related entries, strip repetition, and remove details that no longer carry plot weight. Reassess relevance against the current Codex rather than preserving every old row. Keep facts and distinctions that future scenes need: causal turning points, active goals, unresolved consequences, meaningful relationship changes, and consequential differences in who knows what. Do not invent events, dates, resolutions, or knowledge transfers to justify compaction. Keep every schema exactly as specified.
@@ -3262,13 +3246,15 @@ var migrate_table_default = 'MIGRATE: the relations table was just enabled. Lift
 var migrate_inline_default = 'MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.';
 
 // src/prompts/codex/notes/repair.txt
-var repair_default = "REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: {{FILES}}.";
+var repair_default = `REPAIR: these files were invalid on disk and are shown empty: {{FILES}}. Reconstruct only facts supported by the supplied story.
+`;
 
 // src/prompts/codex/notes/locked.txt
 var locked_default = "LOCKED: the user owns these entities, do NOT set or drop them: {{IDS}}.";
 
 // src/prompts/codex/notes/locked-fields.txt
-var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). Never write those fields. When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.`;
+var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.
+`;
 
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;

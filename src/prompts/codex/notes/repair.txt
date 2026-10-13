@@ -1,1 +1,1 @@
-REPAIR: these files were invalid on disk and are shown empty, rebuild them from the story if they held anything: {{FILES}}.
+REPAIR: these files were invalid on disk and are shown empty: {{FILES}}. Reconstruct only facts supported by the supplied story.

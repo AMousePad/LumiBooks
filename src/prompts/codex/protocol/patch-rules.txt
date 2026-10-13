@@ -1,4 +1,5 @@
-- "set": rows to add or replace. Each row must be COMPLETE on its own. A row carrying its key (entity "id", or "rid" elsewhere) replaces that existing row; a row without a rid (or with a brand-new entity id) is added. Send ONLY rows that actually changed - every untouched row survives without being resent.
+- "set": only new or changed rows, each COMPLETE on its own. To update an existing row, keep its exact entity "id" or "rid". Omit "rid" only for a new record that is not already represented in the file. Every untouched row survives without being resent.
+- Compare against the current codex before writing. Repeating or paraphrasing an already-established fact is not a change. Changes in truth, certainty, or who knows it update the existing row, not a new copy.
 - "drop": keys (ids or rids) of rows to delete.
 - "seeds": threads.json only, replaces the whole seeds list when provided.
 - "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.
