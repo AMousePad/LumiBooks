@@ -12832,8 +12832,7 @@ function renderDiagnostics(host, state, send) {
     label: "Turn off local logs. This is not recommended",
     onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } })
   }));
-  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
-  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
+  sec.body.appendChild(textNode("Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors.", "lmb-help"));
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   const chatId = state.activeChatId;
