@@ -39,3 +39,41 @@ for (const tools of [false, true]) test(`non-injected files accept updates throu
   expect(saved.has("codex/chat/timeline.json")).toBe(false);
 });
 
+for (const tools of [false, true]) for (const full of [false, true]) {
+  test(`repeated knowledge writes stay idempotent through ${tools ? "tools" : "JSON"} ${full ? "replacement" : "patch"}`, async () => {
+    const bundle = emptyBundle();
+    const fact = { fact: "The gate has a hidden latch.", knownBy: ["Alice"] };
+    bundle.knowledge.items = [{ ...fact, rid: "r7" }];
+    const saved: unknown[] = [];
+    (globalThis as any).spindle = {
+      log: { info() {}, warn() {}, error() {} },
+      connections: { async list() { return [{ id: "test", model: "test", is_default: true }]; } },
+      userStorage: { async setJson(path: string, value: any) {
+        if (path !== "codex/chat/knowledge.json") return;
+        saved.push(structuredClone(value));
+        bundle.knowledge = structuredClone(value);
+      } },
+      generate: { async *quietStream() {
+        const writes = [{ file: "knowledge", ...(full
+          ? { content: { items: [...bundle.knowledge.items, fact, fact] } }
+          : { set: [fact, fact] }) }];
+        const skip = CODEX_FILE_KEYS.filter((key) => key !== "knowledge");
+        yield tools ? { type: "done", content: "", tool_calls: [
+          { call_id: "write", name: "codex_write", args: writes[0] },
+          { call_id: "skip", name: "codex_skip", args: { files: skip } },
+          { call_id: "done", name: "codex_done", args: {} },
+        ] } : { type: "done", content: JSON.stringify({ writes, skip, done: true }) };
+      } },
+    };
+    const profile = { ...makeDefaultProfile("p", "test"), codexUseTools: tools, codexThorough: false };
+    for (let run = 0; run < 2; run++) {
+      await runCodexAgent({ chatId: "chat", userId: `dedup-${tools}-${full}`, profile,
+        promptCtx: makeCodexPromptCtx(profile, [], new Set()), bundle, chunk: [], chunkLabel: "test", chunkFirstIndex: run,
+        notes: { reconcile: false, migrateToTable: false, migrateToInline: false, loadProblems: [] },
+        lore: null, storySoFar: null, externalSignal: new AbortController().signal });
+      expect(bundle.knowledge.items).toEqual([{ ...fact, rid: "r7" }]);
+    }
+    expect(saved.length).toBeGreaterThan(0);
+  });
+}
+

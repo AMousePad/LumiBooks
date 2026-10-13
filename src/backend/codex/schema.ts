@@ -605,6 +605,7 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
   const root = asRecord(ctx, raw, "knowledge");
   if (!root) return fail(ctx.errors);
   const items: CodexKnowledgeItem[] = [];
+  const seen = new Map<string, CodexKnowledgeItem>();
   for (const [i, k] of objArray(ctx, root["items"], "items").entries()) {
     const path = `items[${i}]`;
     const fact = str(ctx, k["fact"], `${path}.fact`, true);
@@ -643,6 +644,23 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
       ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
       continue;
     }
+    // Replayed additions often omit rid. Compare all content, not just the
+    // fact: different audiences or beliefs must remain separate records.
+    const signature = JSON.stringify({
+      fact: out.fact,
+      knownBy: [...(out.knownBy ?? [])].sort(),
+      hiddenFrom: [...(out.hiddenFrom ?? [])].sort(),
+      falseBeliefs: (out.falseBeliefs ?? []).map((belief) => JSON.stringify(belief)).sort(),
+      note: out.note,
+      keywords: [...(out.keywords ?? [])].sort(),
+    });
+    const duplicate = seen.get(signature);
+    if (duplicate) {
+      if (!duplicate.rid && out.rid) duplicate.rid = out.rid;
+      ctx.notes.push(`${path}: omitted duplicate knowledge item`);
+      continue;
+    }
+    seen.set(signature, out);
     items.push(out);
   }
   if (ctx.errors.length) return fail(ctx.errors);
