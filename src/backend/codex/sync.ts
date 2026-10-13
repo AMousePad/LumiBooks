@@ -1,7 +1,7 @@
 import { loadSettings } from "../storage";
 import { activationFlags } from "../../activation";
 import type { LMBProfile } from "../../shared";
-import { listCodexChatIds } from "./store";
+import { listCodexChatIds, setCodexOrphaned } from "./store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
@@ -11,7 +11,7 @@ import { CODEX_FILE_KEYS } from "./schema";
 import type { CodexRecordRender } from "./prompt";
 import { renderCodexRecords } from "./prompt";
 import { codexPresence, loadCodex, loadCursor } from "./store";
-import { ensureCodexBookForChat, findCodexBookForChat, listAllEntries } from "../world-book";
+import { ensureCodexBookForChat, findCodexBookForChat, invalidateBookCache, listAllEntries } from "../world-book";
 import { describeError, warn } from "../runtime";
 import { recordDiagnostic } from "../diagnostics";
 
@@ -265,8 +265,27 @@ export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
 }
 export async function syncCodexProfiles(userId: string): Promise<Array<{ chatId: string; error: string }>> {
   const failures: Array<{ chatId: string; error: string }> = [];
-  for (const chatId of await listCodexChatIds(userId)) {
-    try { await syncCodexEntries(chatId, userId); }
+  for (const chatId of await listCodexChatIds(userId, true)) {
+    try {
+      await withSyncLock(userId, chatId, async () => {
+        const retire = async () => {
+          await setCodexOrphaned(chatId, userId, true);
+          invalidateBookCache(userId, chatId);
+          void recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
+        };
+        // A null result confirms absence; permission/transport failures must
+        // still surface and must never retire potentially live state.
+        if (await spindle.chats.get(chatId, userId) === null) { await retire(); return; }
+        await setCodexOrphaned(chatId, userId, false);
+        try { await doSync(chatId, userId, true); }
+        catch (err) {
+          // Deletion can race the initial lookup and the book attachment.
+          const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
+          if (!missing) throw err;
+          await retire();
+        }
+      });
+    }
     catch (err) {
       const error = describeError(err);
       failures.push({ chatId, error });

@@ -3393,17 +3393,28 @@ async function adoptCodexFrom(fromChatId, toChatId, userId) {
     return copied ? "ok" : "no_source";
   });
 }
-async function listCodexChatIds(userId) {
+async function setCodexOrphaned(chatId, userId, orphaned) {
+  const path = `${dir(chatId)}/orphaned.json`;
+  const exists = await spindle.userStorage.exists(path, userId);
+  if (orphaned && !exists)
+    await spindle.userStorage.setJson(path, { version: 1 }, { indent: 0, userId });
+  else if (!orphaned && exists)
+    await spindle.userStorage.delete(path, userId);
+}
+async function listCodexChatIds(userId, includeOrphaned = false) {
   const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => []);
   const ids = new Set;
+  const orphaned = new Set;
   for (const raw of paths) {
     const p = raw.replace(/\\/g, "/");
     const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
     const chatId = rest.split("/")[0];
     if (chatId && chatId !== rest)
       ids.add(chatId);
+    if (rest === `${chatId}/orphaned.json`)
+      orphaned.add(chatId);
   }
-  return [...ids];
+  return [...ids].filter((id) => includeOrphaned || !orphaned.has(id));
 }
 async function readCodexFilesRaw(chatId, userId) {
   const out = {};
@@ -6153,9 +6164,28 @@ function codexEntryPlacement(profile, constant) {
 }
 async function syncCodexProfiles(userId) {
   const failures = [];
-  for (const chatId of await listCodexChatIds(userId)) {
+  for (const chatId of await listCodexChatIds(userId, true)) {
     try {
-      await syncCodexEntries(chatId, userId);
+      await withSyncLock(userId, chatId, async () => {
+        const retire = async () => {
+          await setCodexOrphaned(chatId, userId, true);
+          invalidateBookCache(userId, chatId);
+          recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
+        };
+        if (await spindle.chats.get(chatId, userId) === null) {
+          await retire();
+          return;
+        }
+        await setCodexOrphaned(chatId, userId, false);
+        try {
+          await doSync(chatId, userId, true);
+        } catch (err) {
+          const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
+          if (!missing)
+            throw err;
+          await retire();
+        }
+      });
     } catch (err) {
       const error = describeError(err);
       failures.push({ chatId, error });

@@ -442,18 +442,29 @@ export async function adoptCodexFrom(
   });
 }
 
-/** Chats that have a codex on disk, for the continuity picker. */
-export async function listCodexChatIds(userId: string): Promise<string[]> {
+/** Retain orphaned records for forks/recovery, but retire their live binding. */
+export async function setCodexOrphaned(chatId: string, userId: string, orphaned: boolean): Promise<void> {
+  const path = `${dir(chatId)}/orphaned.json`;
+  const exists = await spindle.userStorage.exists(path, userId);
+  if (orphaned && !exists) await spindle.userStorage.setJson(path, { version: 1 }, { indent: 0, userId });
+  else if (!orphaned && exists) await spindle.userStorage.delete(path, userId);
+}
+
+/** Chats that have a codex on disk, for the continuity picker. Profile sync
+ * includes orphans so a restored chat can recover its binding automatically. */
+export async function listCodexChatIds(userId: string, includeOrphaned = false): Promise<string[]> {
   const paths = await spindle.userStorage.list(CODEX_DIR, userId).catch(() => [] as string[]);
   const ids = new Set<string>();
+  const orphaned = new Set<string>();
   for (const raw of paths) {
     // The host lists via readdirSync, which separates with a backslash on Windows.
     const p = raw.replace(/\\/g, "/");
     const rest = p.startsWith(`${CODEX_DIR}/`) ? p.slice(CODEX_DIR.length + 1) : p;
     const chatId = rest.split("/")[0];
     if (chatId && chatId !== rest) ids.add(chatId);
+    if (rest === `${chatId}/orphaned.json`) orphaned.add(chatId);
   }
-  return [...ids];
+  return [...ids].filter((id) => includeOrphaned || !orphaned.has(id));
 }
 
 /** Raw file contents for the UI viewer: pretty JSON, empty scaffold when

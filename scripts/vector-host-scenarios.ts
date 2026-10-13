@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { makeDefaultProfile } from "../src/shared";
 
 // Only the embedding provider is simulated. Lumiverse indexes these vectors,
@@ -181,4 +182,21 @@ export async function runVectorScenarios(h: {
   for (const privateValue of ["DRAGON_RECORD", "OCEAN_RECORD", "HIDDEN_RECORD", "winged reptile", "synthetic-key", dragonId, bookId]) assert(!exported.includes(privateValue));
   assert(new TextEncoder().encode(exported).length <= 10_000_000);
   pass("vector diagnostics contain no record prose, search text, provider key or raw entry/book IDs");
+
+  const { getUserExtensionPath } = await fromHost("auth/provision.ts");
+  const codexDir = join(getUserExtensionPath(getFirstUserId(), "lumi_books"), "codex", chatId);
+  const source = await Bun.file(join(codexDir, "characters.json")).text();
+  const sourceEntries = await entries();
+  await api(`/api/v1/chats/${chatId}`, "DELETE");
+  await action({ type: "save_profile", chatId: fork.id, profile: { id: "default", codexActivationMode: "always" } });
+  assert(await Bun.file(join(codexDir, "orphaned.json")).exists());
+  assert.equal(await Bun.file(join(codexDir, "characters.json")).text(), source);
+  assert.deepEqual(await entries(), sourceEntries);
+  assert((await api(`/api/v1/world-books/${forkBook}/entries`)).data.every((e: any) => e.constant && !e.vectorized));
+  await restartExtension(h.extensionId);
+  await action({ type: "save_profile", chatId: fork.id, profile: { id: "default", codexActivationMode: "keywords" } });
+  assert(await Bun.file(join(codexDir, "orphaned.json")).exists());
+  assert.equal(await Bun.file(join(codexDir, "characters.json")).text(), source);
+  assert((await api(`/api/v1/world-books/${forkBook}/entries`)).data.some((e: any) => !e.constant && e.content.includes("DRAGON_RECORD_UPDATED")));
+  pass("deleted parent chats retire across worker restarts while profile sync updates the live fork and preserves recovery data");
 }
