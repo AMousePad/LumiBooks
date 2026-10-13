@@ -35,8 +35,8 @@ test("carries recognised file states and drops unknown ones", () => {
 });
 
 test("rejects a file that is not a codex backup", () => {
-  expect(parseCodexBackup({ hello: "world" }, true)).toEqual({ error: "that file is not a codex backup" });
-  expect(parseCodexBackup(null, true)).toEqual({ error: "that file is not a codex backup" });
+  expect(parseCodexBackup({ hello: "world" }, true)).toEqual({ error: "This file isn't a Codex backup" });
+  expect(parseCodexBackup(null, true)).toEqual({ error: "This file isn't a Codex backup" });
 });
 
 test("refuses a backup from a newer LumiBooks", () => {
@@ -56,5 +56,5 @@ test("rejects a structurally invalid file", () => {
 
 test("rejects an envelope with no codex files", () => {
   const parsed = parseCodexBackup(envelope({}), true);
-  expect(parsed).toEqual({ error: "the backup has no codex files in it" });
+  expect(parsed).toEqual({ error: "The backup has no Codex files" });
 });

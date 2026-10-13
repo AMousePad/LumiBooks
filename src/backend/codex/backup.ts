@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
@@ -47,13 +48,13 @@ export interface ParsedBackup {
 
 /** All-or-nothing: a backup that fails any file leaves the codex untouched. */
 export function parseCodexBackup(raw: unknown, fallbackRelationsTable: boolean): ParsedBackup | { error: string } {
-  if (!raw || typeof raw !== "object") return { error: "that file is not a codex backup" };
+  if (!raw || typeof raw !== "object") return { error: tr("backend.codex.backup.parseCodexBackup.thatFileIsNotACodexBackup") };
   const v = raw as Partial<CodexBackup>;
-  if (v.kind !== CODEX_BACKUP_KIND) return { error: "that file is not a codex backup" };
+  if (v.kind !== CODEX_BACKUP_KIND) return { error: tr("backend.codex.backup.parseCodexBackup.thatFileIsNotACodexBackup") };
   if (typeof v.version !== "number" || v.version > CODEX_BACKUP_VERSION) {
-    return { error: `this backup was written by a newer LumiBooks (version ${String(v.version)})` };
+    return { error: tr("backend.codex.backup.parseCodexBackup.thisBackupWasWrittenByANewer", { version: String(v.version) }) };
   }
-  if (!v.files || typeof v.files !== "object") return { error: "the backup has no codex files in it" };
+  if (!v.files || typeof v.files !== "object") return { error: tr("backend.codex.backup.parseCodexBackup.theBackupHasNoCodexFilesIn") };
 
   const relationsTableMode = typeof v.relationsTableMode === "boolean" ? v.relationsTableMode : null;
   const relationsTable = relationsTableMode ?? fallbackRelationsTable;
@@ -65,13 +66,13 @@ export function parseCodexBackup(raw: unknown, fallbackRelationsTable: boolean):
     try {
       parsed = JSON.parse(rawText);
     } catch {
-      return { error: `${key}.json in the backup is not valid JSON` };
+      return { error: tr("backend.codex.backup.parseCodexBackup.jsonInTheBackupIsNotValid", { key: key }) };
     }
     const result = validateCodexFile(key, parsed, { relationsTable });
-    if (!result.ok) return { error: `${key}.json in the backup is invalid: ${result.errors[0]}` };
+    if (!result.ok) return { error: tr("backend.codex.backup.parseCodexBackup.jsonInTheBackupIsInvalid", { key: key, errors0: result.errors[0] }) };
     values.push({ key, value: result.value });
   }
-  if (values.length === 0) return { error: "the backup has no codex files in it" };
+  if (values.length === 0) return { error: tr("backend.codex.backup.parseCodexBackup.theBackupHasNoCodexFilesIn") };
 
   const fileStates: Record<string, CodexFileState> = {};
   const rawStates = v.fileStates && typeof v.fileStates === "object" ? v.fileStates as Record<string, unknown> : {};

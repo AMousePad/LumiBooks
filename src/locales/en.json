@@ -1,0 +1,2869 @@
+{
+  "backend": {
+    "binding": {
+      "messages": {
+        "selectConsecutiveSummariesWithoutCrossingAnotherSummary": "Select consecutive summaries without crossing another summary tier"
+      }
+    },
+    "Codex": {
+      "agent": {
+        "messages": {
+          "theAssembledCodexPromptIsKTokens": "Codex prompt: ~{round}k tokens; limit: {round2}k. Raise Max input tokens in Tuning > Connection > Codex, or reduce the window, Chapters provided, or lore limit in Tuning > Settings > Codex. Freezing records in Codex > Overview also reduces input."
+        },
+        "resolveCodexConnection": {
+          "CodexConnectionHasNoModelSetPick": "Codex connection \"{id}\" has no model set, pick one in settings",
+          "noConnectionAvailableForTheCodex": "No connection available for Codex"
+        },
+        "keptSuffix": {
+          "memoriaKeptTheRecordSheFinishedAnd": " Saved {length} record{length, plural, one {} other {s}}; the rest will retry next time."
+        },
+        "runCodexAgentInner": {
+          "round": "\n\n═══ round {rounds} ═══\n",
+          "fullRewriteKChars": "full rewrite, {toFixed}k chars",
+          "CodexWriteJson": "\n➤ Codex_write {f}.json ({label})",
+          "CodexDone": "\n✦ Codex_done{note}",
+          "CodexSkip": "\n○ Codex_skip {choice, select, yes {{join}} other {(no files)}}",
+          "unknownTool": "\n✗ unknown tool {name}",
+          "theCodexAgentReturnedAnEmptyResponse": "The Codex agent returned an empty response",
+          "noJsonObjectFoundInTheReply": "\n✗ no JSON found in the reply. Retrying...",
+          "memoriaCouldnTFinishTheCodexUpdate": "The model wasn't able to follow instructions :(.{keptSuffix}",
+          "theCodexAgentNarratedInsteadOfCalling": "The Codex agent didn't call tools. Does your connection support tool calls?",
+          "theCodexAgentRepliedWithoutAParsable": "The Codex agent returned faulty JSON",
+          "memoriaCouldnTFinishTheCodexUpdate2": "The model stopped before writing {join}.{keptSuffix}",
+          "keptStillReferencedByUnchangedJson": "\n⤳ Kept {ref}: still referenced by unchanged {file}.json",
+          "value": "\n⤳ {r}",
+          "rejected": "\n✗ rejected{choice, select, yes { {file}.json} other {}}: {errors0}",
+          "integrity": "\n✗ integrity: {e}",
+          "memoriaCouldnTFinishTheCodexUpdate3": "The model returned invalid JSON after {rounds} tries: {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate4": "The model returned invalid records: {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate5": "The model didn''t write {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate6": "The model referenced missing entities: {join}.{keptSuffix}",
+          "tableMigrationLeftTiesOnTheRun": "Relations migration failed: ties remain on {join}.",
+          "inlineMigrationProducedNoTiesFromThe": "Relations migration failed: no ties were created from the table.",
+          "failedToSaveJson": "Failed to save {key}.json: {describeError}"
+        },
+        "stream": {
+          "set": "{count} set",
+          "drop": "{count} drop",
+          "seeds": "seeds",
+          "empty": "empty"
+        }
+      },
+      "backup": {
+        "parseCodexBackup": {
+          "thatFileIsNotACodexBackup": "This file isn''t a Codex backup",
+          "thisBackupWasWrittenByANewer": "This backup needs a newer LumiBooks (version {version})",
+          "theBackupHasNoCodexFilesIn": "The backup has no Codex files",
+          "jsonInTheBackupIsNotValid": "{key}.json isn''t valid JSON",
+          "jsonInTheBackupIsInvalid": "{key}.json in the backup is invalid: {errors0}"
+        }
+      },
+      "index": {
+        "reportCodexFailure": {
+          "memoriaCouldnTTheCodex": "Couldn''t {verb, select, tidy {tidy} refresh {refresh} rebuild {rebuild} other {update}} the Codex: {shortErrorText}"
+        },
+        "syncEntriesGuarded": {
+          "memoriaCouldnTSyncTheCodexTo": "Couldn''t sync the Codex to the lorebook: {shortErrorText}"
+        },
+        "ensureCodexEntriesSynced": {
+          "memoriaCouldnTSyncTheCodexTo": "Couldn''t sync the Codex to the lorebook: {shortErrorText}"
+        },
+        "dryRunCodex": {
+          "theWindowHasNotFilledYetAutomation": "Window isn''t full. Run manually to bypass.",
+          "theLagReserveStillHoldsTheseTurns": "Lag isn''t met. Run manually to bypass.",
+          "chatHasNoMessages": "Chat has no messages",
+          "theCodexHasReadEverythingSoThis": "Codex is up to date. Preview uses previous messages.",
+          "noConsumableWindowSendAMessageAnd": "No messages to process. Send a message and retry.",
+          "everyCodexRecordIsFrozenUnfreezeOne": "Codex records are frozen. Unfreeze a record to preview.",
+          "connection": "Connection: {name} ({provider}/{model})",
+          "transport": "Transport: {choice, select, yes {tool calls} other {strict JSON}}",
+          "updateDeliveryAndEveryRecordMustBe": "Update delivery: {choice, select, yes {record by record} other {batched}}. Write or skip the {length} records to complete the update.",
+          "preset": "Preset: {choice, select, yes {Custom: {displayName}} other {Built-in: Default}}{choice2, select, yes { ({value} template{value2, plural, one {} other {s}} customized)} other {}}",
+          "relationsMode": "Relations mode: {choice, select, yes {table} other {inline ties}}{choice2, select, yes { (format changed, this run would migrate)} other {}}",
+          "activeFiles": "Active files: {join}",
+          "frozenOmittedFromThePromptEntirely": "Frozen from the prompt: {join}",
+          "chunkMessage": "Chunk: {chunkLabel} ({length} message{length, plural, one {} other {s}})",
+          "reconcilePendingTheStoryWasEditedBehind": "Story edits detected. Reconcile note included.",
+          "unreadableFilesShownEmpty": "Unreadable files shown empty: {join}",
+          "locksLockedEntitWithLockedFieldsMasked": "Locks: {length} entit{length, plural, one {y} other {ies}}, {length2} with locked fields hidden from the model",
+          "storySoFarContextTokens": "Story-so-far context: ~{length} tokens",
+          "activatedLoreReferenceTokens": "Activated lore reference: ~{length} tokens",
+          "activatedLoreExceededTheLoreLimitTokens": "Lore exceeded the lore limit ({effectiveLoreLimitTokens} tokens) and was cut off",
+          "thoroughMode": "Thorough mode: {choice, select, yes {on, adds a verification round} other {off}}",
+          "promptSizeTokensSystemTokensUserCodex": "Prompt size: ~{length} tokens system + ~{length2} tokens user (Codex max input {CodexMaxInputTokens})",
+          "wouldFail": "WOULD FAIL: {message}",
+          "samplerParametersBeingSentOnTheWire": "Sampler parameters: {stringify}"
+        },
+        "chunkLabel": {
+          "messagesOf": "messages {firstIdx1}-{lastIdx1} of {length}"
+        },
+        "runChunk": {
+          "theRelationsFormatChangedUnfreezeSoMemoria": "Relations format changed. Unfreeze {join} to migrate.",
+          "relationBetweenLockedEntriesCouldNotBe": "{stuck} relation{stuck, plural, one {} other {s}} between locked entries couldn''t be rewritten and will be dropped",
+          "memoriaUpdatedTheCodexFile": "Codex updated ({length} file{length, plural, one {} other {s}})"
+        },
+        "drain": {
+          "memoriaIsUpdatingTheCodex": "Updating Codex"
+        },
+        "maybeRunCodex": {
+          "automaticUpdate": "automatic update",
+          "memoriaClosesTheCodexForNow": "Codex update cancelled"
+        },
+        "runCodexNow": {
+          "memoriaIsAlreadyUpdatingTheCodex": "Codex update in progress",
+          "memoriaIsStillCarryingTheCodexInto": "Codex fork inheritance is in progress. Try again shortly.",
+          "everyCodexRecordIsFrozenUnfreezeOne": "Codex records are frozen. Unfreeze a record to update.",
+          "theCodexIsAlreadyCaughtUp": "Codex is up to date",
+          "memoriaClosesTheCodexForNow": "Codex update cancelled",
+          "fastCatchUpNeedsTheCodexModel": "Fast catch-up needs the Codex model''s context to be at least the story model''s. Raise your max context size"
+        },
+        "catchupCodex": {
+          "memoriaIsCatchingUpTheCodex": "Catching up Codex ({choice, select, yes {ultra fast} other {fast}})",
+          "memoriaIsAlreadyWorkingOnTheCodex": "Codex task in progress"
+        },
+        "maybeReconcileSweep": {
+          "memoriaIsReconcilingTheCodexWithThe": "Updating Codex after story edits",
+          "memoriaReconciledTheCodexWithTheEdited": "Codex updated after story edits ({length} file{length, plural, one {} other {s}})",
+          "memoriaCheckedTheCodexAgainstTheEdited": "Codex updated after story edits"
+        },
+        "rebuildCodex": {
+          "memoriaIsClearingTheCodexForA": "Clearing Codex for rebuild",
+          "memoriaIsAlreadyWorkingOnTheCodex": "Codex task in progress",
+          "memoriaCouldnTReadTheCodexCursor": "The Codex state has an issue, rebuild aborted: {shortErrorText}",
+          "memoriaCouldnTClearCodexFileRun": "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry Rebuild.",
+          "memoriaCouldnTClearTheCodexLorebook": "Couldn''t clear Codex lorebook entries: {shortErrorText}"
+        },
+        "runCodexTidy": {
+          "memoriaIsTidyingTheCodex": "Tidying Codex",
+          "memoriaIsAlreadyWorkingOnTheCodex": "Codex task in progress",
+          "theRelationsFormatChangedRunUpdateNow": "The relations format changed, please update the Codex",
+          "nothingToTidyThoseRecordsAreEmpty": "Nothing to tidy: records are empty, frozen, or unreadable",
+          "theSelectedRecordsAlreadyFitTokensLimit": "Records already fit within the limit ({limit} tokens)",
+          "tidyTokensLimitModelTargetCallsLeft": "\nTidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} calls left.\n",
+          "aCodexFileCouldNotBeRead": "Codex state issue after tidying: {details}. Undo restores the original.",
+          "CodexTidiedToTokensLimitInModel": "Codex tidied to {size} tokens (limit {limit}) in {used} model call{used, plural, one {} other {s}}",
+          "stoppedAfterModelCallsTokensStillAbove": "Stopped after {used} model calls: {size} tokens, above the limit of {limit}. Edits saved; Undo restores the original.",
+          "tidyingStoppedCompletedEditsAreKeptUndo": "Tidying cancelled. Edits saved; Undo restores the original."
+        },
+        "refreshCodexFiles": {
+          "memoriaIsCatchingUpReEnabledRecords": "Catching up re-enabled records",
+          "memoriaIsAlreadyWorkingOnTheCodex": "Codex task in progress",
+          "theRelationsFormatChangedRunUpdateNow": "Relations format changed. Run Update now before catching up records.",
+          "noReEnabledRecordsAreWaitingFor": "No records need catch-up",
+          "memoriaCaughtUpRecord": "Caught up {length} record{length, plural, one {} other {s}}",
+          "memoriaSetsTheCatchUpAside": "Catch-up cancelled",
+          "theCatchUpPassNeedsTheCodex": "Catch-up needs a Codex context at least as large as the story model''s. Increase it or rebuild in slow mode."
+        },
+        "rebuildCodexFiles": {
+          "memoriaIsRebuildingCodexRecords": "Rebuilding Codex records",
+          "memoriaIsAlreadyWorkingOnTheCodex": "Codex task in progress",
+          "theRelationsFormatChangedRunUpdateNow": "Relations format changed. Run Update now before rebuilding records.",
+          "thoseRecordsAreFrozenUnfreezeThemFirst": "Unfreeze these records first",
+          "memoriaRebuiltRecordFromTheStory": "Rebuilt {length} record{length, plural, one {} other {s}}",
+          "memoriaSetsTheRebuildAside": "Rebuild cancelled",
+          "theRebuildPassNeedsTheCodexModel": "Rebuild needs a Codex context at least as large as the story model''s. Increase it in connection settings."
+        }
+      },
+      "schema": {
+        "keywordArray": {
+          "keptOfDroppedTheRestAsDuplicates": "{path}: kept {length} of {length2}, dropped the rest as duplicates, over {keywordMaxWords} words, already matched by the record''s own name, or past the {keywordLimit} keyword limit"
+        },
+        "str": {
+          "requiredNonEmptyString": "{path}: required non-empty string",
+          "expectedAString": "{path}: expected a string"
+        },
+        "strArray": {
+          "expectedAnArrayOfStrings": "{path}: expected an array of strings",
+          "expectedAString": "{path}[{i}]: expected a string"
+        },
+        "objArray": {
+          "expectedAnArray": "{path}: expected an array",
+          "expectedAnObject": "{path}[{i}]: expected an object"
+        },
+        "asRecord": {
+          "expectedAJsonObject": "{path}: expected a JSON object"
+        },
+        "keepExtras": {
+          "useLowercase": "{path}.{k}: use lowercase \"{lower}\"",
+          "extraFieldsMustBePrimitiveStringNumber": "{path}.{k}: extra fields must be primitive (string, number, boolean, or string[]), flatten this"
+        },
+        "ridOf": {
+          "ridExpectedAShortString": "{path}.rid: expected a short string"
+        },
+        "validateEntityFile": {
+          "idMustMatch": "{path}.id: \"{id}\" must match {ns}:<lowercase_snake_case>",
+          "idBelongsInAnotherFileIdsHere": "{path}.id: \"{id}\" belongs in another file, ids here must start with \"{ns}:\"",
+          "idDuplicateId": "{path}.id: duplicate id \"{id}\"",
+          "statusThisFieldWasRemovedKeepDurable": "{path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state",
+          "tiesTheRelationsTableIsEnabledMove": "{path}.ties: the relations table is enabled, move these into relations.json rows"
+        },
+        "validateRelationsFile": {
+          "relationsTheRelationsTableIsDisabledFor": "relations: the relations table is disabled for this profile, keep connections as ties on entity sheets instead",
+          "aIsNotAValidEntityRef": "{path}.a: \"{a}\" is not a valid entity ref",
+          "bIsNotAValidEntityRef": "{path}.b: \"{b}\" is not a valid entity ref",
+          "aAndBAreTheSameEntity": "{path}: a and b are the same entity",
+          "membersAGroupNeedsAtLeast2": "{path}.members: a group needs at least 2 distinct members",
+          "membersIsNotAValidEntityRef": "{path}.members: \"{m}\" is not a valid entity ref",
+          "rolesKeyIsNotAValidEntity": "{path}.roles: key \"{k}\" is not a valid entity ref",
+          "rolesExpectedAStringRole": "{path}.roles[\"{k}\"]: expected a string role",
+          "typeExpectedPairOrGroup": "{path}.type: expected \"pair\" or \"group\""
+        },
+        "validateThreadsFile": {
+          "statusExpectedOpenStalledResolvedAbandoned": "{path}.status: expected open | stalled | resolved | abandoned"
+        },
+        "validateWorldFile": {
+          "factsAtLeastOneFactRequiredDrop": "{path}.facts: at least one fact required, drop the topic if it has none"
+        },
+        "validateKnowledgeFile": {
+          "appearsInBothKnownByAndHiddenFromWrite": "{path}: {join} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as \"fact\", then list who knows it and who it is hidden from - never write the ignorance as the fact",
+          "needsAtLeastOneOfKnownByHiddenFrom": "{path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline",
+          "omittedDuplicateKnowledgeItem": "{path}: omitted duplicate knowledge item"
+        },
+        "formatDangling": {
+          "isNotDefinedInAnyEntityFile": "{path}: \"{ref}\" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)",
+          "isNotDefinedInAnyEntityFile2": "{path}: \"{ref}\" is not defined in any entity file - add the entity or use plain text"
+        },
+        "fix": {
+          "wasNotAKnownEntityRecordedAs": "{path}: \"{ref}\" was not a known entity, recorded as \"{plain}\""
+        }
+      },
+      "store": {
+        "loadCursor": {
+          "theCodexCursorIsUnreadable": "Codex cursor issue: {error}"
+        },
+        "loadCodex": {
+          "unreadableOnDisk": "unreadable on disk: {error}"
+        },
+        "copyCodexToEmptyChat": {
+          "jsonIsUnreadableOnTheSourceChat": "{key}.json is unreadable on the source chat: {error}"
+        },
+        "readCodexFilesRaw": {
+          "unreadableJsonTheFileExistsButCannot": "Can''t read {key}.json: {error}. Fix or delete it before saving."
+        }
+      },
+      "sync": {
+        "doSync": {
+          "CodexSyncSkippedUnreadableOrInvalidFile": "Codex sync failed. Unreadable or invalid file{length, plural, one {} other {s}}: {join}",
+          "outdatedCodexEntrCouldNotBeRemoved": "Couldn''t remove {failedDeletes} outdated Codex entr{failedDeletes, plural, one {y} other {ies}}. They may still inject."
+        },
+        "doWipe": {
+          "failedToDeleteCodexEntrTheyMay": "Couldn''t delete {failed} Codex entr{failed, plural, one {y} other {ies}}. They may still inject."
+        }
+      },
+      "tokens": {
+        "countCodexText": {
+          "invalidTokenCount": "Invalid token count"
+        }
+      }
+    },
+    "coverage": {
+      "setHidden": {
+        "couldNotUpdateVisibilityForMessagesRun": "Couldn''t update visibility for {length} messages. Retry Resync visibility."
+      }
+    },
+    "fork": {
+      "inheritedMessageIds": {
+        "forkAncestryCouldNotBeResolved": "Fork ancestry couldn''t be resolved",
+        "forkAncestryIsIncomplete": "Fork ancestry is incomplete"
+      },
+      "requireForkShelf": {
+        "forkInheritanceIsStillPendingRetryAfter": "Fork inheritance is pending. Wait for it to finish, then retry."
+      },
+      "doForkAdoption": {
+        "memoriaCouldnTCarryTheShelfInto": "Summary fork inheritance failed; will retry: {shortErrorText}"
+      },
+      "adoptForkCodex": {
+        "memoriaCouldnTCarryTheCodexInto": "Codex fork inheritance failed; will retry: {shortErrorText}"
+      },
+      "markCodexAdopted": {
+        "forkChatVanishedWhileRecordingCodexAdoption": "Chat was deleted during Codex fork inheritance"
+      },
+      "newBook": {
+        "memoriaSShelfForThisChatChapters": "LumiBooks chapters and arcs for this chat."
+      }
+    },
+    "index": {
+      "doPushState": {
+        "lumiBooksStateRefreshFailed": "LumiBooks state refresh failed: {describeError}"
+      },
+      "messages": {
+        "summaryRepairFailed": "Summary repair failed: {describeError}",
+        "savedDiagnosticsCleared": "Saved diagnostics cleared.",
+        "recallSettingSavedEntryOrBookUpdates": "Recall saved, but {failed} updates failed. Reapply to retry.",
+        "invalidProfilePayload": "Invalid profile payload.",
+        "profileNoLongerExists": "Profile {id} no longer exists.",
+        "memoriaKeepsAtLeastOneProfile": "A profile is required",
+        "memoriaIsAlreadyFilingAChapter": "Chapter creation in progress",
+        "yourStoryNeedsMoreMessagesForMe": "Not enough messages to create an entry",
+        "memoriaIsAlreadyBindingAnArc": "Arc creation in progress",
+        "memoriaIsAlreadyPressingAVolume": "Volume creation in progress",
+        "memoriaCanTFindThatEntry": "Entry not found",
+        "memoriaReleasedTheEntryToYourLorebook": "Entry released to the lorebook",
+        "memoriaCanTFindThatEntryTo": "Entry not found",
+        "memoriaIsAlreadyBusyWithA": "A {busyKind} task is in progress",
+        "memoriaCanTRegenerateInheritedChapters": "Inherited chapters can''t be regenerated",
+        "memoriaCanTRegenerateAGhostChapter": "File the ghost chapter before regenerating it",
+        "memoriaHasNoArcSourcesToRegenerate": "No source arcs to regenerate this volume",
+        "memoriaHasNoChapterSourcesToRegenerate": "No source chapters to regenerate this arc",
+        "memoriaHasNoMessagesToRegenerateThis": "No source messages to regenerate this chapter",
+        "theseMessagesAreBoundIntoReleaseOr": "These messages are bound into {blockerLabel}, release or delete it first",
+        "dryRunFailed": "Dry run failed: {text}",
+        "memoriaIsNotInTheMiddleOf": "No task to cancel",
+        "summaryRecallSavedEntriesUpdated": "Summary recall saved; {updated} entries updated.",
+        "waitForTheCurrentTaskToFinish": "Wait for the current task to finish before importing summaries",
+        "importingSummaries": "Importing summaries",
+        "memoriaFoundNoUsablePresetsInThat": "No usable presets in this file",
+        "memoriaImportedPreset": "Imported {length} preset{length, plural, one {} other {s}}",
+        "invalidPresetPayload": "Invalid preset payload.",
+        "memoriaIsBusyWaitForHerTo": "Wait for the current task to finish",
+        "memoriaSeededInheritedMemorBeforeTheGreeting": "Added {count} inherited memor{count, plural, one {y} other {ies}} before the greeting",
+        "memoriaRebuiltOntoInheritedMemorAndIs": "Added {count} inherited memor{count, plural, one {y} other {ies}}. Re-summarizing this chat.",
+        "memoriaWillLeaveMessageUntouched": "Excluded {length} message{length, plural, one {} other {s}} from compression",
+        "memoriaWillCompressMessageAgain": "Allowed compression for {length} message{length, plural, one {} other {s}}",
+        "memoriaTeachesTheCodexBeforeSheOpens": "Memoria teaches the Codex before she opens it, take her lesson first",
+        "enableTheCodexInTuningFirst": "Enable the Codex in Tuning first",
+        "acceptingCurrentCodexRecords": "Accepting current Codex records",
+        "clearStaleTags": "clear stale tags",
+        "memoriaIsUpdatingTheCodexRestoreAgain": "Codex update in progress. Wait before restoring.",
+        "memoriaCouldnTRestoreThatBackup": "Couldn''t restore backup: {error}",
+        "memoriaCouldnTSyncTheCodexTo": "Couldn''t sync the Codex to the lorebook: {shortErrorText}",
+        "memoriaRestoredCodexFile": "Restored {length} Codex file{length, plural, one {} other {s}}",
+        "memoriaIsUpdatingTheCodexAbortThat": "Cancel the Codex update first",
+        "memoriaCouldnTCarryThatCodexOver": "Couldn''t copy Codex: {shortErrorText}",
+        "memoriaCarriedTheCodexOverSheWill": "Codex copied. Indexing will start from the beginning of this chat.",
+        "memoriaHasNoCodexSnapshotToUndo": "No Codex snapshot to restore",
+        "memoriaCouldnTUndo": "Couldn''t undo: {error}",
+        "memoriaRolledTheCodexBack": "Codex restored",
+        "unknownCodexFile": "Unknown Codex file \"{file}\".",
+        "memoriaIsUpdatingTheCodexSaveAgain": "Codex update in progress. Wait before saving.",
+        "thatIsNotValidJson": "Invalid JSON: {describeError}",
+        "validationFailed": "Validation failed: {errors0}{extra}",
+        "savedButCouldNotBeReadSo": "Saved, but couldn''t read {names}. Cross-file checks skipped.",
+        "savedWithDanglingReferenceToFixIn": "Saved with {length} dangling reference{length, plural, one {} other {s}}",
+        "memoriaSavedJson": "Saved {file}.json",
+        "memoriaIsClearingTheCodex": "Clearing Codex",
+        "memoriaCouldnTClearCodexFileTry": "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry.",
+        "memoriaCouldnTClearTheCodexLorebook": "Couldn''t clear Codex lorebook entries: {shortErrorText}",
+        "memoriaClearedTheCodexForThisChat": "Codex cleared",
+        "rebuildFiles": "rebuild files",
+        "memoriaClearedEntrFromTheShelf": "Cleared {removed} entr{removed, plural, one {y} other {ies}}",
+        "theShelfIsAlreadyEmpty": "Shelf is empty",
+        "memoriaClearedEntrAndIsReSummarizing": "Cleared {removed} entr{removed, plural, one {y} other {ies}}. Re-summarizing this chat."
+      },
+      "handleExternalEntryDeletion": {
+        "memoriaUnhidMessageAfterAnExternalLorebook": "Unhid {unhidden} message{unhidden, plural, one {} other {s}} after a lorebook change"
+      },
+      "msg": {
+        "memoriaHasNoChaptersLeftToRetry": "No chapters left to retry the arc"
+      },
+      "retryLastFailure": {
+        "nothingToRetryYetMemoriaWillCatch": "Nothing to retry. Waiting for the next message."
+      },
+      "syncProfileSettings": {
+        "profileSavedButCodexInjectionSettingsCould": "Profile saved. Codex injection sync failed for {length} chat(s): {join}. Fix the errors, then reapply settings.",
+        "profileSavedButCodexInjectionSettingsCould2": "Profile saved. Codex injection sync failed: {describeError}"
+      },
+      "next": {
+        "newProfile": "New profile"
+      },
+      "blockerLabel": {
+        "aVolume": "a volume",
+        "anArc": "an arc",
+        "anotherEntry": "another entry"
+      },
+      "text": {
+        "memoriaSShelfIsAlreadyAlignedNya": "Message visibility is up to date",
+        "memoriaResyncedMessageHiddenUnhidden": "Resynced {total} message{total, plural, one {} other {s}} ({hidden} hidden, {unhidden} unhidden)",
+        "thisChatAlreadyHasMemoriesUseRebuild": "This chat has summaries. Use Rebuild.",
+        "thatChatHasNoMemoriesToInherit": "Source chat has no summaries to inherit",
+        "memoriaIsAlreadyRebasingThisChat": "Rebase in progress",
+        "memoriaCanTRebaseAChatOnto": "Choose a different chat to rebase from",
+        "memoriaIsAlreadyRebuildingThisChat": "Rebuild in progress",
+        "memoriaCanTRebuildAChatOnto": "Choose a different chat to rebuild from",
+        "thisChatAlreadyHasACodexWipe": "Wipe this chat''s Codex first",
+        "thatChatHasNoCodexToCarry": "Source chat has no Codex to copy",
+        "memoriaCanTCarryACodexOnto": "Choose a different chat to copy the Codex from",
+        "thisChatHasNoInheritedMemoriesTo": "No inherited memories to detach",
+        "memoriaDetachedInheritedMemor": "Detached {removed} inherited memor{removed, plural, one {y} other {ies}}"
+      },
+      "extra": {
+        "more": " (+{length1} more)"
+      }
+    },
+    "injection": {
+      "label": {
+        "msgs": "{tierName} msgs {firstIdx1}-{lastIdx1}"
+      },
+      "buildInjection": {
+        "memoriaCouldnTReadTheChatAnd": "Couldn''t read the chat. Summary injection skipped.",
+        "memoriaCouldnTFindTheChatHistory": "Chat history wasn''t found in the prompt. Summary injection skipped."
+      }
+    },
+    "lessons": {
+      "loadFromDisk": {
+        "memoriaCouldnTReadHerLessonRegister": "Memoria couldn''t read her lesson register and unsealed the archive: {describeError}"
+      },
+      "mutateLessons": {
+        "memoriaCouldnTReadHerLessonRegister": "Memoria couldn''t read her lesson register so this change is not saved to disk yet"
+      }
+    },
+    "memoria": {
+      "firePhrases": {
+        "memoriaStirsTheInkpotNyaa": "Creating chapter…",
+        "memoriaIsShelvingThisSceneHushA": "Creating chapter…",
+        "memoriaFlicksHerTailAndStartsWriting": "Creating chapter…",
+        "memoriaOpensAFreshPageForYou": "Creating chapter…",
+        "memoriaPadsOffToCompressThisIn": "Creating chapter…"
+      },
+      "retryPhrases": {
+        "memoriaTrippedOnAQuillTryingAgain": "Retrying…",
+        "memoriaSInkSmudgedOneMoreTry": "Retrying…",
+        "memoriaReshufflesTheIndexCardsRetrying": "Retrying…"
+      },
+      "successPhrases": {
+        "memoriaSlidTheChapterOntoYourShelf": "Chapter created",
+        "memoriaFiledItNeatlyBetweenTheOthers": "Chapter created",
+        "memoriaStampedTheSpineAllYours": "Chapter created",
+        "memoriaPurrsThePageIsDone": "Chapter created",
+        "memoriaTapsTheChapterIntoPlace": "Chapter created"
+      },
+      "arcFirePhrases": {
+        "memoriaGathersTheChaptersForAnArc": "Creating arc…",
+        "memoriaIsBindingSeveralChaptersTogether": "Creating arc…"
+      },
+      "arcSuccessPhrases": {
+        "memoriaBoundTheArcAndPressedIt": "Arc created",
+        "memoriaStitchedTheSpineOfANew": "Arc created"
+      },
+      "volumeFirePhrases": {
+        "memoriaIsPressingAWholeVolumeTogether": "Creating volume…"
+      },
+      "volumeSuccessPhrases": {
+        "memoriaEmbossedTheSpineOfANew": "Volume created"
+      },
+      "pickPhrase": {
+        "memoriaNyaa": "Done"
+      }
+    },
+    "pipeline": {
+      "changedSources": {
+        "summarySourcesChangedDiscardThisResultAnd": "Summary sources changed. Discard and regenerate."
+      },
+      "registerPipelineCallbacks": {
+        "busyStatus": "busy status",
+        "streamViewer": "stream viewer"
+      },
+      "busyPhrases": {
+        "memoriaIsFilingAChapter": "Creating chapter",
+        "memoriaIsWritingAChapter": "Writing chapter",
+        "memoriaIsBindingAnArc": "Creating arc",
+        "memoriaIsPressingAVolume": "Creating volume",
+        "memoriaIsBindingASeries": "Creating series",
+        "memoriaIsBindingASaga": "Creating saga",
+        "memoriaIsBindingALibrary": "Creating library",
+        "memoriaIsBindingAUniverse": "Creating universe",
+        "memoriaIsUpdatingTheCodex": "Updating Codex"
+      },
+      "formatBusyLabel": {
+        "memoriaIsThinkingT": "Reasoning (~{thinkTokens}t, {t})",
+        "tWrittenTThought": "{writing} (~{tokens}t output, ~{thinkTokens}t reasoning, {t})"
+      },
+      "capStreamPart": {
+        "earlierOutputTrimmed": "[...earlier output trimmed...]\n{slice}"
+      },
+      "noun": {
+        "bindTheArc": "create arc",
+        "pressTheVolume": "create volume",
+        "fileTheChapter": "create chapter"
+      },
+      "failToast": {
+        "memoriaCouldnT": "Couldn''t {noun}: {shortErrorText}"
+      },
+      "createChapterAuto": {
+        "memoriaIsFilingAChapter": "Creating chapter"
+      },
+      "createChapterFromRange": {
+        "memoriaIsFilingAChapter": "Creating chapter"
+      },
+      "runChapter": {
+        "memoriaSetsThePenDown": "Summary cancelled"
+      },
+      "commitChapter": {
+        "extraContextModeWasTurnedOffWhile": "Extra context mode was turned off during ghost chapter creation",
+        "thoseMessagesAreAlreadyStagedAsA": "These messages have a ghost chapter. It''ll file automatically.",
+        "allMessagesInThisWindowWereJust": "These messages were already summarized by another chapter"
+      },
+      "title": {
+        "chapterMsgs": "Chapter - msgs {firstIdx1}-{lastIdx1}"
+      },
+      "baseComment": {
+        "chapterMsgs": "Chapter - msgs {firstIdx1}-{lastIdx1}",
+        "arcMsgs": "Arc - msgs {firstIdx1}-{lastIdx1}",
+        "volumeMsgs": "Volume - msgs {firstIdx1}-{lastIdx1}"
+      },
+      "createArcFromChapters": {
+        "memoriaIsBindingAnArc": "Creating arc"
+      },
+      "runArc": {
+        "memoriaSetsThePenDown": "Summary cancelled"
+      },
+      "commitArc": {
+        "allSourceChaptersWereAlreadyBoundBy": "Source chapters were already bound or deleted",
+        "theArcSavedButChapterCouldnT": "Arc saved, but couldn''t mark {length} chapter{length, plural, one {} other {s}} as superseded"
+      },
+      "arcTitle": {
+        "inheritedArc": "Inherited Arc"
+      },
+      "comment": {
+        "arc": "{choice, select, yes {[Root] } other {}}Arc #{sceneNumber} - {baseComment}"
+      },
+      "createHigherFromEntries": {
+        "memoriaIsBindingA": "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}"
+      },
+      "runVolume": {
+        "memoriaSetsThePenDown": "Summary cancelled"
+      },
+      "commitVolume": {
+        "allSourceArcsWereAlreadyBoundBy": "Source arcs were already bound or deleted",
+        "theVolumeSavedButArcCouldnT": "Volume saved, but couldn''t mark {length} arc{length, plural, one {} other {s}} as superseded"
+      },
+      "volumeTitle": {
+        "inheritedVolume": "Inherited Volume"
+      },
+      "dryRunChapter": {
+        "chatHasNoMessages": "Chat has no messages",
+        "noWindowAvailableLowerTheLagOr": "No window available. Lower lag or window thresholds."
+      },
+      "dryRunArc": {
+        "noChaptersToBindYet": "No chapters to bind"
+      },
+      "dryRunVolume": {
+        "noArcsToPressYet": "No arcs to press"
+      },
+      "promoteGhostChapters": {
+        "memoriaShelvedGhostChapter": "Filed {length} ghost chapter{length, plural, one {} other {s}}"
+      },
+      "deriveTitle": {
+        "msgs": "{trim} (msgs {firstMsg}-{lastMsg})",
+        "msgs2": "{trimmed}{choice, select, yes {...} other {}} (msgs {firstMsg}-{lastMsg})",
+        "compressedMsgs": "Compressed - msgs {firstMsg}-{lastMsg}"
+      },
+      "preview": {
+        "chapterMsgs": "Chapter - msgs {firstIdx1}-{lastIdx1}",
+        "msgs": "{indexOf} - msgs {firstIdx1}-{lastIdx1}"
+      }
+    },
+    "presets": {
+      "builtinChapterPresets": {
+        "summary": "Summary",
+        "summarize": "Summarize",
+        "synopsis": "Synopsis",
+        "minimal": "Minimal"
+      },
+      "builtinArcPresets": {
+        "arc": "Arc"
+      },
+      "builtinVolumePresets": {
+        "volume": "Volume"
+      },
+      "builtinCodexPresets": {
+        "default": "Default"
+      }
+    },
+    "promptBreakdown": {
+      "loadPromptBreakdown": {
+        "thePromptPanelRequiresALumiverseUpdate": "Update Lumiverse to use the Prompt panel. Spindle''s prompt-breakdown API is required.",
+        "dryRunReturnedNoBreakdown": "Dry run returned no breakdown."
+      }
+    },
+    "rebase": {
+      "retireEntries": {
+        "someOldSummariesCouldNotBeRemoved": "Couldn''t remove or disable some old summaries. Refresh Books before retrying."
+      }
+    },
+    "runtime": {
+      "debug": {
+        "lmb": "[lmb:{slice}] {join}"
+      }
+    },
+    "shelfActions": {
+      "editSummaryEntry": {
+        "thisSummaryIsNoLongerAvailableTo": "Summary no longer available. Refresh Books."
+      },
+      "clearSummaryShelf": {
+        "removedSummariesButCouldNotBeDeleted": "Removed {removed} summaries; couldn''t delete {length}. Retry clearing before rebuilding."
+      },
+      "removeSummaryEntry": {
+        "aGhostChapterMustBeShelvedBefore": "File the ghost chapter before releasing it"
+      }
+    },
+    "storage": {
+      "flipped": {
+        "directives": "{hasName, select, yes {{name}} other {Profile}} directives"
+      }
+    },
+    "summarizer": {
+      "resolveConnection": {
+        "connectionHasNoModelSetPickOne": "Connection \"{id}\" has no model set, pick one in settings"
+      },
+      "messages": {
+        "abortedByUser": "Cancelled"
+      },
+      "assertRunning": {
+        "noTokenWithinSTheProviderMay": "No token within {firstTokenTimeoutMs1000}s, the provider may be slow or unreachable",
+        "theResponseDidNotFinishWithinS": "Response didn''t finish within {overallDeadlineMs1000}s"
+      },
+      "consumeGenerationStream": {
+        "theStreamEndedBeforeCompleting": "Stream ended before completion"
+      },
+      "resolveMacrosWithDiagnostics": {
+        "macroOffsetLength": "macro: {message} (offset {offset}, length {length})",
+        "macrosResolveFailed": "macros.resolve failed: {describeError}"
+      },
+      "assembleChapterPrompt": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "chapterPresetMissing": "Chapter preset missing",
+        "emptyTranscript": "Empty transcript",
+        "outgoingRegexAppliedScriptS": "Outgoing regex: {length} script(s)"
+      },
+      "diagnostics": {
+        "connection": "Connection: {name} ({provider}/{model})",
+        "windowMessageS": "Window: {length} message(s)",
+        "transcriptTokensModelTokenizer": "Transcript: {transcriptTokens} tokens (model tokenizer)",
+        "targetTokens": "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{chapterTargetUnitTokens}% of input} other {{chapterTargetPercent}% of input}})",
+        "targetWordsShownToModel": "Target words: {value}",
+        "previousMemoriesIncluded": "Previous summaries: {length}",
+        "opener": "Opener: {opener}",
+        "presetKey": "Preset key: {chapterPresetKey}",
+        "samplerParametersBeingSentOnTheWire": "Sampler parameters: {stringify}",
+        "sourceChapters": "Source chapters: {length}",
+        "concatenatedChapterBodyTokensModelTokenizer": "Source chapters: {bodyTokens} tokens (model tokenizer)",
+        "targetTokens2": "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{arcTargetUnitTokens}% of input} other {{arcTargetPercent}% of input}})",
+        "presetKey2": "Preset key: {arcPresetKey}",
+        "sourceArcs": "Source arcs: {length}",
+        "concatenatedArcBodyTokensModelTokenizer": "Source arcs: {bodyTokens} tokens (model tokenizer)",
+        "targetTokens3": "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{volumeTargetUnitTokens}% of input} other {{volumeTargetPercent}% of input}})",
+        "presetKey3": "Preset key: {volumePresetKey}"
+      },
+      "assembleArcPrompt": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "arcPresetMissing": "Arc preset missing",
+        "outgoingRegexAppliedScriptS": "Outgoing regex: {length} script(s)"
+      },
+      "assembleVolumePrompt": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "volumePresetMissing": "Volume preset missing",
+        "outgoingRegexAppliedScriptS": "Outgoing regex: {length} script(s)"
+      },
+      "summarizeVolume": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "volumePresetMissing": "Volume preset missing",
+        "emptyModelOutput": "Empty model output",
+        "theVolumeSummaryCameBackEmpty": "The model returned an empty volume summary"
+      },
+      "summarizeChapter": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "chapterPresetMissing": "Chapter preset missing",
+        "emptyTranscript": "Empty transcript",
+        "emptyModelOutput": "Empty model output",
+        "theSummaryCameBackEmpty": "The model returned an empty summary"
+      },
+      "summarizeArc": {
+        "noConnectionAvailableForMemoria": "No summary connection available",
+        "arcPresetMissing": "Arc preset missing",
+        "emptyModelOutput": "Empty model output",
+        "theArcSummaryCameBackEmpty": "The model returned an empty arc summary"
+      },
+      "parseSummaryJson": {
+        "theModelSJsonHadNoContent": "The model''s JSON had no content field",
+        "theModelDidnTReturnValidJson": "The model didn''t return valid JSON"
+      }
+    },
+    "summaryBackup": {
+      "summaryLorebook": {
+        "lumiBooksSummariesImportThroughBooksToRestore": "LumiBooks summaries. Import in Books to restore message coverage or use as inherited memories.",
+        "summary": "Summary {i1}"
+      },
+      "exportSummaryLorebook": {
+        "thereAreNoActiveSummariesToExport": "No active summaries to export",
+        "fetchingRawChatMessages": "Fetching raw chat messages…",
+        "lumiBooksSummaries": "LumiBooks summaries - {slice}"
+      },
+      "hashes": {
+        "hashingRawMessages": "Hashing raw messages… {done} / {length}"
+      },
+      "parseSummaryLorebook": {
+        "chooseALorebookJsonFileWithEntries": "Choose a lorebook JSON file with entries",
+        "theLorebookHasNoEntries": "The lorebook has no entries",
+        "theLorebookHasMoreThan10000": "The lorebook has more than 10,000 entries",
+        "invalidLorebookEntry": "Invalid lorebook entry",
+        "everyLorebookEntryNeedsTextContent": "Lorebook entries need text content",
+        "invalidSummaryCoverageIndices": "Invalid summary coverage indices",
+        "importedSummary": "Imported summary",
+        "theLorebookHasNoEnabledSummaries": "The lorebook has no enabled summaries"
+      },
+      "readSummaryImport": {
+        "theSummaryCoverageDoesNotMatchIts": "Summary coverage doesn''t match its fingerprint"
+      },
+      "commitImportedSummaries": {
+        "invalidDestinationCoverage": "Invalid destination coverage",
+        "thisImportContainsOverlappingSummaryCoverageResolve": "Summary ranges overlap. Fix them before importing.",
+        "someOfTheseMessagesAlreadyHaveSummaries": "Some messages already have summaries. Release them in Books before importing.",
+        "theChatChangedWhilePreparingTheImport": "Chat changed during import. Choose the file again.",
+        "importFailedAndSomeImportedSummariesCould": "Import failed. Some imported summaries couldn''t be removed; check Books before retrying."
+      }
+    },
+    "summaryMatching": {
+      "parseFingerprint": {
+        "invalidSummaryMessageFingerprint": "Invalid summary message fingerprint",
+        "theSummaryMessageFingerprintIsDamaged": "The summary message fingerprint is damaged"
+      }
+    },
+    "summaryTransfer": {
+      "runSummaryTransfer": {
+        "thisImportIsNoLongerAvailableChoose": "Import no longer available. Choose the file again.",
+        "importCancelled": "Import cancelled",
+        "readingSummaries": "Reading summaries…",
+        "preparingSummaryExport": "Preparing summary export…",
+        "readingRawChatMessages": "Reading raw chat messages…",
+        "summaryExportReady": "Summary export ready",
+        "enterAWholeMessageNumberFrom0": "Enter a whole message number from 0 to {length}.",
+        "importedSummaries": "Imported summaries",
+        "automaticMatchingWasIncompleteOrAmbiguousUp": "Matching was incomplete or ambiguous. Which message should coverage end at?",
+        "theContentOfThisChatIsDifferent": "This chat differs from the imported summary''s source. Try matching messages?",
+        "someOfTheseMessagesAlreadyHaveSummaries": "Some messages already have summaries. Release them in Books before importing.",
+        "theChatChangedWhilePreparingTheImport": "Chat changed during import. Which message should coverage end at?",
+        "savingImportedSummaries": "Saving imported summaries…",
+        "importedSummaries2": "Imported {length} summaries{choice, select, yes { covering {size} messages} other { as root memories}}"
+      },
+      "manual": {
+        "upUntilWhichMessageShouldTheseSummaries": "Which message should coverage end at?"
+      },
+      "computed": {
+        "comparingRawMessages": "Comparing raw messages… {done} / {length}"
+      }
+    },
+    "worldBook": {
+      "doEnsureBookForChat": {
+        "chatNotFoundForUser": "Chat {chatId} not found for user",
+        "memoriaReLinkedThisChatSNotebook": "Notebook link restored. Found {candidates} candidates; check for duplicate notebooks.",
+        "memoriaReLinkedThisChatSNotebook2": "Notebook link restored",
+        "memoriaCouldnTFindThisChatS": "Previous notebook not found. Created a notebook; older chapters may be in another."
+      },
+      "book": {
+        "memoriaSShelfForThisChatChapters": "LumiBooks chapters and arcs for this chat.",
+        "managedByLumiBooksThisBookMirrorsThe": "Managed by LumiBooks. Codex updates overwrite these lorebook entries. Edit records in LumiBooks > Codex."
+      },
+      "bindBookToChat": {
+        "theChatIsNoLongerAvailableIts": "Chat no longer available. Couldn''t attach its summary book."
+      },
+      "bindCodexBookToChat": {
+        "theChatIsNoLongerAvailableIts": "Chat no longer available. Couldn''t attach its Codex book."
+      },
+      "doEnsureCodexBookForChat": {
+        "chatNotFoundForUser": "Chat {chatId} not found for user"
+      }
+    }
+  },
+  "CodexTidy": {
+    "resolveTidyTarget": {
+      "enterAPositiveTokenLimitOrA": "Enter a positive token limit or a percentage between 0 and 100.",
+      "theTargetMustBeAtLeastOne": "The target must be at least one token."
+    }
+  },
+  "prompts": {
+    "Codex": {
+      "registry": {
+        "CodexTemplates": {
+          "entitySheetsRelationsTableOn": "Entity sheets (relations table on)",
+          "describesCharactersJsonLocationsJsonAndThings": "Entity schemas with the relations table enabled. Relationships go in relations.json. {schemaHowtoTail}",
+          "theEntityFilesActiveThisRunE": "the entity files active this run, e.g. characters.json / locations.json",
+          "entitySheetsRelationsTableOff": "Entity sheets (relations table off)",
+          "describesTheEntityFilesWhenTheRelations": "Entity schemas with the relations table disabled. Relationships go in sheet \"ties\". {schemaHowtoTail}",
+          "theEntityFilesActiveThisRun": "the entity files active this run",
+          "relationsTable": "Relations table",
+          "describesRelationsJsonAndTheCoverageRules": "Schema and coverage rules for relations.json. Sent when the relations table is enabled and unfrozen. {schemaHowtoTail}",
+          "timeline": "Timeline",
+          "describesTimelineJsonIncludingTheAppendOnly": "Schema for timeline.json. Normal updates can append events; the app enforces this. {schemaHowtoTail}",
+          "threads": "Threads",
+          "describesThreadsJsonResolvedThreadsAreArchived": "Schema for threads.json. Resolved threads are archived and hidden from the agent; this tells it not to re-add them. {schemaHowtoTail}",
+          "worldRules": "World rules",
+          "describesWorldJson": "Describes world.json. {schemaHowtoTail}",
+          "secrets": "Secrets",
+          "describesKnowledgeJsonTheValidatorRejectsItems": "Schema for knowledge.json. Items need knownBy, hiddenFrom, or falseBeliefs to pass validation. {schemaHowtoTail}",
+          "retrievalKeywords": "Retrieval keywords",
+          "theRulesForTheKeywordsListsOn": "Keyword rules for entities, lore, and secrets. Keywords control recall in Keywords mode and supplement vector recall. Too few can miss records; broad keywords can activate them too often. The app keeps up to 12 keywords, with up to two words per keyword.",
+          "patchRulesSetDropContent": "Patch rules (set / drop / content)",
+          "theSharedExplanationOfSetDropSeeds": "Patch rules for set, drop, seeds, and content, used by both protocols below. Keep these consistent with the app''s merge behavior.",
+          "protocolToolCalls": "Protocol (tool calls)",
+          "sentWhenTheProfileUsesToolCalls": "Tool-call protocol for batched updates. Keep the tool names Codex_write, Codex_skip, and Codex_done, and the requirement to write or skip the active records. Also defines <think> for models without native reasoning.",
+          "thePatchRulesTemplateAbove": "the patch rules template above",
+          "protocolToolCallsOneFileAtA": "Protocol (tool calls, one file at a time)",
+          "sentWhenTheProfileUsesToolCalls2": "Tool-call protocol for record-by-record updates. Uses the same tools and write-or-skip requirement as batched updates. Smaller replies reduce the risk of output being cut off.",
+          "protocolJsonMode": "Protocol (JSON mode)",
+          "sentWhenTheProfileWritesStrictJson": "JSON protocol for batched updates. Keep the \"writes\" array, \"skip\" list, and \"done\" flag, and the requirement to write or skip the active records.",
+          "protocolJsonModeOneFileAtA": "Protocol (JSON mode, one file at a time)",
+          "sentWhenTheProfileWritesStrictJson2": "JSON protocol for record-by-record updates. Uses the same reply structure and write-or-skip requirement as batched updates. Smaller replies reduce the risk of output being cut off.",
+          "taskClosingBlock": "Task closing block",
+          "theClosingBlockOfEveryNormalUpdate": "Closes update and catch-up prompts, after the story text. Restates the task''s three passes and reasoning instructions.",
+          "verificationNudge": "Verification nudge",
+          "sentAsAnExtraRoundAfterA": "Extra round after a successful update in Thorough mode. The app appends a closing instruction for the selected protocol.",
+          "tidyPass": "Tidy pass",
+          "theInstructionBlockForTidyUpThe": "Tidy instructions. The app appends target files, locks, current records, and a closing instruction.",
+          "refreshPass": "Refresh pass",
+          "sentWhenReEnabledRecordsCatchUp": "Catch-up instructions for re-enabled records. Requires complete file rewrites.",
+          "theFilesBeingRefreshed": "the files being refreshed",
+          "itOrTheyToMatchTheTarget": "\"it\" or \"they\" to match the target count",
+          "itLagsOrTheyLagToMatch": "\"it lags\" or \"they lag\" to match the target count",
+          "howTheStoryInputIsArrangedE": "story input format, e.g. summaries and raw messages",
+          "rebuildPass": "Rebuild pass",
+          "sentWhenACategorySRebuildButton": "Category rebuild instructions. Targets appear empty except for locked rows. Requires complete file rewrites. Files are replaced on success; the cursor stays unchanged.",
+          "theFilesBeingRebuilt": "the files being rebuilt",
+          "howTheStoryInputIsArranged": "how the story input is arranged",
+          "reconcileSweep": "Reconcile sweep",
+          "sentWhenMessagesWereDeletedBehindThe": "Sent after message deletions when no new messages remain. Checks existing claims against the remaining story.",
+          "fastCatchUp": "Fast catch-up",
+          "thePreambleForEachFastCatchUp": "Introduces fast catch-up batches, which use chapter summaries instead of raw messages.",
+          "theMessageRangeThisBatchCovers": "the message range this batch covers",
+          "ultraCatchUp": "Ultra catch-up",
+          "thePreambleForTheSinglePassUltra": "Introduces ultra catch-up: a pass over filed summaries and recent raw messages.",
+          "theMessageRangeCovered": "the message range covered",
+          "partialViewGuard": "Partial view guard",
+          "prependedToEveryNormalUpdateTheAgent": "Tells the agent it sees part of the story. Prevents changes based on information missing from that window.",
+          "reconcileWarning": "Reconcile warning",
+          "prependedWhenEditsOrDeletionsWereDetected": "Flags existing records for review after edits or deletions behind the Codex cursor.",
+          "migrationToRelationsTable": "Migration to relations table",
+          "prependedOnTheFirstRunAfterThe": "Sent after enabling the relations table. Keep the migration instruction; the app checks the result.",
+          "migrationToInlineTies": "Migration to inline ties",
+          "prependedOnTheFirstRunAfterThe2": "Sent after disabling the relations table.",
+          "repairWarning": "Repair warning",
+          "prependedWhenFilesOnDiskWereUnreadable": "Sent when unreadable files are shown as empty.",
+          "theUnreadableFiles": "the unreadable files",
+          "lockedEntities": "Locked entities",
+          "prependedWhenEntitiesAreLockedTheApp": "Identifies locked entities. The app also rejects changes to them.",
+          "theLockedEntityIds": "the locked entity ids",
+          "lockedFields": "Locked fields",
+          "prependedWhenIndividualFieldsAreLockedOn": "Identifies locked fields. The agent sees \"Locked, do not edit\" in place of their values. The app restores those values on writes.",
+          "theEntitiesCarryingLockedFields": "the entities carrying locked fields"
+        },
+        "schemaHowtoTail": "Keep the JSON structure consistent with the validator or writes will fail. Guidance can be reworded."
+      }
+    }
+  },
+  "shared": {
+    "tierNames": {
+      "chapter": "Chapter",
+      "arc": "Arc",
+      "volume": "Volume",
+      "series": "Series",
+      "saga": "Saga",
+      "library": "Library",
+      "universe": "Universe"
+    },
+    "defaultSettings": {
+      "default": "Default"
+    },
+    "normalizeSettings": {
+      "default": "Default"
+    },
+    "base": {
+      "untitled": "Untitled"
+    },
+    "CodexBookNameFor": {
+      "CodexDoNotEdit": "{worldBookNamePrefix} Codex [Do Not Edit] - {suffix}"
+    },
+    "lessonGradeLabel": {
+      "gilded": "Gilded",
+      "silver": "Silver",
+      "bronze": "Bronze",
+      "apprentice": "Apprentice"
+    },
+    "summaryKindTag": "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} Codex {Codex} other {{kind}}}"
+  },
+  "ui": {
+    "activationControl": {
+      "activationControl": {
+        "always": "Always",
+        "keywords": "Keywords",
+        "vectorKeywords": "Vector + keywords"
+      },
+      "vectorSetupHint": {
+        "vectorRecallNeedsATestedEmbeddingConnection": "Requires a tested embedding connection and lorebook vectorization in Lumiverse. Indexing runs in the background using its configured provider. Falls back to keywords until ready or if retrieval fails."
+      }
+    },
+    "app": {
+      "tab": {
+        "lumiBooks": "LumiBooks",
+        "books": "Books",
+        "memoriaFilesYourChatIntoChaptersAnd": "Summarizes chats into chapters and arcs.",
+        "lumiBooks2": "lumi books"
+      },
+      "send": {
+        "preparingSummaryExport": "Preparing summary export…",
+        "checkingSummaryCoverage": "Checking summary coverage…"
+      },
+      "showLoadNotice": {
+        "retry": "Retry"
+      },
+      "requestState": {
+        "loadingLumiBooks": "Loading LumiBooks…",
+        "lumiBooksHasnTRespondedYouCanRetry": "LumiBooks hasn''t responded. Retry loading.",
+        "couldNotLoadLumiBooks": "Couldn''t load LumiBooks: {string}"
+      },
+      "doRender": {
+        "lumiBooksCouldnTDisplayThisViewRetry": "Couldn''t display this view. Retry to reload."
+      },
+      "unsub": {
+        "loadingLumiBooks": "Loading LumiBooks…",
+        "thisChatIsTakingLongerToLoad": "Loading is taking longer than usual. Wait or retry."
+      }
+    },
+    "CodexExtraFields": {
+      "applyExtraFields": {
+        "mustBeAValidNumber": "{key} must be a valid number."
+      }
+    },
+    "components": {
+      "multiSelect": {
+        "nothingToPick": "No options"
+      },
+      "searchField": {
+        "value": "×",
+        "clearSearch": "Clear search"
+      },
+      "relativeTime": {
+        "justNow": "just now",
+        "mAgo": "{m}m ago",
+        "hAgo": "{h}h ago",
+        "dAgo": "{floor}d ago"
+      },
+      "formatTokens": {
+        "thousands": "{value}k"
+      }
+    },
+    "continuity": {
+      "sec": {
+        "continuityRoot": "Continuity (root)"
+      }
+    },
+    "lessons": {
+      "contentBooks": {
+        "courseBooks": {
+          "theLibrarianSPrimer": "The Librarian''s Primer",
+          "whyMemoriaExists": "Why Memoria exists",
+          "goodMorningWhyDoIExistAs": "GOOD MORNING!! Why do I exist? As you roleplay, you''ll notice that chats that are very large can''t fit in model''s context. Old messages get clipped out, and your model will soon forget important information. How do we fix that?",
+          "beholdMeITakeYourOlderMessages": "BEHOLD, ME. I take your older messages, and compact chunks of them them into summaries called chapters. When there are too many summaries, I compact them into arcs, and then volumes. Each summary is injected in place of the messages it replaces, so your chat history timeline is preserved!",
+          "compactedMessagesAreHiddenSoYourLlm": "Compacted messages are hidden so your LLM reads my compact summary instead. And if you delete a chapter, the messages that it once hid unhide again.",
+          "afterICompactMessagesOfRange1": "After I compact messages of range 1-18 into a chapter, what does the LLM model see for that range?",
+          "bothTheSummaryAndTheOriginalMessages": "Both the summary and the original messages",
+          "nothingItSForgotten": "Nothing, it''s forgotten!",
+          "theChapterSummariesThereInstead": "The chapter summaries there instead",
+          "aLorebookEntryInTheWorldInfo": "A lorebook entry in the world-info section of the prompt",
+          "theSummariesReplaceTheMessagesInPlace": "The summaries replace the messages in place :)",
+          "theFirstFiling": "The first filing",
+          "thisIsAPracticeChatIMade": "This is a practice chat I made just for teaching you 😾. These highlighted buttons are my quick actions.",
+          "thisPracticeStoryHasPlentyOfOld": "This practice story has plenty of old messages ready to compact into summaries. Press the File chapter button and watch what happens.",
+          "boomTheStoryIsNowMoreCompact": "BOOM💣. The story is now more compact, the new summary chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
+          "importantThereSAutomationTooNowYou": "IMPORTANT. There''s automation too! Now you may ask the very important question of: when do I summarize on my own?? And I''ll graciously answer that very important question! That depends on exactly about TWO 2️⃣ settings. Consider: Uncompressed messages are large, but hold detailed info so we don''t want to compress them right away right? Therefore, first setting is what I call the \"lag\", 65 by default. This represents the number of most recent messages we leave uncompressed always! 🗿",
+          "theSecondSettingIsTheWindowWe": "The second setting is the \"window\" 🪟. We don''t want to summarize every single message individually, instead we probably want toi summarize like, 18, into one chapter! Turns out 18 is the default, what a coincidence! Once 18 old messages have piled up behind your lag, these two \"pills\" both say \"ready\", and I begin summarizing a chapter!",
+          "theDefaultValuesAreMadeFor200k": "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size. But I do reccomend keeping context at 200k. Unless you''re living in 2028 when LLMs are long context GODS (presumably).",
+          "fileAllFilesChaptersUntilTheLag": "\"File all\" files chapters until the lag is reached. Bind arc takes my oldest chapters and compresses them into one smaller summary called an arc. When work is waiting to be done, a little pill appears here telling you how much.",
+          "everythingIFileIsStoredInA": "Everything I file is stored in a lorebook created just for this chat, named after it. It appears the first time a chapter is filed.",
+          "normallyYouNeverNeedTheseButtonsWith": "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I''m busy or you switched me off >:(",
+          "70OldMessagesLag65Window18": "70 old messages · lag 65 · window 18",
+          "thesePillsSayLagReadyButWindow": "These pills say lag ready but window building, and I''m not filing. Why not?",
+          "theLagHasNotFilledUpYet": "The lag has not filled up yet",
+          "theChatHasNoLorebookYet": "The chat has no lorebook yet",
+          "70MessagesMinusThe65ProtectedBy": "70 messages minus the 65 protected by the lag leaves only 5, and a chapter needs 18",
+          "aChapterCanOnlyBeFiledAfter": "A chapter can only be filed after an arc exists",
+          "theWindowOnlyCountsMessagesOlderThan": "The window only counts messages older than the lag. 70 minus 65 is 5, short of 18. This is also when I''d notify you that your story needs more messages if you click file~",
+          "theDesk": "The desk",
+          "thisColoredBarIsTheSpineA": "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the Codex, that''s my second course (it''s really cool).",
+          "clickAnyColoredBlockAndILl": "Click any colored block and I''ll jump you straight to that chapter or arc on my shelf 🐰. Handy when you want to check what I wrote about a scene.",
+          "theListUnderItShowsTheSame": "The list under it shows the same picture in numbers: what my volumes, arcs, and chapters cost, plus the recent messages I haven''t touched yet.",
+          "theseTilesAreTheQuickSummaryFiled": "These tiles are the quick summary. Filed is how much of the chat I''ve compacted. Tail is the recent part I haven''t. Shelf counts everything I''ve made. The Codex tile belongs to my second course 🥷.",
+          "thePromptPanelShowsThePromptBreakdown": "The Prompt panel shows the prompt breakdown your last generation sent, split into groups. Simulate... simulates your next prompt (what a surprise). And if the prompt goes past 90% of the model''s limit, I warn you here. Bad things happen if you go past 100%... trust me 🤞",
+          "iWroteTooMuchThePreviousStep": "I wrote too much the previous step, so I''m continuing here. If you''re approaching 100%, turn down the lag! Anyways. While I write, a row like this appears. If you''re a creep 👾, watch lets you read my raw output live, thoughts included.",
+          "ifIFailEvenAfterRetryingThis": "If I fail even after retrying, this red box shows an error. Please read it.",
+          "arc154Msgs08kTokens": "ARC 1 · 54 msgs → 0.8k tokens",
+          "lookAtTheSpineTheArcBlock": "Look at the spine. The arc block at the far left covers 54 messages but is drawn as a thin sliver, while the uncompressed tail at the end takes most of the bar. Why?",
+          "witnessThePowerOfLumibooks": "WITNESS THE POWER OF LUMIBOOKS",
+          "newerStoryIsAlwaysDrawnBigger": "Newer story is always drawn bigger",
+          "theArcLostMostOfItsMessages": "The arc lost most of its messages",
+          "theBarShowsTimePassingNotSize": "The bar shows time passing, not size",
+          "theSpineIsACostMapThin": "The spine is a cost map. Thin blocks mean my awesome compression technology is working, the fat block are the uncompressed messages.",
+          "compressionIsRunningYetYourPromptIs": "Compression is running, yet your prompt is still huge. Which number here explains it?",
+          "theTailRecentMessagesAreUncompressedUntil": "The Tail, recent messages are uncompressed until they pass the lag+window",
+          "theFiledTileFilingGrowsThePrompt": "The Filed tile, filing grows the prompt",
+          "theShelfTileTooManyChapters": "The Shelf tile, too many chapters",
+          "theCodexTileEvenThoughYouDon": "The Codex tile, even though you don''t know what it is yet 🤥",
+          "theUncompressedTailIsUsuallyTheFat": "The uncompressed tail is usually the fat part of the prompt. If it doesn''t fit your context, lower the lag so I file closer to the present.",
+          "theShelf": "The Shelf",
+          "everythingIFileEndsUpOnMy": "Everything I file ends up on my Shelf. Let''s visit it. Tap the Books tab.",
+          "myShelf": "My shelf.",
+          "witnessMyShelfEverythingIVeFiled": "Witness my Shelf 😈. Everything I''ve filed for this chat lives here, sorted into volumes, arcs, and chapters.",
+          "entriesOpenWithAClickTapThe": "Entries open with a click. Tap the chapter called The Captain Asks Questions.",
+          "thereSTheWholeRecord": "There''s the whole record.",
+          "youLlSeeItsSizeBeforeAnd": "You''ll see its size before and after compacting, my little note, and four buttons. Edit rewrites the text. Regenerate throws the summary away and writes it again from the same messages. Release turns it into a normal lorebook entry that I stop managing. Delete removes it. Boring stuff 💤",
+          "fadedEntriesMeansAnArcOrVolume": "Faded entries means an arc or volume replaced them, like how chapters replace messages. Delete the arc and its chapters unhide again.",
+          "importantTheGhostTagMarksAChapter": "🚩IMPORTANT🚩 The GHOST tag marks a chapter I prepared early for Codex, but I don''t actually inject it or use it in the summaries yet until it passes the lag. My Codex course explains those. If you ask about this on Discord I will kill you.",
+          "youDeleteAnArcThatWasMade": "You delete an arc that was made from 3 chapters. What happens?",
+          "the3ChaptersUnhideAndInjectAgain": "The 3 chapters unhide and inject again, and the messages stay hidden",
+          "theChaptersAndAllTheirMessagesReturn": "The chapters and all their messages return to the prompt",
+          "the3ChaptersAreDeletedAlongWith": "The 3 chapters are deleted along with the arc",
+          "prolixTakesAShit": "Prolix takes a shit",
+          "deletingATierHandsTheJobBack": "Deleting a tier hands the job back down to the one below. The messages themselves only return when nothing covers them at all.",
+          "halfTheChaptersHereAreFadedAnd": "Half the chapters here are faded and labeled superseded. Did something break?",
+          "noAnArcReplacedThemTheyStay": "No, an arc replaced them, they stay stored while the arc speaks for those scenes",
+          "yesTheyFailedToSave": "Yes, they failed to save",
+          "yesTheirMessagesWereDeleted": "Yes, their messages were deleted",
+          "theyWereAccidentallyExcluded": "They were accidentally excluded",
+          "supersededIsNormalHousekeepingAfterAnArc": "Superseded is normal housekeeping after an arc binds. Delete the arc and those chapters wake up again.",
+          "whichOfTheseButtonsActuallyCallsThe": "Which of these buttons actually calls the AI model?",
+          "regenerate": "Regenerate",
+          "delete": "Delete",
+          "release": "Release",
+          "exclude": "Exclude",
+          "value": "🐌",
+          "composeManualControl": "Compose, manual control",
+          "anywayManualControlsNext": "Anyway. Manual controls next!",
+          "ready": "Ready?",
+          "theComposeTabIsManualModeFilter": "The Compose tab is manual mode. Filter or search these messages, tick the boxes, and shift-click (or long-press on a phone) to grab a whole range. A ✓ means already filed, a ⊘ means excluded.",
+          "compressFilesWhatYouSelectedIntoA": "Compress files what you selected into a chapter. Wow no way!",
+          "excludeProtectsMessagesFromMeCompletelyPerfect": "Exclude protects messages from me completely. Perfect for OOC notes or instructions that must stay word-for-word.",
+          "furtherDownYouCanPickChaptersTo": "Further down you can pick chapters to bind into an arc, and arcs to press into a volume. Volumes are the strongest compression. If you need more, you probably don''t.",
+          "whenIsExcludeTheRightToolInstead": "When is Exclude the right tool, instead of Delete?",
+          "whenAMessageMustStayInThe": "When a message must stay in the prompt word-for-word and never be summarized",
+          "whenYouWantAMessageGoneFrom": "When you want a message gone from the chat",
+          "whenAChapterCameOutBadly": "When a chapter came out badly",
+          "whenYouWishToDeceiveYourEnemy": "When you wish to deceive your enemy, and therefore, must deceive yourself 🐉",
+          "excludeKeepsTheMessageFromCompressionDelete": "Exclude keeps the message from compression. Delete removes it from the chat.",
+          "continuityAndRepair": "Continuity and repair",
+          "oneMoreIPromiseTapAdvanced": "ONE MORE I PROMISE. Tap Advanced.",
+          "theContinuityDesk": "The continuity desk.",
+          "continuityLetsANewChatInheritAn": "Continuity lets a new chat inherit an old chat''s memories. Rebase copies another chat''s chapters and arcs in as a frozen prologue, marked [Root], injected before your first message.",
+          "rebuildFromDeletesThisChatSOwn": "\"Rebuild from\"  deletes this chat''s own memories first, then starts over on top of the inherited ones. Detach removes inherited memories again. And if you branch a chat, the new branch inherits this.",
+          "maintenanceFixesThingsWhenTheShelfAnd": "Maintenance fixes things when the shelf and the chat disagree. Resync visibility unhides any message whose chapter no longer exists and re-hides the rest properly. Rebuild books wipes my work and re-summarizes the whole chat. Wipe books just wipes.",
+          "someRepairsIHandleMyselfDeleteOne": "Some repairs I handle myself. Delete one of my entries in the Lorebook drawer and I notice, unhide its messages, and toast you about it. If a chat''s lorebook link ever breaks, I try and re-link it. So don''t fuck with me >:)",
+          "youStartASequelChatItsShelf": "You start a sequel chat. Its shelf is empty, and you pick the old chat as a source. Rebase or Rebuild?",
+          "rebaseDuh": "Rebase, duh?",
+          "rebuildItIsAlwaysTheSaferOption": "Rebuild, it is always the safer option",
+          "neitherCopyTheEntriesOverByHand": "Neither, copy the entries over by hand like force of nature",
+          "detachFirstThenRebuild": "Detach first, then Rebuild",
+          "rebaseIsForFreshChatsRebuildIs": "Rebase is for fresh chats. Rebuild is for chats that already have their own memories that need replacing.",
+          "tuningThePress": "Tuning the press",
+          "okThisIsActuallyTheLastPart": "Ok this is ACTUALLY the last part. Tap the Tuning tab.",
+          "myDials": "My dials.",
+          "everythingIDoIsControlledByA": "Everything I do is controlled by a profile, and the active profile applies to all of your chats at once. The Extension checkbox is my master switch, off means I do nothing anywhere.",
+          "rightBelowSitsMyWritingDeskWhich": "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the Codex''s own connection and samplers, that''s my second course.",
+          "nextRoomTapSettings": "Next room. Tap Settings.",
+          "thePressRoom": "The press room.",
+          "thisIsThatWindowThingITold": "This is that window thing I told you about earlier! Change it here.",
+          "arcsCanBuildAutomaticallyAfterEnoughChapters": "Arcs can build automatically after enough chapters pile up, just like how chapters build after enough messages pile up.",
+          "andThisIsTheAutomationSettingI": "And this is the automation setting I talked about earlier too! Codex has its own, but do my second, shorter course for that one.",
+          "contextIsJustHowManyPreviousChapters": "Context is just how many previous chapters I read each time for, well, context. Some other boring stuff...",
+          "windowTokens18": "Window · tokens · 18",
+          "youSwitchTheWindowUnitFromMessages": "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
+          "chaptersOfAbout18MessagesSameAs": "Chapters of about 18 messages, same as before",
+          "idk": "Idk",
+          "youAskedMeToConvert18Messages": "You asked me to convert 18 messages into tokens",
+          "chaptersWillAutomaticallyFileAfterOnly18": "Chapters will automatically file after only ~18 tokens of story, about one sentence each. Uh oh. ",
+          "theUnitChangesWhatTheNumberMeans": "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands",
+          "lag10Messages": "Lag · 10 messages",
+          "youLowerTheLagFrom65Down": "You lower the lag from 65 down to 10. What changes?",
+          "iStartSummarizingMuchCloserToThe": "I start summarizing much closer to the present, only your 10 newest messages stay untouched",
+          "chaptersGetBigger": "Chapters get bigger",
+          "nothingUntilTheWindowAlsoChanges": "Nothing until the window also changes",
+          "iGoBackAndReSummarizeOld": "I go back and re-summarize old chapters",
+          "aSmallLagSavesMoreSpaceBut": "A small lag saves more space but summarizes your recent scenes sooner. Keep it just big enough for quality writing without hallucination.",
+          "window40TargetPercent4": "Window · 40 · Target percent · 4",
+          "youSetTheWindowTo40And": "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
+          "chaptersBecomeSmallerAndTheyCover40": "Chapters become smaller, and they cover 40 messages each.",
+          "chaptersBecomeSmallerAndMoreFrequent": "Chapters become smaller and more frequent",
+          "theSameTheRatioOnlyAffectsArcs": "The same, the ratio only affects arcs",
+          "unchangedUntilTheLagChangesToo": "Unchanged until the lag changes too",
+          "theWindowIsWhatGoesInThe": "The window is what goes in, the ratio is what comes out. 4% is wayy to aggresive compression, but it''s up to you in the end!",
+          "andTheLastPartOfTheSettings": "And the last part of the settings, tap Prompts.",
+          "myInstructions": "My instructions.",
+          "thePromptsPaneHoldsMyInstructionsFour": "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token.",
+          "memoriaCouldnTFileTheChapterThe": "Memoria couldn''t file the chapter: The model didn''t return valid JSON",
+          "everyOneOfMyChaptersFailsLike": "Every one of my chapters fails like this, even after retries. The most likely fix?",
+          "giveMeAStrongerModelOrA": "Give me a stronger model or a different connection",
+          "raiseTheLag": "Raise the lag",
+          "turnOffMessageHiding": "Turn off message hiding",
+          "lowerTheRetryCount": "Lower the retry count",
+          "retriesCannotFixAModelThatKeeps": "Retries cannot fix a model that keeps writing broken JSON. Also check that custom prompts or regex scripts are not mangling my output.",
+          "finalFuckingLee": "Final Fucking Lee",
+          "practiceIsOverThisIsYourReal": "Practice is over. This is your REAL ui.",
+          "ifYourChatAlreadyHasEnoughStory": "If your chat already has enough story, press File chapter for real and watch me work. If not, skip this, I''ll start on my own once it does.",
+          "aRealChapterFiledByYourOwn": "A real chapter, filed by your own hand!",
+          "myAutomationSwitchLivesInTuningTap": "My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
+          "thereSTheSwitch": "There''s the switch.",
+          "turnRunAutomationOnAndILl": "Turn Run automation on, and I''ll handle the filing myself after every message from now on.",
+          "automationIsOnILlTakeIt": "Automation is on. I''ll take it from here!",
+          "wellDoneMousepadHasLetMeKnow": "Well done! Mousepad has let me know, that they want to tell me to tell you that they are very proud of you for getting through this 🏆. Sign and take your diploma! The shorter Codex course is waiting whenever you''re curious :)"
+        }
+      },
+      "contentCodex": {
+        "courseCodex": {
+          "theArchivistSCodex": "The Archivist''s Codex",
+          "whyAStoryBible": "Why a story bible",
+          "summaryChaptersAreAGoodOutlineBut": "Summary chapters are a good outline. But if you compress a story enough you''ll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
+          "beholdTheKnowledgeCodexLetSWalk": "BEHOLD the Knowledge Codex 😎. Let''s walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
+          "thereItIs": "There it is.",
+          "eightRecordsMakeTheCodexCharactersLocations": "Eight records make the Codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
+          "yourCharacterCardSaysEliasHasA": "Your character card says Elias has a scar. It never comes up in the story, and the Codex never records it. Is that a bug?",
+          "noTheCodexOnlyRecordsWhatThe": "No. The Codex only records what the story itself mentions",
+          "yesTheCodexShouldCopyEverythingFrom": "Yes, the Codex should copy everything from the card",
+          "theCardHasToBeImportedInto": "The card has to be imported into the Codex first",
+          "theCodexOnlyTracksCharactersYouAdd": "The Codex only tracks characters you add by hand",
+          "iReadYourLoreAsReferenceFor": "I read your lore as reference for names and spellings, but copying it in would be duplicating information.",
+          "readingTheCodex": "Reading the Codex",
+          "theLineUpTopIsMyLedger": "The line up top is my ledger. It tells you whether a Codex exists, how many new messages I haven''t read yet, and when I last ran.",
+          "theseAreTheEverydayActionsUpdateNow": "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the Codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
+          "everyTileIsOneRecordItsCount": "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
+          "dashedMeansNotInjectedButStillUpdated": "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.🖱️🖱️🖱️🖱️",
+          "youFrozeRelations40MessagesAgoAnd": "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
+          "itSMarkedAsNeedingACatch": "It''s marked as needing a catch-up. A refresh does that from the summaries and recent messages",
+          "theGapFillsInAutomaticallyOnThe": "The gap fills in automatically on the next normal update",
+          "nothingCanRecoverTheMissedEventsExcept": "Nothing can recover the missed events except a full rebuild",
+          "tidyItTidyingReReadsTheMissed": "Tidy it, tidying re-reads the missed messages",
+          "myReadingPositionIsAlreadyPastThose": "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records.",
+          "rebuildCodexAndWipeCodexBothErase": "Rebuild Codex and Wipe Codex both erase everything. What is actually different afterward?",
+          "wipeHelpsLumiAgentWipeHerAss": "Wipe helps LumiAgent wipe her ass.",
+          "rebuildKeepsYourEntriesAndOnlyRewrites": "Rebuild keeps your entries and only rewrites the stale ones",
+          "wipeAlsoDeletesYourChaptersAndArcs": "Wipe also deletes your chapters and arcs",
+          "rebuildKeepsYourTileSettingsAndRemakes": "Rebuild keeps your tile settings and remakes the Codex from scratch, whereas wipe destroys it all.",
+          "bothEraseTheRecordsAndMyReading": "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive.",
+          "theRecordsHandsOn": "The records, hands on",
+          "tapEntitiesAndBehold": "Tap Entities and behold...",
+          "thePeoplePlacesAndThings": "The people, places, and things! 🌎",
+          "everyChipIsAnEntityClickOne": "Every \"chip\" is an entity. Click one to open its sheet. Poke around as much as you like.",
+          "iAddAndUpdateAllOfThese": "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it''s a good way to learn the interface now. Try it: click the + character chip, type a name, Mousepad maybe, then press Save on the sheet.",
+          "savedYourEditsAreCanonNowI": "Saved. Your edits are canon now, I read them as truth and build on them.",
+          "charElias": "char:elias",
+          "theStoryHasMovedOnEliasIsn": "The story has moved on, Elias isn''t hiding anymore, but his sheet still says \"hiding in the tannery loft\". What''s happening?",
+          "theAgentHasnTReadThatFar": "The agent hasn''t read that far yet. It catches up on its own.",
+          "theCodexIsBrokenDeleteTheExtension": "The Codex is broken, delete the extension",
+          "sheetsNeverChangeOnceWritten": "Sheets never change once written",
+          "youHaveToDeleteEliasAndRe": "You have to delete Elias and re-add him",
+          "theCodexUpdatesOnAScheduleSo": "The Codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
+          "charCaptain": "char:captain",
+          "considerTheCaptainLetSSayThat": "Consider the Captain. Let''s say that his character card describes him well. This means I don''t need him in the Codex as well. See here how it says locked after 1 click? That''s bad! I won''t write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
+          "greatHeIsNoLongerUpdatedOr": "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!",
+          "letSExploreTheWorldWideWeb": "Let''s explore the world wide web. Tap Relations.",
+          "thisIsTheListView": "This is the list view.",
+          "iCreateTheseAndKeepTheseUpdated": "I create these and keep these updated on my own too, but again, we can edit them manually too. Let''s try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
+          "recorded": "Recorded!",
+          "youJustAddedARelationByHand": "You just added a relation by hand. Will my agent overwrite or delete your work on its next pass?",
+          "noYourEditsBecomePartOfThe": "No. Your edits become part of the record, the agent builds on them and only rewrites what the story contradicts",
+          "yesTheAgentRewritesEverythingFromScratch": "Yes, the agent rewrites everything from scratch each pass",
+          "yesUnlessYouFreezeTheRelationsTile": "Yes, unless you freeze the Relations tile first",
+          "handEditsOnlySurviveWhileTheRelations": "Hand edits only survive while the relations table is off",
+          "theAgentAlwaysStartsFromTheCurrent": "The agent always starts from the current records, so your corrections are canon it preserves. Freezing is only for stopping updates entirely.",
+          "tapGraph": "Tap Graph.",
+          "thereSYourWebARealStory": "There''s your web. A real story will look much more complex.",
+          "thisIsTheWebForThisSmall": "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
+          "theAgentAndItsDials": "The agent and its dials",
+          "lastStopMyRulesOpenTheTuning": "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
+          "myDials": "My dials.",
+          "myCodexSettingsLiveHereByDefault": "My Codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
+          "CodexLag65": "Codex lag · 65",
+          "youRaiseTheCodexLagFrom6": "You raise the Codex lag from 6 up to 65, same as the chapter lag. What changes?",
+          "theBibleAlwaysRuns65MessagesBehind": "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
+          "nothingTheLagOnlyAffectsChapters": "Nothing, the lag only affects chapters",
+          "theCodexGetsCheaperWithNoDownside": "The Codex gets cheaper with no downside",
+          "theAgentRunsMoreOften": "The agent runs more often",
+          "chaptersActAsReplacementsOfOldMessages": "Chapters act as replacements of old messages, where the Codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
+          "twoMoreThingsRelationsTableOffMoves": "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
+          "oneMoreThingEditAnyRecordWhenever": "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was Codex-recorded, my next run notices, rewinds, and corrects the Codex.",
+          "memoriaCouldnTUpdateTheCodexThe": "Memoria couldn''t update the Codex: The Codex agent narrated instead of calling tools, check that the connection supports tool calls",
+          "everyCodexRunFailsWithThisWhat": "Every Codex run fails with this. What is the most likely cause?",
+          "theCodexModelCannotMakeToolCalls": "The Codex model cannot make tool calls, pick one that can under Codex connection",
+          "theChatIsTooLong": "The chat is too long",
+          "aCodexFileIsCorrupted": "A Codex file is corrupted",
+          "theRelationsTableIsOff": "The Relations table is off",
+          "withUseToolCallsOnTheAgent": "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the Codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
+          "withExtraContextModeOnAChapter": "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn''t in the prompt. Is something wrong?",
+          "noItSAChapterWrittenEarly": "No. It''s a chapter written early to feed the Codex, but isn''t used before summary lag!",
+          "pleaseReadThisOneCarefullyOrMousepad": "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD",
+          "yesItSCorruptedDeleteItAnd": "Yes, it''s corrupted, delete it and resync",
+          "itSADraftWaitingForYour": "It''s a draft waiting for your approval",
+          "ghostsGiveTheCodexContextEarlyAnd": "Ghosts give the Codex context early, and are eventually turned into real summaries later down the line. ",
+          "openingCeremony": "Opening ceremony",
+          "practiceIsOverThisIsYourReal": "Practice is over, this is your real archive. Walk to your own Codex pane: the Tuning tab, then Settings, then its Codex side.",
+          "alreadyThereGood": "Already there. Good.",
+          "flipEnableCodexOnTheDefaultSettings": "Flip Enable Codex on. The default settings below suit most chats.",
+          "enabledFromNowOnIKeepYour": "Enabled! From now on I keep your story bible current after every message.",
+          "homeHasAnUpdateCodexButtonNow": "Home has an Update Codex button now. Let''s go find it. Tap Home.",
+          "pressItAndILlReadThis": "Press it and I''ll read this chat right away, or skip and I''ll do it later!",
+          "readingWatchTheBusyRowOnHome": "Reading! Watch the busy row on Home if you want to see me think.",
+          "thatSAllGoForthAndMake": "That''s all, go forth and make some awesome stories!✨"
+        }
+      },
+      "diagrams": {
+        "diagramRot": {
+          "theContextWindow": "the context window"
+        },
+        "caption": {
+          "newTurnsPushInTheOldestGet": "new turns push in, the oldest get clipped out",
+          "thePlotSurvivesTheStructuredFactsThin": "the plot survives, the structured facts thin out"
+        },
+        "diagramFold": {
+          "yourChatHistory": "your chat history"
+        },
+        "states": {
+          "oldMessagesPileUp": "old messages pile up…",
+          "ch1": "CH 1",
+          "theOldestFoldIntoAChapterIn": "…the oldest fold into a chapter, in place…",
+          "ch2": "CH 2",
+          "thenTheNextWindowFolds": "…then the next window folds…",
+          "arc1": "ARC 1",
+          "andChaptersBindIntoASingleArc": "…and chapters bind into a single arc."
+        },
+        "diagramUnfold": {
+          "theShelf": "the shelf"
+        },
+        "filed": {
+          "ch3": "CH 3",
+          "aChapterCoversMessages3754They": "a chapter covers messages 37-54, they ride hidden"
+        },
+        "deleted": {
+          "deleteItAndTheMessagesComeRight": "delete it and the messages come right back"
+        },
+        "fadeChips": {
+          "eliasMaraLovesHerHidesIt": "Elias → Mara: loves her, hides it",
+          "captainWronglyBelievesBandits": "captain wrongly believes: bandits",
+          "day12SheSawTheFall": "day 12: she saw the fall",
+          "openThreadTheReceipt": "open thread: the receipt"
+        },
+        "diagramFade": {
+          "oneSummaryCompressedAgainAndAgain": "one summary, compressed again and again",
+          "arc": "arc",
+          "volume": "volume",
+          "withACodex": "with a Codex",
+          "theCodexTracksThemExplicitlyOutsideThe": "the Codex tracks them explicitly, outside the summaries"
+        },
+        "tier": {
+          "chapter": "chapter"
+        },
+        "reset": {
+          "chapter": "chapter",
+          "thePlotSurvivesTheStructuredFactsThin": "the plot survives, the structured facts thin out"
+        }
+      },
+      "diploma": {
+        "gradeRemark": {
+          "notAPageOutOfPlaceMy": "Not a page out of place. My favorite reader, nyaa.",
+          "nearlyFlawlessFilingTheShelfApproves": "Nearly flawless filing. The shelf approves.",
+          "aSolidApprenticeshipTheStacksWillTeach": "A solid apprenticeship. The stacks will teach the rest.",
+          "theLibraryForgivesRetakeASectionWhenever": "The library forgives. Retake a section whenever you like."
+        },
+        "renderRegister": {
+          "signTheRegister": "Sign the register",
+          "theNameGoesOnYourDiploma": "The name goes on your diploma."
+        },
+        "input": {
+          "reader": "Reader"
+        },
+        "sign": {
+          "sign": "Sign",
+          "reader": "Reader"
+        },
+        "renderDiploma": {
+          "lumibooksAcademy": "LUMIBOOKS ACADEMY",
+          "certifiesThat": "certifies that",
+          "hasReadTheStacksAndUnderstoodThem": "has read the stacks and understood them",
+          "ofGoldStamps": "{gold} of {total} gold stamps · {toLocaleDateString}",
+          "saveAsImage": "Save as image",
+          "prefersReducedMotionReduce": "(prefers-reduced-motion: reduce)"
+        },
+        "makeConfetti": {
+          "value": "◆"
+        },
+        "downloadDiploma": {
+          "lUMIBOO": "L U M I B O O K S   A C A D E M Y",
+          "certifiesThat": "certifies that",
+          "hasReadTheStacksAndUnderstoodThem": "has read the stacks and understood them",
+          "ofGoldStamps": "{gold} of {total} gold stamps · {toLocaleDateString}",
+          "memoriaLibrarian": "— Memoria, Librarian"
+        }
+      },
+      "engine": {
+        "buildStage": {
+          "exam": "{title} · Exam",
+          "value": "✕",
+          "leaveTheExamAnUnfinishedExamIs": "Leave the exam, an unfinished exam is not saved",
+          "leaveAnytimeYourDiplomaAndPreviousGrade": "Leave anytime, your diploma and previous grade stand",
+          "leaveTheLessonProgressIsSaved": "Leave the lesson, progress is saved",
+          "leaveTheLesson": "Leave the lesson",
+          "collapseTheDialogue": "Collapse the dialogue"
+        },
+        "renderRail": {
+          "questionOf": "Question {examIdx1} of {length}"
+        },
+        "table": {
+          "ix": "IX",
+          "iv": "IV"
+        },
+        "makeSandboxSend": {
+          "memoriaSavedJson": "Memoria saved {file}.json"
+        },
+        "runDoScript": {
+          "memoriaIsFilingAChapter1s": "Memoria is filing a chapter (1s)",
+          "memoriaOpensAFreshPageForYou": "Memoria opens a fresh page for you, nya",
+          "memoriaSlidTheChapterOntoYourShelf": "Memoria slid the chapter onto your shelf, nyaa~",
+          "memoriaSavedJson": "Memoria saved {file}.json"
+        },
+        "renderDemoFor": {
+          "noChatIsOpenRightNowSkip": "No chat is open right now, skip this step."
+        },
+        "renderCover": {
+          "value": "◆ ◇ ◆"
+        },
+        "positionSpotlight": {
+          "value": "◆ {chip}"
+        },
+        "renderStep": {
+          "signTheRegister": "Sign the register"
+        },
+        "renderSheet": {
+          "rightWhereWeNeedToBe": "Right where we need to be.",
+          "back": "Back",
+          "skip": "Skip",
+          "yourMove": "your move…",
+          "next": "Next",
+          "working": "working…"
+        },
+        "renderQuiz": {
+          "alreadyStampedGoldFromTheExamOr": "Already stamped gold, from the exam or an earlier pass.",
+          "answeredOnAnEarlierPass": "Answered on an earlier pass.",
+          "back": "Back",
+          "next": "Next",
+          "filed": "Filed! ◆",
+          "notQuite": "Not quite.",
+          "continue": "Continue",
+          "skipMarkForRevisit": "Skip, mark for revisit",
+          "holdToPeekAtThePane": "Hold to peek at the pane"
+        },
+        "finishExam": {
+          "ofThePassedTopicsStayStampedWhile": "{correct} of {length}, the passed topics stay stamped while we walk the rest"
+        },
+        "renderStepExamPass": {
+          "signTheRegister": "Sign the register"
+        },
+        "data": {
+          "reader": "Reader"
+        },
+        "renderDiplomaPhase": {
+          "enterTheArchive": "Enter the Archive",
+          "openTheCodex": "Open the Codex",
+          "close": "Close",
+          "yourDiplomaAsFiledInTheAcademy": "Your diploma, as filed in the Academy.",
+          "signedStampedAndShelvedCongratulationsNyaa": "Signed, stamped, and shelved. Congratulations, nyaa."
+        }
+      },
+      "fixture": {
+        "lines": {
+          "theRainHadNotLetUpSince": "The rain had not let up since the duke''s carriage was found empty on the north road.",
+          "eliasPressedTheSilverLocketIntoHis": "Elias pressed the silver locket into his palm until the clasp bit skin.",
+          "youWereThereMaraSaidQuietlyNot": "\"You were there,\" Mara said quietly, not looking up from her stitching.",
+          "theCaptainSMenWentDoorTo": "The captain''s men went door to door along Wren Street before dawn.",
+          "iKeepMyVoiceLevelAndAsk": "I keep my voice level and ask what the pawnbroker wanted for his silence.",
+          "ashfordManorStoodDarkExceptForA": "Ashford Manor stood dark except for a single lamp in the study window.",
+          "banditsTheCaptainRepeatedWritingItDown": "\"Bandits,\" the captain repeated, writing it down like he believed it.",
+          "maraFoldedTheReceiptIntoTheHem": "Mara folded the receipt into the hem of her sleeve and said nothing.",
+          "theBellsRangForTheDukeAt": "The bells rang for the duke at noon, and half the city wore borrowed black.",
+          "eliasSleptInTheLoftAboveThe": "Elias slept in the loft above the tannery and dreamed of the study door.",
+          "ifTheyFindTheLocketTheyFind": "\"If they find the locket, they find you,\" she whispered on the bridge.",
+          "theFerrymanSScarCaughtTheLight": "The ferryman''s scar caught the light when he took my coin."
+        },
+        "makeMeta": {
+          "msgs": "{title} (msgs {first1}-{last1})"
+        },
+        "tag": {
+          "vol": "Vol",
+          "arc": "Arc"
+        },
+        "comment": {
+          "msgs": "#{n} - {title} (msgs {first1}-{last1})",
+          "msgs2": "{tag} #{n} - {title} (msgs {first1}-{last1})"
+        },
+        "ch": {
+          "theDukeFalls": "The Duke Falls",
+          "1stSummaryChapterContaining18PriorTurns": "1st Summary Chapter Containing 18 Prior Turns\n\nDay 3. The Duke of Ashford is found dead in his study. Elias, the duke''s valet, flees through the servant stair carrying the silver locket. Mara sees him cross the yard with blood on his cuff and says nothing. The city watch seals the manor by nightfall.",
+          "neatlyFiledOneNefariousNightOnThe": "Neatly filed, one nefarious night on the shelf.",
+          "aSeamstressSSilence": "A Seamstress''s Silence",
+          "2ndSummaryChapterContaining18PriorTurns": "2nd Summary Chapter Containing 18 Prior Turns\n\nDay 5. The captain interviews the manor staff. Mara claims she saw bandits on the north road and is dismissed. Elias hides in the tannery loft and pays the pawnbroker to hold the locket. Mara keeps the pawnbroker''s receipt sewn into her sleeve.",
+          "secretsStitchedIntoASleeveSoTidy": "Secrets stitched into a sleeve, so tidy nya.",
+          "thePawnbrokerSReceipt": "The Pawnbroker''s Receipt",
+          "3rdSummaryChapterContaining18PriorTurns": "3rd Summary Chapter Containing 18 Prior Turns\n\nDay 8. The pawnbroker raises his price for silence. Elias and Mara meet on the bridge and argue about running. The captain announces the bandit theory publicly at the duke''s funeral while quietly reopening the staff interviews.",
+          "priceyPromisesPressedBetweenThePages": "Pricey promises pressed between the pages.",
+          "theCaptainAsksQuestions": "The Captain Asks Questions",
+          "4thSummaryChapterContaining18PriorTurns": "4th Summary Chapter Containing 18 Prior Turns\n\nDay 11. The captain searches the tannery district on a tip. Elias escapes over the rooftops but drops a glove with the manor''s crest. Mara burns her bloodied stitching and tells the captain she is leaving the city to mourn.",
+          "curiousCaptainsCollectSuchClumsyClues": "Curious captains collect such clumsy clues.",
+          "locketAtTheBridge": "Locket at the Bridge",
+          "5thSummaryChapterContaining18PriorTurns": "5th Summary Chapter Containing 18 Prior Turns\n\nDay 14. The pawnbroker sells the locket''s description to the captain. Elias buys it back with the last of his wages minutes before the watch arrives. On the bridge, Mara tells Elias she saw everything on day 3, and that she has kept the receipt as leverage of her own.",
+          "bridgesBearTheBestAndBoldestBargains": "Bridges bear the best and boldest bargains.",
+          "rooftopConfessions": "Rooftop Confessions",
+          "6thSummaryChapterContaining18PriorTurns": "6th Summary Chapter Containing 18 Prior Turns\n\nDay 16. Elias admits the killing was not planned: the duke caught him returning the locket Mara''s mother once pawned. The pair agree to frame the ferryman, then abandon the plan when Mara recognizes his scar.",
+          "ghostlyGossipGlidesInBeforeTheGlue": "Ghostly gossip glides in before the glue dries."
+        },
+        "arc1": {
+          "theMurderAtAshfordManor": "The Murder at Ashford Manor",
+          "1stSummaryArcContaining3PriorChapters": "1st Summary ARC Containing 3 Prior Chapters and 54 Prior Turns\n\nDays 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses silence over safety. The captain publicly blames bandits while privately doubting the staff. The pawnbroker becomes the hinge every secret turns on.",
+          "anArcOfAlibisBoundAndBeautifully": "An arc of alibis, bound and beautifully shelved."
+        },
+        "files": {
+          "elias": "Elias",
+          "theDukeSFormerValetFugitive": "the duke''s former valet, fugitive",
+          "hidingInTheTanneryLoft": "hiding in the tannery loft",
+          "quickOverRooftops": "quick over rooftops",
+          "keepTheLocket": "keep the locket",
+          "keepMaraOutOfIt": "keep Mara out of it",
+          "killedTheDukeOnDay3": "killed the duke on day 3",
+          "mara": "Mara",
+          "seamstressAtAshfordManor": "seamstress at Ashford Manor",
+          "publiclyMourningPrivatelyBargaining": "publicly mourning, privately bargaining",
+          "leverageOverElias": "leverage over Elias",
+          "leaveTheCity": "leave the city",
+          "theCaptain": "The Captain",
+          "leadsTheCityWatch": "leads the city watch",
+          "publiclyBacksTheBanditTheory": "publicly backs the bandit theory",
+          "reopenTheStaffInterviewsQuietly": "reopen the staff interviews quietly",
+          "ashfordManor": "Ashford Manor",
+          "theDukeSSeatSealedByThe": "the duke''s seat, sealed by the watch, dark except the study lamp",
+          "theBridge": "The Bridge",
+          "whereEliasAndMaraTradeTruths": "where Elias and Mara trade truths",
+          "theSilverLocket": "The Silver Locket",
+          "backInEliasSCoat": "back in Elias''s coat",
+          "tiesEliasToTheStudyOnDay": "ties Elias to the study on day 3",
+          "trustsHerWithHisLifeNotHis": "trusts her with his life, not his reasons",
+          "day3SheSawHimFlee": "day 3: she saw him flee",
+          "day14SheRevealedSheKeptThe": "day 14: she revealed she kept the receipt",
+          "carriesItEverywhereBoughtItBackTwice": "carries it everywhere, bought it back twice",
+          "doubtsHerBanditStoryLacksProof": "doubts her bandit story, lacks proof",
+          "silenceAboutTheMurderUneasySinceThe": "silence about the murder, uneasy since the bridge",
+          "day3": "day 3",
+          "theDukeOfAshfordIsKilledIn": "The Duke of Ashford is killed in his study",
+          "eliasFleesWithTheLocket": "Elias flees with the locket",
+          "day5": "day 5",
+          "maraTellsTheCaptainSheSawBandits": "Mara tells the captain she saw bandits",
+          "day8": "day 8",
+          "thePawnbrokerRaisesHisPriceForSilence": "The pawnbroker raises his price for silence",
+          "eliasRunsOutOfMoney": "Elias runs out of money",
+          "day11": "day 11",
+          "eliasEscapesTheTannerySearchDropsA": "Elias escapes the tannery search, drops a crested glove",
+          "day14": "day 14",
+          "maraRevealsSheKeptThePawnbrokerS": "Mara reveals she kept the pawnbroker''s receipt",
+          "theDukeSMurder": "The duke''s murder",
+          "theCaptainSBanditTheoryIsPublic": "The captain''s bandit theory is public cover while he reworks the staff interviews.",
+          "aCrestedGloveIsInTheWatch": "a crested glove is in the watch''s evidence box",
+          "thePawnbrokerKeptAReceipt": "the pawnbroker kept a receipt",
+          "leavingTheCity": "Leaving the city",
+          "maraWantsOutBeforeTheInterviewsResume": "Mara wants out before the interviews resume, Elias will not leave the locket.",
+          "unexplainedScarOnTheFerrymanSHand": "unexplained scar on the ferryman''s hand",
+          "theCityWatch": "The City Watch",
+          "answersToTheMagistrateNotTheCrown": "answers to the magistrate, not the crown",
+          "funeralCustomBarsArrestsDuringMourningBells": "funeral custom bars arrests during mourning bells",
+          "mourningCustoms": "Mourning customs",
+          "halfBlackWornForAWeekBy": "half-black worn for a week by anyone the deceased employed",
+          "eliasKilledTheDuke": "Elias killed the duke",
+          "banditsDidIt": "bandits did it",
+          "maraKeepsThePawnbrokerSReceiptSewn": "Mara keeps the pawnbroker''s receipt sewn in her sleeve",
+          "herLeverageIfEliasRunsAlone": "her leverage if Elias runs alone",
+          "human": "human",
+          "careful": "careful",
+          "sentimental": "sentimental",
+          "observant": "observant",
+          "steady": "steady",
+          "estate": "estate",
+          "landmark": "landmark",
+          "heirloom": "heirloom",
+          "bond": "bond",
+          "owns": "owns",
+          "suspects": "suspects",
+          "pact": "pact"
+        },
+        "profile": {
+          "default": "Default"
+        },
+        "buildFixture": {
+          "theAshfordCase": "The Ashford Case",
+          "elias": "Elias",
+          "lumiBooksTheAshfordCase": "LumiBooks - The Ashford Case",
+          "storyteller": "Storyteller",
+          "memoriaIsWritingAChapter13kt": "Memoria is writing a chapter (~1.3kt written, ~0.8kt thought, 24s)",
+          "noTokenWithin60sTheProviderMay": "No token within 60s, the provider may be slow or unreachable",
+          "theAshfordCaseVol1": "The Ashford Case, Vol. 1"
+        },
+        "fixtureBusyFiling": {
+          "memoriaIsFilingAChapter2s": "Memoria is filing a chapter (2s)"
+        }
+      },
+      "seal": {
+        "memoriaSprite": {
+          "memoria": "Memoria"
+        },
+        "runeButton": {
+          "value": "◆ ◇ ◆ ◇ ◆ ◇ ◆ ◇"
+        },
+        "renderSealPanel": {
+          "lessonsFromMemoria": "Lessons from Memoria",
+          "welcomeTutorial": "Welcome Tutorial",
+          "hiUserIMTeachingATutorial": "Hi user! I''m teaching a tutorial on LumiBooks, you''ll have to attend (˶ᵔ ᵕ ᵔ˶)",
+          "resumeTheLesson": "Resume the Lesson",
+          "takeLessonFromMemoria": "Take Lesson from Memoria",
+          "sitTheExam": "Sit the Exam",
+          "tenQuestionsFromTheCourse9Of": "Ten questions from the course. 9 of 10 graduates you.",
+          "skipForNow": "Skip for now",
+          "progressSavedAtSection": "Progress saved at section {sec}."
+        },
+        "renderGrumpySkip": {
+          "hmphFine": "Hmph. Fine.",
+          "skipIfYouMustButYouHad": "Skip if you must. But you had better not go asking my creator for help before taking my course (¬`‸´¬) A reminder will wait for you on Home.",
+          "fineTeachMe": "Fine, Teach Me",
+          "skipAnyway": "Skip anyway"
+        },
+        "updateSealBusy": {
+          "abort": "Abort",
+          "lastAttemptFailed": "Last {kind} attempt failed",
+          "retry": "Retry"
+        },
+        "previewTiles": {
+          "characters": "Characters",
+          "240Tokens": "~240 tokens",
+          "locations": "Locations",
+          "90Tokens": "~90 tokens",
+          "things": "Things",
+          "50Tokens": "~50 tokens",
+          "relations": "Relations",
+          "170Tokens": "~170 tokens",
+          "timeline": "Timeline",
+          "160Tokens": "~160 tokens",
+          "threads": "Threads",
+          "120Tokens": "~120 tokens",
+          "lore": "Lore",
+          "110Tokens": "~110 tokens",
+          "secrets": "Secrets"
+        },
+        "renderCodexTabLock": {
+          "example": "example",
+          "theKnowledgeCodex": "The Knowledge Codex",
+          "aStoryBibleAnAgentKeepsFor": "A story bible an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
+        },
+        "renderCodexPaneLock": {
+          "sealedUntilTheLesson": "Sealed until the lesson",
+          "theCodexSettingsUnlockWhenYouFinish": "The Codex settings unlock when you finish The Archivist''s Codex. The final step is flipping this very pane on."
+        },
+        "CodexSealCard": {
+          "takeALessonFromMemoria": "Take a Lesson from Memoria",
+          "skipForNow": "Skip for now"
+        },
+        "renderCodexGrumpySkip": {
+          "hmphFine": "Hmph. Fine.",
+          "skipIfYouMustTheCodexUnlocks": "Skip if you must (¬`‸´¬) The Codex unlocks, but the agent stays off until you enable it in Tuning. A reminder will wait for you on Home.",
+          "fineTeachMe": "Fine, Teach Me",
+          "skipAnyway": "Skip anyway"
+        }
+      }
+    },
+    "modals": {
+      "booksWarning": {
+        "thisChatHasNoFiledChaptersYet": "No filed chapters. Fast modes would read raw messages. Use Home > File all first.",
+        "theUnfiledTailOfThisChatIs": "Many messages remain unfiled. The final pass will still read them raw. Use Home > File all first."
+      },
+      "requestCodexUpdate": {
+        "messageAreWaitingAboutPassesAtThe": "{CodexBacklog0} message{CodexBacklog02, plural, one {} other {s}} waiting (~{CodexBacklogPasses} passes). Choose a catch-up mode."
+      },
+      "requestCodexRebuild": {
+        "rebuildTheCodex": "Rebuild the Codex",
+        "memoriaWillEraseTheStoryBibleAnd": "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
+      },
+      "requestCodexTidy": {
+        "tidyCodexToATargetSize": "Tidy Codex to a target size",
+        "currentSelectedContentTokensFrozenFilesAre": "Selected: {choice, select, yes {~} other {}}{toLocaleString} tokens. Excludes frozen files; keeps locked content.",
+        "targetUnit": "Target unit",
+        "percentageToKeep": "Percentage to keep",
+        "tokens": "Tokens",
+        "memoriaAims10BelowYourLimitChecks": "Targets 10% below your limit, with up to six model calls including repairs. Percentages set how much to keep: 50% targets 45%. Undo restores the original Codex. Locks or model output may prevent reaching the limit.",
+        "theTokenizerIsUnavailableForThisModel": " Tokenizer unavailable; sizes are estimates.",
+        "cancel": "Cancel"
+      },
+      "start": {
+        "startTidy": "Start tidy"
+      },
+      "refresh": {
+        "keepThisPercentage": "Keep this percentage",
+        "maximumTokens": "Maximum tokens",
+        "chooseATargetBelowTheCurrentSize": "Choose a target below the current size.",
+        "yourLimitTokensModelTargetWithMargin": "Limit: {toLocaleString} tokens. Model target: {toLocaleString2} tokens.",
+        "enterAValidTarget": "Enter a valid target."
+      },
+      "showCodexCatchupModal": {
+        "theCodexIsFarBehind": "Codex backlog",
+        "value": "×",
+        "close": "Close",
+        "automationIsOnSoFastAndUltra": "With automation on, fast modes update chapters and arcs first.",
+        "fastAndUltraFastNeedTheCodex": "Fast modes need a Codex context at least as large as the story model''s.",
+        "value2": "⚠ {booksWarning}",
+        "slow": "Slow",
+        "notRecommendedReplaysEveryRawMessageWindow": "Reads raw messages in windows. Can take hours.",
+        "fast": "Fast",
+        "replayTheFiledSummariesThenOneRaw": "Reads filed summaries, then remaining raw messages",
+        "ultraFast": "Ultra fast",
+        "oneSinglePassOverTheFiledSummaries": "Reads filed summaries and remaining raw messages in a pass"
+      },
+      "paragraphs": {
+        "ultraFastReadsTheStorySCurrent": "Reads summaries and remaining raw messages together. Fastest, with the least detail.",
+        "fastReplaysYourFiledChapterSummariesPass": "Reads chapter summaries in batches, then remaining raw messages. Faster than slow mode.",
+        "slowReplaysEveryRawMessageWindowBy": "Reads raw messages in windows. Most detailed; long chats can take hours.",
+        "theCodexAgentAskedYourModelTo": "The model returned text instead of tool calls. The model or provider may not support them.",
+        "memoriaCanSwitchTheCodexToJson": "JSON mode uses text replies and doesn''t need tool support. Replies are validated, but can be less reliable than tool calls.",
+        "youCanChangeThisAnytimeUnderTuning": "Change Use tool calls in Tuning > Connection > Codex, or choose a connection that supports tools."
+      },
+      "showCodexToolsHintModal": {
+        "toolCallsArenTGettingThrough": "No tool calls returned",
+        "value": "×",
+        "close": "Close",
+        "donTShowThisAgain": "Don''t show this again",
+        "keepToolCalls": "Keep tool calls",
+        "switchToJsonMode": "Switch to JSON mode"
+      },
+      "openEditModal": {
+        "label": "Label",
+        "content": "Content",
+        "cancel": "Cancel",
+        "save": "Save"
+      },
+      "labelInput": {
+        "label": "Label"
+      },
+      "r": {
+        "delete": "Delete",
+        "cancel": "Cancel"
+      },
+      "showDryRunModal": {
+        "dryRun": "Dry run: {choice, select, yes {Arc} other {{choice2, select, yes {Volume} other {{choice3, select, yes {Codex} other {Chapter}}}}}}",
+        "value": "×",
+        "closeDryRun": "Close dry run",
+        "diagnostics": "Diagnostics",
+        "copyJson": "Copy JSON",
+        "copied": "Copied",
+        "copyFailed": "Copy failed"
+      },
+      "promptForString": {
+        "cancel": "Cancel",
+        "ok": "OK"
+      }
+    },
+    "promptBreakdown": {
+      "timer": {
+        "promptBreakdownTimedOutTryRefreshingThe": "Prompt breakdown timed out. Try refreshing the panel."
+      },
+      "clearPromptRequests": {
+        "promptPanelClosed": "Prompt panel closed."
+      }
+    },
+    "summaryTransfer": {
+      "draw": {
+        "summaryTransferInProgress": "Summary transfer in progress…",
+        "continueSummaryImportExport": "Continue summary import/export",
+        "summaryImportExport": "Summary import / export",
+        "attemptMatching": "Attempt Matching",
+        "letMeSpecify": "Let me specify",
+        "upUntilWhichMessageShouldTheseSummaries": "Which message should coverage end at?",
+        "thisChatHasMessagesCountFrom1": "This chat has {messageCount0} messages. Use 0 to import as inherited memories. Otherwise, summaries merge into an entry covering messages 1–N, keeping their text.",
+        "importSummaries": "Import summaries",
+        "dismiss": "Dismiss",
+        "cancelImport": "Cancel import",
+        "hide": "Hide"
+      },
+      "choose": {
+        "processingSummaryImport": "Processing summary import…"
+      }
+    },
+    "tabMeta": {
+      "appTabs": {
+        "home": "Home",
+        "books": "Books",
+        "Codex": "Codex",
+        "tuning": "Tuning",
+        "info": "Info"
+      }
+    },
+    "tabs": {
+      "aboutTab": {
+        "hero": {
+          "memoria": "Memoria"
+        },
+        "renderAboutTab": {
+          "memoriaTheLumiBooksLibrarian": "Memoria, the LumiBooks librarian",
+          "nyandereCatgirlInAMaidUniformBlack": "Nyandere catgirl that tries to make sure your stories don't blow up your model, and your wallet.",
+          "builtOnLumiverseSpindleWithPromptsAnd": "Inspired by SillyTavern Memory Books."
+        },
+        "ack": {
+          "acknowledgements": "Acknowledgements"
+        },
+        "sec": {
+          "memoriaSAcademy": "Memoria''s Academy",
+          "privateDiagnostics": "Private diagnostics"
+        },
+        "renderAcademy": {
+          "bothCoursesLiveHereForRetakesPer": "Courses open for review."
+        },
+        "courseCard": {
+          "completedAttempt": "Completed{choice, select, yes { by {signedName}} other {}}, {attempts} attempt{attempts, plural, one {} other {s}}.",
+          "inProgressSection": "In progress, section {section1}.",
+          "lockedBehindNothingButYourTimeThis": "Locked behind your efforts. Complete to enable Codex.",
+          "theMandatoryPrimer": "The mandatory tutorial.",
+          "viewDiploma": "View diploma",
+          "retakeCourse": "Retake course",
+          "leaveAnytimeTheCourseStaysCompletedOn": "Leave anytime~",
+          "resume": "Resume",
+          "start": "Start",
+          "sitTheExam": "Sit the Exam",
+          "value": "{i1}. {title}{choice, select, yes { ◇} other { ◆}}",
+          "hasSilverOrSkippedStampsRetakeTo": "Retake the course to aim for gold",
+          "allGold": "All gold"
+        },
+        "renderDiagnostics": {
+          "turnOffLocalLogsThisIsNot": "Turn off local logs. This isn''t recommended",
+          "tracksUiFailuresNavigationRequestsFilingCoverage": "Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and unannonymized errors.",
+          "exportDiagnostics": "Export diagnostics",
+          "clearDiagnostics": "Clear diagnostics"
+        }
+      },
+      "booksTab": {
+        "subtabs": {
+          "shelf": "Shelf",
+          "compose": "Compose",
+          "advanced": "Advanced"
+        },
+        "draw": {
+          "openAChatToBrowseMemoriaS": "Open a chat to view summaries"
+        },
+        "sec": {
+          "theShelf": "The Bookshelf",
+          "pickMessagesForAChapter": "Pick messages for a chapter",
+          "bindChaptersIntoAnArc": "Bind chapters into an arc",
+          "pressArcsIntoAVolume": "Press arcs into a volume",
+          "maintenance": "Maintenance",
+          "bind": "Bind {tierNamesTier1}",
+          "summaryExportAndImport": "Summary export and import"
+        },
+        "renderShelf": {
+          "emptyShelfForNowMemoriaWillStart": "No summaries yet."
+        },
+        "search": {
+          "searchTitlesAndSummaries": "Search titles and summaries..."
+        },
+        "groups": {
+          "volumes": "Volumes",
+          "arcs": "Arcs",
+          "chapters": "Chapters"
+        },
+        "buildGroups": {
+          "of": "{title} ({length} of {length2})",
+          "noMatch": "No match"
+        },
+        "toggle": {
+          "showRecentOnly": "Show recent only",
+          "showAllShown": "Show all {length} ({length2} shown)"
+        },
+        "renderEntryRow": {
+          "ghost": "GHOST",
+          "t": "{range} · {contentTokens}t"
+        },
+        "tokenStr": {
+          "tokens": "{formatTokens}→{contentTokens} tokens",
+          "tokens2": "{contentTokens} tokens"
+        },
+        "renderEntryDetail": {
+          "ghostNotYetInjected": "ghost, not yet injected",
+          "memoria": "Memoria: {shortComment}",
+          "edit": "Edit",
+          "edit2": "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}",
+          "editThisEntrySLabelAndContent": "Edit label and content",
+          "regenerate": "Regenerate",
+          "resummarizeTheSameSources": "Resummarize the same sources",
+          "release": "Release",
+          "stripTheLumiBooksMarkerSoTheEntry": "Convert to a regular lorebook entry",
+          "delete": "Delete"
+        },
+        "ok": {
+          "regenerate": "Regenerate?",
+          "memoriaWillResummarizeTheSameSourcesAnd": "Resummarizes the same sources and replaces this entry on success.",
+          "releaseToLorebook": "Release to lorebook?",
+          "memoriaWillHandThisEntryToYour": "Converts this to a regular lorebook entry with an [orphaned] prefix. Detatches it from LumiBooks. {freed}",
+          "delete": "Delete?",
+          "memoriaWillDropThisGhostChapterShe": "Deletes this ghost chapter. Its messages will be summarized again later.",
+          "higherTierMemoriesKeepCoveringTheseSources": "Higher-tier memories keep covering these sources.",
+          "memoriaWillLetThoseMessagesBackInto": "Its messages return to the prompt.",
+          "itsChaptersReviveAndKeepCoveringThose": "Its chapters reactivate and keep covering these messages.",
+          "itsSourceSummariesReviveAndKeepCovering": "Its source summaries reactivate and keep covering these messages.",
+          "rebuildTheShelf": "Rebuild the shelf?",
+          "memoriaWillDeleteEveryChapterArcAnd": "Deletes this chat''s summaries and re-summarizes from the start. Can''t be undone.",
+          "wipeTheShelf": "Wipe the shelf?",
+          "memoriaWillDeleteEveryChapterArcAnd2": "Deletes this chat''s summaries and returns messages to the prompt. Can''t be undone."
+        },
+        "freed": {
+          "higherTierMemoriesKeepCoveringTheseSources": "Higher-tier memories keep covering these sources.",
+          "itsMessagesReturnToThePromptUnless": "Its messages return to the prompt unless a higher tier still covers them.",
+          "itsChaptersReviveAndKeepCoveringThose": "Its chapters reactivate and keep covering these messages.",
+          "itsSourceSummariesReviveAndKeepCovering": "Its source summaries reactivate and keep covering these messages."
+        },
+        "renderChapterPicker": {
+          "pickUncompressedMessagesAndFileThemInto": "Select messages to summarize. ✓ marks messages already filed.",
+          "shiftClickOrLongPressSelectsA": "Shift-click or long-press selects a range",
+          "pickUncompressed": "Pick uncompressed",
+          "clear": "Clear"
+        },
+        "filterSel": {
+          "uncompressedOnly": "Uncompressed only",
+          "allMessages": "All messages",
+          "alreadyFiled": "Already filed"
+        },
+        "query": {
+          "search": "Search..."
+        },
+        "compressBtn": {
+          "compress": "Compress"
+        },
+        "excludeBtn": {
+          "exclude": "Exclude",
+          "toggleExclusionForTheSelectedMessagesExcluded": "Toggles compression for selected messages. Excluded messages stay in context."
+        },
+        "syncControls": {
+          "selectedTokensBefore": "{size} selected (~{formatTokens} tokens before)"
+        },
+        "buildRows": {
+          "noMessagesMatch": "No messages match"
+        },
+        "more": {
+          "showOlder": "Show older ({older})"
+        },
+        "buildMessageRow": {
+          "shiftClickOrLongPressOnTouch": "Shift+click (or long-press on touch) to select a range",
+          "value": "#{indexInChat1}",
+          "alreadyFiledIntoAChapterArcOr": "Already filed into a chapter, arc, or volume",
+          "value2": "✓",
+          "excludedNeverHiddenReplacedOrSummarized": "Excluded - never hidden, replaced, or summarized",
+          "value3": "⊘",
+          "hiddenInChat": "Hidden in chat",
+          "empty": "(empty)"
+        },
+        "renderArcPicker": {
+          "memoriaHasNotFiledAnyChaptersYet": "No chapters yet",
+          "value": "{slice}{range} - {tokenStr}",
+          "bindSelected": "Bind selected",
+          "selectAllActive": "Select all active",
+          "clear": "Clear"
+        },
+        "updateArcCounts": {
+          "selectedTokensBefore": "{size} selected (~{formatTokens} tokens before)"
+        },
+        "range": {
+          "msgs": " (msgs {firstMsgIdx1}-{lastMsgIdx1})"
+        },
+        "renderVolumePicker": {
+          "memoriaHasNoUnboundArcsToPress": "No unbound arcs",
+          "aVolumeReplacesItsSourceArcsIn": "Volumes replace covered arcs in the prompt. Configure automation in Tuning.",
+          "value": "{slice}{range} - {tokenStr}",
+          "pressSelected": "Press selected",
+          "selectAllActive": "Select all active",
+          "clear": "Clear"
+        },
+        "updateCounts": {
+          "selectedTokensBefore": "{size} selected (~{formatTokens} tokens before)"
+        },
+        "renderContinuity": {
+          "t": "[{tag}] {slice} ({contentTokens}t)"
+        },
+        "originName": {
+          "anImportedLorebook": "an imported lorebook"
+        },
+        "wrap": {
+          "noOtherChatHasMemoriesToInherit": "No chats with summaries to inherit",
+          "inheritedFromMemor": "Inherited from {originName}: {rootEntryCount} memor{rootEntryCount, plural, one {y} other {ies}}.",
+          "detachRoot": "Detach root",
+          "removeTheInheritedRootMemoriesFromThis": "Remove the inherited root memories from this chat",
+          "detachInheritedMemories": "Detach inherited memories?",
+          "memoriaWillRemoveTheInheritedMemoriesFrom": "Removes inherited memories. Keeps this chat''s chapters and arcs.",
+          "thisChatAlreadyHasItsOwnMemories": "This chat has summaries. Rebuilding replaces them, then re-summarizes with the chosen root.",
+          "seedThisChatWithAnotherChatS": "Inherit another chat''s summaries. They inject before the greeting until bound into newer summaries.",
+          "sourceChatToInheritMemoriesFrom": "Source chat to inherit memories from",
+          "pickASourceChat": "Pick a source chat...",
+          "rebuildFrom": "Rebuild from...",
+          "replacesThisChatSMemoriesWithThe": "Replace summaries using the chosen root",
+          "rebuildFromRoot": "Rebuild from root?",
+          "memoriaWillDeleteThisChatSExisting": "Deletes this chat''s chapters and arcs, adds the chosen root, then re-summarizes. Can''t be undone.",
+          "rebase": "Rebase",
+          "seedThisChatWithTheChosenChat": "Inherit the selected chat''s summaries"
+        },
+        "renderMaintenance": {
+          "repairToolsForWhenTheShelfAnd": "Repair message visibility after changes such as editing lorebook entries.",
+          "reHideCovered": "Re-hide covered",
+          "reApplyTheExcludeFromContextFlag": "Exclude covered messages from context",
+          "resyncVisibility": "Resync visibility",
+          "unhideMessagesWhoseChapterOrArcNo": "Match message visibility to summary coverage",
+          "rebuildBooks": "Rebuild books",
+          "wipeTheShelfAndReSummarizeThis": "Clear summaries and re-summarize from the start",
+          "wipeBooks": "Wipe books",
+          "deleteEveryLumiBooksEntryForThisChat": "Delete this chat''s LumiBooks summaries"
+        },
+        "renderHigherPickers": {
+          "bindSelected": "Bind selected",
+          "bindReadyBatches": "Bind ready batches",
+          "activeSourceEntriesReadyBatchesUseThis": "{length} active source entries. Ready batches use this tier''s threshold and lag from Tuning."
+        },
+        "renderSummaryTransfer": {
+          "exportTheActiveShelfWithRawMessage": "Export summaries. This export is chat-aware.",
+          "exportSummaries": "Export summaries",
+          "importSummaries": "Import summaries",
+          "readingSummaryFile": "Reading summary file…",
+          "couldNotReadThatLorebookJsonFile": "Couldn''t read the lorebook JSON file"
+        },
+        "entryFallback": "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}} {id}"
+      },
+      "CodexTab": {
+        "deliverCodexFileState": {
+          "couldnTSaveThisCategorySSetting": "Couldn''t save this category''s setting: {error}"
+        },
+        "subtabs": {
+          "overview": "Overview",
+          "entities": "Entities",
+          "relations": "Relations",
+          "timeline": "Timeline",
+          "threads": "Threads",
+          "lore": "Lore",
+          "secrets": "Secrets",
+          "manage": "Manage"
+        },
+        "entityGroups": {
+          "characters": "Characters",
+          "locations": "Locations",
+          "things": "Things"
+        },
+        "staleDraftAbort": {
+          "memoriaRewroteThatRecordWhileYouWere": "Record changed during editing. Reapply your edit to the new version."
+        },
+        "empty": {
+          "knowledgeCodex": "Knowledge Codex"
+        },
+        "renderCodexTab": {
+          "openAChatToConsultTheCodex": "Open a chat to view the Codex",
+          "memoriaIsFetchingTheCodexFiles": "Loading Codex…"
+        },
+        "sec": {
+          "knowledgeCodex": "Knowledge Codex",
+          "storyBible": "Story Bible",
+          "entities": "Entities",
+          "relations": "Relations",
+          "timeline": "Timeline",
+          "threads": "Threads"
+        },
+        "search": {
+          "searchThisSection": "Search this section..."
+        },
+        "bibleTiles": {
+          "characters": "Characters",
+          "locations": "Locations",
+          "things": "Things",
+          "relations": "Relations",
+          "timeline": "Timeline",
+          "threads": "Threads",
+          "lore": "Lore",
+          "secrets": "Secrets"
+        },
+        "bits": {
+          "memoriaWillDeleteEveryRecordInFor": "Deletes the records in {label} for this chat."
+        },
+        "purgeMessage": {
+          "referencesToThemInOtherRecordsBecome": "References to them in other records become plain text.",
+          "theResolvedThreadArchiveClearsToo": "Also clears the resolved thread archive.",
+          "thisCannotBeUndone": "Can''t be undone."
+        },
+        "tileStateLabel": {
+          "injectedUpdated": "injected · updated",
+          "notInjectedStillUpdated": "not injected · still updated",
+          "frozenNoUpdates": "frozen · no updates"
+        },
+        "renderOverview": {
+          "CodexOnFile": "Codex on file",
+          "noCodexYet": "no Codex yet",
+          "messageUnindexed": "{CodexBacklog} message{CodexBacklog, plural, one {} other {s}} unindexed",
+          "updated": "updated {CodexLastRunAt}",
+          "theCodexAgentIsOffForThis": "Codex is off. Enable it in Tuning > Settings > Codex.",
+          "memoriaIsWorkingOnTheCodexWatch": "Codex task in progress. View progress in Home.",
+          "unreadableOnDiskRebuildCodexRegeneratesThem": "Can''t read: {join}. Use Rebuild Codex to regenerate.",
+          "noCodexYet2": "No Codex yet.",
+          "clearStaleTags": "Clear stale tags",
+          "acceptTheCurrentRecordsAsUpTo": "Marks records as up to date without changing text or indexing. No model call. Frozen records can become stale again after missed updates.",
+          "recordMissedUpdatesWhileFrozen": "{length} record{length, plural, one {} other {s}} missed updates while frozen.",
+          "catchUp1Pass": "Catch up (1 pass)",
+          "onePassRebuildsJustTheReEnabled": "Rebuilds re-enabled records from summaries and recent messages",
+          "rebuildInstead": "Rebuild instead",
+          "wipeEverythingAndRegenerateFromTheStart": "Clear Codex and regenerate from the start",
+          "clickARecordCardToCycleIt": "Click a card to cycle: injected → not injected → frozen. Records remain editable.",
+          "shorterAndSimplerChatsOftenRunBetter": "Fewer categories may suit simpler chats.",
+          "updateNow": "Update now",
+          "consumeEverythingUpToTheNewestMessage": "Update through the newest message, ignoring window and lag. Offers fast modes for large backlogs.",
+          "cancel": "Cancel",
+          "abortTheCodexTaskInFlight": "Cancel the Codex task",
+          "tidyUp": "Tidy up",
+          "chooseATargetSizeThenCompactUp": "Shorten records to a target size, using up to six model calls",
+          "undo": "Undo {CodexUndoReasonUpdate}",
+          "undo2": "Undo",
+          "rollBackToTheSnapshotTakenBefore": "Restore the snapshot before the last Codex change",
+          "nothingToUndoYetMemoriaSnapshotsThe": "No snapshot to restore"
+        },
+        "ok": {
+          "rebuildTheCodex": "Rebuild the Codex?",
+          "memoriaWillEraseTheStoryBibleAnd": "Clears the Codex and rereads the chat. Choose a speed next.",
+          "undoTheLastCodexChange": "Undo the last Codex change?",
+          "memoriaWillRollTheCodexBackTo": "Restores the snapshot before {CodexUndoReasonUpdate} {CodexUndoAt}. Later changes are lost.",
+          "importACodexFile": "Import a Codex file?",
+          "memoriaWillReplaceEveryCodexFileIn": "Replaces this chat''s Codex with the imported files. Can''t be undone.",
+          "wipeTheCodex": "Wipe the Codex?",
+          "memoriaWillEraseEveryCodexRecordFor": "Clears this chat''s Codex. The next update starts fresh. Can''t be undone.",
+          "rebuildThisRecord": "Rebuild this record?",
+          "memoriaWillRegenerateEveryRecordInFrom": "Regenerates {label} from the story in a pass. Replaces content on success; keeps locked entries.",
+          "purgeThisRecord": "Purge this record?",
+          "deleteEntity": "Delete entity?",
+          "memoriaWillRemoveFromTheCodexReferences": "Deletes \"{str}\". References to it become plain text.",
+          "delete": "Delete?"
+        },
+        "renderManage": {
+          "noOtherChatHasACodexTo": "No chats with a Codex to copy",
+          "carriedOverFromMemoriaIndexesThisChat": "Copied from {CodexRootOriginName}. Indexing starts from this chat''s beginning.",
+          "detachCodex": "Detach Codex",
+          "eraseTheCarriedOverCodexFromThis": "Erase the carried-over Codex from this chat",
+          "detachTheCarriedOverCodex": "Detach the carried-over Codex?",
+          "CodexRecordsMergeAsMemoriaWorksSo": "Copied records have merged with this chat''s Codex. Detaching clears it; the next update starts fresh. Can''t be undone.",
+          "continuingAnEarlierChatCarryItsStory": "Copy a Codex to continue an earlier chat.",
+          "sourceChatToCarryTheCodexFrom": "Source chat to carry the Codex from",
+          "pickASourceChat": "Pick a source chat...",
+          "carryCodexOver": "Carry Codex over",
+          "copyAnotherChatSCodexIntoThis": "Copy another chat''s Codex into this one",
+          "carryTheCodexOver": "Carry the Codex over?",
+          "memoriaWillCopyTheChosenChatS": "Copies the selected chat''s Codex. Indexing starts from this chat''s beginning.",
+          "exportWritesEveryCodexFileAndIts": "Export saves Codex files and injection settings as JSON. Import replaces them.",
+          "export": "Export",
+          "downloadEveryCodexFilePlusItsInject": "Download Codex files and injection settings as JSON",
+          "import": "Import",
+          "replaceThisChatSCodexFromAn": "Replace this chat''s Codex from an exported file",
+          "rebuildReReadsTheWholeChatFrom": "Rebuild clears and rereads the chat. Wipe leaves the Codex empty until the next update.",
+          "rebuildCodex": "Rebuild Codex",
+          "wipeAndRegenerateTheWholeStoryBible": "Clear Codex and regenerate from the start",
+          "wipeCodex": "Wipe Codex"
+        },
+        "files": {
+          "CodexFiles": "Codex files"
+        },
+        "danger": {
+          "startOver": "Start over"
+        },
+        "restoreBackup": {
+          "memoriaCouldnTReadThatBackupFile": "Couldn''t read the backup file"
+        },
+        "renderBibleTile": {
+          "clickToCycle": "{tileStateLabelSt}{choice, select, yes { · missed updates while frozen} other {}}{choice2, select, yes { · waiting for the catch-up pass} other {}} - click to cycle",
+          "tokens": "{choice, select, yes {~} other {}}{formatTokens} tokens",
+          "stale": " · stale",
+          "needsCatchUp": " · needs catch-up",
+          "clickToCycle2": "{tileStateLabelSt} - click to cycle"
+        },
+        "tidyBtn": {
+          "cancel": "Cancel",
+          "tidy": "Tidy",
+          "abortTheCodexTaskInFlight": "Cancel the Codex task",
+          "chooseATargetSizeForThisRecord": "Choose a target size for this record"
+        },
+        "rebuildBtn": {
+          "rebuild": "Rebuild",
+          "regenerateJustThisCategoryFromTheWhole": "Regenerate this category from the story in a pass"
+        },
+        "purgeBtn": {
+          "purge": "Purge",
+          "deleteEveryRecordInThisCategoryAt": "Delete this category''s records"
+        },
+        "sheetStateTitle": {
+          "memoriaMaintainsThisSheetClickToLock": "Updated automatically. Click to freeze.",
+          "frozenAndStillInjectedClickToHold": "Frozen and injected. Click to exclude from the prompt.",
+          "frozenAndHeldOutOfThePrompt": "Frozen from the prompt. Click to resume updates."
+        },
+        "sheetStateLabel": {
+          "state": "{locked, select, yes {🔒} other {🔓}} {injected, select, yes {injected} other {not injected}} · {locked, select, yes {frozen} other {updated}}"
+        },
+        "renderEntities": {
+          "clickANameToOpenItsSheet": "Click a name to edit.",
+          "of": "{title} · {length} of {length2}",
+          "value": "+ {singular, select, character {character} location {location} thing {thing} other {{singular}}}",
+          "noEntitiesRecordedYetAddOneOr": "No entities yet. Add an entity or run a Codex update."
+        },
+        "input": {
+          "name": "Name...",
+          "true": "true",
+          "false": "false"
+        },
+        "renderAddForm": {
+          "create": "Create",
+          "cancel": "Cancel"
+        },
+        "renderEntityCard": {
+          "notInjected": "not injected",
+          "locked": "locked",
+          "editSheet": "Edit sheet",
+          "delete": "Delete"
+        },
+        "addKv": {
+          "lockedFieldMemoriaCanNeverChangeIt": "Locked from model edits"
+        },
+        "renderEntityForm": {
+          "newEntity": "New entity",
+          "cancel": "Cancel"
+        },
+        "sync": {
+          "locked": "🔒 locked",
+          "lockedMemoriaReadsALockMarkerInstead": "Locked from model edits. Click to unlock.",
+          "lockThisFieldSoOnlyYouCan": "Lock from model edits"
+        },
+        "nameField": {
+          "name": "Name"
+        },
+        "w": {
+          "commaSeparated": "{f} (comma separated)"
+        },
+        "label": {
+          "onePerLine": "{key} (one per line)"
+        },
+        "saveBtn": {
+          "saving": "Saving...",
+          "save": "Save",
+          "theEntityNeedsAName": "The entity needs a name"
+        },
+        "renderRecordForm": {
+          "saving": "Saving...",
+          "save": "Save",
+          "cancel": "Cancel"
+        },
+        "recordItemActions": {
+          "edit": "Edit",
+          "delete": "Delete"
+        },
+        "saveRelationDraft": {
+          "theGroupNeedsAtLeastTwoMembers": "The group needs at least two members, a kind, and a state",
+          "theRelationNeedsFromToAKind": "The relation needs From, To, a kind, and a state"
+        },
+        "specs": {
+          "type": "Type",
+          "pairAB": "pair (a → b)",
+          "group": "group",
+          "membersCommaSeparatedRefs": "Members (comma separated refs)",
+          "charEliasCharWren": "char:elias, char:wren",
+          "fromA": "From (a)",
+          "charElias": "char:elias",
+          "toB": "To (b)",
+          "charWren": "char:wren",
+          "kind": "Kind",
+          "bondOwnsAtRival": "bond, owns, at, rival...",
+          "state": "State",
+          "lovesHerHidesIt": "loves her, hides it",
+          "historyOnePerLine": "History (one per line)",
+          "day12SheSawHimKill": "day 12: she saw him kill"
+        },
+        "form": {
+          "editRelation": "Edit relation",
+          "newRelation": "New relation"
+        },
+        "renderRelations": {
+          "list": "List",
+          "graph": "Graph",
+          "relation": "+ Relation",
+          "noRelationsRecordedYetAddOneOr": "No relations yet. Add a relation or run a Codex update.",
+          "theRelationsTableIsOffForThis": "Relations table is off. Relationships are stored as entity ties.",
+          "memoriaWillRemoveThisRelationFromThe": "Deletes this relation.",
+          "noRelationMatchesTheSearch": "No relation matches the search"
+        },
+        "arrowSpan": {
+          "value": "→"
+        },
+        "renderRelationGraph": {
+          "noRelationMatchesTheSearch": "No relation matches the search",
+          "noRelationsToChartYet": "No relations to chart yet",
+          "group": " group",
+          "value": "{name} ({id})",
+          "zoomOut": "Zoom out",
+          "zoomIn": "Zoom in",
+          "fit": "Fit",
+          "frameTheWholeWeb": "Fit graph",
+          "tapAnEdgeForTheStoryTap": "Tap a connection for details or a diamond for its sheet. Drag diamonds to rearrange. Pinch or drag to navigate."
+        },
+        "entries": {
+          "character": "character",
+          "location": "location",
+          "thing": "thing"
+        },
+        "saveEventDraft": {
+          "theEventNeedsAWhenAndWhat": "Enter when the event happened and what happened"
+        },
+        "eventSpecs": {
+          "when": "When",
+          "day12": "day 12",
+          "event": "Event",
+          "maraSeesEliasKillTheDuke": "Mara sees Elias kill the duke",
+          "participantsCommaSeparatedRefs": "Participants (comma separated refs)",
+          "where": "Where",
+          "locAshfordManor": "loc:ashford_manor",
+          "causes": "Causes",
+          "sheFleesTheCity": "she flees the city"
+        },
+        "renderTimeline": {
+          "event": "+ Event",
+          "newEvent": "New event",
+          "noEventsRecordedYet": "No events recorded yet",
+          "noEventMatchesTheSearch": "No event matches the search",
+          "editEvent": "Edit event",
+          "clickForEditAndDelete": "Edit or delete",
+          "showRecentOnly": "Show recent only",
+          "showEarlier": "Show earlier ({lengthTimelineRecent})"
+        },
+        "actions": {
+          "memoriaWillRemoveThisEventFromThe": "Deletes this event.",
+          "memoriaWillRemoveThisTopicAndIts": "Deletes this topic and its facts.",
+          "memoriaWillRemoveThisSecretFromThe": "Deletes this secret."
+        },
+        "threadSpecs": {
+          "name": "Name",
+          "theStolenCrown": "The stolen crown",
+          "status": "Status",
+          "open": "open",
+          "stalled": "stalled",
+          "resolved": "resolved",
+          "abandoned": "abandoned",
+          "summary": "Summary",
+          "latestDevelopment": "Latest development",
+          "plantedDetailsOnePerLine": "Planted details (one per line)"
+        },
+        "saveThreadDraft": {
+          "theThreadNeedsANameAndA": "The thread needs a name and a summary"
+        },
+        "renderThreads": {
+          "thread": "+ Thread",
+          "editSeeds": "Edit seeds",
+          "newThread": "New thread",
+          "seedsOnePerLine": "Seeds (one per line)",
+          "noOpenStorylinesTrackedYet": "No open threads",
+          "resolvedThreadsStayHereAsYourArchive": "Resolved threads are archived and excluded from prompts.",
+          "editThread": "Edit thread",
+          "latest": "Latest: {latest}",
+          "planted": "◆ planted: {p}",
+          "memoriaWillRemoveThisThreadFromThe": "Deletes this thread.",
+          "noThreadMatchesTheSearch": "No thread matches the search",
+          "seeds": "Seeds ({length})"
+        },
+        "saveWorldDraft": {
+          "theTopicNeedsANameAndAt": "Enter a topic name and a fact"
+        },
+        "saveKnowledgeDraft": {
+          "theSecretNeedsItsFact": "Enter the secret''s fact"
+        },
+        "worldSpecs": {
+          "topic": "Topic",
+          "magic": "Magic",
+          "factsOnePerLine": "Facts (one per line)",
+          "bloodMagicCostsMemories": "blood magic costs memories",
+          "keywordsCommaSeparatedRetrievalTags": "Keywords (comma separated, retrieval tags)",
+          "ritualMemoriesBloodMagic": "ritual, memories, blood magic"
+        },
+        "knowledgeSpecs": {
+          "fact": "Fact",
+          "eliasKilledTheDuke": "Elias killed the duke",
+          "knownByCommaSeparatedRefs": "Known by (comma separated refs)",
+          "hiddenFromCommaSeparatedRefs": "Hidden from (comma separated refs)",
+          "falseBeliefsOnePerLineWhoBelief": "False beliefs (one per line, \"who => belief\")",
+          "charCaptainBanditsDidIt": "char:captain => bandits did it",
+          "note": "Note",
+          "keywordsCommaSeparatedRetrievalTags": "Keywords (comma separated, retrieval tags)",
+          "murderDaggerDuke": "murder, dagger, duke"
+        },
+        "world": {
+          "worldRules": "World rules"
+        },
+        "renderLore": {
+          "topic": "+ Topic",
+          "newTopic": "New topic",
+          "noWorldLoreRecordedYet": "No world lore recorded yet",
+          "noTopicMatchesTheSearch": "No topic matches the search",
+          "editTopic": "Edit topic",
+          "clickForEditAndDelete": "Edit or delete",
+          "keywords": "keywords: {join}"
+        },
+        "secrets": {
+          "whoKnowsWhat": "Who knows what"
+        },
+        "renderSecrets": {
+          "secret": "+ Secret",
+          "newSecret": "New secret",
+          "noSecretsOrAsymmetricKnowledgeTrackedYet": "No secrets recorded",
+          "noSecretMatchesTheSearch": "No secret matches the search",
+          "editSecret": "Edit secret",
+          "clickForEditAndDelete": "Edit or delete",
+          "knows": "knows: {nameOf}",
+          "hidden": "hidden: {nameOf}",
+          "wronglyBelieves": "{nameOf} wrongly believes: {str}",
+          "keywords": "keywords: {join}"
+        },
+        "entityFields": {
+          "kind": "kind",
+          "role": "role",
+          "significance": "significance",
+          "appearance": "appearance",
+          "description": "description",
+          "notes": "notes",
+          "aliases": "aliases",
+          "traits": "traits",
+          "goals": "goals",
+          "ties": "ties",
+          "keywords": "keywords"
+        },
+        "threadStatus": "{status, select, open {open} stalled {stalled} resolved {resolved} abandoned {abandoned} other {{status}}}"
+      },
+      "homeTab": {
+        "buildStreamPanel": {
+          "liveFromMemoriaSDesk": "Live output",
+          "value": "✕",
+          "closeTheLiveView": "Close the live view",
+          "waitingForTheFirstTokensFromThe": "Waiting for model output…"
+        },
+        "lessonReminder": {
+          "takeALesson": "Take a Lesson"
+        },
+        "renderHomeTab": {
+          "myLessonIsStillWaitingForYou": "My lesson is still waiting for you",
+          "theCodexLessonIsStillWaitingFor": "The Codex lesson is still waiting for you",
+          "openAChatAndMemoriaWillSet": "Open a chat to use LumiBooks"
+        },
+        "empty": {
+          "overview": "Overview",
+          "noBookYet": "No book yet"
+        },
+        "hostGroups": {
+          "promptBlocks": "Prompt blocks",
+          "chatHistory": "Chat history",
+          "longTermMemory": "Long-term memory",
+          "worldInfo": "World info",
+          "sidecar": "Sidecar",
+          "extensions": "Extensions",
+          "system": "System"
+        },
+        "groups": {
+          "promptBlocks": "Prompt blocks",
+          "chatHistory": "Chat history",
+          "worldInfo": "World info",
+          "extensions": "Extensions"
+        },
+        "renderLessonPromptPanel": {
+          "tokens": "{label} · {tokens} tokens",
+          "promptVsContextWindow": "Prompt vs context window",
+          "value": "{formatTokens} / {formatTokens2} ({round}%)",
+          "simulatedExampleTheLivePanelReadsYour": "Simulated example, the live panel reads your host''s real prompt."
+        },
+        "sec": {
+          "thePrompt": "The Prompt",
+          "overview": "Overview",
+          "pendingPreviews": "Pending previews ({length})",
+          "actions": "Actions"
+        },
+        "simulate": {
+          "simulate": "Simulate",
+          "assembleTheNextPromptThroughTheHost": "Preview the next prompt without generating"
+        },
+        "drawPromptContent": {
+          "readingTheLastFire": "Loading last prompt…",
+          "memoriaIsAskingTheHostForThe": "Loading prompt breakdown…",
+          "couldnTReadTheHostPrompt": "Couldn''t read the host prompt",
+          "noPromptDataYet": "No prompt data yet",
+          "tokens": "{label} · {tokens} tokens",
+          "freeSpaceTokens": "Free space · {formatTokens} tokens",
+          "promptVsContextWindow": "Prompt vs context window",
+          "promptTotal": "Prompt total",
+          "tokens2": "{totalTokens} tokens",
+          "contextNearlyFull": "context nearly full",
+          "value": "{tokens} · {pct}%",
+          "freeSpace": "Free space",
+          "value2": "{formatTokens} · {pct}%"
+        },
+        "retry": {
+          "retry": "Retry"
+        },
+        "srcLabel": {
+          "lastFire": "last prompt",
+          "simulatedNextFire": "next prompt preview"
+        },
+        "spineLabel": {
+          "knowledgeCodex": "Knowledge Codex",
+          "inAVolume": "in a volume",
+          "inASeries": "in a series",
+          "inASaga": "in a saga",
+          "inALibrary": "in a library",
+          "inAUniverse": "in a universe",
+          "inAnArc": "in an arc",
+          "inAChapter": "in a chapter",
+          "stagedAsGhost": "staged as ghost"
+        },
+        "where": {
+          "msgs": "msgs {from1}–{to1} · "
+        },
+        "renderSpine": {
+          "tokens": "{where}{kind} · ~{tokens} tokens{choice, select, yes { (click to open)} other {}}"
+        },
+        "renderBreakdown": {
+          "knowledgeCodexConstantPart": "Knowledge Codex (constant part)",
+          "volumesAndHigher": "Volumes and higher ({length})",
+          "arcs": "Arcs ({length})",
+          "chapters": "Chapters ({length})",
+          "uncompressedTailMsgs": "Uncompressed tail ({tailCount} msgs)",
+          "excludedMsgs": "Excluded ({excludedCount} msgs)",
+          "CodexCountsIncludeEnabledConstantLorebookEntries": "Codex keyword and vector matches can add additional tokens.",
+          "storyContextInThePrompt": "Story context in the prompt"
+        },
+        "renderOverview": {
+          "chat": "Chat",
+          "character": "Character",
+          "filed": "Filed",
+          "ofMsgs": "{coveredMessages} of {totalMessages} msgs",
+          "shareOfThisChatSMessagesAlready": "Chat messages covered by summaries",
+          "tail": "Tail",
+          "msgsUncompressed": "{uncoveredMessages} msgs uncompressed",
+          "recentMessagesStillInThePromptAt": "Messages still in context, waiting for summary window and lag",
+          "Codex": "Codex",
+          "messagesTheStoryBibleHasNotRead": "Messages not yet indexed by the Codex",
+          "offEnableInTuning": "off, enable in Tuning",
+          "memoriaHasNoConnectionToWriteWith": "No connection available. Add a connection in Lumiverse.",
+          "pickAConnectionInTheTuningTab": "Select a connection in Tuning."
+        },
+        "shelfTile": {
+          "shelf": "Shelf",
+          "volArcChap": "vol · arc · chap",
+          "uncompressedSummariesHoverForExistingHigherTiers": "Active summaries. Hover for higher tiers."
+        },
+        "locked": {
+          "Codex": "Codex",
+          "takeALesson": "take a lesson",
+          "theKnowledgeCodexUnlocksAfterMemoriaS": "The Knowledge Codex unlocks after Memoria''s Codex lesson"
+        },
+        "subText": {
+          "msgsUnindexedManualOnly": "msgs unindexed, manual only",
+          "msgsUnindexed": "msgs unindexed",
+          "updated": "updated {CodexLastRunAt}",
+          "noCodexYet": "no Codex yet"
+        },
+        "watchBtn": {
+          "hide": "Hide",
+          "watch": "Watch",
+          "seeMemoriaSRawOutputStreamIn": "View model output"
+        },
+        "abortBtn": {
+          "abort": "Abort",
+          "cancelTheInFlightGeneration": "Cancel generation"
+        },
+        "renderFailure": {
+          "lastArcAttemptFailed": "Last arc attempt failed",
+          "lastAttemptFailed": "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}} attempt failed",
+          "lastChapterAttemptFailed": "Last chapter attempt failed",
+          "triedX": "{message} (tried {retriedTimes}x)",
+          "retry": "Retry"
+        },
+        "titleField": {
+          "title": "Title"
+        },
+        "contentField": {
+          "content": "Content"
+        },
+        "renderPreviewCard": {
+          "memoria": "Memoria: {shortComment}",
+          "tokens": "{tokenCountOutput} tokens",
+          "save": "Save",
+          "discard": "Discard"
+        },
+        "renderActions": {
+          "lagReady": "lag ready",
+          "lagBuilding": "lag building",
+          "windowReady": "window ready",
+          "windowBuilding": "window building",
+          "chapterReady": "{backlogChapters} chapter{backlogChapters, plural, one {} other {s}} ready",
+          "arcReady": "{backlogArcs} arc{backlogArcs, plural, one {} other {s}} ready",
+          "fileChapter": "File chapter",
+          "compressTheOldestUncoveredMessagesIntoA": "Summarize the oldest uncovered messages, even if the window isn''t full",
+          "fileAll": "File all ({backlogChapters})",
+          "drainTheChapterBacklogKeepsFilingChapters": "File chapters until window or lag limits are reached",
+          "bindArc": "Bind arc",
+          "rollTheOldestUnsupersededChaptersIntoA": "Combine the oldest active chapters into an arc",
+          "bindAll": "Bind all ({backlogArcs})",
+          "drainTheArcBacklogKeepsBindingArcs": "Bind arcs until threshold or lag limits are reached",
+          "updateCodex": "Update Codex",
+          "consumeEverythingUpToTheNewestMessage": "Update through the newest message, ignoring window and lag. Offers fast modes for large backlogs.",
+          "actionsUnlockWhenMemoriaFinishesHerCurrent": "Wait for the current task to finish",
+          "theExtensionIsOffFlipItOn": "Extension is off. Enable it in Tuning.",
+          "memoriaWillCreateThisChatSWorld": "The lorebook is created when the first chapter is filed",
+          "worldBookWhereChaptersAndArcsAre": "This chat''s summary lorebook"
+        },
+        "lockedBtn": {
+          "CodexTakeALesson": "🔒 Codex · take a lesson",
+          "theCodexUnlocksAfterMemoriaSCodex": "The Codex unlocks after Memoria''s Codex lesson"
+        },
+        "tag": {
+          "bookReady": "Book ready"
+        },
+        "streamStatus": "{running, select, yes {streaming} other {finished}}",
+        "higherCount": "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}"
+      },
+      "profileTab": {
+        "profileDefaults": {
+          "defaults": "Defaults"
+        },
+        "sec": {
+          "knowledgeCodex": "Knowledge Codex",
+          "CodexConnection": "Codex connection",
+          "reset": "Reset",
+          "profile": "Profile",
+          "summarySettings": "Summary settings",
+          "summaryConnection": "Summary Connection",
+          "summarySamplers": "Summary samplers",
+          "CodexSamplers": "Codex samplers",
+          "regex": "Regex",
+          "context": "Context",
+          "behavior": "Behavior"
+        },
+        "renderCodexSettings": {
+          "enableCodex": "Enable Codex",
+          "window": "Window",
+          "lag": "Lag",
+          "unit": "{kind} unit",
+          "messages": "Messages",
+          "messageTokens": "Message tokens",
+          "tokensBreakpoint": "Tokens breakpoint",
+          "runsWhenEitherTheWindowOrThis": "Runs when either the window or this token count is reached.",
+          "loreLimit": "Lore limit",
+          "ofMaxContext": "% of max context",
+          "tokenCap": "token cap",
+          "loreTokens0NoLimit": "Lore tokens (0 = no limit)",
+          "loreOfMaxContext": "Lore % of max context",
+          "yourActivatedLorebookEntriesRideEveryCodex": "Includes lorebook entries as context. Entries that exceed the budget are skipped. A token cap of 0 removes the limit.",
+          "CodexRecall": "Codex recall",
+          "theActiveProfileSetsRecallForEnabled": "Timeline and threads are always constantly injected, but other records can use constant, keyword, or vector recall.",
+          "CodexPlacement": "Codex placement",
+          "lorebookBefore": "Lorebook (before)",
+          "atHistoryDepth": "At history depth",
+          "afterChatHistory": "After chat history",
+          "depthFromNewestTurn": "Depth from newest turn",
+          "summariesReplaceTheirSourceHistoryInPlace": "Summaries inject in-place of messages whereas the Codex is injected as normal lorebook entries. Larger windows reduce update frequency and can be cheaper. Codex lore placement after history preserves more cache, assuming earlier lorebooks are constant.",
+          "relationsTable": "Relations table",
+          "tracksConnectionsBetweenEntitiesAsOneShared": "Stores relationships in a shared table with reference checks. When off, stores them in entities.",
+          "thoroughMode": "Thorough mode",
+          "spendsOneExtraVerificationRoundPerUpdate": "Adds a verification round to check stale information and shorten records.",
+          "extraContextMode": "Extra context mode",
+          "summarizesChaptersEarlyAtTheCodexLag": "Creates ghost chapters early at the Codex lag. They help provide summary context to Codex.",
+          "chaptersProvided": "Chapters provided",
+          "howManyRecentChapterSummariesExtraContext": "Recent chapters included as context in extra context mode.",
+          "theCodexAgentSConnectionAndSamplers": "Codex connection and samplers are in Connection > Codex."
+        },
+        "updating": {
+          "CodexUpdating": "Codex Updating"
+        },
+        "connOpts": {
+          "sameAsSummaryConnection": "Same as Summary Connection",
+          "value": "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (default)} other {}}"
+        },
+        "renderCodexConnection": {
+          "useToolCalls": "Use tool calls",
+          "offByDefaultTheAgentWritesOne": "Off uses JSON replies. Enable if your connection supports tool calls.",
+          "updateDelivery": "Update delivery",
+          "allRecordsAtOnce": "Batched",
+          "oneRecordAtATime": "Sequential",
+          "memoriaAlwaysMakesSureEveryRecordIs": "Batched updates cost less. Only use sequential if long replies are problematic."
+        },
+        "renderResetSettings": {
+          "resetsThisProfileSSettingsToTheir": "Resets this profile''s settings to their defaults."
+        },
+        "idle": {
+          "resetProfileToDefaults": "Reset profile to defaults"
+        },
+        "confirm": {
+          "clickAgainToConfirm": "Confirm?"
+        },
+        "renderProfilePicker": {
+          "new": "New",
+          "delete": "Delete",
+          "enabled": "Enabled",
+          "masterSwitchWhenOffMemoriaDoesNothing": "Enable LumiBooks for this account."
+        },
+        "name": {
+          "newProfileName": "New profile name"
+        },
+        "nameField": {
+          "profileName": "Profile name"
+        },
+        "enableWrap": {
+          "extension": "Extension"
+        },
+        "renderSummarySettings": {
+          "windowLagAndCompressionSettingsForEach": "Window, lag, and compression per tier.",
+          "runAutomation": "Enable Automation",
+          "windowUnit": "Window unit",
+          "messages": "Messages",
+          "messageTokens": "Message tokens",
+          "window": "Window",
+          "lagUnit": "Lag unit",
+          "lag": "Lag",
+          "chapterEntries": "Chapter entries",
+          "summaryTokens": "Summary tokens",
+          "manualOnly": "Manual only",
+          "entries": "{tierNamesTier2} entries"
+        },
+        "card": {
+          "chapterFiling": "Chapter Filing",
+          "binding": "{name} Binding"
+        },
+        "appendAutomationControls": {
+          "automate": "Automate?"
+        },
+        "change": {
+          "targetUnit": "{prefix}TargetUnit",
+          "targetPercent": "{prefix}TargetPercent",
+          "targetTokens": "{prefix}TargetTokens"
+        },
+        "appendCompressionTarget": {
+          "compressionTarget": "Compression target",
+          "percentOfInput": "Percent of input",
+          "fixedTokens": "Fixed tokens",
+          "targetTokens": "Target tokens",
+          "targetPercent": "Target percent"
+        },
+        "opts": {
+          "defaultConnection": "Default connection",
+          "noConnectionsAvailable": "No connections available",
+          "value": "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (default)} other {}}"
+        },
+        "renderConnection": {
+          "memoriaWritesWith": "Connection: {name}"
+        },
+        "renderSamplers": {
+          "usedWhenMemoriaWritesChaptersArcsAnd": "Used for summaries. Empty fields use the defaults shown as placeholders. Temperature, max output, and max input are sent; top_p, top_k, and penalties are sent when set.",
+          "maxInputTokens": "Max input tokens",
+          "maxOutputTokens": "Max output tokens",
+          "temperature": "Temperature",
+          "topP": "Top P",
+          "topK": "Top K",
+          "freqPenalty": "Freq penalty",
+          "presPenalty": "Pres penalty"
+        },
+        "options": {
+          "books": "Books",
+          "Codex": "Codex"
+        },
+        "renderCodexSamplers": {
+          "samplersForTheCodexAgentOnlySeparate": "Codex samplers, separate from summaries. Empty fields use Codex defaults.",
+          "maxInputTokens": "Max input tokens",
+          "maxOutputTokens": "Max output tokens",
+          "temperature": "Temperature",
+          "topP": "Top P",
+          "topK": "Top K",
+          "freqPenalty": "Freq penalty",
+          "presPenalty": "Pres penalty"
+        },
+        "renderRegex": {
+          "noRegexScriptsFoundInLumiverse": "No regex scripts found in Lumiverse",
+          "outgoingRunsOnThePromptBeforeMemoria": "Outgoing regex runs on prompts; incoming runs on model output."
+        },
+        "outgoing": {
+          "outgoing": "Outgoing"
+        },
+        "incoming": {
+          "incoming": "Incoming"
+        },
+        "f": {
+          "chapterContext": "Chapter context"
+        },
+        "renderContext": {
+          "howManyRecentChaptersToFeedMemoria": "Recent chapters included as context.",
+          "triesPerAttemptAfterTheLastTry": "Tries per attempt. After failure, the same messages retry next turn.",
+          "howLongMemoriaWaitsForTheFirst": "Wait time for the first streamed token."
+        },
+        "retry": {
+          "retries": "Retries"
+        },
+        "ttft": {
+          "firstTokenTimeoutSeconds": "First-token timeout (seconds)"
+        },
+        "renderBehavior": {
+          "hideMessagesOnceFiled": "Hide messages once filed",
+          "greysOutCoveredMessagesInTheChat": "Greys out covered messages in chat. Summary coverage applies either way.",
+          "previewBeforeSaving": "Preview before saving",
+          "memoriaStagesNewChaptersAndArcsIn": "Review chapters and arcs in Home > Pending previews before saving."
+        }
+      },
+      "promptsTab": {
+        "categorySubtabs": {
+          "chapter": "Chapter",
+          "arc": "Arc",
+          "volume": "Volume",
+          "Codex": "Codex"
+        },
+        "groupHelp": {
+          "oneBlockPerCodexFile": "One block per Codex file.",
+          "howTheAgentIsToldToDeliver": "Edit delivery instructions. Selected by the Use tool calls setting.",
+          "theTaskTextForEachKindOf": "Task instructions by run type.",
+          "warningsPrependedOnlyWhenTheirSituationApplies": "Notes included when applicable."
+        },
+        "sec": {
+          "CodexPromptTemplates": "Codex prompt templates",
+          "memoriaOverrides": "Memoria overrides",
+          "arcPrompt": "Arc prompt",
+          "volumePrompt": "Volume prompt",
+          "CodexDirectives": "Codex directives",
+          "chapterPrompt": "Chapter prompt",
+          "importStmbPresets": "Import STMB presets",
+          "info": "Info"
+        },
+        "draw": {
+          "everyOtherBlockOfTheCodexAgent": "Additional Codex prompt blocks, saved in the \"{displayName}\" preset. Switching presets changes the prompt set. Read How To before editing.",
+          "otherBlocksOfTheCodexAgentS": "Additional Codex prompt blocks for this preset.",
+          "templateCustomizedInThisPreset": "{overridden} template{overridden, plural, one {} other {s}} customized in this preset."
+        },
+        "renderTemplateRow": {
+          "customized": "customized",
+          "hostMacrosLikeUserAlsoWorkThey": "Supports host macros such as '{{user}}', resolved when sent.",
+          "builtInPresetDuplicateItAboveTo": "Built-in preset, duplicate it above to edit this template."
+        },
+        "howBtn": {
+          "hideHowTo": "Hide How To",
+          "howTo": "How To"
+        },
+        "resetBtn": {
+          "resetToDefault": "Reset to default",
+          "clickAgainToConfirm": "Confirm?"
+        },
+        "renderMemoriaOverrides": {
+          "personaIsTheSystemPromptHeaderShort": "Persona sets the system-prompt header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
+          "memoriaPersona": "Memoria persona",
+          "memoriaShortCommentRules": "Memoria short-comment rules"
+        },
+        "buildOverrideBlock": {
+          "resetToDefault": "Reset to default",
+          "clickAgainToConfirm": "Confirm?"
+        },
+        "restoreIdle": {
+          "resetToDefault": "Reset to default"
+        },
+        "renderCategory": {
+          "theMissionBlockAtTheTopOf": "Instructions at the start of the Codex system prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
+          "newBlankPrompt": "New blank prompt",
+          "duplicateToNew": "Duplicate to new",
+          "duplicateToEdit": "Duplicate to edit",
+          "dryRun": "Dry run",
+          "assembleTheNextCodexRunSComplete": "Preview resolved system and user prompts. No model call.",
+          "assembleThisPresetSPromptWithAll": "Preview this preset''s resolved prompt. No model call.",
+          "delete": "Delete",
+          "promptBuiltInDuplicateToEdit": "Prompt (built-in, duplicate to edit)"
+        },
+        "opts": {
+          "builtIn": "Built-in: {displayName}",
+          "custom": "Custom: {displayName}"
+        },
+        "name": {
+          "nameForNewPrompt": "Name for new {category} prompt",
+          "untitled": "Untitled",
+          "nameForDuplicate": "Name for duplicate"
+        },
+        "sourceName": {
+          "untitled": "Untitled"
+        },
+        "ok": {
+          "deletePrompt": "Delete prompt?",
+          "thisRemovesTheCustomPromptAndFalls": "Deletes this custom prompt and selects the built-in default.",
+          "deletePreset": "Delete preset?"
+        },
+        "nameField": {
+          "displayName": "Display name"
+        },
+        "textField": {
+          "prompt": "Prompt"
+        },
+        "renderImport": {
+          "uploadASillyTavernMemoryBooksExportMemoria": "Import a SillyTavern Memory Books export as editable presets.",
+          "importChapterPresets": "Import chapter presets",
+          "importArcPresets": "Import arc presets",
+          "delete": "Delete",
+          "noCustomPresetsYet": "No custom presets yet"
+        },
+        "importFile": {
+          "memoriaCanTReadThisFile": "Couldn''t read the file",
+          "memoriaCouldnTParseThePresetJson": "Invalid preset JSON"
+        },
+        "showImportFailure": {
+          "importFailed": "Import failed",
+          "ok": "OK"
+        },
+        "lines": {
+          "duplicateAnyBuiltInOrCreateNew": "Duplicate a built-in preset or create a custom preset to edit.",
+          "promptsMustAskTheModelForStrict": "Prompts must ask the model for strict JSON (examples below).",
+          "targetTokensExpandsToTheActiveCompression": "'{{target_tokens}}' expands to the active compression target.",
+          "memoriaShortCommentRulesExpandsToThis": "'{{memoria_short_comment_rules}}' expands to this turn''s nyandere short-comment rules.",
+          "promptsAreMacroEvaluated": "Prompts are macro-evaluated."
+        },
+        "groups": {
+          "fileSchemas": "File schemas",
+          "writeProtocol": "Write protocol",
+          "passInstructions": "Pass instructions",
+          "runNotes": "Run notes"
+        }
+      },
+      "tuningTab": {
+        "subtabs": {
+          "connection": "Connection",
+          "settings": "Settings",
+          "prompts": "Prompts"
+        },
+        "renderTuningTab": {
+          "profile": "Profile",
+          "extensionOff": "· extension off",
+          "switchOrManageProfilesInTheConnection": "Switch or manage profiles in the Connection pane"
+        },
+        "options": {
+          "books": "Books",
+          "Codex": "Codex"
+        },
+        "sec": {
+          "everywhere": "Everywhere"
+        },
+        "renderGlobalSettings": {
+          "theseApplyToEveryChatAndProfile": "Account settings for chats and profiles.",
+          "automationToasts": "Automation toasts",
+          "whenOffMemoriaSBackgroundRunsStay": "Show notifications for automatic tasks. Errors and manual actions still notify.",
+          "summaryRecall": "Summary recall",
+          "appliesToExistingAndFutureChapterAnd": "Applies to existing and future summaries across chats. Summary coverage stays unchanged. Keyword and vector modes include matching summaries; vector recall falls back to keywords if no recent text is visible.",
+          "lorebookNamesFollowChatNames": "Lorebook names follow chat names",
+          "turnOffToRenameYourBooksAnd": "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync."
+        }
+      }
+    },
+    "common": {
+      "messageCount": "{count} msgs",
+      "compactRole": "{role, select, user {USER} assistant {ASSI} system {SYST} tool {TOOL} other {{fallback}}}",
+      "role": "{role, select, user {user} assistant {assistant} system {system} tool {tool} other {{role}}}",
+      "compactTokens": "{tokens}t",
+      "compactTokenChange": "{before}t→{after}t"
+    }
+  },
+  "guides": {
+    "Codex": {
+      "markdown": "# The Knowledge Codex\n\nModels lose facts, muddle timelines, and drift out of character as the context grows and overflows. Researchers have measured these failure modes in long-run roleplay: fact loss, timeline confusion, and persona drift ([ARPM, 2026](https://arxiv.org/pdf/2605.14802), [PCL](https://arxiv.org/html/2503.17662v1), [CloneMem](https://arxiv.org/pdf/2601.07023)).\n\nLumiBooks already fights this partially with compression. Memoria files your chat into chapters, binds chapters into arcs, and presses arcs into volumes.\n\nIn short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.\n\nThis is what knowledge Codex solves.\n\n## What it is\n\nThe Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:\n\n- **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).\n- **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.\n- **Timeline.** A dated record of major events. Timeline confusion is one of the most common failure modes, and a maintained timeline is the classic defense ([ARPM](https://arxiv.org/pdf/2605.14802), [narrative dimensions](https://arxiv.org/pdf/2604.10786), [event relation extraction](https://arxiv.org/pdf/2106.08629)).\n- **Threads.** Open/stalled storylines, and the details planted for later payoff. Explicit thread and outline state is what keeps plots coherent over thousands of words ([DOC](https://arxiv.org/pdf/2212.10077), [Writing Path](https://arxiv.org/html/2404.13919v1), [plot structure management](https://www.sciencedirect.com/science/article/pii/S1875952123000459)).\n- **World.** The rules of your setting (Magic systems, factions, geography, lore, facts true of the world itself). Important for narrative depth ([KG-guided storytelling](https://arxiv.org/html/2505.24803v2), [KG + literary theory](https://arxiv.org/pdf/2508.03137), [hierarchical story KGs](https://arxiv.org/html/2506.10008v1)).\n- **Knowledge and secrets.** Who knows what. Models improve greatly when memory is limited to what each character actually witnessed, and belief tracking is where LLMs are shit ([perspective-bounded memory](https://arxiv.org/pdf/2606.25632), [MREval](https://aclanthology.org/2026.findings-acl.1175/), [ToMATO, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/32143), [EnigmaToM](https://arxiv.org/pdf/2503.03340)).\n\n## Why these records?\n\nThese are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).\n\nSome things other trackers keep were left out on purpose:\n\n- **Numeric affection and trust meters.** Some research shows relationships benefit more from trajectories vs scores ([Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph)). A number like affection 62 is pseudo-precision an LLM can interpret in arbitrary ways. \"Loves her, hides it, betrayed on day 12\" carries far more information. We track this as relationships.\n- **Per-turn scene state.** Who is standing where, current weather, momentary moods, etc. The uncompressed tail of your chat already shows the present scene, so tracking it twice is not needed and would need to be updated every turn.\n- **Possession ledgers, personality drift logs, faction standing matrices.** Each extra table multiplies the agent''s upkeep and adds a place for old data to accumulate and relationships to track. Significant objects already live as Things, lasting character change belongs on the sheet itself, and pivotal shifts go in the timeline as events.\n- **Verbatim dialogue.** Potentially in the future, could track dialogues. idk.\n\n## How it works\n\nEvery so often, on a schedule you control, LB hands a slice of your story to a lightweight agent along with the current records and some context of the past. The agent then does three things:\n\n1. **Update.** Rewrite every section the story has outdated.\n2. **Sweep.** Verify nothing stale survived.\n3. **Compress.** Strip bloat and prose, duplicate info, verbosity.\n\nYou can edit the records yourself in the new and beautiful glass UI.\n\n## How it reaches the prompt\n\nThe Codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host''s native lorebook activation decides what enters the prompt:\n\n- **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse''s lorebook search.\n- **Timeline and threads** are constant entries as keyword matching doesn''t make as much sense here.\n\nVector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.\n\nChapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.\n\nThe mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.\n\n## For extension developers\n\nLumiBooks publishes the Codex to Spindle''s shared RPC pool. Read it from any extension backend:\n\n```ts\n// Full snapshot: all 8 files as parsed JSON, plus per-file states.\nconst snap = await spindle.rpcPool.read(`lumi_books.Codex.$'{'chatId'}'`);\n// snap: '{' chatId, userId, files: '{' characters, locations, things, relations,\n//         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'\n\n// The whole Codex rendered as one text block. Note LumiBooks itself no longer\n// injects this block: records reach the prompt as lorebook entries (see\n// \"How it reaches the prompt\"), so this is a convenience view for consumers.\nconst text = await spindle.rpcPool.read(`lumi_books.Codex.$'{'chatId'}'.rendered`);\n\n// Change signal: the most recent Codex mutation across all chats.\nconst evt = await spindle.rpcPool.read(\"lumi_books.Codex_updated\");\n// evt: '{' chatId, userId, changedFiles, reason: \"run\"|\"tidy\"|\"edit\"|\"states\"|\"wipe\", updatedAt '}'\n```\n\nNotes:\n\n- Endpoints appear after the first Codex activity of a session. `read` rejects before that, so wrap it in a try/catch.\n- A wiped Codex publishes `null` at both chat endpoints.\n- `fileStates` marks files the user switched off (`noInject`) or froze (`frozen`). The `rendered` text already excludes them. If you consume `files` directly, respect these flags.\n- `lumi_books.latest_chapter`, `lumi_books.latest_arc`, and `lumi_books.latest_volume` carry the summary events and were already published.\n"
+    }
+  },
+  "promptBreakdown": {
+    "assembledTranscript": "Assembled transcript"
+  }
+}

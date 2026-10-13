@@ -1,3 +1,5 @@
+import { t as tr } from "./i18n";
+
 export interface HostBreakdownEntry {
   name: string;
   type: string;
@@ -50,7 +52,7 @@ export function normalizeBreakdown(raw: Record<string, unknown>, chatHistoryToke
   }
   // The host strips chat_history entries and reports their sum separately.
   if (chatHistoryTokens > 0 && !clean.some((e) => e.type === "chat_history")) {
-    clean.unshift({ name: "Assembled transcript", type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
+    clean.unshift({ name: tr("promptBreakdown.assembledTranscript"), type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
   }
   const summed = clean.reduce((a, e) => a + e.tokens, 0);
   return {

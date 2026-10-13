@@ -11,6 +11,8 @@ import { COURSE_CODEX } from "../src/ui/lessons/content-codex";
 import { FIXTURE_VARIANTS, buildFixture } from "../src/ui/lessons/fixture";
 import { scoredQuestions } from "../src/ui/lessons/lesson-types";
 import type { LessonCourseDef, QuizStep } from "../src/ui/lessons/lesson-types";
+import english from "../src/locales/en.json";
+import { flattenCatalog, messageCalls } from "./locale-tools";
 
 let failures = 0;
 function fail(msg: string): void {
@@ -33,6 +35,12 @@ function walk(dir: string, out: string[] = []): string[] {
 const SRC = join(import.meta.dir, "..", "src");
 const files = walk(SRC);
 const sourceText = files.map((f) => readFileSync(f, "utf8")).join("\n");
+// Resolve only catalog entries referenced by implementation code. Counting lesson
+// copy itself would let a stale exhibit validate its own obsolete error text.
+const implementationFiles = files.filter(f => !f.endsWith(".test.ts") && !f.replaceAll("\\", "/").includes("/ui/lessons/"));
+const messages = flattenCatalog(english);
+const implementationText = implementationFiles.map(f => readFileSync(f, "utf8")).join("\n") + "\n" +
+  implementationFiles.flatMap(messageCalls).map(call => messages.get(call.key)?.replaceAll("''", "'") ?? "").join("\n");
 
 /* ------------------------------------------------------------- anchors */
 
@@ -172,7 +180,7 @@ const EXHIBIT_FRAGMENTS = [
 
 console.log("exhibits:");
 for (const frag of EXHIBIT_FRAGMENTS) {
-  if (sourceText.includes(frag)) ok(`fragment in source: "${frag.slice(0, 48)}"`);
+  if (implementationText.includes(frag)) ok(`fragment in source: "${frag.slice(0, 48)}"`);
   else fail(`fragment missing from source: "${frag}"`);
 }
 for (const course of courses) {

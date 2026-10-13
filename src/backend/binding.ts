@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { approximateTokensFromChars, type LMBProfile, type SummaryTier } from "../shared";
 import type { LMBEntry } from "./world-book";
 
@@ -27,7 +28,7 @@ export function summaryRuns(entries: LMBEntry[], tier: SummaryTier): { entries: 
 
 export class SummaryTimelineError extends Error {
   constructor() {
-    super("Select consecutive summaries without crossing another summary tier");
+    super(tr("backend.binding.messages.selectConsecutiveSummariesWithoutCrossingAnotherSummary"));
     this.name = "SummaryTimelineError";
   }
 }

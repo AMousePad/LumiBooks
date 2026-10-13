@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 export interface ExtraFieldDraft {
   key: string;
   type: "string" | "number" | "boolean" | "list";
@@ -24,7 +25,7 @@ export function applyExtraFields(entity: Record<string, unknown>, fields: ExtraF
     if (!value) { delete entity[field.key]; continue; }
     if (field.type === "number") {
       const number = Number(value);
-      if (!Number.isFinite(number)) throw new Error(`${field.key} must be a valid number.`);
+      if (!Number.isFinite(number)) throw new Error(tr("ui.codexExtraFields.applyExtraFields.mustBeAValidNumber", { key: field.key }));
       entity[field.key] = number;
     } else if (field.type === "list") {
       entity[field.key] = value.split(/\r?\n/).map(item => item.trim()).filter(Boolean);

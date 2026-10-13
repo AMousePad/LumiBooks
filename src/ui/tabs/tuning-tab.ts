@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile } from "../../shared";
@@ -20,9 +21,9 @@ import { activationControl, vectorSetupHint } from "../activation-control";
 type TuningSubtab = "profile" | "settings" | "prompts";
 
 const SUBTABS: { key: TuningSubtab; label: string }[] = [
-  { key: "profile", label: "Connection" },
-  { key: "settings", label: "Settings" },
-  { key: "prompts", label: "Prompts" },
+  { key: "profile", label: tr("ui.tabs.tuningTab.subtabs.connection") },
+  { key: "settings", label: tr("ui.tabs.tuningTab.subtabs.settings") },
+  { key: "prompts", label: tr("ui.tabs.tuningTab.subtabs.prompts") },
 ];
 
 const local = { subtab: "profile" as TuningSubtab, settingsView: "books" as "books" | "codex" };
@@ -58,14 +59,14 @@ export function renderTuningTab(
   if (local.subtab !== "profile") {
     const strip = document.createElement("div");
     strip.className = "lmb-profile-strip";
-    strip.append(document.createTextNode("Profile"));
+    strip.append(document.createTextNode(tr("ui.tabs.tuningTab.renderTuningTab.profile")));
     const name = document.createElement("b");
     name.textContent = state.activeProfile.name;
     strip.appendChild(name);
     if (!state.settings.enabled) {
-      strip.appendChild(document.createTextNode("· extension off"));
+      strip.appendChild(document.createTextNode(tr("ui.tabs.tuningTab.renderTuningTab.extensionOff")));
     }
-    strip.title = "Switch or manage profiles in the Connection pane";
+    strip.title = tr("ui.tabs.tuningTab.renderTuningTab.switchOrManageProfilesInTheConnection");
     host.appendChild(strip);
   }
 
@@ -107,8 +108,8 @@ export function renderTuningTab(
       const body = document.createElement("div");
       body.className = "lmb-pane";
       const options: { key: "books" | "codex"; label: string; btn?: HTMLButtonElement }[] = [
-        { key: "books", label: "Books" },
-        { key: "codex", label: "Codex" },
+        { key: "books", label: tr("ui.tabs.tuningTab.options.books") },
+        { key: "codex", label: tr("ui.tabs.tuningTab.options.codex") },
       ];
       const sync = (): void => {
         for (const o of options) o.btn?.classList.toggle("active", local.settingsView === o.key);
@@ -156,30 +157,30 @@ function renderGlobalSettings(
   state: FrontendState,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Everywhere");
+  const sec = section(tr("ui.tabs.tuningTab.sec.everywhere"));
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.textContent = "These apply to every chat and profile on this account.";
+  help.textContent = tr("ui.tabs.tuningTab.renderGlobalSettings.theseApplyToEveryChatAndProfile");
   sec.body.appendChild(help);
 
   sec.body.appendChild(checkbox({
     checked: state.settings.showAutomationToasts,
-    label: "Automation toasts",
-    hint: "When off, Memoria's background runs stay quiet. Errors and your own actions still toast.",
+    label: tr("ui.tabs.tuningTab.renderGlobalSettings.automationToasts"),
+    hint: tr("ui.tabs.tuningTab.renderGlobalSettings.whenOffMemoriaSBackgroundRunsStay"),
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId }),
   }));
 
-  sec.body.appendChild(lessonMark(activationControl("Summary recall", state.settings.summaryActivationMode,
+  sec.body.appendChild(lessonMark(activationControl(tr("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode,
     (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId })), "tuning.every.constant"));
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
-  hint.textContent = "Applies to existing and future chapter and higher-tier summaries across all chats. Filing and hidden-message coverage stay the same; Keywords and Vector recall include only matching memories. With no visible recent text, vector recall falls back to keywords.";
+  hint.textContent = tr("ui.tabs.tuningTab.renderGlobalSettings.appliesToExistingAndFutureChapterAnd");
   sec.body.appendChild(hint);
   if (state.settings.summaryActivationMode === "vector") sec.body.appendChild(vectorSetupHint());
   sec.body.appendChild(checkbox({
     checked: state.settings.followChatNames,
-    label: "Lorebook names follow chat names",
-    hint: "Turn off to rename your Books and Codex lorebooks manually in Lumiverse. Turning on restores chat-based names when each shelf next syncs.",
+    label: tr("ui.tabs.tuningTab.renderGlobalSettings.lorebookNamesFollowChatNames"),
+    hint: tr("ui.tabs.tuningTab.renderGlobalSettings.turnOffToRenameYourBooksAnd"),
     onChange: (followChatNames) => send({ type: "save_settings", patch: { followChatNames }, chatId: state.activeChatId }),
   }));
 

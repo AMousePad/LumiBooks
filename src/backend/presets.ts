@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { BuiltInPreset } from "../types";
 import { fillPrompt } from "../prompts/fill";
 import targetDirectiveTxt from "../prompts/books/target-directive.txt";
@@ -16,24 +17,24 @@ function withTargetDirective(template: string): string {
 }
 
 export const BUILTIN_CHAPTER_PRESETS: BuiltInPreset[] = [
-  { key: "summary", displayName: "Summary", prompt: withTargetDirective(chapterSummaryTxt) },
-  { key: "summarize", displayName: "Summarize", prompt: withTargetDirective(chapterSummarizeTxt) },
-  { key: "synopsis", displayName: "Synopsis", prompt: withTargetDirective(chapterSynopsisTxt) },
-  { key: "minimal", displayName: "Minimal", prompt: withTargetDirective(chapterMinimalTxt) },
+  { key: "summary", displayName: tr("backend.presets.builtinChapterPresets.summary"), prompt: withTargetDirective(chapterSummaryTxt) },
+  { key: "summarize", displayName: tr("backend.presets.builtinChapterPresets.summarize"), prompt: withTargetDirective(chapterSummarizeTxt) },
+  { key: "synopsis", displayName: tr("backend.presets.builtinChapterPresets.synopsis"), prompt: withTargetDirective(chapterSynopsisTxt) },
+  { key: "minimal", displayName: tr("backend.presets.builtinChapterPresets.minimal"), prompt: withTargetDirective(chapterMinimalTxt) },
 ];
 
 export const BUILTIN_ARC_PRESETS: BuiltInPreset[] = [
-  { key: "arc_default", displayName: "Arc", prompt: withTargetDirective(arcDefaultTxt) },
+  { key: "arc_default", displayName: tr("backend.presets.builtinArcPresets.arc"), prompt: withTargetDirective(arcDefaultTxt) },
 ];
 
 export const BUILTIN_VOLUME_PRESETS: BuiltInPreset[] = [
-  { key: "volume_default", displayName: "Volume", prompt: withTargetDirective(volumeDefaultTxt) },
+  { key: "volume_default", displayName: tr("backend.presets.builtinVolumePresets.volume"), prompt: withTargetDirective(volumeDefaultTxt) },
 ];
 
 /** The codex directives block rides the same preset system as the books
  * prompts: built-in default, custom "codex" presets, picked per profile. */
 export const BUILTIN_CODEX_PRESETS: BuiltInPreset[] = [
-  { key: "codex_default", displayName: "Default", prompt: CODEX_DIRECTIVES_DEFAULT },
+  { key: "codex_default", displayName: tr("backend.presets.builtinCodexPresets.default"), prompt: CODEX_DIRECTIVES_DEFAULT },
 ];
 
 export function findBuiltInPreset(category: "chapter" | "arc" | "volume" | "codex", key: string): BuiltInPreset | null {

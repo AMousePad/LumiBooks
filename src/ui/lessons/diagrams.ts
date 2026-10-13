@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 /** Animated concept diagrams for dialogue steps. JS drives phase changes on a
  * loop, CSS carries the motion, and every timer stops itself once its host
  * leaves the DOM. Reduced motion collapses the transitions to state flips. */
@@ -63,12 +64,12 @@ const MSG_WIDTHS = [46, 72, 38, 66, 52, 74, 42, 68, 56, 70, 44, 64];
 /* --------------------------------------------------------- context rot */
 
 function diagramRot(wrap: HTMLElement): void {
-  wrap.appendChild(el("lmb-dg-label", "the context window"));
+  wrap.appendChild(el("lmb-dg-label", tr("ui.lessons.diagrams.diagramRot.theContextWindow")));
   const win = el("lmb-dg-window");
   const col = el("lmb-dg-col bottom");
   win.appendChild(col);
   wrap.appendChild(win);
-  const caption = el("lmb-dg-caption", "new turns push in, the oldest get clipped out");
+  const caption = el("lmb-dg-caption", tr("ui.lessons.diagrams.caption.newTurnsPushInTheOldestGet"));
   wrap.appendChild(caption);
 
   const MAX = 9;
@@ -115,7 +116,7 @@ function paintFold(col: HTMLElement, caption: HTMLElement, state: FoldState): vo
 }
 
 function diagramFold(wrap: HTMLElement): void {
-  wrap.appendChild(el("lmb-dg-label", "your chat history"));
+  wrap.appendChild(el("lmb-dg-label", tr("ui.lessons.diagrams.diagramFold.yourChatHistory")));
   const win = el("lmb-dg-window tall");
   const col = el("lmb-dg-col");
   win.appendChild(col);
@@ -125,10 +126,10 @@ function diagramFold(wrap: HTMLElement): void {
 
   const msgs = (k: number): FoldState["rows"] => Array.from({ length: k }, () => ({ kind: "msg" as const }));
   const states: FoldState[] = [
-    { rows: [...msgs(9)], caption: "old messages pile up…" },
-    { rows: [{ kind: "chapter", label: "CH 1" }, ...msgs(6)], caption: "…the oldest fold into a chapter, in place…" },
-    { rows: [{ kind: "chapter", label: "CH 1" }, { kind: "chapter", label: "CH 2" }, ...msgs(3)], caption: "…then the next window folds…" },
-    { rows: [{ kind: "arc", label: "ARC 1" }, ...msgs(3)], caption: "…and chapters bind into a single arc." },
+    { rows: [...msgs(9)], caption: tr("ui.lessons.diagrams.states.oldMessagesPileUp") },
+    { rows: [{ kind: "chapter", label: tr("ui.lessons.diagrams.states.ch1") }, ...msgs(6)], caption: tr("ui.lessons.diagrams.states.theOldestFoldIntoAChapterIn") },
+    { rows: [{ kind: "chapter", label: tr("ui.lessons.diagrams.states.ch1") }, { kind: "chapter", label: tr("ui.lessons.diagrams.states.ch2") }, ...msgs(3)], caption: tr("ui.lessons.diagrams.states.thenTheNextWindowFolds") },
+    { rows: [{ kind: "arc", label: tr("ui.lessons.diagrams.states.arc1") }, ...msgs(3)], caption: tr("ui.lessons.diagrams.states.andChaptersBindIntoASingleArc") },
   ];
   paintFold(col, caption, states[0]!);
   loop(wrap, [
@@ -142,7 +143,7 @@ function diagramFold(wrap: HTMLElement): void {
 /* ------------------------------------------------------------ unfolding */
 
 function diagramUnfold(wrap: HTMLElement): void {
-  wrap.appendChild(el("lmb-dg-label", "the shelf"));
+  wrap.appendChild(el("lmb-dg-label", tr("ui.lessons.diagrams.diagramUnfold.theShelf")));
   const win = el("lmb-dg-window");
   const col = el("lmb-dg-col");
   win.appendChild(col);
@@ -151,12 +152,12 @@ function diagramUnfold(wrap: HTMLElement): void {
   wrap.appendChild(caption);
 
   const filed: FoldState = {
-    rows: [{ kind: "chapter", label: "CH 3" }],
-    caption: "a chapter covers messages 37-54, they ride hidden",
+    rows: [{ kind: "chapter", label: tr("ui.lessons.diagrams.filed.ch3") }],
+    caption: tr("ui.lessons.diagrams.filed.aChapterCoversMessages3754They"),
   };
   const deleted: FoldState = {
     rows: [{ kind: "msg" }, { kind: "msg" }, { kind: "msg" }, { kind: "msg" }],
-    caption: "delete it and the messages come right back",
+    caption: tr("ui.lessons.diagrams.deleted.deleteItAndTheMessagesComeRight"),
   };
   paintFold(col, caption, filed);
   loop(wrap, [
@@ -168,15 +169,15 @@ function diagramUnfold(wrap: HTMLElement): void {
 /* ------------------------------------------------------------ fact fade */
 
 const FADE_CHIPS = [
-  "Elias → Mara: loves her, hides it",
-  "captain wrongly believes: bandits",
-  "day 12: she saw the fall",
-  "open thread: the receipt",
+  tr("ui.lessons.diagrams.fadeChips.eliasMaraLovesHerHidesIt"),
+  tr("ui.lessons.diagrams.fadeChips.captainWronglyBelievesBandits"),
+  tr("ui.lessons.diagrams.fadeChips.day12SheSawTheFall"),
+  tr("ui.lessons.diagrams.fadeChips.openThreadTheReceipt"),
 ];
 
 function diagramFade(wrap: HTMLElement): void {
-  wrap.appendChild(el("lmb-dg-label", "one summary, compressed again and again"));
-  const tier = el("lmb-dg-tier", "chapter");
+  wrap.appendChild(el("lmb-dg-label", tr("ui.lessons.diagrams.diagramFade.oneSummaryCompressedAgainAndAgain")));
+  const tier = el("lmb-dg-tier", tr("ui.lessons.diagrams.tier.chapter"));
   wrap.appendChild(tier);
   const card = el("lmb-dg-card");
   for (const w of [88, 74, 81]) {
@@ -192,28 +193,28 @@ function diagramFade(wrap: HTMLElement): void {
     return chip;
   });
   wrap.appendChild(chips);
-  const caption = el("lmb-dg-caption", "the plot survives, the structured facts thin out");
+  const caption = el("lmb-dg-caption", tr("ui.lessons.diagrams.caption.thePlotSurvivesTheStructuredFactsThin"));
   wrap.appendChild(caption);
 
   const reset = (): void => {
-    tier.textContent = "chapter";
+    tier.textContent = tr("ui.lessons.diagrams.reset.chapter");
     tier.classList.remove("hot");
     chips.classList.remove("kept");
     for (const c of chipEls) c.classList.remove("gone");
-    caption.textContent = "the plot survives, the structured facts thin out";
+    caption.textContent = tr("ui.lessons.diagrams.reset.thePlotSurvivesTheStructuredFactsThin");
   };
   loop(wrap, [
-    { at: 1800, run: () => { tier.textContent = "arc"; chipEls[0]!.classList.add("gone"); } },
+    { at: 1800, run: () => { tier.textContent = tr("ui.lessons.diagrams.diagramFade.arc"); chipEls[0]!.classList.add("gone"); } },
     { at: 3400, run: () => { chipEls[2]!.classList.add("gone"); } },
-    { at: 5000, run: () => { tier.textContent = "volume"; chipEls[1]!.classList.add("gone"); chipEls[3]!.classList.add("gone"); } },
+    { at: 5000, run: () => { tier.textContent = tr("ui.lessons.diagrams.diagramFade.volume"); chipEls[1]!.classList.add("gone"); chipEls[3]!.classList.add("gone"); } },
     {
       at: 6600,
       run: () => {
-        tier.textContent = "with a codex";
+        tier.textContent = tr("ui.lessons.diagrams.diagramFade.withACodex");
         tier.classList.add("hot");
         chips.classList.add("kept");
         for (const c of chipEls) c.classList.remove("gone");
-        caption.textContent = "the codex tracks them explicitly, outside the summaries";
+        caption.textContent = tr("ui.lessons.diagrams.diagramFade.theCodexTracksThemExplicitlyOutsideThe");
       },
     },
     { at: 9600, run: reset },

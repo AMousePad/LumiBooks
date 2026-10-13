@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LessonAnswer, LessonCourseKey, LessonCourseState, LessonGrade } from "../../shared";
@@ -360,19 +361,19 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     head.className = "lmb-lesson-head";
     const title = document.createElement("span");
     title.className = "lmb-lesson-title";
-    title.textContent = active.mode === "exam" ? `${active.course.title} \u00B7 Exam` : active.course.title;
+    title.textContent = active.mode === "exam" ? tr("ui.lessons.engine.buildStage.exam", { title: active.course.title }) : active.course.title;
     headLabel = document.createElement("span");
     headLabel.className = "lmb-lesson-headlabel";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "lmb-lesson-close";
-    close.textContent = "\u2715";
+    close.textContent = tr("ui.lessons.engine.buildStage.value");
     close.title = active.mode === "exam"
-      ? "Leave the exam, an unfinished exam is not saved"
+      ? tr("ui.lessons.engine.buildStage.leaveTheExamAnUnfinishedExamIs")
       : deps.getState()?.lessons?.[active.key]?.status === "done"
-        ? "Leave anytime, your diploma and previous grade stand"
-        : "Leave the lesson, progress is saved";
-    close.setAttribute("aria-label", "Leave the lesson");
+        ? tr("ui.lessons.engine.buildStage.leaveAnytimeYourDiplomaAndPreviousGrade")
+        : tr("ui.lessons.engine.buildStage.leaveTheLessonProgressIsSaved");
+    close.setAttribute("aria-label", tr("ui.lessons.engine.buildStage.leaveTheLesson"));
     close.addEventListener("click", exit);
     head.append(title, headLabel, close);
 
@@ -427,7 +428,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     const grab = document.createElement("button");
     grab.type = "button";
     grab.className = "lmb-lesson-grab";
-    grab.setAttribute("aria-label", "Collapse the dialogue");
+    grab.setAttribute("aria-label", tr("ui.lessons.engine.buildStage.collapseTheDialogue"));
     grab.addEventListener("click", () => sheet.classList.toggle("collapsed"));
     sheetBody = document.createElement("div");
     sheetBody.className = "lmb-lesson-sheet-body";
@@ -448,7 +449,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     if (active.mode === "exam") {
       const label = document.createElement("span");
       label.className = "lmb-lesson-headlabel";
-      label.textContent = active.phase === "steps" ? `Question ${active.examIdx + 1} of ${active.examSet.length}` : "";
+      label.textContent = active.phase === "steps" ? tr("ui.lessons.engine.renderRail.questionOf", { examIdx1: active.examIdx + 1, length: active.examSet.length }) : "";
       railEl.appendChild(label);
       return;
     }
@@ -476,7 +477,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
   }
 
   function roman(n: number): string {
-    const table: [number, string][] = [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]];
+    const table: [number, string][] = [[10, "X"], [9, tr("ui.lessons.engine.table.ix")], [5, "V"], [4, tr("ui.lessons.engine.table.iv")], [1, "I"]];
     let out = "";
     let v = n;
     for (const [num, sym] of table) {
@@ -534,7 +535,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         // Free-play edits in the sandbox still land, so Save buttons work.
         active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
         deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
-        showToast("success", `Memoria saved ${m.file}.json`);
+        showToast("success", tr("ui.lessons.engine.makeSandboxSend.memoriaSavedJson", { file: m.file }));
         scheduleDemoRerender(step);
         return;
       }
@@ -552,9 +553,9 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         return;
       }
       active.doPhase = "running";
-      fx.busy = [{ kind: "chapter", chatId: FIXTURE_CHAT_ID, label: "Memoria is filing a chapter (1s)", startedAt: Date.now() }];
+      fx.busy = [{ kind: "chapter", chatId: FIXTURE_CHAT_ID, label: tr("ui.lessons.engine.runDoScript.memoriaIsFilingAChapter1s"), startedAt: Date.now() }];
       scheduleDemoRerender(step);
-      showToast("info", "Memoria opens a fresh page for you, nya");
+      showToast("info", tr("ui.lessons.engine.runDoScript.memoriaOpensAFreshPageForYou"));
       // Completion re-reads the live fixture instead of trusting the captured
       // object, so a re-render between click and finish can't strand the step.
       setTimeout(() => {
@@ -564,7 +565,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           cur.busy = [];
           applyFiledChapter(cur);
         }
-        showToast("success", "Memoria slid the chapter onto your shelf, nyaa~");
+        showToast("success", tr("ui.lessons.engine.runDoScript.memoriaSlidTheChapterOntoYourShelf"));
         markDoDone(step);
         scheduleDemoRerender(step);
       }, 1400);
@@ -573,7 +574,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     if (m.type === "codex_write_file") {
       active.codexFiles = { ...active.codexFiles, [m.file]: m.content };
       deliverCodexFiles(FIXTURE_CHAT_ID, active.codexFiles, 0, m.file, m.seq);
-      showToast("success", `Memoria saved ${m.file}.json`);
+      showToast("success", tr("ui.lessons.engine.runDoScript.memoriaSavedJson", { file: m.file }));
       markDoDone(step);
       scheduleDemoRerender(step);
       return;
@@ -678,7 +679,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       demoInner.replaceChildren();
       const empty = document.createElement("div");
       empty.className = "lmb-empty";
-      empty.textContent = real ? "No chat is open right now, skip this step." : "";
+      empty.textContent = real ? tr("ui.lessons.engine.renderDemoFor.noChatIsOpenRightNowSkip") : "";
       demoInner.appendChild(empty);
       return;
     }
@@ -752,7 +753,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     title.textContent = active.course.title;
     const orn = document.createElement("div");
     orn.className = "lmb-lesson-cover-orn";
-    orn.textContent = "\u25C6 \u25C7 \u25C6";
+    orn.textContent = tr("ui.lessons.engine.renderCover.value");
     cover.append(title, orn);
     const secTitle = subtitle
       ?? (active.mode === "lesson" && active.phase === "steps" ? active.main[active.sIdx]?.title : undefined);
@@ -858,7 +859,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           ? "tap"
           : undefined;
       if (chip) {
-        spotTag.textContent = `\u25C6 ${chip}`;
+        spotTag.textContent = tr("ui.lessons.engine.positionSpotlight.value", { chip: chip });
         spotTag.style.display = "";
         const tagTop = top - 27;
         spotTag.style.top = tagTop < 4 ? `${bottom + 7}px` : `${tagTop}px`;
@@ -875,7 +876,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     if (!active || !stage) return;
     renderRail();
     if (active.phase === "register") {
-      renderCover("Sign the register");
+      renderCover(tr("ui.lessons.engine.renderStep.signTheRegister"));
       if (sheetBody) {
         renderRegister(sheetBody, active.signedName ?? "", onSigned);
       }
@@ -951,27 +952,27 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     text.textContent = step.kind === "do" && done && step.done
       ? step.done
       : step.kind === "nav" && done
-        ? (step.done ?? "Right where we need to be.")
+        ? (step.done ?? tr("ui.lessons.engine.renderSheet.rightWhereWeNeedToBe"))
         : step.text;
     text.setAttribute("aria-live", "polite");
     content.appendChild(text);
 
     const nav = document.createElement("div");
     nav.className = "lmb-lesson-nav";
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
+    nav.appendChild(makeButton(tr("ui.lessons.engine.renderSheet.back"), back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.appendChild(spacer);
     if ((step.kind === "do" || step.kind === "nav") && !done) {
       if (step.optional && active.doPhase === "idle") {
-        nav.appendChild(makeButton("Skip", advance, { small: true }));
+        nav.appendChild(makeButton(tr("ui.lessons.engine.renderSheet.skip"), advance, { small: true }));
       }
       const hint = document.createElement("span");
       hint.className = "lmb-lesson-waiting";
-      hint.textContent = active.doPhase === "running" ? "working\u2026" : "your move\u2026";
+      hint.textContent = active.doPhase === "running" ? tr("ui.lessons.engine.renderSheet.working") : tr("ui.lessons.engine.renderSheet.yourMove");
       nav.appendChild(hint);
     } else {
-      nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
+      nav.appendChild(makeButton(tr("ui.lessons.engine.renderSheet.next"), advance, { small: true, primary: true }));
     }
     content.appendChild(nav);
   }
@@ -1002,14 +1003,14 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       const note = document.createElement("div");
       note.className = "lmb-lesson-why";
       note.textContent = already === "gold"
-        ? "Already stamped gold, from the exam or an earlier pass."
-        : "Answered on an earlier pass.";
+        ? tr("ui.lessons.engine.renderQuiz.alreadyStampedGoldFromTheExamOr")
+        : tr("ui.lessons.engine.renderQuiz.answeredOnAnEarlierPass");
       content.appendChild(note);
-      nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
+      nav.appendChild(makeButton(tr("ui.lessons.engine.renderQuiz.back"), back, { small: true, disabled: atStart() || active.mode === "exam" }));
       const spacer = document.createElement("span");
       spacer.className = "lmb-spacer";
       nav.appendChild(spacer);
-      nav.appendChild(makeButton("Next", advance, { small: true, primary: true }));
+      nav.appendChild(makeButton(tr("ui.lessons.engine.renderQuiz.next"), advance, { small: true, primary: true }));
       content.appendChild(nav);
       return;
     }
@@ -1039,14 +1040,14 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
           if (wasCorrect) b.classList.add("correct");
         }
         if (!o.correct) btn.classList.add("wrong");
-        verdict.textContent = o.correct ? "Filed! \u25C6" : "Not quite.";
+        verdict.textContent = o.correct ? tr("ui.lessons.engine.renderQuiz.filed") : tr("ui.lessons.engine.renderQuiz.notQuite");
         verdict.classList.add(o.correct ? "ok" : "miss");
         const why = document.createElement("div");
         why.className = "lmb-lesson-why";
         why.textContent = q.why;
         content.insertBefore(why, nav);
         skipLink.remove();
-        nav.appendChild(makeButton("Continue", advance, { small: true, primary: true }));
+        nav.appendChild(makeButton(tr("ui.lessons.engine.renderQuiz.continue"), advance, { small: true, primary: true }));
       });
       btns.push(btn);
       group.appendChild(btn);
@@ -1057,14 +1058,14 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     const skipLink = document.createElement("button");
     skipLink.type = "button";
     skipLink.className = "lmb-lesson-skip";
-    skipLink.textContent = "Skip, mark for revisit";
+    skipLink.textContent = tr("ui.lessons.engine.renderQuiz.skipMarkForRevisit");
     skipLink.addEventListener("click", () => {
       if (locked) return;
       locked = true;
       recordAnswer(q, "skip");
       advance();
     });
-    nav.appendChild(makeButton("Back", back, { small: true, disabled: atStart() || active.mode === "exam" }));
+    nav.appendChild(makeButton(tr("ui.lessons.engine.renderQuiz.back"), back, { small: true, disabled: atStart() || active.mode === "exam" }));
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
     nav.append(spacer, skipLink);
@@ -1074,7 +1075,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
       const peek = document.createElement("button");
       peek.type = "button";
       peek.className = "lmb-lesson-peek";
-      peek.textContent = "Hold to peek at the pane";
+      peek.textContent = tr("ui.lessons.engine.renderQuiz.holdToPeekAtThePane");
       const sheet = sheetBody?.parentElement;
       const down = (): void => sheet?.classList.add("peeking");
       const up = (): void => sheet?.classList.remove("peeking");
@@ -1286,13 +1287,13 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     active.tIdx = 0;
     active.phase = "steps";
     renderStep();
-    showToast("info", `${correct} of ${active.examSet.length}, the passed topics stay stamped while we walk the rest`);
+    showToast("info", tr("ui.lessons.engine.finishExam.ofThePassedTopicsStayStampedWhile", { correct: correct, length: active.examSet.length }));
   }
 
   function renderStepExamPass(): void {
     if (!active || !sheetBody) return;
     renderRail();
-    renderCover("Sign the register");
+    renderCover(tr("ui.lessons.engine.renderStepExamPass.signTheRegister"));
     renderRegister(sheetBody, active.signedName ?? "", (name) => {
       if (!active) return;
       active.signedName = name;
@@ -1310,7 +1311,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     const saved = deps.getState()?.lessons?.[active.key];
     const data = {
       courseTitle: active.course.title,
-      name: (active.viewOnly ? saved?.signedName : active.signedName) ?? saved?.signedName ?? "Reader",
+      name: (active.viewOnly ? saved?.signedName : active.signedName) ?? saved?.signedName ?? tr("ui.lessons.engine.data.reader"),
       grade: active.viewOnly ? (saved?.grade ?? active.grade) : active.grade,
       wrong: active.viewOnly ? (saved?.lastWrong ?? active.wrong) : active.wrong,
       total: active.viewOnly ? (saved?.lastTotal ?? active.total) : active.total,
@@ -1318,11 +1319,11 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     };
     const actions: { label: string; onClick: () => void; primary?: boolean }[] = [];
     if (!active.viewOnly && active.key === "books") {
-      actions.push({ label: "Enter the Archive", onClick: exit, primary: true });
+      actions.push({ label: tr("ui.lessons.engine.renderDiplomaPhase.enterTheArchive"), onClick: exit, primary: true });
     } else if (!active.viewOnly) {
-      actions.push({ label: "Open the Codex", onClick: exit, primary: true });
+      actions.push({ label: tr("ui.lessons.engine.renderDiplomaPhase.openTheCodex"), onClick: exit, primary: true });
     } else {
-      actions.push({ label: "Close", onClick: exit, primary: true });
+      actions.push({ label: tr("ui.lessons.engine.renderDiplomaPhase.close"), onClick: exit, primary: true });
     }
     if (demoInner) {
       demoInner.replaceChildren();
@@ -1336,8 +1337,8 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
     const text = document.createElement("div");
     text.className = "lmb-lesson-text";
     text.textContent = active.viewOnly
-      ? "Your diploma, as filed in the Academy."
-      : "Signed, stamped, and shelved. Congratulations, nyaa.";
+      ? tr("ui.lessons.engine.renderDiplomaPhase.yourDiplomaAsFiledInTheAcademy")
+      : tr("ui.lessons.engine.renderDiplomaPhase.signedStampedAndShelvedCongratulationsNyaa");
     row.appendChild(text);
     sheetBody.appendChild(row);
   }

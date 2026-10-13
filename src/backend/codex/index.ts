@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import { resolveTidyTarget, type CodexTidyTarget } from "../../codex-tidy";
 import { countCodexText, measureCodexTokens, type CodexTokenCounts } from "./tokens";
 import { frozenCodexFiles } from "./prompt";
@@ -60,7 +61,7 @@ function reportCodexFailure(userId: string, chatId: string, verb: string, err: u
     cb?.onToast(userId, "error", err.message);
     return;
   }
-  cb?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
+  cb?.onToast(userId, "error", tr("backend.codex.index.reportCodexFailure.memoriaCouldnTTheCodex", { verb: verb, shortErrorText: shortErrorText(err) }));
   if (err instanceof ToolProtocolError) cb?.onToolsHint?.(userId, chatId);
 }
 
@@ -141,7 +142,7 @@ async function syncEntriesGuarded(chatId: string, userId: string, relationsTable
     await syncCodexEntries(chatId, userId, relationsTableFallback);
   } catch (err) {
     warn(`codex entry sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    cb?.onToast(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+    cb?.onToast(userId, "error", tr("backend.codex.index.syncEntriesGuarded.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
   }
 }
 
@@ -165,7 +166,7 @@ export async function ensureCodexEntriesSynced(chatId: string, userId: string, p
   } catch (err) {
     entriesEnsured.delete(key);
     warn(`codex entry ensure-sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    cb?.onToast(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+    cb?.onToast(userId, "error", tr("backend.codex.index.ensureCodexEntriesSynced.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
   }
 }
 
@@ -426,29 +427,29 @@ export async function dryRunCodex(
   if (plan.compressible.length > 0) {
     chunk = takeWindow(plan.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
     if (!windowReached(plan.compressible, profile)) {
-      diagnostics.push({ message: "The window has not filled yet, automation would wait. Update now would consume this chunk." });
+      diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.theWindowHasNotFilledYetAutomation") });
     }
   } else {
     const eager = await planRun(chatId, userId, profile.codexLagUnit, 0);
     if (eager.compressible.length > 0) {
       plan = eager;
       chunk = takeWindow(eager.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
-      diagnostics.push({ message: "The lag reserve still holds these turns, automation would wait. Update now would consume them." });
+      diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.theLagReserveStillHoldsTheseTurns") });
     } else {
       const eligible = plan.messages.filter(nonEmpty);
-      if (eligible.length === 0) throw new Error("Chat has no messages");
+      if (eligible.length === 0) throw new Error(tr("backend.codex.index.dryRunCodex.chatHasNoMessages"));
       chunk = previewTail(eligible, profile);
-      diagnostics.push({ message: "The codex has read everything, so this preview reuses the newest turns. A real run would wait for new messages." });
+      diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.theCodexHasReadEverythingSoThis") });
     }
   }
-  if (chunk.length === 0) throw new Error("No consumable window, send a message and try again");
+  if (chunk.length === 0) throw new Error(tr("backend.codex.index.dryRunCodex.noConsumableWindowSendAMessageAnd"));
 
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
   const frozenFiles = frozenCodexFiles(plan.cursor.fileStates);
   if (frozenFiles.size === CODEX_FILE_KEYS.length) {
-    throw new Error("Every codex record is frozen, unfreeze one to preview a run");
+    throw new Error(tr("backend.codex.index.dryRunCodex.everyCodexRecordIsFrozenUnfreezeOne"));
   }
   const notes: CodexRunNotes = {
     reconcile: plan.reconcile,
@@ -461,7 +462,7 @@ export async function dryRunCodex(
   const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
   const firstIdx = posById.get(chunk[0]!.id) ?? 0;
   const lastIdx = posById.get(chunk[chunk.length - 1]!.id) ?? firstIdx;
-  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const chunkLabel = tr("backend.codex.index.chunkLabel.messagesOf", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1, length: plan.messages.length });
   const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
   const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
 
@@ -472,23 +473,22 @@ export async function dryRunCodex(
 
   const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
   const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
-  diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
-  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls" : "strict JSON"}` });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.connection", { name: conn.name, provider: conn.provider, model: conn.model }) });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.transport", { choice: (promptCtx.useTools) ? "yes" : "no" }) });
   diagnostics.push({
-    message: `Update delivery: ${promptCtx.sequential ? "one record per reply" : "all records in one reply"}`
-      + `, and every record must be written or skipped before Memoria accepts the update (${[...promptCtx.activeFiles].length} to cover)`,
+    message: tr("backend.codex.index.dryRunCodex.updateDeliveryAndEveryRecordMustBe", { choice: (promptCtx.sequential) ? "yes" : "no", length: [...promptCtx.activeFiles].length }),
   });
   diagnostics.push({
-    message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`,
+    message: tr("backend.codex.index.dryRunCodex.preset", { choice: (preset) ? "yes" : "no", displayName: (preset) ? (preset.displayName) : "", choice2: (overrideCount) ? "yes" : "no", value: (overrideCount) ? (overrideCount) : "", value2: (overrideCount) ? (overrideCount) : 0 }),
   });
   diagnostics.push({
-    message: `Relations mode: ${profile.codexRelationsTable ? "table" : "inline ties"}${notes.migrateToTable || notes.migrateToInline ? " (format changed, this run would migrate)" : ""}`,
+    message: tr("backend.codex.index.dryRunCodex.relationsMode", { choice: (profile.codexRelationsTable) ? "yes" : "no", choice2: (notes.migrateToTable || notes.migrateToInline) ? "yes" : "no" }),
   });
-  diagnostics.push({ message: `Active files: ${[...promptCtx.activeFiles].join(", ")}` });
-  if (frozenFiles.size) diagnostics.push({ message: `Frozen, omitted from the prompt entirely: ${[...frozenFiles].join(", ")}` });
-  diagnostics.push({ message: `Chunk: ${chunkLabel} (${chunk.length} message${chunk.length === 1 ? "" : "s"})` });
-  if (plan.reconcile) diagnostics.push({ message: "Reconcile pending: the story was edited behind the codex, the reconcile note is included" });
-  if (notes.loadProblems.length) diagnostics.push({ message: `Unreadable files shown empty: ${notes.loadProblems.join(", ")}` });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.activeFiles", { join: [...promptCtx.activeFiles].join(", ") }) });
+  if (frozenFiles.size) diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.frozenOmittedFromThePromptEntirely", { join: [...frozenFiles].join(", ") }) });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.chunkMessage", { chunkLabel: chunkLabel, length: chunk.length }) });
+  if (plan.reconcile) diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.reconcilePendingTheStoryWasEditedBehind") });
+  if (notes.loadProblems.length) diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.unreadableFilesShownEmpty", { join: notes.loadProblems.join(", ") }) });
   const lockedEntities: string[] = [];
   const fieldLocked: string[] = [];
   for (const key of ["characters", "locations", "things"] as const) {
@@ -499,25 +499,25 @@ export async function dryRunCodex(
   }
   if (lockedEntities.length || fieldLocked.length) {
     diagnostics.push({
-      message: `Locks: ${lockedEntities.length} locked entit${lockedEntities.length === 1 ? "y" : "ies"}, ${fieldLocked.length} with locked fields (masked in the prompt)`,
+      message: tr("backend.codex.index.dryRunCodex.locksLockedEntitWithLockedFieldsMasked", { length: lockedEntities.length, length2: fieldLocked.length }),
     });
   }
-  if (storySoFar) diagnostics.push({ message: `Story-so-far context: ~${approximateTokensFromChars(storySoFar.length)} tokens` });
-  if (lore) diagnostics.push({ message: `Activated lore reference: ~${approximateTokensFromChars(lore.length)} tokens` });
+  if (storySoFar) diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.storySoFarContextTokens", { length: approximateTokensFromChars(storySoFar.length) }) });
+  if (lore) diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.activatedLoreReferenceTokens", { length: approximateTokensFromChars(lore.length) }) });
   if (lore?.includes(LORE_OMITTED_MARKER)) {
     diagnostics.push({
-      message: `Activated lore exceeded the lore limit (${effectiveLoreLimitTokens(profile)} tokens): entries past the budget were skipped whole and the omission marker tells the agent more canon exists`,
+      message: tr("backend.codex.index.dryRunCodex.activatedLoreExceededTheLoreLimitTokens", { effectiveLoreLimitTokens: effectiveLoreLimitTokens(profile) }),
     });
   }
-  diagnostics.push({ message: `Thorough mode: ${profile.codexThorough ? "on, one verification round follows a clean update" : "off"}` });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.thoroughMode", { choice: (profile.codexThorough) ? "yes" : "no" }) });
   diagnostics.push({
-    message: `Prompt size: ~${approximateTokensFromChars(system.length)} tokens system + ~${approximateTokensFromChars(user.length)} tokens user (codex max input ${codexMaxInputTokens(profile)})`,
+    message: tr("backend.codex.index.dryRunCodex.promptSizeTokensSystemTokensUserCodex", { length: approximateTokensFromChars(system.length), length2: approximateTokensFromChars(user.length), codexMaxInputTokens: codexMaxInputTokens(profile) }),
   });
   const promptTokens = approximateTokensFromChars(system.length + user.length);
   if (promptTokens > codexMaxInputTokens(profile)) {
-    diagnostics.push({ message: `WOULD FAIL: ${new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message}` });
+    diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.wouldFail", { message: new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message }) });
   }
-  diagnostics.push({ message: `Sampler parameters being sent on the wire: ${JSON.stringify(buildCodexSamplerParameters(profile))}` });
+  diagnostics.push({ message: tr("backend.codex.index.dryRunCodex.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(buildCodexSamplerParameters(profile)) }) });
 
   return {
     messages: [
@@ -569,14 +569,14 @@ async function runChunk(
   if (notes.migrateToTable || notes.migrateToInline) {
     const blocked = (["characters", "locations", "things", "relations"] as const).filter((k) => frozenFiles.has(k));
     if (blocked.length) {
-      throw new Error(`The relations format changed - unfreeze ${blocked.map((k) => `${k}.json`).join(", ")} so Memoria can migrate`);
+      throw new Error(tr("backend.codex.index.runChunk.theRelationsFormatChangedUnfreezeSoMemoria", { join: blocked.map((k) => `${k}.json`).join(", ") }));
     }
   }
 
   const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
   const firstIdx = posById.get(chunk[0]!.id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1]!.id) ?? -1;
-  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const chunkLabel = tr("backend.codex.index.chunkLabel.messagesOf", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1, length: plan.messages.length });
   const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile)) : null;
   const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
 
@@ -618,7 +618,7 @@ async function runChunk(
       (r.type === "pair" ? [r.a, r.b] : r.members).every((m) => lockedIds.has(m)),
     ).length;
     if (stuck > 0) {
-      cb?.onToast(userId, "warn", `${stuck} relation${stuck === 1 ? "" : "s"} between locked entries could not be folded onto their sheets and will be dropped`);
+      cb?.onToast(userId, "warn", tr("backend.codex.index.runChunk.relationBetweenLockedEntriesCouldNotBe", { stuck: stuck }));
     }
     await saveCodexFile(chatId, "relations", { relations: [] }, userId).catch((err) =>
       warn(`codex: failed to clear relations.json after inline migration: ${describeError(err)}`),
@@ -667,7 +667,7 @@ async function runChunk(
   await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
 
   if (result.changedFiles.length > 0) {
-    cb?.onToast(userId, "success", `Memoria updated the codex (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})`, automation);
+    cb?.onToast(userId, "success", tr("backend.codex.index.runChunk.memoriaUpdatedTheCodexFile", { length: result.changedFiles.length }), automation);
   }
   cb?.onStateChange(userId, chatId);
 }
@@ -681,7 +681,7 @@ async function drain(
   automation: boolean,
 ): Promise<number | null> {
   // Null means another run holds the busy flag, distinct from "nothing to do".
-  if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex")) return null;
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.drain.memoriaIsUpdatingTheCodex"))) return null;
   // One controller for the whole drain: aborting cancels the current chunk
   // and stops the loop, instead of racing a per-chunk controller swap.
   const controller = new AbortController();
@@ -735,11 +735,11 @@ export async function maybeRunCodex(
   await ensureCodexEntriesSynced(chatId, userId, profile);
   if (profile.codexManualOnly) return;
   try {
-    await snapshotCodexForUndo(chatId, userId, "automatic update");
+    await snapshotCodexForUndo(chatId, userId, tr("backend.codex.index.maybeRunCodex.automaticUpdate"));
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria closes the codex for now");
+      cb?.onToast(userId, "info", tr("backend.codex.index.maybeRunCodex.memoriaClosesTheCodexForNow"));
       return;
     }
     warn(`codex auto run failed: ${describeError(err)}`);
@@ -761,11 +761,11 @@ export async function runCodexNow(
   settings: LMBSettings | null = null,
 ): Promise<void> {
   if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
-    cb?.onToast(userId, "warn", "Memoria is already updating the codex");
+    cb?.onToast(userId, "warn", tr("backend.codex.index.runCodexNow.memoriaIsAlreadyUpdatingTheCodex"));
     return;
   }
   if (await forkCodexPending(chatId, userId).catch(() => false)) {
-    cb?.onToast(userId, "info", "Memoria is still carrying the codex into this fork, try again in a moment");
+    cb?.onToast(userId, "info", tr("backend.codex.index.runCodexNow.memoriaIsStillCarryingTheCodexInto"));
     return;
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
@@ -776,23 +776,23 @@ export async function runCodexNow(
     if (runs === 0) {
       const cursor = await loadCursor(chatId, userId).catch(() => null);
       if (cursor && CODEX_FILE_KEYS.every((k) => cursor.fileStates[k] === "frozen")) {
-        cb?.onToast(userId, "info", "Every codex record is frozen, unfreeze one so Memoria can update it");
+        cb?.onToast(userId, "info", tr("backend.codex.index.runCodexNow.everyCodexRecordIsFrozenUnfreezeOne"));
         return;
       }
       // Nothing consumable can still hide a pending reconcile: the deleted
       // tail left no unread turns, so sweep the codex against the story now.
       const swept = await maybeReconcileSweep(chatId, profile, userId);
-      if (!swept) cb?.onToast(userId, "info", "The codex is already caught up");
+      if (!swept) cb?.onToast(userId, "info", tr("backend.codex.index.runCodexNow.theCodexIsAlreadyCaughtUp"));
     }
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria closes the codex for now");
+      cb?.onToast(userId, "info", tr("backend.codex.index.runCodexNow.memoriaClosesTheCodexForNow"));
       return;
     }
     warn(`codex manual run failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "update", err);
     if (mode !== "slow" && !(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.runCodexNow.fastCatchUpNeedsTheCodexModel"));
     }
   }
 }
@@ -944,8 +944,8 @@ async function catchupCodex(
   userId: string,
   mode: "fast" | "ultra",
 ): Promise<number | null> {
-  if (!setBusy(userId, chatId, "codex", `Memoria is catching up the codex (${mode === "ultra" ? "ultra fast" : "fast"})`)) {
-    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.catchupCodex.memoriaIsCatchingUpTheCodex", { choice: (mode === "ultra") ? "yes" : "no" }))) {
+    cb?.onToast(userId, "warn", tr("backend.codex.index.catchupCodex.memoriaIsAlreadyWorkingOnTheCodex"));
     return null;
   }
   const controller = new AbortController();
@@ -1026,7 +1026,7 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
   if (plan.cursor.relationsTableMode !== null && plan.cursor.relationsTableMode !== profile.codexRelationsTable) return false;
   // Every file frozen: the sweep could not write a single correction.
   if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen")) return false;
-  if (!setBusy(userId, chatId, "codex", "Memoria is reconciling the codex with the edited story")) return false;
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.maybeReconcileSweep.memoriaIsReconcilingTheCodexWithThe"))) return false;
   const controller = new AbortController();
   registerAborter(userId, chatId, "codex", controller);
   try {
@@ -1088,8 +1088,8 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "run");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
     cb?.onToast(userId, "success", result.changedFiles.length > 0
-      ? `Memoria reconciled the codex with the edited story (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})`
-      : "Memoria checked the codex against the edited story and everything still holds");
+      ? tr("backend.codex.index.maybeReconcileSweep.memoriaReconciledTheCodexWithTheEdited", { length: result.changedFiles.length })
+      : tr("backend.codex.index.maybeReconcileSweep.memoriaCheckedTheCodexAgainstTheEdited"));
     cb?.onStateChange(userId, chatId);
     return true;
   } finally {
@@ -1311,8 +1311,8 @@ export async function rebuildCodex(
   settings: LMBSettings | null = null,
 ): Promise<void> {
   // The wipe holds the busy flag itself, or a racing drain resurrects the old codex.
-  if (!setBusy(userId, chatId, "codex", "Memoria is clearing the codex for a rebuild")) {
-    cb?.onToast(userId, "warn", "Memoria is already working on the codex, abort that first");
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.rebuildCodex.memoriaIsClearingTheCodexForA"))) {
+    cb?.onToast(userId, "warn", tr("backend.codex.index.rebuildCodex.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   try {
@@ -1340,7 +1340,7 @@ export async function rebuildCodex(
       await saveCursor(chatId, fresh, userId);
     });
     if (cursorFault !== null) {
-      cb?.onToast(userId, "error", `Memoria couldn't read the codex cursor, rebuild aborted: ${shortErrorText(cursorFault)}`);
+      cb?.onToast(userId, "error", tr("backend.codex.index.rebuildCodex.memoriaCouldnTReadTheCodexCursor", { shortErrorText: shortErrorText(cursorFault) }));
       return;
     }
     const failed: CodexFileKey[] = [];
@@ -1350,13 +1350,13 @@ export async function rebuildCodex(
     }
     invalidateCodexInjectionCache(chatId);
     if (failed.length > 0) {
-      cb?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, run Rebuild again`);
+      cb?.onToast(userId, "error", tr("backend.codex.index.rebuildCodex.memoriaCouldnTClearCodexFileRun", { length: failed.length }));
       return;
     }
     publishCodexWiped(chatId, userId);
     await wipeCodexEntries(chatId, userId).catch((err) => {
       warn(`codex rebuild: entry wipe failed: ${describeError(err)}`);
-      cb?.onToast(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+      cb?.onToast(userId, "error", tr("backend.codex.index.rebuildCodex.memoriaCouldnTClearTheCodexLorebook", { shortErrorText: shortErrorText(err) }));
     });
   } finally {
     clearBusy(userId, chatId, "codex");
@@ -1372,8 +1372,8 @@ export async function runCodexTidy(
   only: CodexFileKey[] | undefined,
   target: CodexTidyTarget,
 ): Promise<void> {
-  if (!setBusy(userId, chatId, "codex", "Memoria is tidying the codex")) {
-    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.runCodexTidy.memoriaIsTidyingTheCodex"))) {
+    cb?.onToast(userId, "warn", tr("backend.codex.index.runCodexTidy.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController();
@@ -1383,7 +1383,7 @@ export async function runCodexTidy(
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate the codex before tidying");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.runCodexTidy.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -1394,7 +1394,7 @@ export async function runCodexTidy(
       (k) => !frozenFiles.has(k) && !broken.has(k) && !fileIsEmpty(bundle, k),
     );
     if (!targets.length) {
-      cb?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
+      cb?.onToast(userId, "info", tr("backend.codex.index.runCodexTidy.nothingToTidyThoseRecordsAreEmpty"));
       return;
     }
     const measure = async (): Promise<{ tokens: number; approximate: boolean }> => {
@@ -1412,7 +1412,7 @@ export async function runCodexTidy(
     // Resolve percentages once against the starting size, never the shrinking size.
     const { limit, modelTarget } = resolveTidyTarget(current.tokens, target);
     if (current.tokens <= limit) {
-      cb?.onToast(userId, "info", `The selected records already fit: ${current.tokens} tokens, limit ${limit}`);
+      cb?.onToast(userId, "info", tr("backend.codex.index.runCodexTidy.theSelectedRecordsAlreadyFitTokensLimit", { limit: limit }));
       return;
     }
     await snapshotCodexForUndo(chatId, userId, "tidy");
@@ -1423,7 +1423,7 @@ export async function runCodexTidy(
     const progressBase = { chars: 0, thinking: 0 };
     while (current.tokens > limit && callBudget.remaining > 0) {
       if (controller.signal.aborted) throw new AbortedSummarizerError();
-      appendStreamText(userId, chatId, "codex", "text", `\nTidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${callBudget.remaining} calls left.\n`);
+      appendStreamText(userId, chatId, "codex", "text", tr("backend.codex.index.runCodexTidy.tidyTokensLimitModelTargetCallsLeft", { tokens: current.tokens, limit: limit, modelTarget: modelTarget, remaining: callBudget.remaining }));
       const result = await runCodexAgent({
         chatId, userId, profile, promptCtx, bundle,
         chunk: [], chunkLabel: "", chunkFirstIndex: 0,
@@ -1436,7 +1436,16 @@ export async function runCodexTidy(
         onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta),
       });
       const reloaded = await loadCodex(chatId, userId, { relationsTable: diskMode });
-      if (reloaded.problems.some((p) => targets.includes(p.file))) throw new Error("A codex file could not be read after tidying; stopped before retrying.");
+      const reloadProblems = reloaded.problems.filter((p) => targets.includes(p.file));
+      if (reloadProblems.length) {
+        // Preserve the file and first underlying reason in the toast. The generic
+        // error path shortens messages to one sentence and would hide the remedy.
+        const details = reloadProblems.map((p) => {
+          const reason = p.errors[0]!.replace(/\s+/g, " ").trim();
+          return `${p.file}.json: ${reason.length > 240 ? `${reason.slice(0, 239)}…` : reason}`;
+        }).join("; ");
+        throw new CodexValidationError(tr("backend.codex.index.runCodexTidy.aCodexFileCouldNotBeRead", { details }));
+      }
       bundle = reloaded.bundle;
       current = await measure();
       invalidateCodexInjectionCache(chatId);
@@ -1449,11 +1458,11 @@ export async function runCodexTidy(
     const size = `${current.approximate ? "~" : ""}${current.tokens}`;
     cb?.onToast(userId, current.tokens <= limit ? "success" : "warn",
       current.tokens <= limit
-        ? `Codex tidied to ${size} tokens (limit ${limit}) in ${callBudget.used} model call${callBudget.used === 1 ? "" : "s"}`
-        : `Stopped after ${callBudget.used} model calls: ${size} tokens, still above the ${limit}-token limit. Kept the completed edits; Undo restores the original.`);
+        ? tr("backend.codex.index.runCodexTidy.codexTidiedToTokensLimitInModel", { size: size, limit: limit, used: callBudget.used })
+        : tr("backend.codex.index.runCodexTidy.stoppedAfterModelCallsTokensStillAbove", { used: callBudget.used, size: size, limit: limit }));
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Tidying stopped. Completed edits are kept; Undo restores the original.");
+      cb?.onToast(userId, "info", tr("backend.codex.index.runCodexTidy.tidyingStoppedCompletedEditsAreKeptUndo"));
       return;
     }
     warn(`codex tidy failed: ${describeError(err)}`);
@@ -1472,8 +1481,8 @@ export async function runCodexTidy(
 /** One ultra-shaped pass that rewrites the refresh-pending files from the
  * story's active context. The cursor never moves. */
 export async function refreshCodexFiles(chatId: string, profile: LMBProfile, userId: string): Promise<void> {
-  if (!setBusy(userId, chatId, "codex", "Memoria is catching up re-enabled records")) {
-    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.refreshCodexFiles.memoriaIsCatchingUpReEnabledRecords"))) {
+    cb?.onToast(userId, "warn", tr("backend.codex.index.refreshCodexFiles.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController();
@@ -1481,13 +1490,13 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before catching records up");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.refreshCodexFiles.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = cursor.refreshPending.filter((f): f is CodexFileKey => isCodexFileKey(f) && !frozen.has(f));
     if (targets.length === 0) {
-      cb?.onToast(userId, "info", "No re-enabled records are waiting for a catch-up");
+      cb?.onToast(userId, "info", tr("backend.codex.index.refreshCodexFiles.noReEnabledRecordsAreWaitingFor"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -1530,17 +1539,17 @@ export async function refreshCodexFiles(chatId: string, profile: LMBProfile, use
     });
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-    cb?.onToast(userId, "success", `Memoria caught up ${targets.length} record${targets.length === 1 ? "" : "s"}`);
+    cb?.onToast(userId, "success", tr("backend.codex.index.refreshCodexFiles.memoriaCaughtUpRecord", { length: targets.length }));
     cb?.onStateChange(userId, chatId);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the catch-up aside");
+      cb?.onToast(userId, "info", tr("backend.codex.index.refreshCodexFiles.memoriaSetsTheCatchUpAside"));
       return;
     }
     warn(`codex refresh failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "refresh", err);
     if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.refreshCodexFiles.theCatchUpPassNeedsTheCodex"));
     }
   } finally {
     clearBusy(userId, chatId, "codex");
@@ -1580,8 +1589,8 @@ export async function rebuildCodexFiles(
   userId: string,
   only: CodexFileKey[],
 ): Promise<void> {
-  if (!setBusy(userId, chatId, "codex", "Memoria is rebuilding codex records")) {
-    cb?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", tr("backend.codex.index.rebuildCodexFiles.memoriaIsRebuildingCodexRecords"))) {
+    cb?.onToast(userId, "warn", tr("backend.codex.index.rebuildCodexFiles.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController();
@@ -1589,13 +1598,13 @@ export async function rebuildCodexFiles(
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before rebuilding records");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.rebuildCodexFiles.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = only.filter((k) => !frozen.has(k));
     if (targets.length === 0) {
-      cb?.onToast(userId, "info", "Those records are frozen, unfreeze them first");
+      cb?.onToast(userId, "info", tr("backend.codex.index.rebuildCodexFiles.thoseRecordsAreFrozenUnfreezeThemFirst"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -1637,17 +1646,17 @@ export async function rebuildCodexFiles(
     invalidateCodexInjectionCache(chatId);
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-    cb?.onToast(userId, "success", `Memoria rebuilt ${targets.length} record${targets.length === 1 ? "" : "s"} from the story`);
+    cb?.onToast(userId, "success", tr("backend.codex.index.rebuildCodexFiles.memoriaRebuiltRecordFromTheStory", { length: targets.length }));
     cb?.onStateChange(userId, chatId);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the rebuild aside");
+      cb?.onToast(userId, "info", tr("backend.codex.index.rebuildCodexFiles.memoriaSetsTheRebuildAside"));
       return;
     }
     warn(`codex record rebuild failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "rebuild", err);
     if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb?.onToast(userId, "warn", "The rebuild pass needs the codex model's context to be at least the story model's, pick a larger context codex connection");
+      cb?.onToast(userId, "warn", tr("backend.codex.index.rebuildCodexFiles.theRebuildPassNeedsTheCodexModel"));
     }
   } finally {
     clearBusy(userId, chatId, "codex");

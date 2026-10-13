@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBSettings } from "../shared";
@@ -56,7 +57,7 @@ function migrateSettings(userId: string, raw: Partial<LMBSettings>, fromVersion:
             const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
             migratedPresets.push({
               key,
-              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
+              displayName: tr("backend.storage.flipped.directives", { hasName: typeof next.name === "string" && next.name.trim() ? "yes" : "no", name: typeof next.name === "string" ? next.name : "" }),
               prompt: legacy,
               category: "codex",
               createdAt: Date.now(),

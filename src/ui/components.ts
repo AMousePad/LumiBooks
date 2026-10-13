@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { reportUi } from "./diagnostics";
 
 export interface TextInputOpts {
@@ -152,7 +153,7 @@ export function multiSelect(opts: MultiSelectOpts): HTMLElement {
   if (opts.options.length === 0) {
     const empty = document.createElement("div");
     empty.className = "lmb-empty";
-    empty.textContent = opts.emptyText ?? "Nothing to pick";
+    empty.textContent = opts.emptyText ?? tr("ui.components.multiSelect.nothingToPick");
     wrap.appendChild(empty);
     return wrap;
   }
@@ -318,9 +319,9 @@ export function searchField(opts: SearchFieldOpts): { wrap: HTMLElement; input: 
   const clear = document.createElement("button");
   clear.type = "button";
   clear.className = "lmb-search-clear";
-  clear.textContent = "×";
-  clear.title = "Clear search";
-  clear.setAttribute("aria-label", "Clear search");
+  clear.textContent = tr("ui.components.searchField.value");
+  clear.title = tr("ui.components.searchField.clearSearch");
+  clear.setAttribute("aria-label", tr("ui.components.searchField.clearSearch"));
   const syncClear = () => { clear.style.visibility = input.value ? "visible" : "hidden"; };
   syncClear();
   input.addEventListener("input", () => {
@@ -346,12 +347,12 @@ export function scrollPaneTop(el: HTMLElement): void {
 
 export function relativeTime(ts: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 60) return "just now";
+  if (s < 60) return tr("ui.components.relativeTime.justNow");
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return tr("ui.components.relativeTime.mAgo", { m: m });
   const h = Math.floor(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 48) return tr("ui.components.relativeTime.hAgo", { h: h });
+  return tr("ui.components.relativeTime.dAgo", { floor: Math.floor(h / 24) });
 }
 
 export function textNode(text: string, className?: string): HTMLElement {
@@ -369,7 +370,7 @@ export function span(text: string, className?: string): HTMLSpanElement {
 }
 
 export function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  if (n >= 1000) return tr("ui.components.formatTokens.thousands", { value: (n / 1000).toFixed(1) });
   return String(n);
 }
 

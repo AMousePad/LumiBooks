@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { LessonGrade } from "../../shared";
 import { LESSON_GRADE_LABEL } from "../../shared";
 import { makeButton, textInput } from "../components";
@@ -14,10 +15,10 @@ export interface DiplomaData {
 }
 
 const GRADE_REMARK: Record<LessonGrade, string> = {
-  gilded: "Not a page out of place. My favorite reader, nyaa.",
-  silver: "Nearly flawless filing. The shelf approves.",
-  bronze: "A solid apprenticeship. The stacks will teach the rest.",
-  apprentice: "The library forgives. Retake a section whenever you like.",
+  gilded: tr("ui.lessons.diploma.gradeRemark.notAPageOutOfPlaceMy"),
+  silver: tr("ui.lessons.diploma.gradeRemark.nearlyFlawlessFilingTheShelfApproves"),
+  bronze: tr("ui.lessons.diploma.gradeRemark.aSolidApprenticeshipTheStacksWillTeach"),
+  apprentice: tr("ui.lessons.diploma.gradeRemark.theLibraryForgivesRetakeASectionWhenever"),
 };
 
 /* ------------------------------------------------------------- register */
@@ -32,15 +33,15 @@ export function renderRegister(
   card.className = "lmb-register";
   const title = document.createElement("div");
   title.className = "lmb-seal-title";
-  title.textContent = "Sign the register";
+  title.textContent = tr("ui.lessons.diploma.renderRegister.signTheRegister");
   const hint = document.createElement("div");
   hint.className = "lmb-seal-pitch";
-  hint.textContent = "The name goes on your diploma.";
-  const input = textInput({ value: defaultName, placeholder: "Reader", autoFocus: true });
+  hint.textContent = tr("ui.lessons.diploma.renderRegister.theNameGoesOnYourDiploma");
+  const input = textInput({ value: defaultName, placeholder: tr("ui.lessons.diploma.input.reader"), autoFocus: true });
   input.maxLength = 40;
   const row = document.createElement("div");
   row.className = "lmb-seal-actions";
-  const sign = makeButton("Sign", () => onSign(input.value.trim() || "Reader"), { primary: true });
+  const sign = makeButton(tr("ui.lessons.diploma.sign.sign"), () => onSign(input.value.trim() || tr("ui.lessons.diploma.sign.reader")), { primary: true });
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sign.click();
   });
@@ -64,19 +65,19 @@ export function renderDiploma(
   frame.className = "lmb-diploma-frame";
   const arch = document.createElement("div");
   arch.className = "lmb-diploma-arch";
-  arch.textContent = "LUMIBOOKS ACADEMY";
+  arch.textContent = tr("ui.lessons.diploma.renderDiploma.lumibooksAcademy");
   const course = document.createElement("div");
   course.className = "lmb-diploma-course";
   course.textContent = data.courseTitle;
   const grant = document.createElement("div");
   grant.className = "lmb-diploma-grant";
-  grant.textContent = "certifies that";
+  grant.textContent = tr("ui.lessons.diploma.renderDiploma.certifiesThat");
   const name = document.createElement("div");
   name.className = "lmb-diploma-name";
   name.textContent = data.name;
   const line = document.createElement("div");
   line.className = "lmb-diploma-line";
-  line.textContent = "has read the stacks and understood them";
+  line.textContent = tr("ui.lessons.diploma.renderDiploma.hasReadTheStacksAndUnderstoodThem");
 
   const stamp = document.createElement("div");
   stamp.className = `lmb-diploma-stamp lmb-grade-${data.grade}`;
@@ -85,7 +86,7 @@ export function renderDiploma(
   const score = document.createElement("div");
   score.className = "lmb-diploma-score";
   const gold = data.total - data.wrong;
-  score.textContent = `${gold} of ${data.total} gold stamps · ${new Date(data.completedAt).toLocaleDateString()}`;
+  score.textContent = tr("ui.lessons.diploma.renderDiploma.ofGoldStamps", { gold: gold, total: data.total, toLocaleDateString: new Date(data.completedAt).toLocaleDateString() });
 
   const sealRow = document.createElement("div");
   sealRow.className = "lmb-diploma-seal";
@@ -100,14 +101,14 @@ export function renderDiploma(
 
   const btnRow = document.createElement("div");
   btnRow.className = "lmb-seal-actions";
-  btnRow.appendChild(makeButton("Save as image", () => void downloadDiploma(data), { small: true }));
+  btnRow.appendChild(makeButton(tr("ui.lessons.diploma.renderDiploma.saveAsImage"), () => void downloadDiploma(data), { small: true }));
   for (const a of actions) {
     btnRow.appendChild(makeButton(a.label, a.onClick, { small: true, primary: a.primary }));
   }
   wrap.appendChild(btnRow);
   host.appendChild(wrap);
 
-  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (!window.matchMedia(tr("ui.lessons.diploma.renderDiploma.prefersReducedMotionReduce")).matches) {
     wrap.appendChild(makeConfetti());
   }
 }
@@ -118,7 +119,7 @@ function makeConfetti(): HTMLElement {
   layer.setAttribute("aria-hidden", "true");
   for (let i = 0; i < 36; i++) {
     const d = document.createElement("span");
-    d.textContent = "◆";
+    d.textContent = tr("ui.lessons.diploma.makeConfetti.value");
     d.style.left = `${(i * 137) % 100}%`;
     d.style.animationDelay = `${(i % 12) * 90}ms`;
     d.style.fontSize = `${8 + (i % 4) * 3}px`;
@@ -171,25 +172,25 @@ async function downloadDiploma(data: DiplomaData): Promise<void> {
   g.textAlign = "center";
   g.fillStyle = "#c9a86a";
   g.font = display(24);
-  g.fillText("L U M I B O O K S   A C A D E M Y", W / 2, 96);
+  g.fillText(tr("ui.lessons.diploma.downloadDiploma.lUMIBOO"), W / 2, 96);
   g.fillStyle = "rgba(255,255,255,0.85)";
   g.font = display(20);
   g.fillText(data.courseTitle, W / 2, 140);
   g.fillStyle = "rgba(255,255,255,0.55)";
   g.font = "15px Georgia, serif";
-  g.fillText("certifies that", W / 2, 190);
+  g.fillText(tr("ui.lessons.diploma.downloadDiploma.certifiesThat"), W / 2, 190);
   g.fillStyle = "#e8ddc0";
   g.font = display(44);
   g.fillText(data.name, W / 2, 246);
   g.fillStyle = "rgba(255,255,255,0.55)";
   g.font = "15px Georgia, serif";
-  g.fillText("has read the stacks and understood them", W / 2, 284);
+  g.fillText(tr("ui.lessons.diploma.downloadDiploma.hasReadTheStacksAndUnderstoodThem"), W / 2, 284);
 
   const gold = data.total - data.wrong;
   g.fillStyle = "rgba(255,255,255,0.7)";
   g.font = "14px Georgia, serif";
   g.fillText(
-    `${gold} of ${data.total} gold stamps · ${new Date(data.completedAt).toLocaleDateString()}`,
+    tr("ui.lessons.diploma.downloadDiploma.ofGoldStamps", { gold: gold, total: data.total, toLocaleDateString: new Date(data.completedAt).toLocaleDateString() }),
     W / 2,
     330,
   );
@@ -231,7 +232,7 @@ async function downloadDiploma(data: DiplomaData): Promise<void> {
   g.fillText(GRADE_REMARK[data.grade], W / 2, 560);
   g.fillStyle = "rgba(201, 168, 106, 0.8)";
   g.font = display(13);
-  g.fillText("— Memoria, Librarian", W / 2, 588);
+  g.fillText(tr("ui.lessons.diploma.downloadDiploma.memoriaLibrarian"), W / 2, 588);
 
   const a = document.createElement("a");
   a.download = `lumibooks-diploma-${data.courseTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`;

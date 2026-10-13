@@ -24,7 +24,7 @@ for (const end of ["done", "partial", "error"] as const) {
       await aborted(signal);
       if (end === "done") yield { type: "done", content: "late result" };
       if (end === "error") throw new Error("provider abort");
-    }, { ...options(), overallDeadlineMs: 1 })).rejects.toThrow("The response did not finish");
+    }, { ...options(), overallDeadlineMs: 1 })).rejects.toThrow("Response didn't finish");
   });
 }
 

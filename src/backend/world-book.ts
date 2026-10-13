@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookDTO, WorldBookEntryDTO } from "lumiverse-spindle-types";
@@ -121,7 +122,7 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
   }
 
   const chat = await spindle.chats.get(chatId, userId);
-  if (!chat) throw new Error(`Chat ${chatId} not found for user`);
+  if (!chat) throw new Error(tr("backend.worldBook.doEnsureBookForChat.chatNotFoundForUser", { chatId: chatId }));
   const claim = chat.metadata && typeof chat.metadata === "object"
     ? (chat.metadata as Record<string, unknown>)["lumibooks_book_id"]
     : undefined;
@@ -145,8 +146,8 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
         userId,
         "warn",
         recovery.candidates > 1
-          ? `Memoria re-linked this chat's notebook but found ${recovery.candidates} candidates, you may have duplicate notebooks`
-          : "Memoria re-linked this chat's notebook after its link was lost",
+          ? tr("backend.worldBook.doEnsureBookForChat.memoriaReLinkedThisChatSNotebook", { candidates: recovery.candidates })
+          : tr("backend.worldBook.doEnsureBookForChat.memoriaReLinkedThisChatSNotebook2"),
       );
       return existing;
     }
@@ -160,14 +161,14 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
     bookAnomalyCb?.(
       userId,
       "error",
-      "Memoria couldn't find this chat's old notebook and started a new one, older chapters may live in a separate notebook",
+      tr("backend.worldBook.doEnsureBookForChat.memoriaCouldnTFindThisChatS"),
     );
   }
 
   const book = await spindle.world_books.create(
     {
       name: bookNameFor(chat.name, chatId),
-      description: "Memoria's shelf for this chat. Chapters and arcs live here.",
+      description: tr("backend.worldBook.book.memoriaSShelfForThisChatChapters"),
       metadata: {
         lumibooks_chat_id: chatId,
         lumibooks_created_at: Date.now(),
@@ -238,7 +239,7 @@ export function withChatMetaLock<T>(userId: string, chatId: string, fn: () => Pr
 function bindBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
   return withChatMetaLock(userId, chatId, async () => {
     const chat = await spindle.chats.get(chatId, userId);
-    if (!chat) throw new Error("The chat is no longer available; its summary shelf could not be attached.");
+    if (!chat) throw new Error(tr("backend.worldBook.bindBookToChat.theChatIsNoLongerAvailableIts"));
     const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
     const existing = Array.isArray((metadata as Record<string, unknown>)["chat_world_book_ids"])
       ? ((metadata as Record<string, unknown>)["chat_world_book_ids"] as string[]).filter((x) => typeof x === "string")
@@ -571,7 +572,7 @@ export async function findCodexBookForChat(chatId: string, userId: string): Prom
 function bindCodexBookToChat(chatId: string, bookId: string, userId: string): Promise<void> {
   return withChatMetaLock(userId, chatId, async () => {
     const chat = await spindle.chats.get(chatId, userId);
-    if (!chat) throw new Error("The chat is no longer available; its Codex book could not be attached.");
+    if (!chat) throw new Error(tr("backend.worldBook.bindCodexBookToChat.theChatIsNoLongerAvailableIts"));
     const metadata = (chat.metadata && typeof chat.metadata === "object") ? chat.metadata : {};
     const md = metadata as Record<string, unknown>;
     const existing = Array.isArray(md["chat_world_book_ids"])
@@ -618,12 +619,12 @@ async function doEnsureCodexBookForChat(chatId: string, userId: string): Promise
     }
   }
   const chat = await spindle.chats.get(chatId, userId);
-  if (!chat) throw new Error(`Chat ${chatId} not found for user`);
+  if (!chat) throw new Error(tr("backend.worldBook.doEnsureCodexBookForChat.chatNotFoundForUser", { chatId: chatId }));
   const book = await spindle.world_books.create(
     {
       name: codexBookNameFor(chat.name, chatId),
       description:
-        "Managed by LumiBooks. This book mirrors the Knowledge Codex as retrievable entries and is rewritten on every codex update - edits made here WILL be overwritten. Edit records in the LumiBooks Codex tab instead.",
+        tr("backend.worldBook.book.managedByLumiBooksThisBookMirrorsThe"),
       metadata: {
         [CODEX_BOOK_META_KEY]: chatId,
         lumibooks_created_at: Date.now(),

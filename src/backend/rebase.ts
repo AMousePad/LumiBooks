@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { LMBEntry } from "./world-book";
 import {
   deleteEntry,
@@ -43,7 +44,7 @@ async function retireEntries(entries: LMBEntry[], userId: string, chatId: string
   }
   invalidateBookCache(userId, chatId);
   invalidateRootCandidates(userId);
-  if (failures.length) throw new AggregateError(failures, "Some old summaries could not be removed or disabled. Refresh Books before retrying.");
+  if (failures.length) throw new AggregateError(failures, tr("backend.rebase.retireEntries.someOldSummariesCouldNotBeRemoved"));
 }
 
 async function seedRoot(

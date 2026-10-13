@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 /** Hash stored content, never prompt/rendered text or message IDs. */
 export interface RawSummaryMessage { id: string; role: string; content: string }
 export interface SummaryFingerprint {
@@ -33,13 +34,13 @@ export async function parseFingerprint(raw: unknown): Promise<SummaryFingerprint
   if (raw === undefined) return null; // Ordinary/older lorebooks remain usable.
   const v = raw as SummaryFingerprint;
   if (!v || v.version !== 1 || v.algorithm !== "sha256-role-content-v1" || !Array.isArray(v.messages)
-      || v.messages.length > 1_000_000 || !/^[a-f0-9]{64}$/.test(v.contentHash)) throw new Error("Invalid summary message fingerprint");
+      || v.messages.length > 1_000_000 || !/^[a-f0-9]{64}$/.test(v.contentHash)) throw new Error(tr("backend.summaryMatching.parseFingerprint.invalidSummaryMessageFingerprint"));
   let previous = -1;
   for (const m of v.messages) {
-    if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash)) throw new Error("Invalid summary message fingerprint");
+    if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash)) throw new Error(tr("backend.summaryMatching.parseFingerprint.invalidSummaryMessageFingerprint"));
     previous = m.index;
   }
-  if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash) throw new Error("The summary message fingerprint is damaged");
+  if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash) throw new Error(tr("backend.summaryMatching.parseFingerprint.theSummaryMessageFingerprintIsDamaged"));
   return v;
 }
 

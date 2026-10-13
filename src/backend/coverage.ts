@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBProfile } from "../shared";
@@ -330,7 +331,7 @@ async function setHidden(chatId: string, ids: string[], hidden: boolean): Promis
       }
     }
   }
-  if (failures.length) throw new AggregateError(failures, `Could not update visibility for ${failures.length} messages. Run Resync visibility again.`);
+  if (failures.length) throw new AggregateError(failures, tr("backend.coverage.setHidden.couldNotUpdateVisibilityForMessagesRun", { length: failures.length }));
 }
 
 export function pickOrphanedHiddenIds(messages: ChatMessageDTO[], coverage: CoverageMap): string[] {

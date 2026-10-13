@@ -1,17 +1,19 @@
 {
   "name": "lumi-books",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-only",
   "scripts": {
     "build:backend": "bun build src/backend.ts --outfile dist/backend.js --target bun",
     "build:frontend": "bun build src/frontend.ts --outfile dist/frontend.js --target browser",
-    "build": "bun run build:backend && bun run build:frontend && bun run check:lessons",
+    "build": "bun run check:locales && bun run export:guide && bun run build:backend && bun run build:frontend && bun run check:lessons",
     "check:lessons": "bun run scripts/check-lessons.ts",
     "typecheck": "tsc --noEmit",
     "test:host": "bun scripts/test-real-host.ts",
-    "deploy": "powershell.exe -File local/scripts/deploy.ps1"
+    "deploy": "powershell.exe -File local/scripts/deploy.ps1",
+    "check:locales": "bun run scripts/check-locales.ts",
+    "export:guide": "bun run scripts/export-codex-guide.ts"
   },
   "devDependencies": {
     "@types/d3-force": "^3.0.10",
@@ -19,6 +21,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "d3-force": "^3.0.0"
+    "d3-force": "^3.0.0",
+    "intl-messageformat": "^12.1.3"
   }
 }

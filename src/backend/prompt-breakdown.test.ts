@@ -63,5 +63,5 @@ test("host errors propagate without silently falling back or making raw HTTP cal
   install({ getBreakdown: async () => { throw new Error("Permission denied"); }, dryRun: () => { throw new Error("Unexpected preview"); } });
   await expect(loadPromptBreakdown(request, "owner")).rejects.toThrow("Permission denied");
   install({ dryRun: () => { throw new Error("Unexpected preview"); } });
-  await expect(loadPromptBreakdown(request, "owner")).rejects.toThrow("requires a Lumiverse update");
+  await expect(loadPromptBreakdown(request, "owner")).rejects.toThrow("Update Lumiverse");
 });

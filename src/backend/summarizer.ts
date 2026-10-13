@@ -1,5 +1,6 @@
+import { t as tr } from "../i18n";
 import { recordDiagnostic } from "./diagnostics";
-import { TIER_KINDS, TIER_NAMES, type HigherTier } from "../shared";
+import { TIER_KINDS, MODEL_TIER_NAMES as TIER_NAMES, type HigherTier } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
@@ -48,7 +49,7 @@ export async function resolveConnection(
   const modelStr = typeof picked.model === "string" ? picked.model : "";
   if (!modelStr.trim()) {
     throw new FatalSummarizerError(
-      `Connection "${picked.name || picked.id}" has no model set, pick one in its settings`,
+      tr("backend.summarizer.resolveConnection.connectionHasNoModelSetPickOne", { id: picked.name || picked.id }),
     );
   }
   return picked;
@@ -195,7 +196,7 @@ export interface StreamOptions {
 
 export class AbortedSummarizerError extends Error {
   constructor() {
-    super("Aborted by user");
+    super(tr("backend.summarizer.messages.abortedByUser"));
     this.name = "AbortedSummarizerError";
   }
 }
@@ -268,10 +269,10 @@ export async function consumeGenerationStream(
   const assertRunning = (): void => {
     if (externalAborted) throw new AbortedSummarizerError();
     if (ttftFired && options.firstTokenTimeoutMs !== null) {
-      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+      throw new Error(tr("backend.summarizer.assertRunning.noTokenWithinSTheProviderMay", { firstTokenTimeoutMs1000: Math.round(options.firstTokenTimeoutMs / 1000) }));
     }
     if (deadlineFired && options.overallDeadlineMs !== null) {
-      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
+      throw new Error(tr("backend.summarizer.assertRunning.theResponseDidNotFinishWithinS", { overallDeadlineMs1000: Math.round(options.overallDeadlineMs / 1000) }));
     }
   };
 
@@ -314,7 +315,7 @@ export async function consumeGenerationStream(
     if (options.salvagePartial && aggregated.trim()) {
       return { content: aggregated, toolCalls: [], usage };
     }
-    throw new Error("The stream ended before completing");
+    throw new Error(tr("backend.summarizer.consumeGenerationStream.theStreamEndedBeforeCompleting"));
   } catch (err) {
     assertRunning();
     throw err;
@@ -440,11 +441,11 @@ export async function resolveMacrosWithDiagnostics(
   try {
     const result = await spindle.macros.resolve(text, { chatId, userId, commit: false });
     for (const d of result.diagnostics) {
-      diagnostics.push({ message: `macro: ${d.message} (offset ${d.offset}, length ${d.length})` });
+      diagnostics.push({ message: tr("backend.summarizer.resolveMacrosWithDiagnostics.macroOffsetLength", { message: d.message, offset: d.offset, length: d.length }) });
     }
     return result.text;
   } catch (err) {
-    diagnostics.push({ message: `macros.resolve failed: ${describeError(err)}` });
+    diagnostics.push({ message: tr("backend.summarizer.resolveMacrosWithDiagnostics.macrosResolveFailed", { describeError: describeError(err) }) });
     return text;
   }
 }
@@ -459,13 +460,13 @@ export async function assembleChapterPrompt(
   opener: string,
 ): Promise<DryRunAssembly> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.assembleChapterPrompt.noConnectionAvailableForMemoria"));
 
   const presetText = findPresetText(profile, customPresets, "chapter");
-  if (!presetText) throw new Error("Chapter preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.assembleChapterPrompt.chapterPresetMissing"));
 
   const transcript = renderTranscript(messages, true);
-  if (!transcript.trim()) throw new Error("Empty transcript");
+  if (!transcript.trim()) throw new Error(tr("backend.summarizer.assembleChapterPrompt.emptyTranscript"));
 
   const { targetTokens, targetPercent, inputTokens: transcriptTokens } = await resolveTargets(
     profile.chapterTargetUnit,
@@ -490,21 +491,21 @@ export async function assembleChapterPrompt(
 
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics: Array<{ message: string }> = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Window: ${messages.length} message(s)` },
-    { message: `Transcript tokens (model tokenizer): ${transcriptTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.chapterTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.chapterTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Previous memories included: ${previousMemories.length}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.chapterPresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` },
+    { message: tr("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: tr("backend.summarizer.diagnostics.windowMessageS", { length: messages.length }) },
+    { message: tr("backend.summarizer.diagnostics.transcriptTokensModelTokenizer", { transcriptTokens: transcriptTokens }) },
+    { message: tr("backend.summarizer.diagnostics.targetTokens", { targetTokens: targetTokens, choice: (profile.chapterTargetUnit === "tokens") ? "yes" : "no", chapterTargetUnitTokens: (profile.chapterTargetUnit === "tokens") ? (targetPercent) : "", chapterTargetPercent: (!(profile.chapterTargetUnit === "tokens")) ? (profile.chapterTargetPercent) : "" }) },
+    { message: tr("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: tr("backend.summarizer.diagnostics.previousMemoriesIncluded", { length: previousMemories.length }) },
+    { message: tr("backend.summarizer.diagnostics.opener", { opener: opener }) },
+    { message: tr("backend.summarizer.diagnostics.presetKey", { chapterPresetKey: profile.chapterPresetKey }) },
+    { message: tr("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) },
   ];
 
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: tr("backend.summarizer.assembleChapterPrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
 
   return {
@@ -525,10 +526,10 @@ export async function assembleArcPrompt(
   opener: string,
 ): Promise<DryRunAssembly> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.assembleArcPrompt.noConnectionAvailableForMemoria"));
 
   const presetText = findPresetText(profile, customPresets, "arc");
-  if (!presetText) throw new Error("Arc preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.assembleArcPrompt.arcPresetMissing"));
 
   const body = chapters
     .map((c, idx) => `<<CHAPTER ${idx + 1}: ${c.raw.comment || c.meta.title || "untitled"}>>\n${c.raw.content}`)
@@ -557,20 +558,20 @@ export async function assembleArcPrompt(
 
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics: Array<{ message: string }> = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Source chapters: ${chapters.length}` },
-    { message: `Concatenated chapter body tokens (model tokenizer): ${bodyTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.arcTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.arcTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.arcPresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` },
+    { message: tr("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: tr("backend.summarizer.diagnostics.sourceChapters", { length: chapters.length }) },
+    { message: tr("backend.summarizer.diagnostics.concatenatedChapterBodyTokensModelTokenizer", { bodyTokens: bodyTokens }) },
+    { message: tr("backend.summarizer.diagnostics.targetTokens2", { targetTokens: targetTokens, choice: (profile.arcTargetUnit === "tokens") ? "yes" : "no", arcTargetUnitTokens: (profile.arcTargetUnit === "tokens") ? (targetPercent) : "", arcTargetPercent: (!(profile.arcTargetUnit === "tokens")) ? (profile.arcTargetPercent) : "" }) },
+    { message: tr("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: tr("backend.summarizer.diagnostics.opener", { opener: opener }) },
+    { message: tr("backend.summarizer.diagnostics.presetKey2", { arcPresetKey: profile.arcPresetKey }) },
+    { message: tr("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) },
   ];
 
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: tr("backend.summarizer.assembleArcPrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
 
   return {
@@ -604,10 +605,10 @@ export async function assembleVolumePrompt(
   tier: HigherTier = 3,
 ): Promise<DryRunAssembly> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.assembleVolumePrompt.noConnectionAvailableForMemoria"));
 
   const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
-  if (!presetText) throw new Error("Volume preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.assembleVolumePrompt.volumePresetMissing"));
 
   const body = arcs
     .map((a, idx) => `<<${TIER_NAMES[tier - 2]!.toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
@@ -636,20 +637,20 @@ export async function assembleVolumePrompt(
 
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics: Array<{ message: string }> = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Source arcs: ${arcs.length}` },
-    { message: `Concatenated arc body tokens (model tokenizer): ${bodyTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.volumeTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.volumeTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.volumePresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` },
+    { message: tr("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: tr("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length }) },
+    { message: tr("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens: bodyTokens }) },
+    { message: tr("backend.summarizer.diagnostics.targetTokens3", { targetTokens: targetTokens, choice: (profile.volumeTargetUnit === "tokens") ? "yes" : "no", volumeTargetUnitTokens: (profile.volumeTargetUnit === "tokens") ? (targetPercent) : "", volumeTargetPercent: (!(profile.volumeTargetUnit === "tokens")) ? (profile.volumeTargetPercent) : "" }) },
+    { message: tr("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: tr("backend.summarizer.diagnostics.opener", { opener: opener }) },
+    { message: tr("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: profile.volumePresetKey }) },
+    { message: tr("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) },
   ];
 
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: tr("backend.summarizer.assembleVolumePrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
 
   return {
@@ -672,10 +673,10 @@ export async function summarizeVolume(
   tier: HigherTier = 3,
 ): Promise<SummarizationResult> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.summarizeVolume.noConnectionAvailableForMemoria"));
 
   const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
-  if (!presetText) throw new Error("Volume preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.summarizeVolume.volumePresetMissing"));
 
   const body = arcs
     .map((a, idx) => `<<${TIER_NAMES[tier - 2]!.toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>\n${a.raw.content}`)
@@ -715,10 +716,10 @@ export async function summarizeVolume(
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();
-  if (!rawText) throw new Error("Empty model output");
+  if (!rawText) throw new Error(tr("backend.summarizer.summarizeVolume.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
   const parsed = parseSummaryJson(processed);
-  if (!parsed.content.trim()) throw new Error("The volume summary came back empty");
+  if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeVolume.theVolumeSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -745,13 +746,13 @@ export async function summarizeChapter(
   streamOptions: StreamOptions,
 ): Promise<SummarizationResult> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.summarizeChapter.noConnectionAvailableForMemoria"));
 
   const presetText = findPresetText(profile, customPresets, "chapter");
-  if (!presetText) throw new Error("Chapter preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.summarizeChapter.chapterPresetMissing"));
 
   const transcript = renderTranscript(messages, true);
-  if (!transcript.trim()) throw new Error("Empty transcript");
+  if (!transcript.trim()) throw new Error(tr("backend.summarizer.summarizeChapter.emptyTranscript"));
 
   const { targetTokens, targetPercent } = await resolveTargets(
     profile.chapterTargetUnit,
@@ -787,11 +788,11 @@ export async function summarizeChapter(
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();
-  if (!rawText) throw new Error("Empty model output");
+  if (!rawText) throw new Error(tr("backend.summarizer.summarizeChapter.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
 
   const parsed = parseSummaryJson(processed);
-  if (!parsed.content.trim()) throw new Error("The summary came back empty");
+  if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeChapter.theSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -817,10 +818,10 @@ export async function summarizeArc(
   streamOptions: StreamOptions,
 ): Promise<SummarizationResult> {
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for Memoria");
+  if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.summarizeArc.noConnectionAvailableForMemoria"));
 
   const presetText = findPresetText(profile, customPresets, "arc");
-  if (!presetText) throw new Error("Arc preset missing");
+  if (!presetText) throw new Error(tr("backend.summarizer.summarizeArc.arcPresetMissing"));
 
   const body = chapters
     .map((c, idx) => `<<CHAPTER ${idx + 1}: ${c.raw.comment || c.meta.title || "untitled"}>>\n${c.raw.content}`)
@@ -860,10 +861,10 @@ export async function summarizeArc(
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
 
   const rawText = (result.content || "").trim();
-  if (!rawText) throw new Error("Empty model output");
+  if (!rawText) throw new Error(tr("backend.summarizer.summarizeArc.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
   const parsed = parseSummaryJson(processed);
-  if (!parsed.content.trim()) throw new Error("The arc summary came back empty");
+  if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeArc.theArcSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -907,9 +908,9 @@ function parseSummaryJson(raw: string): ParsedSummary {
     return { title, opener, content: contentRaw, keywords, shortComment: sc };
   }
   if (sawParseableObject) {
-    throw new Error("The model's JSON had no content field");
+    throw new Error(tr("backend.summarizer.parseSummaryJson.theModelSJsonHadNoContent"));
   }
-  throw new Error("The model didn't return valid JSON");
+  throw new Error(tr("backend.summarizer.parseSummaryJson.theModelDidnTReturnValidJson"));
 }
 
 /** Every parsable JSON object in a model reply, in reading order (fenced

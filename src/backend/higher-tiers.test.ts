@@ -53,7 +53,7 @@ test("failed shelf clearing reports partial progress and retries the remaining e
  const api = (globalThis as any).spindle.world_books.entries;
  const remove = api.delete;
  api.delete = async (id: string) => { if (id === "source-1-1") throw new Error("delete failed"); return remove(id); };
- await expect(clearSummaryShelf(chatId, userId)).rejects.toThrow("Removed 2 summaries, but 1 could not be deleted");
+ await expect(clearSummaryShelf(chatId, userId)).rejects.toThrow("Removed 2 summaries; couldn't delete 1");
  expect(entries.map((e) => e.id)).toEqual(["source-1-1"]);
  api.delete = remove;
  expect(await clearSummaryShelf(chatId, userId)).toBe(1);

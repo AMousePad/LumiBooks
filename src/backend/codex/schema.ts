@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 /**
  * The Knowledge Codex data model: eight JSON files per chat, each a snapshot
  * of the story's present state. Validation is hand-rolled in the same style
@@ -259,7 +260,7 @@ function keywordArray(ctx: Ctx, v: unknown, path: string, reserved: readonly str
   }
   if (dropped > 0) {
     ctx.notes.push(
-      `${path}: kept ${out.length} of ${raw.length}, dropped the rest as duplicates, over ${KEYWORD_MAX_WORDS} words, already matched by the record's own name, or past the ${KEYWORD_LIMIT} keyword limit`,
+      tr("backend.codex.schema.keywordArray.keptOfDroppedTheRestAsDuplicates", { path: path, length: out.length, length2: raw.length, keywordMaxWords: KEYWORD_MAX_WORDS, keywordLimit: KEYWORD_LIMIT }),
     );
   }
   return out.length ? out : undefined;
@@ -271,16 +272,16 @@ function fail<T>(errors: string[]): ValidationResult<T> {
 
 function str(ctx: Ctx, v: unknown, path: string, required: boolean): string | undefined {
   if (v === undefined || v === null || v === "") {
-    if (required) ctx.errors.push(`${path}: required non-empty string`);
+    if (required) ctx.errors.push(tr("backend.codex.schema.str.requiredNonEmptyString", { path: path }));
     return undefined;
   }
   if (typeof v !== "string") {
-    ctx.errors.push(`${path}: expected a string`);
+    ctx.errors.push(tr("backend.codex.schema.str.expectedAString", { path: path }));
     return undefined;
   }
   const t = v.trim();
   if (!t && required) {
-    ctx.errors.push(`${path}: required non-empty string`);
+    ctx.errors.push(tr("backend.codex.schema.str.requiredNonEmptyString", { path: path }));
     return undefined;
   }
   return t || undefined;
@@ -289,12 +290,12 @@ function str(ctx: Ctx, v: unknown, path: string, required: boolean): string | un
 function strArray(ctx: Ctx, v: unknown, path: string): string[] | undefined {
   if (v === undefined || v === null) return undefined;
   if (!Array.isArray(v)) {
-    ctx.errors.push(`${path}: expected an array of strings`);
+    ctx.errors.push(tr("backend.codex.schema.strArray.expectedAnArrayOfStrings", { path: path }));
     return undefined;
   }
   const out: string[] = [];
   v.forEach((x, i) => {
-    if (typeof x !== "string") ctx.errors.push(`${path}[${i}]: expected a string`);
+    if (typeof x !== "string") ctx.errors.push(tr("backend.codex.schema.strArray.expectedAString", { path: path, i: i }));
     else if (x.trim()) out.push(x.trim());
   });
   return out.length ? out : undefined;
@@ -303,13 +304,13 @@ function strArray(ctx: Ctx, v: unknown, path: string): string[] | undefined {
 function objArray(ctx: Ctx, v: unknown, path: string): Record<string, unknown>[] {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) {
-    ctx.errors.push(`${path}: expected an array`);
+    ctx.errors.push(tr("backend.codex.schema.objArray.expectedAnArray", { path: path }));
     return [];
   }
   const out: Record<string, unknown>[] = [];
   v.forEach((x, i) => {
     if (!x || typeof x !== "object" || Array.isArray(x)) {
-      ctx.errors.push(`${path}[${i}]: expected an object`);
+      ctx.errors.push(tr("backend.codex.schema.objArray.expectedAnObject", { path: path, i: i }));
     } else {
       out.push(x as Record<string, unknown>);
     }
@@ -319,7 +320,7 @@ function objArray(ctx: Ctx, v: unknown, path: string): Record<string, unknown>[]
 
 function asRecord(ctx: Ctx, raw: unknown, path: string): Record<string, unknown> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    ctx.errors.push(`${path}: expected a JSON object`);
+    ctx.errors.push(tr("backend.codex.schema.asRecord.expectedAJsonObject", { path: path }));
     return null;
   }
   return raw as Record<string, unknown>;
@@ -341,7 +342,7 @@ function keepExtras(
   for (const [k, v] of Object.entries(source)) {
     const lower = k.toLowerCase();
     if (known.some((f) => f === lower)) {
-      if (k !== lower && strict && !CANONICAL_MIXED_CASE.has(k)) ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
+      if (k !== lower && strict && !CANONICAL_MIXED_CASE.has(k)) ctx.errors.push(tr("backend.codex.schema.keepExtras.useLowercase", { path: path, k: k, lower: lower }));
       continue;
     }
     // JSON.parse can produce an own "__proto__" key; assigning it would hit
@@ -360,7 +361,7 @@ function keepExtras(
       const arr = (v as string[]).map((x) => x.trim()).filter(Boolean);
       if (arr.length) target[k] = arr;
     } else if (v !== null && v !== undefined && strict) {
-      ctx.errors.push(`${path}.${k}: extra fields must be primitive (string, number, boolean, or string[]), flatten this`);
+      ctx.errors.push(tr("backend.codex.schema.keepExtras.extraFieldsMustBePrimitiveStringNumber", { path: path, k: k }));
     }
     // Lenient mode drops the rest (nested objects, null): structure stays flat.
   }
@@ -377,7 +378,7 @@ const ENTITY_KNOWN_FIELDS = [
 function ridOf(ctx: Ctx, v: unknown, path: string): string | undefined {
   if (v === undefined || v === null) return undefined;
   if (typeof v !== "string" || !v.trim()) {
-    ctx.errors.push(`${path}.rid: expected a short string`);
+    ctx.errors.push(tr("backend.codex.schema.ridOf.ridExpectedAShortString", { path: path }));
     return undefined;
   }
   return v.trim().slice(0, 24);
@@ -407,15 +408,15 @@ function validateEntityFile(
     const name = str(ctx, e["name"], `${path}.name`, true);
     if (!id || !name) continue;
     if (!ENTITY_REF_RE.test(id)) {
-      ctx.errors.push(`${path}.id: "${id}" must match ${ns}:<lowercase_snake_case>`);
+      ctx.errors.push(tr("backend.codex.schema.validateEntityFile.idMustMatch", { path: path, id: id, ns: ns }));
       continue;
     }
     if (!id.startsWith(`${ns}:`)) {
-      ctx.errors.push(`${path}.id: "${id}" belongs in another file, ids here must start with "${ns}:"`);
+      ctx.errors.push(tr("backend.codex.schema.validateEntityFile.idBelongsInAnotherFileIdsHere", { path: path, id: id, ns: ns }));
       continue;
     }
     if (seen.has(id)) {
-      ctx.errors.push(`${path}.id: duplicate id "${id}"`);
+      ctx.errors.push(tr("backend.codex.schema.validateEntityFile.idDuplicateId", { path: path, id: id }));
       continue;
     }
     seen.add(id);
@@ -436,7 +437,7 @@ function validateEntityFile(
       if (cleaned.length) out.lockedFields = cleaned;
     }
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
-      ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
+      ctx.errors.push(tr("backend.codex.schema.validateEntityFile.statusThisFieldWasRemovedKeepDurable", { path: path }));
     }
     for (const f of ["traits", "goals"] as const) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
@@ -449,7 +450,7 @@ function validateEntityFile(
       // Locked rows keep their ties even in table mode: the agent may not
       // rewrite them, so rejecting would brick the whole file.
       if (opts.relationsTable && !out.locked) {
-        ctx.errors.push(`${path}.ties: the relations table is enabled, move these into relations.json rows`);
+        ctx.errors.push(tr("backend.codex.schema.validateEntityFile.tiesTheRelationsTableIsEnabledMove", { path: path }));
       } else {
         out.ties = ties;
       }
@@ -470,7 +471,7 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
   // guidance rather than generic per-row shape errors.
   const rawLen = Array.isArray(root["relations"]) ? (root["relations"] as unknown[]).length : 0;
   if (!opts.relationsTable && rawLen > 0) {
-    return fail(["relations: the relations table is disabled for this profile, keep connections as ties on entity sheets instead"]);
+    return fail([tr("backend.codex.schema.validateRelationsFile.relationsTheRelationsTableIsDisabledFor")]);
   }
   const rows = objArray(ctx, root["relations"], "relations");
   const relations: CodexRelation[] = [];
@@ -484,9 +485,9 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
       const kind = str(ctx, r["kind"], `${path}.kind`, true);
       const state = str(ctx, r["state"], `${path}.state`, true);
       if (!a || !b || !kind || !state) continue;
-      if (!isEntityRef(a)) ctx.errors.push(`${path}.a: "${a}" is not a valid entity ref`);
-      if (!isEntityRef(b)) ctx.errors.push(`${path}.b: "${b}" is not a valid entity ref`);
-      if (a === b) ctx.errors.push(`${path}: a and b are the same entity`);
+      if (!isEntityRef(a)) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.aIsNotAValidEntityRef", { path: path, a: a }));
+      if (!isEntityRef(b)) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.bIsNotAValidEntityRef", { path: path, b: b }));
+      if (a === b) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.aAndBAreTheSameEntity", { path: path }));
       const history = strArray(ctx, r["history"], `${path}.history`);
       relations.push({ type: "pair", ...(rid ? { rid } : {}), a, b, kind, state, ...(history ? { history } : {}) });
     } else if (type === "group") {
@@ -494,9 +495,9 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
       const state = str(ctx, r["state"], `${path}.state`, true);
       const members = [...new Set(strArray(ctx, r["members"], `${path}.members`) ?? [])];
       if (!kind || !state) continue;
-      if (members.length < 2) ctx.errors.push(`${path}.members: a group needs at least 2 distinct members`);
+      if (members.length < 2) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.membersAGroupNeedsAtLeast2", { path: path }));
       for (const m of members) {
-        if (!isEntityRef(m)) ctx.errors.push(`${path}.members: "${m}" is not a valid entity ref`);
+        if (!isEntityRef(m)) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.membersIsNotAValidEntityRef", { path: path, m: m }));
       }
       let roles: Record<string, string> | undefined;
       const rawRoles = r["roles"];
@@ -505,8 +506,8 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
         if (rec) {
           roles = {};
           for (const [k, v] of Object.entries(rec)) {
-            if (!isEntityRef(k)) ctx.errors.push(`${path}.roles: key "${k}" is not a valid entity ref`);
-            else if (typeof v !== "string" || !v.trim()) ctx.errors.push(`${path}.roles["${k}"]: expected a string role`);
+            if (!isEntityRef(k)) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.rolesKeyIsNotAValidEntity", { path: path, k: k }));
+            else if (typeof v !== "string" || !v.trim()) ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.rolesExpectedAStringRole", { path: path, k: k }));
             else roles[k] = v.trim();
           }
           if (Object.keys(roles).length === 0) roles = undefined;
@@ -519,7 +520,7 @@ function validateRelationsFile(raw: unknown, opts: ValidateOptions): ValidationR
         ...(history ? { history } : {}),
       });
     } else {
-      ctx.errors.push(`${path}.type: expected "pair" or "group"`);
+      ctx.errors.push(tr("backend.codex.schema.validateRelationsFile.typeExpectedPairOrGroup", { path: path }));
     }
   }
   if (ctx.errors.length) return fail(ctx.errors);
@@ -563,7 +564,7 @@ function validateThreadsFile(raw: unknown): ValidationResult<CodexThreadsFile> {
     const rid = ridOf(ctx, t["rid"], path);
     if (!name || !summary) continue;
     if (status !== "open" && status !== "stalled" && status !== "resolved" && status !== "abandoned") {
-      ctx.errors.push(`${path}.status: expected open | stalled | resolved | abandoned`);
+      ctx.errors.push(tr("backend.codex.schema.validateThreadsFile.statusExpectedOpenStalledResolvedAbandoned", { path: path }));
       continue;
     }
     const out: CodexThread = { ...(rid ? { rid } : {}), name, status, summary };
@@ -590,7 +591,7 @@ function validateWorldFile(raw: unknown): ValidationResult<CodexWorldFile> {
     const rid = ridOf(ctx, e["rid"], path);
     if (!topic) continue;
     if (facts.length === 0) {
-      ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
+      ctx.errors.push(tr("backend.codex.schema.validateWorldFile.factsAtLeastOneFactRequiredDrop", { path: path }));
       continue;
     }
     const keywords = keywordArray(ctx, e["keywords"], `${path}.keywords`, [topic]);
@@ -635,13 +636,13 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
       const both = out.hiddenFrom.filter((s) => known.has(s.toLowerCase()));
       if (both.length) {
         ctx.errors.push(
-          `${path}: ${both.join(", ")} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as "fact", then list who knows it and who it is hidden from - never write the ignorance as the fact`,
+          tr("backend.codex.schema.validateKnowledgeFile.appearsInBothKnownByAndHiddenFromWrite", { path: path, join: both.join(", ") }),
         );
         continue;
       }
     }
     if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
-      ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
+      ctx.errors.push(tr("backend.codex.schema.validateKnowledgeFile.needsAtLeastOneOfKnownByHiddenFrom", { path: path }));
       continue;
     }
     // Replayed additions often omit rid. Compare all content, not just the
@@ -657,7 +658,7 @@ function validateKnowledgeFile(raw: unknown): ValidationResult<CodexKnowledgeFil
     const duplicate = seen.get(signature);
     if (duplicate) {
       if (!duplicate.rid && out.rid) duplicate.rid = out.rid;
-      ctx.notes.push(`${path}: omitted duplicate knowledge item`);
+      ctx.notes.push(tr("backend.codex.schema.validateKnowledgeFile.omittedDuplicateKnowledgeItem", { path: path }));
       continue;
     }
     seen.set(signature, out);
@@ -734,8 +735,8 @@ function collectDangling(bundle: CodexBundle): DanglingRef[] {
 
 function formatDangling(d: DanglingRef): string {
   return d.file === "relations"
-    ? `${d.path}: "${d.ref}" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)`
-    : `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
+    ? tr("backend.codex.schema.formatDangling.isNotDefinedInAnyEntityFile", { path: d.path, ref: d.ref })
+    : tr("backend.codex.schema.formatDangling.isNotDefinedInAnyEntityFile2", { path: d.path, ref: d.ref });
 }
 
 /**
@@ -789,7 +790,7 @@ export function repairDanglingRefs(bundle: CodexBundle, files: ReadonlySet<Codex
     if (!looksLikeEntityRef(ref) || ids.has(ref)) return ref;
     const plain = ref.slice(ref.indexOf(":") + 1).replace(/_/g, " ").trim();
     if (!plain) return ref;
-    fixed.push(`${path}: "${ref}" was not a known entity, recorded as "${plain}"`);
+    fixed.push(tr("backend.codex.schema.fix.wasNotAKnownEntityRecordedAs", { path: path, ref: ref, plain: plain }));
     return plain;
   };
   if (files.has("knowledge")) {

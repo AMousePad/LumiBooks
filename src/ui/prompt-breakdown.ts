@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { FrontendToBackend } from "../types";
 import type { PromptBreakdownRequest, PromptBreakdownResponse, PromptBreakdownResult } from "../prompt-breakdown";
 import { reportUi } from "./diagnostics";
@@ -20,7 +21,7 @@ export function requestPromptBreakdown(
     const timer = setTimeout(() => {
       pending.delete(requestId);
       reportUi("timeout", { code: "prompt", op: "prompt_breakdown" });
-      reject(new Error("Prompt breakdown timed out. Try refreshing the panel."));
+      reject(new Error(tr("ui.promptBreakdown.timer.promptBreakdownTimedOutTryRefreshingThe")));
     }, timeoutMs);
     pending.set(requestId, { chatId: input.chatId, resolve, reject, timer });
     try { send({ type: "prompt_breakdown", requestId, ...input }); }
@@ -45,7 +46,7 @@ export function clearPromptRequests(): void {
   if (pending.size) reportUi("receive", { code: "closed", op: "prompt_breakdown" });
   for (const request of pending.values()) {
     clearTimeout(request.timer);
-    request.reject(new Error("Prompt panel closed."));
+    request.reject(new Error(tr("ui.promptBreakdown.clearPromptRequests.promptPanelClosed")));
   }
   pending.clear();
 }

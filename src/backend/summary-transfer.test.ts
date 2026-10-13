@@ -57,7 +57,7 @@ test("overlapping coverage inside one imported file is rejected before any write
   Object.values(raw.entries)[1]!.extensions.lumibooks_summary.messageIndices.push(1);
   expect(await runSummaryTransfer(user, "target", { type: "import", raw })).toBe(false);
   expect(status().stage).toBe("error");
-  expect(status().text).toContain("overlapping");
+  expect(status().text).toContain("ranges overlap");
   expect(creates).toBe(0);
   expect(imported()).toHaveLength(0);
 });

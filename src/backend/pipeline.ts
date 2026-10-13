@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { TIER_KINDS, TIER_NAMES, HIGHER_TIERS, tierHeader, type HigherTier, type SummaryTier, type SummaryKind } from "../shared";
 import { assertContiguousBinding, selectBindingBatch, summaryBindingRule, summaryRuns } from "./binding";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
@@ -55,7 +56,7 @@ const previewsByChat = new Map<string, PendingPreview[]>();
 // Source fingerprints stay backend-only and expire with their in-memory draft.
 const previewSources = new WeakMap<PendingPreview, string[]>();
 const replacementSources = new WeakMap<object, string>();
-const changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
+const changedSources = () => new Error(tr("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd"));
 const messageSource = (m: ChatMessageDTO) => msgSig(m.role, m.content || "");
 const entrySource = (e: LMBEntry) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 const replacementSource = (e: LMBEntry) => msgSig("replacement", JSON.stringify([entrySource(e), e.raw.comment, e.raw.key]));
@@ -158,10 +159,10 @@ export function registerPipelineCallbacks(c: PipelineCallbacks): void {
     };
   }
   cb = {
-    onBusyChange: delivery("busy status", c.onBusyChange.bind(c)),
+    onBusyChange: delivery(tr("backend.pipeline.registerPipelineCallbacks.busyStatus"), c.onBusyChange.bind(c)),
     onToast: delivery("toast", c.onToast.bind(c)),
     onStateChange: delivery("state", c.onStateChange.bind(c)),
-    onStreamText: delivery("stream viewer", c.onStreamText.bind(c)),
+    onStreamText: delivery(tr("backend.pipeline.registerPipelineCallbacks.streamViewer"), c.onStreamText.bind(c)),
   };
 }
 
@@ -244,14 +245,14 @@ function formatElapsed(ms: number): string {
 }
 
 const BUSY_PHRASES: Record<BusyKind, { idle: string; writing: string }> = {
-  chapter: { idle: "Memoria is filing a chapter", writing: "Memoria is writing a chapter" },
-  arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
-  volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
-  series: { idle: "Memoria is binding a series", writing: "Memoria is binding a series" },
-  saga: { idle: "Memoria is binding a saga", writing: "Memoria is binding a saga" },
-  library: { idle: "Memoria is binding a library", writing: "Memoria is binding a library" },
-  universe: { idle: "Memoria is binding a universe", writing: "Memoria is binding a universe" },
-  codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" },
+  chapter: { idle: tr("backend.pipeline.busyPhrases.memoriaIsFilingAChapter"), writing: tr("backend.pipeline.busyPhrases.memoriaIsWritingAChapter") },
+  arc: { idle: tr("backend.pipeline.busyPhrases.memoriaIsBindingAnArc"), writing: tr("backend.pipeline.busyPhrases.memoriaIsBindingAnArc") },
+  volume: { idle: tr("backend.pipeline.busyPhrases.memoriaIsPressingAVolume"), writing: tr("backend.pipeline.busyPhrases.memoriaIsPressingAVolume") },
+  series: { idle: tr("backend.pipeline.busyPhrases.memoriaIsBindingASeries"), writing: tr("backend.pipeline.busyPhrases.memoriaIsBindingASeries") },
+  saga: { idle: tr("backend.pipeline.busyPhrases.memoriaIsBindingASaga"), writing: tr("backend.pipeline.busyPhrases.memoriaIsBindingASaga") },
+  library: { idle: tr("backend.pipeline.busyPhrases.memoriaIsBindingALibrary"), writing: tr("backend.pipeline.busyPhrases.memoriaIsBindingALibrary") },
+  universe: { idle: tr("backend.pipeline.busyPhrases.memoriaIsBindingAUniverse"), writing: tr("backend.pipeline.busyPhrases.memoriaIsBindingAUniverse") },
+  codex: { idle: tr("backend.pipeline.busyPhrases.memoriaIsUpdatingTheCodex"), writing: tr("backend.pipeline.busyPhrases.memoriaIsUpdatingTheCodex") },
 };
 
 /** Plain words first, telemetry in the parenthetical - the label is read by
@@ -262,8 +263,8 @@ function formatBusyLabel(state: ProgressState, elapsedMs: number): string {
   const thinkTokens = approximateTokensFromChars(state.thinkingChars);
   const t = formatElapsed(elapsedMs);
   if (tokens === 0 && thinkTokens === 0) return `${idle} (${t})`;
-  if (tokens === 0 && thinkTokens > 0) return `Memoria is thinking (~${thinkTokens}t, ${t})`;
-  if (thinkTokens > 0) return `${writing} (~${tokens}t written, ~${thinkTokens}t thought, ${t})`;
+  if (tokens === 0 && thinkTokens > 0) return tr("backend.pipeline.formatBusyLabel.memoriaIsThinkingT", { thinkTokens: thinkTokens, t: t });
+  if (thinkTokens > 0) return tr("backend.pipeline.formatBusyLabel.tWrittenTThought", { writing: writing, tokens: tokens, thinkTokens: thinkTokens, t: t });
   return `${writing} (~${tokens}t, ${t})`;
 }
 
@@ -303,7 +304,7 @@ const STREAM_BUF_CAP = 200_000;
 
 function capStreamPart(s: string): string {
   if (s.length <= STREAM_BUF_CAP) return s;
-  return `[...earlier output trimmed...]\n${s.slice(-STREAM_BUF_CAP)}`;
+  return tr("backend.pipeline.capStreamPart.earlierOutputTrimmed", { slice: s.slice(-STREAM_BUF_CAP) });
 }
 
 export function appendStreamText(
@@ -473,8 +474,8 @@ export function shortErrorText(err: unknown): string {
 }
 
 function failToast(userId: string, kind: BusyKind, err: unknown): void {
-  const noun = kind === "arc" ? "bind the arc" : kind === "volume" ? "press the volume" : "file the chapter";
-  cb?.onToast(userId, "error", `Memoria couldn't ${noun}: ${shortErrorText(err)}`);
+  const noun = kind === "arc" ? tr("backend.pipeline.noun.bindTheArc") : kind === "volume" ? tr("backend.pipeline.noun.pressTheVolume") : tr("backend.pipeline.noun.fileTheChapter");
+  cb?.onToast(userId, "error", tr("backend.pipeline.failToast.memoriaCouldnT", { noun: noun, shortErrorText: shortErrorText(err) }));
 }
 
 /**
@@ -497,7 +498,7 @@ export async function createChapterAuto(
    * cadence. The lag reserve still holds: it keeps recent turns raw. */
   manual = false,
 ): Promise<string | null> {
-  if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
+  if (!setBusy(userId, chatId, "chapter", tr("backend.pipeline.createChapterAuto.memoriaIsFilingAChapter"))) return null;
   try {
     await requireForkShelf(chatId, userId);
     // The caller's profile snapshot can be from before a mode toggle; a
@@ -533,7 +534,7 @@ export async function createChapterFromRange(
   userId: string,
   opts: { replacesEntryId?: string } = {},
 ): Promise<string | null> {
-  if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter")) return null;
+  if (!setBusy(userId, chatId, "chapter", tr("backend.pipeline.createChapterFromRange.memoriaIsFilingAChapter"))) return null;
   try {
     await requireForkShelf(chatId, userId);
     const messages = await spindle.chat.getMessages(chatId);
@@ -618,7 +619,7 @@ async function runChapter(
 
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", tr("backend.pipeline.runChapter.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -673,7 +674,7 @@ async function commitChapter(
     const live = await loadSettings(userId);
     const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
     if (!liveProfile || !extraContextActive(liveProfile)) {
-      throw new Error("Extra context mode was turned off while this ghost was being written");
+      throw new Error(tr("backend.pipeline.commitChapter.extraContextModeWasTurnedOffWhile"));
     }
   }
   const liveMessages = await spindle.chat.getMessages(chatId);
@@ -699,8 +700,8 @@ async function commitChapter(
     const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true] as const));
     const allGhost = window.every((m) => ghostById.get(freshCoverage.coveredBy.get(m.id) ?? "") === true);
     throw new Error(allGhost
-      ? "Those messages are already staged as a ghost chapter, it will file on its own"
-      : "All messages in this window were just bound by another chapter");
+      ? tr("backend.pipeline.commitChapter.thoseMessagesAreAlreadyStagedAsA")
+      : tr("backend.pipeline.commitChapter.allMessagesInThisWindowWereJust"));
   }
   if (validWindow.length < window.length) {
     void recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
@@ -721,7 +722,7 @@ async function commitChapter(
     sceneNumber = freedTaken ?? await nextSceneNumber(chatId, 1, userId);
   }
   const title = fromPreview
-    ? (result.title?.trim() || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`)
+    ? (result.title?.trim() || tr("backend.pipeline.title.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }))
     : deriveTitle(result, firstIdx + 1, lastIdx + 1);
   const msgIds = window.map((m) => m.id);
   const meta: LMBEntryMeta = {
@@ -742,7 +743,7 @@ async function commitChapter(
     rawOutput: result.rawOutput,
     ...(ghost ? { ghost: true, msgSigs: window.map((m) => msgSig(m.role, m.content || "")) } : {}),
   };
-  const baseComment = meta.title ?? `Chapter - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
+  const baseComment = meta.title ?? tr("backend.pipeline.baseComment.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
   const comment = `#${sceneNumber} - ${baseComment}`;
   const settings = await loadSettings(userId);
   const opener = buildChapterHeader(sceneNumber, msgIds.length);
@@ -823,7 +824,7 @@ export async function createArcFromChapters(
   userId: string,
   opts: { replacesEntryId?: string; automation?: boolean } = {},
 ): Promise<string | null> {
-  if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc")) return null;
+  if (!setBusy(userId, chatId, "arc", tr("backend.pipeline.createArcFromChapters.memoriaIsBindingAnArc"))) return null;
   try {
     const entries = await listTimelineEntries(chatId, userId, true);
     const entriesForSelection = opts.replacesEntryId
@@ -882,7 +883,7 @@ async function runArc(
 
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", tr("backend.pipeline.runArc.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -939,7 +940,7 @@ async function commitArc(
   const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 1).map((e) => e.raw.id));
   const filtered = selected.filter((c) => stillActive.has(c.raw.id));
   if (filtered.length === 0) {
-    throw new Error("All source chapters were already bound by another arc or deleted");
+    throw new Error(tr("backend.pipeline.commitArc.allSourceChaptersWereAlreadyBoundBy"));
   }
   if (filtered.length < selected.length) {
     throw changedSources();
@@ -972,7 +973,7 @@ async function commitArc(
     else if (lastIdx < firstIdx) lastIdx = firstIdx;
   }
   const arcTitle = isRootArc
-    ? (result.title?.trim() || "Inherited Arc")
+    ? (result.title?.trim() || tr("backend.pipeline.arcTitle.inheritedArc"))
     : deriveTitle(result, firstIdx + 1, lastIdx + 1);
   const meta: LMBEntryMeta = {
     tier: 2,
@@ -993,8 +994,8 @@ async function commitArc(
     rawOutput: result.rawOutput,
     ...(isRootArc ? { isRoot: true, rootOrigin } : {}),
   };
-  const baseComment = meta.title ?? `Arc - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
-  const comment = `${isRootArc ? "[Root] " : ""}Arc #${sceneNumber} - ${baseComment}`;
+  const baseComment = meta.title ?? tr("backend.pipeline.baseComment.arcMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
+  const comment = tr("backend.pipeline.comment.arc", { choice: (isRootArc) ? "yes" : "no", sceneNumber: sceneNumber, baseComment: baseComment });
   const arcOpener = buildArcHeader(sceneNumber, sourceChapterEntryIds.length, msgIds.length);
   const finalArcContent = `${arcOpener}\n\n${result.content}`;
   const arcEntry = await createChapterEntry(book.id, meta, finalArcContent, comment, userId, result.keywords ?? [], false, replacedArc);
@@ -1011,7 +1012,7 @@ async function commitArc(
     cb?.onToast(
       userId,
       "warn",
-      `The arc saved but ${failedSupersedes.length} chapter${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`,
+      tr("backend.pipeline.commitArc.theArcSavedButChapterCouldnT", { length: failedSupersedes.length }),
       automation,
     );
   }
@@ -1046,7 +1047,7 @@ export async function createHigherFromEntries(
   opts: { replacesEntryId?: string; automation?: boolean } = {},
 ): Promise<string | null> {
   const kind = TIER_KINDS[tier - 1]!;
-  if (!setBusy(userId, chatId, kind, `Memoria is binding a ${kind}`)) return null;
+  if (!setBusy(userId, chatId, kind, tr("backend.pipeline.createHigherFromEntries.memoriaIsBindingA", { kind: kind }))) return null;
   try {
     const entries = await listTimelineEntries(chatId, userId, true);
     const entriesForSelection = opts.replacesEntryId
@@ -1108,7 +1109,7 @@ async function runVolume(
 
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", tr("backend.pipeline.runVolume.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -1165,7 +1166,7 @@ async function commitVolume(
   const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
   const filtered = selected.filter((a) => stillActive.has(a.raw.id));
   if (filtered.length === 0) {
-    throw new Error("All source arcs were already bound by another volume or deleted");
+    throw new Error(tr("backend.pipeline.commitVolume.allSourceArcsWereAlreadyBoundBy"));
   }
   if (filtered.length < selected.length) {
     throw changedSources();
@@ -1198,7 +1199,7 @@ async function commitVolume(
     else if (lastIdx < firstIdx) lastIdx = firstIdx;
   }
   const volumeTitle = isRootVolume
-    ? (result.title?.trim() || "Inherited Volume")
+    ? (result.title?.trim() || tr("backend.pipeline.volumeTitle.inheritedVolume"))
     : deriveTitle(result, firstIdx + 1, lastIdx + 1);
   const meta: LMBEntryMeta = {
     tier,
@@ -1219,7 +1220,7 @@ async function commitVolume(
     rawOutput: result.rawOutput,
     ...(isRootVolume ? { isRoot: true, rootOrigin } : {}),
   };
-  const baseComment = meta.title ?? `Volume - msgs ${(firstIdx + 1)}-${(lastIdx + 1)}`;
+  const baseComment = meta.title ?? tr("backend.pipeline.baseComment.volumeMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
   const comment = `${isRootVolume ? "[Root] " : ""}${TIER_NAMES[tier - 1]} #${sceneNumber} - ${baseComment}`;
   const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
   const finalVolumeContent = `${volumeOpener}\n\n${result.content}`;
@@ -1237,7 +1238,7 @@ async function commitVolume(
     cb?.onToast(
       userId,
       "warn",
-      `The volume saved but ${failedSupersedes.length} arc${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`,
+      tr("backend.pipeline.commitVolume.theVolumeSavedButArcCouldnT", { length: failedSupersedes.length }),
     );
   }
   void recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
@@ -1414,13 +1415,13 @@ export async function dryRunChapter(
   userId: string,
 ): Promise<DryRunAssembly> {
   const messages = await spindle.chat.getMessages(chatId);
-  if (!messages || messages.length === 0) throw new Error("Chat has no messages");
+  if (!messages || messages.length === 0) throw new Error(tr("backend.pipeline.dryRunChapter.chatHasNoMessages"));
   const entries = await listLmbEntries(chatId, userId);
   // Same coverage the real manual path sees, ghosts included in extra mode.
   const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
   const window = selectUncoveredChapterWindow(messages, coverage, profile, true);
   if (window.length === 0) {
-    throw new Error("No window available, lower the lag or window thresholds");
+    throw new Error(tr("backend.pipeline.dryRunChapter.noWindowAvailableLowerTheLagOr"));
   }
   const previousMemories = selectPreviousChapters(coverage, messages, window, profile.previousMemoriesCount);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
@@ -1437,7 +1438,7 @@ export async function dryRunArc(
   const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
   const chapters = summaryRuns(coverage.activeEntries, 1)[0]?.entries ?? [];
-  if (chapters.length === 0) throw new Error("No chapters to bind yet");
+  if (chapters.length === 0) throw new Error(tr("backend.pipeline.dryRunArc.noChaptersToBindYet"));
   const totalTurns = chapters.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 2, userId);
   const opener = buildArcHeader(provisionalSceneNumber, chapters.length, totalTurns);
@@ -1453,7 +1454,7 @@ export async function dryRunVolume(
   const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
   const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
-  if (arcs.length === 0) throw new Error("No arcs to press yet");
+  if (arcs.length === 0) throw new Error(tr("backend.pipeline.dryRunVolume.noArcsToPressYet"));
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
   const opener = buildVolumeHeader(provisionalSceneNumber, arcs.length, totalTurns);
@@ -1614,7 +1615,7 @@ export async function promoteGhostChapters(
   cb?.onToast(
     userId,
     "success",
-    `Memoria shelved ${promoted.length} ghost chapter${promoted.length === 1 ? "" : "s"}`,
+    tr("backend.pipeline.promoteGhostChapters.memoriaShelvedGhostChapter", { length: promoted.length }),
     automation,
   );
   cb?.onStateChange(userId, chatId);
@@ -1725,12 +1726,12 @@ async function nextSceneNumber(chatId: string, tier: SummaryTier, userId: string
 }
 
 function deriveTitle(result: SummarizationResult, firstMsg: number, lastMsg: number): string {
-  if (result.title && result.title.trim()) return `${result.title.trim()} (msgs ${firstMsg}-${lastMsg})`;
+  if (result.title && result.title.trim()) return tr("backend.pipeline.deriveTitle.msgs", { trim: result.title.trim(), firstMsg: firstMsg, lastMsg: lastMsg });
   const firstLine = (result.content.split(/\n+/, 1)[0] || "").trim();
   const firstSentence = firstLine.split(/(?<=[.!?])\s/, 1)[0] || firstLine;
   const trimmed = firstSentence.slice(0, 60).trim();
-  if (trimmed) return `${trimmed}${trimmed.length === 60 ? "..." : ""} (msgs ${firstMsg}-${lastMsg})`;
-  return `Compressed - msgs ${firstMsg}-${lastMsg}`;
+  if (trimmed) return tr("backend.pipeline.deriveTitle.msgs2", { trimmed: trimmed, choice: (trimmed.length === 60) ? "yes" : "no", firstMsg: firstMsg, lastMsg: lastMsg });
+  return tr("backend.pipeline.deriveTitle.compressedMsgs", { firstMsg: firstMsg, lastMsg: lastMsg });
 }
 
 function makePreview(
@@ -1746,7 +1747,7 @@ function makePreview(
   const preview: PendingPreview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
+    title: result.title || tr("backend.pipeline.preview.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }),
     content: result.content,
     shortComment: result.shortComment,
     keywords: result.keywords ?? [],
@@ -1776,7 +1777,7 @@ function makeGroupPreview(
   const preview: PendingPreview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    title: result.title || `${TIER_NAMES[TIER_KINDS.indexOf(kind)]} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
+    title: result.title || tr("backend.pipeline.preview.msgs", { indexOf: TIER_NAMES[TIER_KINDS.indexOf(kind)], firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }),
     content: result.content,
     shortComment: result.shortComment,
     keywords: result.keywords ?? [],

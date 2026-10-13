@@ -144,7 +144,7 @@ test("a delete that keeps failing is reported with its lingering-injection conse
   try {
     const settled = wipeCodexEntries(chatId, userId).then(() => null, (err) => err);
     for (const ms of [1000, 2000, 4000, 8000, 16_000]) await pump(ms);
-    expect(String(await settled)).toContain("failed to delete 1 codex entry, they may still inject");
+    expect(String(await settled)).toContain("Couldn't delete 1 Codex entry. They may still inject.");
   } finally {
     jest.useRealTimers();
   }

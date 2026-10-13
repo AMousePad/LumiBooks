@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { approximateTokensFromChars, type SummaryTier } from "../shared";
 import { buildCoverage } from "./coverage";
 import { withCommitMutex } from "./summary-commit";
@@ -9,11 +10,11 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 const EXPORT_KEY = "lumibooks_summary";
 export function summaryLorebook(entries: LMBEntry[], name: string, fingerprint?: SummaryFingerprint, coverage?: Map<string, number[]>) {
-  return { name, description: "LumiBooks summaries. Import through Books to restore message coverage or use as inherited roots.",
+  return { name, description: tr("backend.summaryBackup.summaryLorebook.lumiBooksSummariesImportThroughBooksToRestore"),
     ...(fingerprint ? { extensions: { [EXPORT_KEY]: fingerprint } } : {}),
     entries: Object.fromEntries(entries.filter((e) => !e.meta.ghost).map((e, i) => [i, {
       uid: i, key: e.raw.key ?? [], keysecondary: [], content: e.raw.content,
-      comment: e.raw.comment || e.meta.title || `Summary ${i + 1}`, constant: true, disable: false,
+      comment: e.raw.comment || e.meta.title || tr("backend.summaryBackup.summaryLorebook.summary", { i1: i + 1 }), constant: true, disable: false,
       position: 0, order: i, displayIndex: i,
       extensions: { [EXPORT_KEY]: { tier: e.meta.tier, ...(coverage ? { messageIndices: coverage.get(e.raw.id) ?? [] } : {}) } },
     }])) };
@@ -21,8 +22,8 @@ export function summaryLorebook(entries: LMBEntry[], name: string, fingerprint?:
 export async function exportSummaryLorebook(chatId: string, userId: string, progress?: (text: string) => void) {
   const coverage = await buildCoverage(chatId, userId);
   const entries = coverage.activeEntries.slice().sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
-  if (!entries.length) throw new Error("There are no active summaries to export");
-  progress?.("Fetching raw chat messages…");
+  if (!entries.length) throw new Error(tr("backend.summaryBackup.exportSummaryLorebook.thereAreNoActiveSummariesToExport"));
+  progress?.(tr("backend.summaryBackup.exportSummaryLorebook.fetchingRawChatMessages"));
   const messages = await spindle.chat.getMessages(chatId);
   const positions = new Map(messages.map((m, i) => [m.id, i]));
   const byEntry = new Map<string, number[]>();
@@ -38,35 +39,35 @@ export async function exportSummaryLorebook(chatId: string, userId: string, prog
   }
   for (const [id, indices] of byEntry) byEntry.set(id, [...new Set(indices)].sort((a, b) => a - b));
   const indices = [...new Set([...byEntry.values()].flat())].sort((a, b) => a - b);
-  const hashes = await hashRawMessages(indices.map((i) => messages[i]!), (done) => progress?.(`Hashing raw messages… ${done} / ${indices.length}`));
+  const hashes = await hashRawMessages(indices.map((i) => messages[i]!), (done) => progress?.(tr("backend.summaryBackup.hashes.hashingRawMessages", { done: done, length: indices.length })));
   const fingerprint = await makeFingerprint(indices.map((index, i) => ({ index, hash: hashes[i]! })));
-  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`, fingerprint, byEntry);
+  return summaryLorebook(entries, tr("backend.summaryBackup.exportSummaryLorebook.lumiBooksSummaries", { slice: chatId.slice(0, 8) }), fingerprint, byEntry);
 }
 export interface ImportedSummary { content: string; comment: string; keys: string[]; tier: SummaryTier; messageIndices?: number[] }
 export function parseSummaryLorebook(raw: unknown): ImportedSummary[] {
-  if (!raw || typeof raw !== "object") throw new Error("Choose a lorebook JSON file with entries");
+  if (!raw || typeof raw !== "object") throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.chooseALorebookJsonFileWithEntries"));
   const entries = (raw as { entries?: unknown }).entries;
-  if (!entries || typeof entries !== "object") throw new Error("The lorebook has no entries");
+  if (!entries || typeof entries !== "object") throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.theLorebookHasNoEntries"));
   const rows = Array.isArray(entries) ? entries : Object.values(entries);
-  if (rows.length > 10000) throw new Error("The lorebook has more than 10,000 entries");
+  if (rows.length > 10000) throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.theLorebookHasMoreThan10000"));
   const out: ImportedSummary[] = [];
   for (const row of rows) {
-    if (!row || typeof row !== "object") throw new Error("Invalid lorebook entry");
+    if (!row || typeof row !== "object") throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.invalidLorebookEntry"));
     const v = row as Record<string, any>;
     if (v.disable === true || v.disabled === true || v.enabled === false) continue;
-    if (typeof v.content !== "string") throw new Error("Every lorebook entry needs text content");
+    if (typeof v.content !== "string") throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.everyLorebookEntryNeedsTextContent"));
     if (!v.content.trim()) continue;
     const tier = v.extensions?.[EXPORT_KEY]?.tier;
     const messageIndices = v.extensions?.[EXPORT_KEY]?.messageIndices;
     if (messageIndices !== undefined && (!Array.isArray(messageIndices) || messageIndices.length > 1_000_000
-        || messageIndices.some((n: unknown) => !Number.isSafeInteger(n) || (n as number) < 0))) throw new Error("Invalid summary coverage indices");
+        || messageIndices.some((n: unknown) => !Number.isSafeInteger(n) || (n as number) < 0))) throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.invalidSummaryCoverageIndices"));
     const keys = v.key ?? v.keys;
-    out.push({ content: v.content, comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : "Imported summary",
+    out.push({ content: v.content, comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : tr("backend.summaryBackup.parseSummaryLorebook.importedSummary"),
       keys: Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string") : [],
       tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1,
       ...(messageIndices !== undefined ? { messageIndices: [...new Set<number>(messageIndices)].sort((a, b) => a - b) } : {}) });
   }
-  if (!out.length) throw new Error("The lorebook has no enabled summaries");
+  if (!out.length) throw new Error(tr("backend.summaryBackup.parseSummaryLorebook.theLorebookHasNoEnabledSummaries"));
   return out;
 }
 export async function readSummaryImport(raw: unknown) {
@@ -75,7 +76,7 @@ export async function readSummaryImport(raw: unknown) {
   if (fingerprint) {
     const indices = new Set(fingerprint.messages.map((m) => m.index));
     for (const row of rows) {
-      if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i))) throw new Error("The summary coverage does not match its fingerprint");
+      if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i))) throw new Error(tr("backend.summaryBackup.readSummaryImport.theSummaryCoverageDoesNotMatchIts"));
     }
     // Disabled/deleted summaries should not cause their messages to be linked.
     const used = new Set(rows.flatMap((r) => r.messageIndices!));
@@ -101,12 +102,12 @@ export async function saveImportedSummaries(chatId: string, userId: string, rows
 async function commitImportedSummaries(chatId: string, userId: string, rows: ImportedSummary[], links?: SummaryImportLinks): Promise<number> {
   if (links) {
     const messages = links.messages;
-    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i]))) throw new Error("Invalid destination coverage");
+    if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i]))) throw new Error(tr("backend.summaryBackup.commitImportedSummaries.invalidDestinationCoverage"));
     const claimed = new Set<string>();
     for (const indices of links.indices) {
       for (const index of new Set(indices)) {
         const id = messages[index]!.id;
-        if (claimed.has(id)) throw new Error("This import contains overlapping summary coverage. Resolve the overlapping entries before importing.");
+        if (claimed.has(id)) throw new Error(tr("backend.summaryBackup.commitImportedSummaries.thisImportContainsOverlappingSummaryCoverageResolve"));
         claimed.add(id);
       }
     }
@@ -117,8 +118,8 @@ async function commitImportedSummaries(chatId: string, userId: string, rows: Imp
     const current = new Map((await spindle.chat.getMessages(chatId)).map((m) => [m.id, m]));
     for (const index of new Set(links.indices.flat())) {
       const source = links.messages[index]!, live = current.get(source.id);
-      if (coverage.coveredBy.has(source.id)) throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
-      if (!live || live.role !== source.role || live.content !== source.content) throw new Error("The chat changed while preparing the import. Choose the file again.");
+      if (coverage.coveredBy.has(source.id)) throw new Error(tr("backend.summaryBackup.commitImportedSummaries.someOfTheseMessagesAlreadyHaveSummaries"));
+      if (!live || live.role !== source.role || live.content !== source.content) throw new Error(tr("backend.summaryBackup.commitImportedSummaries.theChatChangedWhilePreparingTheImport"));
     }
     links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
   }
@@ -142,7 +143,7 @@ async function commitImportedSummaries(chatId: string, userId: string, rows: Imp
     }
   } catch (err) {
     const rollback = await Promise.allSettled(created.map((id) => deleteEntry(id, userId)));
-    if (rollback.some((r) => r.status === "rejected")) throw new Error("Import failed and some imported summaries could not be removed; inspect Books before retrying", { cause: err });
+    if (rollback.some((r) => r.status === "rejected")) throw new Error(tr("backend.summaryBackup.commitImportedSummaries.importFailedAndSomeImportedSummariesCould"), { cause: err });
     throw err;
   } finally { invalidateBookCache(userId, chatId); }
   return created.length;

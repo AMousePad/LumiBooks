@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n";
 import { isCodexTemplateKey, type CodexTemplateKey } from "./prompts/codex/registry";
 import { normalizeActivationMode, type ActivationMode } from "./activation";
 
@@ -45,7 +46,9 @@ export type SummaryTier = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type HigherTier = 3 | 4 | 5 | 6 | 7;
 export type SummaryKind = "chapter" | "arc" | "volume" | "series" | "saga" | "library" | "universe";
 export const TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"] as const;
-export const TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"] as const;
+// Fixed English names are part of the model prompt format. UI labels are separate.
+export const MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"] as const;
+export const TIER_NAMES = [tr("shared.tierNames.chapter"), tr("shared.tierNames.arc"), tr("shared.tierNames.volume"), tr("shared.tierNames.series"), tr("shared.tierNames.saga"), tr("shared.tierNames.library"), tr("shared.tierNames.universe")] as const;
 export const HIGHER_TIERS = [3, 4, 5, 6, 7] as const;
 export interface HigherTierSettings {
   enabled: boolean;
@@ -77,10 +80,10 @@ function normalizeHigherTiers(raw: unknown): Record<HigherTier, HigherTierSettin
   return out;
 }
 export function tierHeader(tier: SummaryTier, number: number, sources: number, turns: number): string {
-  const sourceName = TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
+  const sourceName = MODEL_TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
   const sourceLabel = sources === 1 || sourceName === "series" ? sourceName
     : sourceName === "library" ? "libraries" : `${sourceName}s`;
-  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
+  return `${MODEL_TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
 }
 
 export type ArcTriggerMode = "chapters" | "tokens" | "manual";
@@ -333,7 +336,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
 export const DEFAULT_SETTINGS: LMBSettings = {
   version: STORAGE_VERSION,
   enabled: true,
-  profiles: [makeDefaultProfile("default", "Default")],
+  profiles: [makeDefaultProfile("default", tr("shared.defaultSettings.default"))],
   activeProfileId: "default",
   customPresets: [],
   debugLog: false,
@@ -356,7 +359,7 @@ export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined):
   const profiles = profilesRaw
     .map((p): LMBProfile | null => normalizeProfile(p))
     .filter((p): p is LMBProfile => !!p);
-  if (profiles.length === 0) profiles.push(makeDefaultProfile("default", "Default"));
+  if (profiles.length === 0) profiles.push(makeDefaultProfile("default", tr("shared.normalizeSettings.default")));
   const activeProfileId =
     typeof v.activeProfileId === "string" && profiles.some((p) => p.id === v.activeProfileId)
       ? v.activeProfileId
@@ -385,7 +388,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
   const v = raw as Partial<LMBProfile>;
   const id = typeof v.id === "string" && v.id.trim() ? v.id : null;
   if (!id) return null;
-  const base = makeDefaultProfile(id, typeof v.name === "string" && v.name.trim() ? v.name : "Untitled");
+  const base = makeDefaultProfile(id, typeof v.name === "string" && v.name.trim() ? v.name : tr("shared.base.untitled"));
   return {
     ...base,
     lagUnit: v.lagUnit === "tokens" ? "tokens" : "messages",
@@ -591,7 +594,7 @@ export function bookNameFor(chatName: string | null | undefined, chatId: string)
 export function codexBookNameFor(chatName: string | null | undefined, chatId: string): string {
   const cleanName = (chatName ?? "").trim();
   const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
-  return `${WORLD_BOOK_NAME_PREFIX} Codex [Do Not Edit] - ${suffix}`;
+  return tr("shared.codexBookNameFor.codexDoNotEdit", { worldBookNamePrefix: WORLD_BOOK_NAME_PREFIX, suffix: suffix });
 }
 
 /* ------------------------------------------------- Lessons from Memoria */
@@ -677,10 +680,10 @@ export function lessonGradeForWrong(wrong: number): LessonGrade {
 }
 
 export const LESSON_GRADE_LABEL: Readonly<Record<LessonGrade, string>> = {
-  gilded: "Gilded",
-  silver: "Silver",
-  bronze: "Bronze",
-  apprentice: "Apprentice",
+  gilded: tr("shared.lessonGradeLabel.gilded"),
+  silver: tr("shared.lessonGradeLabel.silver"),
+  bronze: tr("shared.lessonGradeLabel.bronze"),
+  apprentice: tr("shared.lessonGradeLabel.apprentice"),
 };
 
 function normalizeLessonAnswers(raw: unknown): Record<string, LessonAnswer> {

@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import { diagnosticErrorReason, recordDiagnostic } from "../diagnostics";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -65,8 +66,7 @@ export class CodexValidationError extends Error {
 export class CodexContextError extends Error {
   constructor(promptTokens: number, maxInputTokens: number) {
     super(
-      `The assembled codex prompt is ~${Math.round(promptTokens / 1000)}k tokens but the codex max input is ${Math.round(maxInputTokens / 1000)}k, so Memoria stopped instead of sending a request that would fail or be silently cut. `
-      + "Raise Max input tokens under Tuning > Connection > Codex, or in Tuning > Settings > Codex lower the window, Chapters provided, or the lore limit, or freeze records in Codex > Overview.",
+      tr("backend.codex.agent.messages.theAssembledCodexPromptIsKTokens", { round: Math.round(promptTokens / 1000), round2: Math.round(maxInputTokens / 1000) }),
     );
     this.name = "CodexContextError";
   }
@@ -207,7 +207,7 @@ export async function resolveCodexConnection(profile: LMBProfile, userId: string
       const model = typeof picked.model === "string" ? picked.model : "";
       if (!model.trim()) {
         throw new FatalSummarizerError(
-          `Codex connection "${picked.name || picked.id}" has no model set, pick one in its settings`,
+          tr("backend.codex.agent.resolveCodexConnection.codexConnectionHasNoModelSetPick", { id: picked.name || picked.id }),
         );
       }
       return picked;
@@ -215,7 +215,7 @@ export async function resolveCodexConnection(profile: LMBProfile, userId: string
     warn(`codex: connection ${profile.codexConnectionId} not found, falling back to the profile connection`);
   }
   const conn = await resolveConnection(profile, userId);
-  if (!conn) throw new FatalSummarizerError("No connection available for the codex");
+  if (!conn) throw new FatalSummarizerError(tr("backend.codex.agent.resolveCodexConnection.noConnectionAvailableForTheCodex"));
   return conn;
 }
 
@@ -723,13 +723,13 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   };
   const keptSuffix = (saved: CodexFileKey[]): string =>
     saved.length
-      ? ` Memoria kept the ${saved.length} record${saved.length === 1 ? "" : "s"} she finished and will try the rest next time.`
+      ? tr("backend.codex.agent.keptSuffix.memoriaKeptTheRecordSheFinishedAnd", { length: saved.length })
       : "";
 
   while (rounds < maxRounds) {
     if (opts.externalSignal.aborted) throw new AbortedSummarizerError();
     rounds++;
-    if (rounds > 1) opts.onDelta?.("text", `\n\n═══ round ${rounds} ═══\n`);
+    if (rounds > 1) opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.round", { rounds: rounds }));
     if (opts.callBudget) { opts.callBudget.remaining--; opts.callBudget.used++; }
     const round = await runQuietRound(conn, conv, profile, userId, tools, opts.externalSignal, opts.onProgress, opts.onDelta, progressBase);
     usagePrompt += round.usagePrompt;
@@ -745,38 +745,38 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
         if (call.args["content"] !== undefined) {
           let size = 0;
           try { size = JSON.stringify(call.args["content"] ?? "").length; } catch { /* unserializable */ }
-          label = `full rewrite, ${(size / 1000).toFixed(1)}k chars`;
+          label = tr("backend.codex.agent.runCodexAgentInner.fullRewriteKChars", { toFixed: (size / 1000).toFixed(1) });
         } else {
           const bits: string[] = [];
           const setN = Array.isArray(call.args["set"]) ? (call.args["set"] as unknown[]).length : 0;
           const dropN = Array.isArray(call.args["drop"]) ? (call.args["drop"] as unknown[]).length : 0;
-          if (setN) bits.push(`${setN} set`);
-          if (dropN) bits.push(`${dropN} drop`);
-          if (call.args["seeds"] !== undefined) bits.push("seeds");
-          label = bits.join(", ") || "empty";
+          if (setN) bits.push(tr("backend.codex.agent.stream.set", { count: setN }));
+          if (dropN) bits.push(tr("backend.codex.agent.stream.drop", { count: dropN }));
+          if (call.args["seeds"] !== undefined) bits.push(tr("backend.codex.agent.stream.seeds"));
+          label = bits.join(", ") || tr("backend.codex.agent.stream.empty");
         }
-        opts.onDelta?.("text", `\n➤ codex_write ${f}.json (${label})`);
+        opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.codexWriteJson", { f: f, label: label }));
       } else if (call.name === "codex_done") {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` — ${call.args["note"].trim()}` : "";
-        opts.onDelta?.("text", `\n✦ codex_done${note}`);
+        opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.codexDone", { note: note }));
       } else if (call.name === "codex_skip") {
         const files = Array.isArray(call.args["files"])
           ? (call.args["files"] as unknown[]).filter((f): f is string => typeof f === "string")
           : [];
-        opts.onDelta?.("text", `\n○ codex_skip ${files.length ? files.map((f) => `${f}.json`).join(", ") : "(no files)"}`);
+        opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.codexSkip", { choice: (files.length) ? "yes" : "no", join: (files.length) ? (files.map((f) => `${f}.json`).join(", ")) : "" }));
       } else {
-        opts.onDelta?.("text", `\n✗ unknown tool ${call.name}`);
+        opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.unknownTool", { name: call.name }));
       }
     }
 
     if (calls.length === 0) {
       if (rounds === 1 && !round.content.trim()) {
-        throw new Error("The codex agent returned an empty response");
+        throw new Error(tr("backend.codex.agent.runCodexAgentInner.theCodexAgentReturnedAnEmptyResponse"));
       }
       // One stray character should not cost a whole pass.
       if (!useTools && !jsonRetryUsed && rounds < maxRounds && round.content.trim()) {
         jsonRetryUsed = true;
-        opts.onDelta?.("text", "\n✗ no JSON object found in the reply, asking for a resend");
+        opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.noJsonObjectFoundInTheReply"));
         conv.push({ role: "assistant", content: round.content });
         conv.push({
           role: "user",
@@ -793,8 +793,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
       if (unresolvedErrors) {
         const saved = await persistClean();
         throw new CodexValidationError(
-          "Memoria couldn't finish the codex update because the model gave up instead of fixing a record she rejected."
-          + keptSuffix(saved),
+          tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate", { keptSuffix: keptSuffix(saved) }),
         );
       }
       // Nothing staged and no done signal: treating this as a clean no-op
@@ -803,9 +802,9 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
         if (useTools) {
           // Prose instead of tool calls is a transport failure (a route that
           // can't carry tool calls): the callers offer the JSON fallback.
-          throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+          throw new ToolProtocolError(tr("backend.codex.agent.runCodexAgentInner.theCodexAgentNarratedInsteadOfCalling"));
         }
-        throw new Error("The codex agent replied without a parsable JSON update");
+        throw new Error(tr("backend.codex.agent.runCodexAgentInner.theCodexAgentRepliedWithoutAParsable"));
       }
       if (remaining.size > 0) {
         // An empty or narrated reply mid-list is a stall, not a refusal. Keep
@@ -830,8 +829,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
         }
         const saved = await persistClean();
         throw new CodexValidationError(
-          `Memoria couldn't finish the codex update, the model stopped before writing ${[...remaining].join(", ")}.`
-          + keptSuffix(saved),
+          tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate2", { join: [...remaining].join(", "), keptSuffix: keptSuffix(saved) }),
         );
       }
       break;
@@ -945,7 +943,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
         const original = opts.bundle[key].entities.find((e) => e.id === d.ref);
         if (original && !working[key].entities.some((e) => e.id === d.ref)) {
           working[key].entities.push(structuredClone(original));
-          opts.onDelta?.("text", `\n⤳ Kept ${d.ref}: still referenced by unchanged ${d.file}.json`);
+          opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.keptStillReferencedByUnchangedJson", { ref: d.ref, file: d.file }));
         }
       }
     }
@@ -958,7 +956,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
         const stubborn = dangling.filter((d) => danglingSeen.has(danglingKey(d)));
         if (stubborn.length > 0) {
           const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file).filter((file) => changed.has(file))));
-          for (const r of fixed) opts.onDelta?.("text", `\n⤳ ${r}`);
+          for (const r of fixed) opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.value", { r: r }));
           if (fixed.length > 0) dangling = newDangling(working, baselineDangling);
         }
       }
@@ -967,9 +965,9 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
     }
     const integrityErrors = dangling.map(formatDanglingRef);
     for (const o of outcomes) {
-      if (o.errors.length) opts.onDelta?.("text", `\n✗ rejected${o.file ? ` ${o.file}.json` : ""}: ${o.errors[0]}`);
+      if (o.errors.length) opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.rejected", { choice: (o.file) ? "yes" : "no", file: (o.file) ? (o.file) : "", errors0: o.errors[0] }));
     }
-    for (const e of integrityErrors) opts.onDelta?.("text", `\n✗ integrity: ${e}`);
+    for (const e of integrityErrors) opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.integrity", { e: e }));
     const hadErrors = outcomes.some((o) => o.errors.length > 0) || integrityErrors.length > 0;
     unresolvedErrors = hadErrors || rejectedFiles.size > 0;
 
@@ -1063,7 +1061,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
       const left = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
       const saved = await persistClean();
       throw new CodexValidationError(
-        `Memoria couldn't finish the codex update after ${rounds} tries. The model kept sending records she can't accept: ${left.slice(0, 3).join(", ")}.${keptSuffix(saved)}`,
+        tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate3", { rounds: rounds, join: left.slice(0, 3).join(", "), keptSuffix: keptSuffix(saved) }),
       );
     }
   }
@@ -1075,13 +1073,13 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   if (rejectedFiles.size > 0) {
     const saved = await persistClean();
     throw new CodexValidationError(
-      `Memoria couldn't finish the codex update, these records were never corrected: ${[...rejectedFiles].join(", ")}.${keptSuffix(saved)}`,
+      tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate4", { join: [...rejectedFiles].join(", "), keptSuffix: keptSuffix(saved) }),
     );
   }
   if (remaining.size > 0) {
     const saved = await persistClean();
     throw new CodexValidationError(
-      `Memoria couldn't finish the codex update, the model never wrote ${[...remaining].join(", ")}.${keptSuffix(saved)}`,
+      tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate5", { join: [...remaining].join(", "), keptSuffix: keptSuffix(saved) }),
     );
   }
 
@@ -1091,12 +1089,12 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   // the ties check catches a table migration that left an entity file
   // un-rewritten, which would brick that file under the new recorded mode.
   const repaired = repairDanglingRefs(working, new Set(changed));
-  for (const r of repaired) opts.onDelta?.("text", `\n⤳ ${r}`);
+  for (const r of repaired) opts.onDelta?.("text", tr("backend.codex.agent.runCodexAgentInner.value", { r: r }));
   const finalIntegrity = newDanglingErrors(working, baselineDangling);
   if (finalIntegrity.length) {
     const saved = await persistClean();
     throw new CodexValidationError(
-      `Memoria couldn't finish the codex update, some records point at people or places that don't exist: ${finalIntegrity.slice(0, 3).join(", ")}.${keptSuffix(saved)}`,
+      tr("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate6", { join: finalIntegrity.slice(0, 3).join(", "), keptSuffix: keptSuffix(saved) }),
     );
   }
   // Locked entities are exempt from both migration gates: the agent may not
@@ -1106,7 +1104,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
       working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0),
     );
     if (leftover.length) {
-      throw new Error(`Table migration left ties on ${leftover.map((k) => `${k}.json`).join(", ")}, the run will retry`);
+      throw new Error(tr("backend.codex.agent.runCodexAgentInner.tableMigrationLeftTiesOnTheRun", { join: leftover.map((k) => `${k}.json`).join(", ") }));
     }
   }
   // Mirror gate for the inline direction: the caller wipes relations.json
@@ -1124,7 +1122,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
       (r.type === "pair" ? [r.a, r.b] : r.members).some((m) => !lockedIds.has(m)),
     );
     if (!foldedTies && foldable) {
-      throw new Error("Inline migration produced no ties from the relations table, the run will retry");
+      throw new Error(tr("backend.codex.agent.runCodexAgentInner.inlineMigrationProducedNoTiesFromThe"));
     }
   }
 
@@ -1132,7 +1130,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
     try {
       await saveCodexFile(chatId, key, working[key], userId);
     } catch (err) {
-      throw new Error(`Failed to save ${key}.json: ${describeError(err)}`);
+      throw new Error(tr("backend.codex.agent.runCodexAgentInner.failedToSaveJson", { key: key, describeError: describeError(err) }));
     }
   }
 

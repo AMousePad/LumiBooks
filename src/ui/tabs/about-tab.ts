@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LessonCourseKey } from "../../shared";
 import { LESSON_GRADE_LABEL } from "../../shared";
@@ -15,19 +16,18 @@ export function renderAboutTab(
 ): void {
   host.replaceChildren();
 
-  const hero = section("Memoria");
+  const hero = section(tr("ui.tabs.aboutTab.hero.memoria"));
   const card = document.createElement("div");
   card.className = "lmb-about-hero";
   card.appendChild(memoriaSprite(64));
   const right = document.createElement("div");
   const title = document.createElement("div");
   title.className = "lmb-hero-title";
-  title.textContent = "Memoria, the LumiBooks librarian";
+  title.textContent = tr("ui.tabs.aboutTab.renderAboutTab.memoriaTheLumiBooksLibrarian");
   const tag = document.createElement("div");
   tag.className = "lmb-about-line";
   tag.textContent =
-    "Nyandere catgirl in a maid uniform. Black hair, blue eyes. " +
-    "Files your chats into chapters, binds chapters into arcs, and leaves a tiny nyaa note on every shelf.";
+    tr("ui.tabs.aboutTab.renderAboutTab.nyandereCatgirlInAMaidUniformBlack");
   right.append(title, tag);
   card.append(right);
   hero.body.appendChild(card);
@@ -38,12 +38,11 @@ export function renderAboutTab(
     renderAcademy(host, state, send);
   }
 
-  const ack = section("Acknowledgements");
+  const ack = section(tr("ui.tabs.aboutTab.ack.acknowledgements"));
   const a = document.createElement("div");
   a.className = "lmb-about-line";
   a.textContent =
-    "Built on Lumiverse Spindle, with prompts and UX inspired by SillyTavern Memory Books. " +
-    "Memoria thanks the original Memory Books authors for the inspiration.";
+    tr("ui.tabs.aboutTab.renderAboutTab.builtOnLumiverseSpindleWithPromptsAnd");
   ack.body.appendChild(a);
   host.appendChild(ack.wrap);
 }
@@ -56,9 +55,9 @@ const GRADE_CLASS: Record<string, string> = {
 };
 
 function renderAcademy(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
-  const sec = section("Memoria's Academy");
+  const sec = section(tr("ui.tabs.aboutTab.sec.memoriaSAcademy"));
   sec.body.appendChild(textNode(
-    "Both courses live here for retakes, per-section revisits, and diplomas.",
+    tr("ui.tabs.aboutTab.renderAcademy.bothCoursesLiveHereForRetakesPer"),
     "lmb-help",
   ));
   sec.body.appendChild(courseCard("books", COURSE_BOOKS, state, send));
@@ -93,36 +92,36 @@ function courseCard(
   const sub = document.createElement("div");
   sub.className = "lmb-help";
   sub.textContent = cs.status === "done"
-    ? `Completed${cs.signedName ? ` by ${cs.signedName}` : ""}, ${cs.attempts} attempt${cs.attempts === 1 ? "" : "s"}.`
+    ? tr("ui.tabs.aboutTab.courseCard.completedAttempt", { choice: (cs.signedName) ? "yes" : "no", signedName: (cs.signedName) ? (cs.signedName) : "", attempts: cs.attempts })
     : cs.status === "in_progress"
-      ? `In progress, section ${cs.section + 1}.`
+      ? tr("ui.tabs.aboutTab.courseCard.inProgressSection", { section1: cs.section + 1 })
       : key === "codex"
-        ? "Locked behind nothing but your time. This one turns the codex on."
-        : "The mandatory primer.";
+        ? tr("ui.tabs.aboutTab.courseCard.lockedBehindNothingButYourTimeThis")
+        : tr("ui.tabs.aboutTab.courseCard.theMandatoryPrimer");
   card.appendChild(sub);
 
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   if (cs.status === "done") {
     actions.append(
-      makeButton("View diploma", () => requestLesson({ course: key, mode: "diploma" }), { small: true }),
-      makeButton("Retake course", () => {
+      makeButton(tr("ui.tabs.aboutTab.courseCard.viewDiploma"), () => requestLesson({ course: key, mode: "diploma" }), { small: true }),
+      makeButton(tr("ui.tabs.aboutTab.courseCard.retakeCourse"), () => {
         send({ type: "lesson_reset", course: key, mode: "course", chatId: state.activeChatId });
         requestLesson({ course: key, mode: "lesson", section: 0, fresh: true });
       }, {
         small: true,
-        title: "Leave anytime, the course stays completed on your previous grade until you finish a new run",
+        title: tr("ui.tabs.aboutTab.courseCard.leaveAnytimeTheCourseStaysCompletedOn"),
       }),
     );
   } else {
     actions.append(
-      makeButton(cs.status === "in_progress" ? "Resume" : "Start", () => requestLesson({ course: key, mode: "lesson" }), {
+      makeButton(cs.status === "in_progress" ? tr("ui.tabs.aboutTab.courseCard.resume") : tr("ui.tabs.aboutTab.courseCard.start"), () => requestLesson({ course: key, mode: "lesson" }), {
         small: true,
         primary: true,
       }),
     );
     if (key === "books") {
-      actions.append(makeButton("Sit the Exam", () => requestLesson({ course: key, mode: "exam" }), { small: true }));
+      actions.append(makeButton(tr("ui.tabs.aboutTab.courseCard.sitTheExam"), () => requestLesson({ course: key, mode: "exam" }), { small: true }));
     }
   }
   card.appendChild(actions);
@@ -137,8 +136,8 @@ function courseCard(
       btn.className = "lmb-academy-section";
       const ids = allQuestionIds(course, i);
       const missed = ids.some((id) => cs.answers[id] !== "gold");
-      btn.textContent = `${i + 1}. ${s.title}${missed ? " ◇" : " ◆"}`;
-      btn.title = missed ? "Has silver or skipped stamps, retake to gild it" : "All gold";
+      btn.textContent = tr("ui.tabs.aboutTab.courseCard.value", { i1: i + 1, title: s.title, choice: (missed) ? "yes" : "no" });
+      btn.title = missed ? tr("ui.tabs.aboutTab.courseCard.hasSilverOrSkippedStampsRetakeTo") : tr("ui.tabs.aboutTab.courseCard.allGold");
       btn.addEventListener("click", () => {
         send({ type: "lesson_reset", course: key, mode: "section", section: i, answerIds: ids, chatId: state.activeChatId });
         requestLesson({ course: key, mode: "lesson", section: i });
@@ -151,16 +150,16 @@ function courseCard(
 }
 
 function renderDiagnostics(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
-  const sec = section("Private diagnostics");
+  const sec = section(tr("ui.tabs.aboutTab.sec.privateDiagnostics"));
   sec.body.appendChild(checkbox({
     checked: state.settings.localLogsDisabled,
-    label: "Turn off local logs. This is not recommended",
+    label: tr("ui.tabs.aboutTab.renderDiagnostics.turnOffLocalLogsThisIsNot"),
     onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } }),
   }));
-  sec.body.appendChild(textNode("Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors.", "lmb-help"));
+  sec.body.appendChild(textNode(tr("ui.tabs.aboutTab.renderDiagnostics.tracksUiFailuresNavigationRequestsFilingCoverage"), "lmb-help"));
   const actions = document.createElement("div"); actions.className = "lmb-actions";
   const chatId = state.activeChatId;
-  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })),
-    makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
+  actions.append(makeButton(tr("ui.tabs.aboutTab.renderDiagnostics.exportDiagnostics"), () => send({ type: "diagnostics_export", chatId })),
+    makeButton(tr("ui.tabs.aboutTab.renderDiagnostics.clearDiagnostics"), () => send({ type: "diagnostics_clear", chatId })));
   sec.body.appendChild(actions); host.appendChild(sec.wrap);
 }

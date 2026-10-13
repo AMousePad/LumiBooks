@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import { bookNameFor } from "../shared";
@@ -45,13 +46,13 @@ async function inheritedMessageIds(ancestorId: string, forkId: string, userId: s
   let mapped = new Map(currentMessages.map((m) => [m.id, m.id]));
   const seen = new Set<string>();
   while (currentId !== ancestorId) {
-    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS) throw new Error("Fork ancestry could not be resolved");
+    if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS) throw new Error(tr("backend.fork.inheritedMessageIds.forkAncestryCouldNotBeResolved"));
     seen.add(currentId);
     const chat = await spindle.chats.get(currentId, userId);
     const metadata = chat?.metadata;
     const parentId = metadata?.["branched_from"];
     const branchAt = metadata?.["branch_at_message"];
-    if (typeof parentId !== "string") throw new Error("Fork ancestry is incomplete");
+    if (typeof parentId !== "string") throw new Error(tr("backend.fork.inheritedMessageIds.forkAncestryIsIncomplete"));
     const parentMessages = await spindle.chat.getMessages(parentId);
     const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
     // A deleted fork point cannot prove which later indexes were inherited.
@@ -126,7 +127,7 @@ export async function forkShelfPending(chatId: string, userId: string): Promise<
  * Otherwise a new empty shelf permanently shadows the parent's memories. */
 export async function requireForkShelf(chatId: string, userId: string): Promise<void> {
   await ensureForkAdoption(chatId, userId);
-  if (await forkShelfPending(chatId, userId)) throw new Error("Fork inheritance is still pending. Retry after the inherited shelf is restored.");
+  if (await forkShelfPending(chatId, userId)) throw new Error(tr("backend.fork.requireForkShelf.forkInheritanceIsStillPendingRetryAfter"));
 }
 
 export async function forkCodexPending(chatId: string, userId: string): Promise<boolean> {
@@ -171,7 +172,7 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
         } catch (err) {
           shelfSettled = false;
           warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-          forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
+          forkAnomalyCb?.(userId, tr("backend.fork.doForkAdoption.memoriaCouldnTCarryTheShelfInto", { shortErrorText: shortErrorText(err) }));
         }
       } else {
         await markShelfAdopted(forkChatId, userId).catch(() => {});
@@ -268,7 +269,7 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
     return true;
   } catch (err) {
     warn(`fork codex adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-    forkAnomalyCb?.(userId, `Memoria couldn't carry the codex into this fork and will retry: ${shortErrorText(err)}`);
+    forkAnomalyCb?.(userId, tr("backend.fork.adoptForkCodex.memoriaCouldnTCarryTheCodexInto", { shortErrorText: shortErrorText(err) }));
     return false;
   }
 }
@@ -289,7 +290,7 @@ async function markShelfAdopted(forkChatId: string, userId: string): Promise<voi
 async function markCodexAdopted(forkChatId: string, userId: string): Promise<void> {
   await withChatMetaLock(userId, forkChatId, async () => {
     const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
-    if (!chat) throw new Error("fork chat vanished while recording codex adoption");
+    if (!chat) throw new Error(tr("backend.fork.markCodexAdopted.forkChatVanishedWhileRecordingCodexAdoption"));
     const md = chat.metadata && typeof chat.metadata === "object"
       ? { ...(chat.metadata as Record<string, unknown>) }
       : {};
@@ -417,7 +418,7 @@ async function cloneShelfForFork(
   const newBook = await spindle.world_books.create(
     {
       name: bookNameFor(forkChatName, forkChatId),
-      description: "Memoria's shelf for this chat. Chapters and arcs live here.",
+      description: tr("backend.fork.newBook.memoriaSShelfForThisChatChapters"),
       metadata: {
         lumibooks_chat_id: forkChatId,
         lumibooks_created_at: Date.now(),

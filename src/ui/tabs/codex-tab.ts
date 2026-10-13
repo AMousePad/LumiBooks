@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import {
   forceCollide,
@@ -37,21 +38,21 @@ import { applyExtraFields, draftExtraFields, type ExtraFieldDraft } from "../cod
 const fileStateChanges = new CodexFileStateChanges();
 export function deliverCodexFileState(chatId: string, file: string, seq: number, error?: string): "on" | "noInject" | "frozen" | null {
   const confirmed = fileStateChanges.acknowledge(chatId, file, seq, !!error);
-  if (error && confirmed !== null) showToast("error", `Couldn't save this category's setting: ${error}`);
+  if (error && confirmed !== null) showToast("error", tr("ui.tabs.codexTab.deliverCodexFileState.couldnTSaveThisCategorySSetting", { error: error }));
   return confirmed;
 }
 
 type CodexSubtab = "overview" | "entities" | "relations" | "timeline" | "threads" | "lore" | "secrets" | "manage";
 
 const SUBTABS: { key: CodexSubtab; label: string }[] = [
-  { key: "overview", label: "Overview" },
-  { key: "entities", label: "Entities" },
-  { key: "relations", label: "Relations" },
-  { key: "timeline", label: "Timeline" },
-  { key: "threads", label: "Threads" },
-  { key: "lore", label: "Lore" },
-  { key: "secrets", label: "Secrets" },
-  { key: "manage", label: "Manage" },
+  { key: "overview", label: tr("ui.tabs.codexTab.subtabs.overview") },
+  { key: "entities", label: tr("ui.tabs.codexTab.subtabs.entities") },
+  { key: "relations", label: tr("ui.tabs.codexTab.subtabs.relations") },
+  { key: "timeline", label: tr("ui.tabs.codexTab.subtabs.timeline") },
+  { key: "threads", label: tr("ui.tabs.codexTab.subtabs.threads") },
+  { key: "lore", label: tr("ui.tabs.codexTab.subtabs.lore") },
+  { key: "secrets", label: tr("ui.tabs.codexTab.subtabs.secrets") },
+  { key: "manage", label: tr("ui.tabs.codexTab.subtabs.manage") },
 ];
 
 /* ------------------------------------------------------- tolerant parsing */
@@ -61,9 +62,9 @@ const SUBTABS: { key: CodexSubtab; label: string }[] = [
 type EntityGroup = "characters" | "locations" | "things";
 
 const ENTITY_GROUPS: { key: EntityGroup; title: string; singular: string; ns: string }[] = [
-  { key: "characters", title: "Characters", singular: "character", ns: "char" },
-  { key: "locations", title: "Locations", singular: "location", ns: "loc" },
-  { key: "things", title: "Things", singular: "thing", ns: "thing" },
+  { key: "characters", title: tr("ui.tabs.codexTab.entityGroups.characters"), singular: "character", ns: "char" },
+  { key: "locations", title: tr("ui.tabs.codexTab.entityGroups.locations"), singular: "location", ns: "loc" },
+  { key: "things", title: tr("ui.tabs.codexTab.entityGroups.things"), singular: "thing", ns: "thing" },
 ];
 
 interface ParsedCodex {
@@ -195,7 +196,7 @@ function resolveDraftIndex(list: Record<string, unknown>[], draft: RecordDraft):
 
 function staleDraftAbort(): void {
   local.recordDraft = null;
-  showToast("warn", "Memoria rewrote that record while you were working, redo the change on the new version");
+  showToast("warn", tr("ui.tabs.codexTab.staleDraftAbort.memoriaRewroteThatRecordWhileYouWere"));
   rerender();
 }
 
@@ -398,8 +399,8 @@ export function renderCodexTab(
   }
   const chatId = state.activeChatId;
   if (!chatId) {
-    const empty = section("Knowledge Codex");
-    empty.body.appendChild(textNode("Open a chat to consult the codex", "lmb-empty"));
+    const empty = section(tr("ui.tabs.codexTab.empty.knowledgeCodex"));
+    empty.body.appendChild(textNode(tr("ui.tabs.codexTab.renderCodexTab.openAChatToConsultTheCodex"), "lmb-empty"));
     host.appendChild(empty.wrap);
     return;
   }
@@ -461,8 +462,8 @@ export function renderCodexTab(
   }
 
   if (!parsed) {
-    const sec = section("Knowledge Codex");
-    sec.body.appendChild(textNode("Memoria is fetching the codex files...", "lmb-empty"));
+    const sec = section(tr("ui.tabs.codexTab.sec.knowledgeCodex"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderCodexTab.memoriaIsFetchingTheCodexFiles"), "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
@@ -471,7 +472,7 @@ export function renderCodexTab(
   // below so the input keeps focus.
   const search = searchField({
     value: local.queryRaw,
-    placeholder: "Search this section...",
+    placeholder: tr("ui.tabs.codexTab.search.searchThisSection"),
     onChange: (v) => {
       local.queryRaw = v;
       local.query = v.toLowerCase();
@@ -516,14 +517,14 @@ function matches(q: string, ...bits: (string | string[] | undefined)[]): boolean
 
 // One tile per file, labelled to match the section tabs above.
 const BIBLE_TILES: { id: string; label: string; files: CodexFileKey[] }[] = [
-  { id: "characters", label: "Characters", files: ["characters"] },
-  { id: "locations", label: "Locations", files: ["locations"] },
-  { id: "things", label: "Things", files: ["things"] },
-  { id: "relations", label: "Relations", files: ["relations"] },
-  { id: "timeline", label: "Timeline", files: ["timeline"] },
-  { id: "threads", label: "Threads", files: ["threads"] },
-  { id: "lore", label: "Lore", files: ["world"] },
-  { id: "secrets", label: "Secrets", files: ["knowledge"] },
+  { id: "characters", label: tr("ui.tabs.codexTab.bibleTiles.characters"), files: ["characters"] },
+  { id: "locations", label: tr("ui.tabs.codexTab.bibleTiles.locations"), files: ["locations"] },
+  { id: "things", label: tr("ui.tabs.codexTab.bibleTiles.things"), files: ["things"] },
+  { id: "relations", label: tr("ui.tabs.codexTab.bibleTiles.relations"), files: ["relations"] },
+  { id: "timeline", label: tr("ui.tabs.codexTab.bibleTiles.timeline"), files: ["timeline"] },
+  { id: "threads", label: tr("ui.tabs.codexTab.bibleTiles.threads"), files: ["threads"] },
+  { id: "lore", label: tr("ui.tabs.codexTab.bibleTiles.lore"), files: ["world"] },
+  { id: "secrets", label: tr("ui.tabs.codexTab.bibleTiles.secrets"), files: ["knowledge"] },
 ];
 
 type FileState = "on" | "noInject" | "frozen";
@@ -550,12 +551,12 @@ const PURGE_SCAFFOLD: Record<CodexFileKey, unknown> = {
 };
 
 function purgeMessage(def: { id: string; label: string }): string {
-  const bits = [`Memoria will delete every record in ${def.label} for this chat.`];
+  const bits = [tr("ui.tabs.codexTab.bits.memoriaWillDeleteEveryRecordInFor", { label: def.label })];
   if (def.id === "characters" || def.id === "locations" || def.id === "things") {
-    bits.push("References to them in other records become plain text.");
+    bits.push(tr("ui.tabs.codexTab.purgeMessage.referencesToThemInOtherRecordsBecome"));
   }
-  if (def.id === "threads") bits.push("The resolved thread archive clears too.");
-  bits.push("This cannot be undone.");
+  if (def.id === "threads") bits.push(tr("ui.tabs.codexTab.purgeMessage.theResolvedThreadArchiveClearsToo"));
+  bits.push(tr("ui.tabs.codexTab.purgeMessage.thisCannotBeUndone"));
   return bits.join(" ");
 }
 
@@ -584,9 +585,9 @@ function tileState(state: FrontendState, files: CodexFileKey[]): FileState {
 }
 
 const TILE_STATE_LABEL: Record<FileState, string> = {
-  on: "injected · updated",
-  noInject: "not injected · still updated",
-  frozen: "frozen · no updates",
+  on: tr("ui.tabs.codexTab.tileStateLabel.injectedUpdated"),
+  noInject: tr("ui.tabs.codexTab.tileStateLabel.notInjectedStillUpdated"),
+  frozen: tr("ui.tabs.codexTab.tileStateLabel.frozenNoUpdates"),
 };
 
 function renderOverview(
@@ -598,16 +599,16 @@ function renderOverview(
 ): void {
   const chatId = state.activeChatId!;
   const profile = state.activeProfile;
-  const sec = section("Story Bible");
+  const sec = section(tr("ui.tabs.codexTab.sec.storyBible"));
 
   const bits: string[] = [];
-  bits.push(state.codexExists ? "codex on file" : "no codex yet");
-  bits.push(`${state.codexBacklog} message${state.codexBacklog === 1 ? "" : "s"} unindexed`);
-  if (state.codexLastRunAt) bits.push(`updated ${relativeTime(state.codexLastRunAt)}`);
+  bits.push(state.codexExists ? tr("ui.tabs.codexTab.renderOverview.codexOnFile") : tr("ui.tabs.codexTab.renderOverview.noCodexYet"));
+  bits.push(tr("ui.tabs.codexTab.renderOverview.messageUnindexed", { codexBacklog: state.codexBacklog }));
+  if (state.codexLastRunAt) bits.push(tr("ui.tabs.codexTab.renderOverview.updated", { codexLastRunAt: relativeTime(state.codexLastRunAt) }));
   sec.body.appendChild(lessonMark(textNode(bits.join(" · "), "lmb-help"), "codex.status"));
 
   if (!profile.codexEnabled) {
-    sec.body.appendChild(textNode("The codex agent is off for this profile. Enable it in Tuning → Settings → Codex.", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderOverview.theCodexAgentIsOffForThis"), "lmb-empty"));
   }
 
   const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
@@ -616,7 +617,7 @@ function renderOverview(
     row.className = "lmb-busy";
     const dot = document.createElement("div");
     dot.className = "lmb-busy-dot";
-    row.append(dot, document.createTextNode("Memoria is working on the codex, watch Home for progress"));
+    row.append(dot, document.createTextNode(tr("ui.tabs.codexTab.renderOverview.memoriaIsWorkingOnTheCodexWatch")));
     sec.body.appendChild(row);
   }
 
@@ -627,7 +628,7 @@ function renderOverview(
   if (shownParsed) {
     if (shownParsed.broken.length > 0) {
       sec.body.appendChild(textNode(
-        `Unreadable on disk: ${shownParsed.broken.join(", ")} - Rebuild codex regenerates them from the story`,
+        tr("ui.tabs.codexTab.renderOverview.unreadableOnDiskRebuildCodexRegeneratesThem", { join: shownParsed.broken.join(", ") }),
         "lmb-help",
       ));
     }
@@ -640,14 +641,14 @@ function renderOverview(
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
       sec.body.appendChild(textNode(
-        "No codex yet.",
+        tr("ui.tabs.codexTab.renderOverview.noCodexYet2"),
         "lmb-help",
       ));
     }
     if ((state.codexRefreshPending?.length ?? 0) + (state.codexStaleFiles?.length ?? 0) > 0) {
-      sec.body.appendChild(makeButton("Clear stale tags", () => send({ type: "codex_clear_stale", chatId }), {
+      sec.body.appendChild(makeButton(tr("ui.tabs.codexTab.renderOverview.clearStaleTags"), () => send({ type: "codex_clear_stale", chatId }), {
         small: true, disabled: busy,
-        title: "Accept the current records as up to date. Keeps all text and indexing; makes no model request. Future missed updates can mark frozen records stale again.",
+        title: tr("ui.tabs.codexTab.renderOverview.acceptTheCurrentRecordsAsUpTo"),
       }));
     }
     const pending = state.codexRefreshPending ?? [];
@@ -656,32 +657,32 @@ function renderOverview(
       banner.className = "lmb-actions";
       banner.append(
         textNode(
-          `${pending.length} record${pending.length === 1 ? "" : "s"} missed updates while frozen.`,
+          tr("ui.tabs.codexTab.renderOverview.recordMissedUpdatesWhileFrozen", { length: pending.length }),
           "lmb-help",
         ),
-        makeButton("Catch up (1 pass)", () => send({ type: "codex_refresh", chatId }), {
+        makeButton(tr("ui.tabs.codexTab.renderOverview.catchUp1Pass"), () => send({ type: "codex_refresh", chatId }), {
           primary: true,
           small: true,
           disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-          title: "One pass rebuilds just the re-enabled records from the filed summaries and recent messages",
+          title: tr("ui.tabs.codexTab.renderOverview.onePassRebuildsJustTheReEnabled"),
         }),
-        makeButton("Rebuild instead", async () => {
-          const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+        makeButton(tr("ui.tabs.codexTab.renderOverview.rebuildInstead"), async () => {
+          const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
           if (ok) requestCodexRebuild(state, chatId, send);
         }, {
           small: true,
           disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-          title: "Wipe everything and regenerate from the start of the chat",
+          title: tr("ui.tabs.codexTab.renderOverview.wipeEverythingAndRegenerateFromTheStart"),
         }),
       );
       sec.body.appendChild(banner);
     }
     sec.body.appendChild(textNode(
-      "Click a record card to cycle it: injected → not injected → frozen. Records stay manually editable in their sections.",
+      tr("ui.tabs.codexTab.renderOverview.clickARecordCardToCycleIt"),
       "lmb-help",
     ));
     sec.body.appendChild(textNode(
-      "Shorter and simpler chats often run better with fewer records.",
+      tr("ui.tabs.codexTab.renderOverview.shorterAndSimplerChatsOftenRunBetter"),
       "lmb-help",
     ));
   }
@@ -690,31 +691,31 @@ function renderOverview(
   row.className = "lmb-actions";
   lessonMark(row, "codex.actions");
   row.append(
-    lessonMark(makeButton("Update now", () => requestCodexUpdate(state, chatId, send), {
+    lessonMark(makeButton(tr("ui.tabs.codexTab.renderOverview.updateNow"), () => requestCodexUpdate(state, chatId, send), {
       primary: true,
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-      title: "Consume everything up to the newest message now, ignoring lag and window. A big backlog offers fast catch-up modes.",
+      title: tr("ui.tabs.codexTab.renderOverview.consumeEverythingUpToTheNewestMessage"),
     }), "codex.actions.update"),
     busy
-      ? makeButton("Cancel", () => send({ type: "abort_busy", chatId, kind: "codex" }), {
+      ? makeButton(tr("ui.tabs.codexTab.renderOverview.cancel"), () => send({ type: "abort_busy", chatId, kind: "codex" }), {
           danger: true,
-          title: "Abort the codex task in flight",
+          title: tr("ui.tabs.codexTab.renderOverview.abortTheCodexTaskInFlight"),
         })
-      : makeButton("Tidy up", () => requestCodexTidy(state, chatId, send), {
+      : makeButton(tr("ui.tabs.codexTab.renderOverview.tidyUp"), () => requestCodexTidy(state, chatId, send), {
           disabled: !state.settings.enabled || !profile.codexEnabled || !state.codexExists,
-          title: "Choose a target size, then compact up to six model calls without losing plot-relevant information",
+          title: tr("ui.tabs.codexTab.renderOverview.chooseATargetSizeThenCompactUp"),
         }),
     makeButton(
-      state.codexUndoAt ? `Undo ${state.codexUndoReason ?? "update"}` : "Undo",
+      state.codexUndoAt ? tr("ui.tabs.codexTab.renderOverview.undo", { codexUndoReasonUpdate: state.codexUndoReason ?? "update" }) : tr("ui.tabs.codexTab.renderOverview.undo2"),
       async () => {
-        const ok = await confirmDelete(ctx, "Undo the last codex change?", `Memoria will roll the codex back to the snapshot she took before the ${state.codexUndoReason ?? "update"} ${relativeTime(state.codexUndoAt!)}. Anything written since is lost.`);
+        const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.undoTheLastCodexChange"), tr("ui.tabs.codexTab.ok.memoriaWillRollTheCodexBackTo", { codexUndoReasonUpdate: state.codexUndoReason ?? "update", codexUndoAt: relativeTime(state.codexUndoAt!) }));
         if (ok) send({ type: "codex_undo", chatId });
       },
       {
         disabled: busy || !state.codexUndoAt,
         title: state.codexUndoAt
-          ? "Roll back to the snapshot taken before the last codex change"
-          : "Nothing to undo yet, Memoria snapshots the codex before each change",
+          ? tr("ui.tabs.codexTab.renderOverview.rollBackToTheSnapshotTakenBefore")
+          : tr("ui.tabs.codexTab.renderOverview.nothingToUndoYetMemoriaSnapshotsThe"),
       },
     ),
   );
@@ -739,34 +740,34 @@ function renderManage(
   if (!known) local.codexSourceId = "";
 
   renderContinuitySection(host, ctx, {
-    emptyText: "No other chat has a codex to carry over yet",
+    emptyText: tr("ui.tabs.codexTab.renderManage.noOtherChatHasACodexTo"),
     inherited: state.codexRootOrigin
       ? {
-          text: `Carried over from ${state.codexRootOriginName}. Memoria indexes this chat's own messages from the start.`,
+          text: tr("ui.tabs.codexTab.renderManage.carriedOverFromMemoriaIndexesThisChat", { codexRootOriginName: state.codexRootOriginName }),
           detach: {
-            label: "Detach codex",
-            title: "Erase the carried-over codex from this chat",
-            confirmTitle: "Detach the carried-over codex?",
-            confirmBody: "Codex records merge as Memoria works, so there is nothing left to separate. Detaching wipes the codex and starts blank on the next update. This cannot be undone.",
+            label: tr("ui.tabs.codexTab.renderManage.detachCodex"),
+            title: tr("ui.tabs.codexTab.renderManage.eraseTheCarriedOverCodexFromThis"),
+            confirmTitle: tr("ui.tabs.codexTab.renderManage.detachTheCarriedOverCodex"),
+            confirmBody: tr("ui.tabs.codexTab.renderManage.codexRecordsMergeAsMemoriaWorksSo"),
             run: () => send({ type: "codex_reset", chatId }),
           },
         }
       : null,
     picker: !state.codexExists && sources.length > 0
       ? {
-          help: "Continuing an earlier chat? Carry its story bible over instead of re-reading a story Memoria already encoded.",
-          ariaLabel: "Source chat to carry the codex from",
-          placeholder: "Pick a source chat...",
+          help: tr("ui.tabs.codexTab.renderManage.continuingAnEarlierChatCarryItsStory"),
+          ariaLabel: tr("ui.tabs.codexTab.renderManage.sourceChatToCarryTheCodexFrom"),
+          placeholder: tr("ui.tabs.codexTab.renderManage.pickASourceChat"),
           options: sources.map((s) => ({ chatId: s.chatId, chatName: s.chatName })),
           selectedId: local.codexSourceId ?? "",
           onSelect: (v) => { local.codexSourceId = v; },
           action: {
-            label: "Carry codex over",
-            title: "Copy another chat's codex into this one",
+            label: tr("ui.tabs.codexTab.renderManage.carryCodexOver"),
+            title: tr("ui.tabs.codexTab.renderManage.copyAnotherChatSCodexIntoThis"),
             primary: true,
             confirm: {
-              title: "Carry the codex over?",
-              body: "Memoria will copy the chosen chat's story bible into this chat, then index this chat's own messages from the start.",
+              title: tr("ui.tabs.codexTab.renderManage.carryTheCodexOver"),
+              body: tr("ui.tabs.codexTab.renderManage.memoriaWillCopyTheChosenChatS"),
             },
             run: (sourceChatId) => send({ type: "codex_adopt", chatId, sourceChatId }),
           },
@@ -774,44 +775,44 @@ function renderManage(
       : null,
   });
 
-  const files = section("Codex files");
+  const files = section(tr("ui.tabs.codexTab.files.codexFiles"));
   files.body.appendChild(textNode(
-    "Export writes every codex file and its inject switches to one JSON file. Import replaces them all from such a file.",
+    tr("ui.tabs.codexTab.renderManage.exportWritesEveryCodexFileAndIts"),
     "lmb-help",
   ));
   const fileRow = document.createElement("div");
   fileRow.className = "lmb-actions";
   fileRow.append(
-    makeButton("Export", () => send({ type: "codex_backup", chatId }), {
+    makeButton(tr("ui.tabs.codexTab.renderManage.export"), () => send({ type: "codex_backup", chatId }), {
       disabled: busy || !state.codexExists,
-      title: "Download every codex file plus its inject switches as one JSON file",
+      title: tr("ui.tabs.codexTab.renderManage.downloadEveryCodexFilePlusItsInject"),
     }),
-    makeButton("Import", async () => {
-      const ok = await confirmDelete(ctx, "Import a codex file?", "Memoria will replace every codex file in this chat with the ones in the imported file. This cannot be undone.");
+    makeButton(tr("ui.tabs.codexTab.renderManage.import"), async () => {
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.importACodexFile"), tr("ui.tabs.codexTab.ok.memoriaWillReplaceEveryCodexFileIn"));
       if (ok) restoreBackup(ctx, chatId, send);
-    }, { disabled: busy, title: "Replace this chat's codex from an exported file" }),
+    }, { disabled: busy, title: tr("ui.tabs.codexTab.renderManage.replaceThisChatSCodexFromAn") }),
   );
   files.body.appendChild(fileRow);
   host.appendChild(files.wrap);
 
-  const danger = section("Start over");
+  const danger = section(tr("ui.tabs.codexTab.danger.startOver"));
   danger.body.appendChild(textNode(
-    "Rebuild re-reads the whole chat from message one. Wipe clears the codex and leaves it blank until the next update.",
+    tr("ui.tabs.codexTab.renderManage.rebuildReReadsTheWholeChatFrom"),
     "lmb-help",
   ));
   const dangerRow = document.createElement("div");
   dangerRow.className = "lmb-actions";
   lessonMark(dangerRow, "codex.manage.startover");
   dangerRow.append(
-    makeButton("Rebuild codex", async () => {
-      const ok = await confirmDelete(ctx, "Rebuild the codex?", "Memoria will erase the story bible and re-read the whole chat from message one. You pick the speed next.");
+    makeButton(tr("ui.tabs.codexTab.renderManage.rebuildCodex"), async () => {
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
       if (ok) requestCodexRebuild(state, chatId, send);
     }, {
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-      title: "Wipe and regenerate the whole story bible from the start of the chat",
+      title: tr("ui.tabs.codexTab.renderManage.wipeAndRegenerateTheWholeStoryBible"),
     }),
-    makeButton("Wipe codex", async () => {
-      const ok = await confirmDelete(ctx, "Wipe the codex?", "Memoria will erase every codex record for this chat and start blank on the next update. This cannot be undone.");
+    makeButton(tr("ui.tabs.codexTab.renderManage.wipeCodex"), async () => {
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.wipeTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseEveryCodexRecordFor"));
       if (ok) send({ type: "codex_reset", chatId });
     }, { danger: true, disabled: busy || !state.codexExists }),
   );
@@ -832,7 +833,7 @@ function restoreBackup(
         parsed = JSON.parse(new TextDecoder().decode(files[0]!.bytes));
       } catch (err) {
         console.warn("[LumiBooks] codex backup parse failed", err);
-        showToast("error", "Memoria couldn't read that backup file");
+        showToast("error", tr("ui.tabs.codexTab.restoreBackup.memoriaCouldnTReadThatBackupFile"));
         return;
       }
       send({ type: "codex_restore", chatId, raw: parsed });
@@ -873,7 +874,7 @@ function renderBibleTile(
   const tile = document.createElement("div");
   tile.className = `lmb-tile lmb-bible-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
   lessonMark(tile, `codex.tile.${def.id}`);
-  tile.title = `${TILE_STATE_LABEL[st]}${stale ? " · missed updates while frozen" : ""}${needsCatchup ? " · waiting for the catch-up pass" : ""} - click to cycle`;
+  tile.title = tr("ui.tabs.codexTab.renderBibleTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: (stale) ? "yes" : "no", choice2: (needsCatchup) ? "yes" : "no" });
 
   const v = document.createElement("div");
   v.className = "lmb-tile-value";
@@ -883,43 +884,43 @@ function renderBibleTile(
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = `${state.codexTokensApproximate ? "~" : ""}${formatTokens(tokens)} tokens`;
+  s.textContent = tr("ui.tabs.codexTab.renderBibleTile.tokens", { choice: (state.codexTokensApproximate) ? "yes" : "no", formatTokens: formatTokens(tokens) });
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
-  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
+  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
   tile.append(v, l, s, stateLine);
 
   const tools = document.createElement("div");
   tools.className = "lmb-tile-tools";
-  const tidyBtn = makeButton(busy ? "Cancel" : "Tidy", () => {
+  const tidyBtn = makeButton(busy ? tr("ui.tabs.codexTab.tidyBtn.cancel") : tr("ui.tabs.codexTab.tidyBtn.tidy"), () => {
     if (busy) send({ type: "abort_busy", chatId, kind: "codex" });
     else requestCodexTidy(state, chatId, send, def.files);
   }, {
     small: true,
     disabled: !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists),
-    title: busy ? "Abort the codex task in flight" : "Choose a target size for this record",
+    title: busy ? tr("ui.tabs.codexTab.tidyBtn.abortTheCodexTaskInFlight") : tr("ui.tabs.codexTab.tidyBtn.chooseATargetSizeForThisRecord"),
   });
   tidyBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(tidyBtn);
-  const rebuildBtn = makeButton("Rebuild", () => {
+  const rebuildBtn = makeButton(tr("ui.tabs.codexTab.rebuildBtn.rebuild"), () => {
     void (async () => {
       const ok = await confirmDelete(
         ctx,
-        "Rebuild this record?",
-        `Memoria will regenerate every record in ${def.label} from the whole story in one pass. The current contents are replaced when the pass succeeds. Locked entries survive untouched.`,
+        tr("ui.tabs.codexTab.ok.rebuildThisRecord"),
+        tr("ui.tabs.codexTab.ok.memoriaWillRegenerateEveryRecordInFrom", { label: def.label }),
       );
       if (ok) send({ type: "codex_rebuild_files", chatId, files: def.files });
     })();
   }, {
     small: true,
     disabled: busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled,
-    title: "Regenerate just this category from the whole story in one pass",
+    title: tr("ui.tabs.codexTab.rebuildBtn.regenerateJustThisCategoryFromTheWhole"),
   });
   rebuildBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(rebuildBtn);
-  const purgeBtn = makeButton("Purge", () => {
+  const purgeBtn = makeButton(tr("ui.tabs.codexTab.purgeBtn.purge"), () => {
     void (async () => {
-      const ok = await confirmDelete(ctx, "Purge this record?", purgeMessage(def));
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.purgeThisRecord"), purgeMessage(def));
       if (!ok) return;
       sendCodexWrite(def.files[0]!, PURGE_SCAFFOLD[def.files[0]!], state, send);
     })();
@@ -927,7 +928,7 @@ function renderBibleTile(
     small: true,
     danger: true,
     disabled: busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0,
-    title: "Delete every record in this category at once",
+    title: tr("ui.tabs.codexTab.purgeBtn.deleteEveryRecordInThisCategoryAt"),
   });
   purgeBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(purgeBtn);
@@ -938,8 +939,8 @@ function renderBibleTile(
     st = tileState(state, def.files);
     tile.classList.remove("on", "noInject", "frozen");
     tile.classList.add(st);
-    tile.title = `${TILE_STATE_LABEL[st]} - click to cycle`;
-    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? " · stale" : ""}${needsCatchup ? " · needs catch-up" : ""}`;
+    tile.title = tr("ui.tabs.codexTab.renderBibleTile.clickToCycle2", { tileStateLabelSt: TILE_STATE_LABEL[st] });
+    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
     tidyBtn.disabled = !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists);
     rebuildBtn.disabled = busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled;
     purgeBtn.disabled = busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0;
@@ -965,6 +966,14 @@ function cycleTileState(
 const ENTITY_TEXT_FIELDS = ["kind", "role", "significance"] as const;
 const ENTITY_LONG_FIELDS = ["appearance", "description", "notes"] as const;
 const ENTITY_LIST_FIELDS = ["aliases", "traits", "goals", "ties", "keywords"] as const;
+const ENTITY_FIELD_LABELS: Record<string, string> = {
+  kind: tr("ui.tabs.codexTab.entityFields.kind"), role: tr("ui.tabs.codexTab.entityFields.role"),
+  significance: tr("ui.tabs.codexTab.entityFields.significance"), appearance: tr("ui.tabs.codexTab.entityFields.appearance"),
+  description: tr("ui.tabs.codexTab.entityFields.description"), notes: tr("ui.tabs.codexTab.entityFields.notes"),
+  aliases: tr("ui.tabs.codexTab.entityFields.aliases"), traits: tr("ui.tabs.codexTab.entityFields.traits"),
+  goals: tr("ui.tabs.codexTab.entityFields.goals"), ties: tr("ui.tabs.codexTab.entityFields.ties"),
+  keywords: tr("ui.tabs.codexTab.entityFields.keywords"),
+};
 // "status" is deprecated, "locked"/"lockedFields"/"noInject" user-owned, "rid"
 // plumbing: never shown as extras.
 const ENTITY_KNOWN = new Set<string>(["id", "name", "status", "locked", "lockedFields", "lockedfields", "noInject", "noinject", "rid", ...ENTITY_TEXT_FIELDS, ...ENTITY_LONG_FIELDS, ...ENTITY_LIST_FIELDS]);
@@ -986,15 +995,15 @@ function entitySheetState(e: Record<string, unknown>): EntitySheetState {
 }
 
 const SHEET_STATE_TITLE: Record<EntitySheetState, string> = {
-  open: "Memoria maintains this sheet, click to lock it.",
-  locked: "Frozen and still injected, click to hold it out of the prompt.",
-  held: "Frozen and held out of the prompt, click to hand it back to Memoria.",
+  open: tr("ui.tabs.codexTab.sheetStateTitle.memoriaMaintainsThisSheetClickToLock"),
+  locked: tr("ui.tabs.codexTab.sheetStateTitle.frozenAndStillInjectedClickToHold"),
+  held: tr("ui.tabs.codexTab.sheetStateTitle.frozenAndHeldOutOfThePrompt"),
 };
 
 // Both axes, so a hand-authored noInject without a lock still reads true.
 function sheetStateLabel(e: Record<string, unknown>): string {
   const locked = e["locked"] === true;
-  return `${locked ? "🔒" : "🔓"} ${entityNoInject(e) ? "not injected" : "injected"} · ${locked ? "frozen" : "updated"}`;
+  return tr("ui.tabs.codexTab.sheetStateLabel.state", { locked: locked ? "yes" : "no", injected: entityNoInject(e) ? "no" : "yes" });
 }
 
 function entitySearchText(e: Record<string, unknown>): string[] {
@@ -1021,10 +1030,10 @@ function renderEntities(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Entities");
+  const sec = section(tr("ui.tabs.codexTab.sec.entities"));
   lessonMark(sec.wrap, "codex.entities");
   sec.body.appendChild(textNode(
-    "Click a name to open its sheet. Edits are validated and saved to the codex, Memoria builds on them from her next pass.",
+    tr("ui.tabs.codexTab.renderEntities.clickANameToOpenItsSheet"),
     "lmb-help",
   ));
   let any = false;
@@ -1036,7 +1045,7 @@ function renderEntities(
     const searching = local.query !== "";
     const sub = document.createElement("div");
     sub.className = "lmb-section-title";
-    sub.textContent = searching ? `${g.title} · ${list.length} of ${all.length}` : `${g.title} (${all.length})`;
+    sub.textContent = searching ? tr("ui.tabs.codexTab.renderEntities.of", { title: g.title, length: list.length, length2: all.length }) : `${g.title} (${all.length})`;
     sec.body.appendChild(sub);
 
     const grid = document.createElement("div");
@@ -1061,7 +1070,7 @@ function renderEntities(
       addChip.type = "button";
       addChip.className = "lmb-chip add";
       if (g.key === "characters") lessonMark(addChip, "codex.entities.add");
-      addChip.textContent = `+ ${g.singular}`;
+      addChip.textContent = tr("ui.tabs.codexTab.renderEntities.value", { singular: g.singular });
       addChip.addEventListener("click", () => {
         local.addFormGroup = local.addFormGroup === g.key ? null : g.key;
         local.addFormName = "";
@@ -1083,7 +1092,7 @@ function renderEntities(
       if (open) sec.body.appendChild(renderEntityCard(g.key, open, parsed, state, ctx, send));
     }
   }
-  if (!any) sec.body.appendChild(textNode("No entities recorded yet, add one or let Memoria find them", "lmb-empty"));
+  if (!any) sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderEntities.noEntitiesRecordedYetAddOneOr"), "lmb-empty"));
   host.appendChild(sec.wrap);
 }
 
@@ -1098,7 +1107,7 @@ function renderAddForm(
   lessonMark(row, "codex.entities.addform");
   const input = textInput({
     value: local.addFormName,
-    placeholder: "Name...",
+    placeholder: tr("ui.tabs.codexTab.input.name"),
     autoFocus: true,
     onChange: (v) => { local.addFormName = v; },
   });
@@ -1119,8 +1128,8 @@ function renderAddForm(
   };
   row.append(
     input,
-    makeButton("Create", submit, { primary: true, small: true }),
-    makeButton("Cancel", () => {
+    makeButton(tr("ui.tabs.codexTab.renderAddForm.create"), submit, { primary: true, small: true }),
+    makeButton(tr("ui.tabs.codexTab.renderAddForm.cancel"), () => {
       local.addFormGroup = null;
       local.addFormName = "";
       rerender();
@@ -1165,8 +1174,8 @@ function renderEntityCard(
     idEl.textContent = id;
     name.appendChild(idEl);
   }
-  if (sheetState === "held") name.appendChild(lessonMark(pill("not injected", "warn"), "codex.entities.statepill"));
-  else if (locked) name.appendChild(lessonMark(pill("locked", "warn"), "codex.entities.statepill"));
+  if (sheetState === "held") name.appendChild(lessonMark(pill(tr("ui.tabs.codexTab.renderEntityCard.notInjected"), "warn"), "codex.entities.statepill"));
+  else if (locked) name.appendChild(lessonMark(pill(tr("ui.tabs.codexTab.renderEntityCard.locked"), "warn"), "codex.entities.statepill"));
   card.appendChild(name);
 
   const kv = document.createElement("div");
@@ -1176,8 +1185,9 @@ function renderEntityCard(
     if (!value) return;
     const k = document.createElement("div");
     k.className = "lmb-kv-key";
-    k.textContent = fieldLocks.has(label) ? `${label} 🔒` : label;
-    if (fieldLocks.has(label)) k.title = "Locked field, Memoria can never change it";
+    const displayLabel = Object.hasOwn(ENTITY_FIELD_LABELS, label) ? ENTITY_FIELD_LABELS[label]! : label;
+    k.textContent = fieldLocks.has(label) ? `${displayLabel} 🔒` : displayLabel;
+    if (fieldLocks.has(label)) k.title = tr("ui.tabs.codexTab.addKv.lockedFieldMemoriaCanNeverChangeIt");
     const v = document.createElement("div");
     v.className = "lmb-kv-value";
     v.textContent = value;
@@ -1199,7 +1209,7 @@ function renderEntityCard(
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   actions.append(
-    makeButton("Edit sheet", () => {
+    makeButton(tr("ui.tabs.codexTab.renderEntityCard.editSheet"), () => {
       local.entityDraft = makeDraft(group, e);
       rerender();
     }, { primary: true, small: true }),
@@ -1223,8 +1233,8 @@ function renderEntityCard(
       small: true,
       title: SHEET_STATE_TITLE[sheetState],
     }), "codex.entities.lock"),
-    makeButton("Delete", async () => {
-      const ok = await confirmDelete(ctx, "Delete entity?", `Memoria will remove "${str(e["name"])}" from the codex. References to it elsewhere become plain text.`);
+    makeButton(tr("ui.tabs.codexTab.renderEntityCard.delete"), async () => {
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.deleteEntity"), tr("ui.tabs.codexTab.ok.memoriaWillRemoveFromTheCodexReferences", { str: str(e["name"]) }));
       if (!ok) return;
       const next = (cache.parsed ?? parsed)[group].filter((x) => str(x["id"]) !== id);
       sendCodexWrite(group, { entities: next }, state, send);
@@ -1245,7 +1255,7 @@ function renderEntityForm(
   lessonMark(card, "codex.entities.editor");
   const name = document.createElement("div");
   name.className = "lmb-entity-name";
-  name.textContent = draft.fields["name"] || "New entity";
+  name.textContent = draft.fields["name"] || tr("ui.tabs.codexTab.renderEntityForm.newEntity");
   const idEl = document.createElement("span");
   idEl.className = "lmb-entity-id";
   idEl.textContent = draft.id;
@@ -1267,10 +1277,10 @@ function renderEntityForm(
     btn.className = "lmb-field-lock";
     const sync = (): void => {
       const on = draft.lockedFields.has(key);
-      btn.textContent = on ? "🔒 locked" : "🔓";
+      btn.textContent = on ? tr("ui.tabs.codexTab.sync.locked") : "🔓";
       btn.title = on
-        ? "Locked. Memoria reads a lock marker instead of this value and can never change it. Click to unlock."
-        : "Lock this field so only you can change it";
+        ? tr("ui.tabs.codexTab.sync.lockedMemoriaReadsALockMarkerInstead")
+        : tr("ui.tabs.codexTab.sync.lockThisFieldSoOnlyYouCan");
       btn.classList.toggle("active", on);
     };
     btn.addEventListener("click", (ev) => {
@@ -1287,7 +1297,7 @@ function renderEntityForm(
   const form = document.createElement("div");
   form.className = "lmb-entity-form";
 
-  const nameField = fieldWrap("Name");
+  const nameField = fieldWrap(tr("ui.tabs.codexTab.nameField.name"));
   const nameInput = textInput({ value: draft.fields["name"] ?? "" });
   bind("name", nameInput);
   nameField.appendChild(nameInput);
@@ -1296,7 +1306,7 @@ function renderEntityForm(
   const grid = document.createElement("div");
   grid.className = "lmb-grid-2";
   for (const f of ENTITY_TEXT_FIELDS) {
-    const w = lockableWrap(f, f);
+    const w = lockableWrap(f, ENTITY_FIELD_LABELS[f]!);
     const input = textInput({ value: draft.fields[f] ?? "" });
     bind(f, input);
     w.appendChild(input);
@@ -1305,7 +1315,7 @@ function renderEntityForm(
   form.appendChild(grid);
 
   for (const f of ENTITY_LONG_FIELDS) {
-    const w = lockableWrap(f, f);
+    const w = lockableWrap(f, ENTITY_FIELD_LABELS[f]!);
     const ta = textArea({ value: draft.fields[f] ?? "", rows: 2 });
     bind(f, ta);
     w.appendChild(ta);
@@ -1315,19 +1325,19 @@ function renderEntityForm(
   const relationsOn = state.activeProfile.codexRelationsTable;
   for (const f of ENTITY_LIST_FIELDS) {
     if (f === "ties" && relationsOn) continue;
-    const w = lockableWrap(f, `${f} (comma separated)`);
+    const w = lockableWrap(f, tr("ui.tabs.codexTab.w.commaSeparated", { f: ENTITY_FIELD_LABELS[f]! }));
     const input = textInput({ value: draft.fields[f] ?? "" });
     bind(f, input);
     w.appendChild(input);
     form.appendChild(w);
   }
   for (const extra of draft.extras) {
-    const label = extra.type === "list" ? `${extra.key} (one per line)` : extra.key;
+    const label = extra.type === "list" ? tr("ui.tabs.codexTab.label.onePerLine", { key: extra.key }) : extra.key;
     const w = lockableWrap(extra.key, label);
     const input = extra.type === "list" || extra.type === "string"
       ? textArea({ value: extra.value, rows: 2 })
       : extra.type === "boolean"
-        ? select({ value: extra.value, options: [{ value: "true", label: "true" }, { value: "false", label: "false" }], onChange: value => { extra.value = value; } })
+        ? select({ value: extra.value, options: [{ value: "true", label: tr("ui.tabs.codexTab.input.true") }, { value: "false", label: tr("ui.tabs.codexTab.input.false") }], onChange: value => { extra.value = value; } })
         : textInput({ value: extra.value });
     if (extra.type === "number") (input as HTMLInputElement).inputMode = "decimal";
     input.addEventListener("input", () => { extra.value = input.value; });
@@ -1341,7 +1351,7 @@ function renderEntityForm(
 
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
-  const saveBtn = makeButton(draft.saving ? "Saving..." : "Save", () => {
+  const saveBtn = makeButton(draft.saving ? tr("ui.tabs.codexTab.saveBtn.saving") : tr("ui.tabs.codexTab.saveBtn.save"), () => {
     if (draft.saving) return;
     const parsed = cache.parsed;
     if (!parsed) return;
@@ -1352,7 +1362,7 @@ function renderEntityForm(
       return;
     }
     if (!entity) {
-      showToast("warn", "The entity needs a name");
+      showToast("warn", tr("ui.tabs.codexTab.saveBtn.theEntityNeedsAName"));
       return;
     }
     const list = parsed[draft.group];
@@ -1364,7 +1374,7 @@ function renderEntityForm(
   }, { primary: true, small: true, disabled: draft.saving });
   actions.append(
     saveBtn,
-    makeButton("Cancel", () => {
+    makeButton(tr("ui.tabs.codexTab.renderEntityForm.cancel"), () => {
       local.entityDraft = null;
       rerender();
     }, { small: true }),
@@ -1495,10 +1505,10 @@ function renderRecordForm(
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   actions.append(
-    makeButton(draft.saving ? "Saving..." : "Save", () => {
+    makeButton(draft.saving ? tr("ui.tabs.codexTab.renderRecordForm.saving") : tr("ui.tabs.codexTab.renderRecordForm.save"), () => {
       if (!draft.saving) onSave();
     }, { primary: true, small: true, disabled: draft.saving }),
-    makeButton("Cancel", () => {
+    makeButton(tr("ui.tabs.codexTab.renderRecordForm.cancel"), () => {
       local.recordDraft = null;
       rerender();
     }, { small: true }),
@@ -1516,9 +1526,9 @@ function recordItemActions(
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   actions.append(
-    makeButton("Edit", onEdit, { small: true }),
-    makeButton("Delete", async () => {
-      const ok = await confirmDelete(ctx, "Delete?", deleteMessage);
+    makeButton(tr("ui.tabs.codexTab.recordItemActions.edit"), onEdit, { small: true }),
+    makeButton(tr("ui.tabs.codexTab.recordItemActions.delete"), async () => {
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.delete"), deleteMessage);
       if (ok) onDelete();
     }, { small: true, danger: true }),
   );
@@ -1574,8 +1584,8 @@ function saveRelationDraft(d: RecordDraft, state: FrontendState, send: (m: Front
   const rel = buildRelationFromDraft(d);
   if (!rel) {
     showToast("warn", d.fields["type"] === "group"
-      ? "The group needs at least two members, a kind, and a state"
-      : "The relation needs From, To, a kind, and a state");
+      ? tr("ui.tabs.codexTab.saveRelationDraft.theGroupNeedsAtLeastTwoMembers")
+      : tr("ui.tabs.codexTab.saveRelationDraft.theRelationNeedsFromToAKind"));
     return;
   }
   const idx = resolveDraftIndex(parsed.relations, d);
@@ -1608,19 +1618,19 @@ function relationFormEl(
 ): HTMLElement {
   const isGroup = draft.fields["type"] === "group";
   const specs: RecordFieldSpec[] = [
-    { key: "type", label: "Type", widget: "select", options: [{ value: "pair", label: "pair (a → b)" }, { value: "group", label: "group" }] },
+    { key: "type", label: tr("ui.tabs.codexTab.specs.type"), widget: "select", options: [{ value: "pair", label: tr("ui.tabs.codexTab.specs.pairAB") }, { value: "group", label: tr("ui.tabs.codexTab.specs.group") }] },
     ...(isGroup
-      ? [{ key: "members", label: "Members (comma separated refs)", widget: "input" as const, refList: true, placeholder: "char:elias, char:wren" }]
+      ? [{ key: "members", label: tr("ui.tabs.codexTab.specs.membersCommaSeparatedRefs"), widget: "input" as const, refList: true, placeholder: tr("ui.tabs.codexTab.specs.charEliasCharWren") }]
       : [
-          { key: "a", label: "From (a)", widget: "input" as const, refList: true, placeholder: "char:elias" },
-          { key: "b", label: "To (b)", widget: "input" as const, refList: true, placeholder: "char:wren" },
+          { key: "a", label: tr("ui.tabs.codexTab.specs.fromA"), widget: "input" as const, refList: true, placeholder: tr("ui.tabs.codexTab.specs.charElias") },
+          { key: "b", label: tr("ui.tabs.codexTab.specs.toB"), widget: "input" as const, refList: true, placeholder: tr("ui.tabs.codexTab.specs.charWren") },
         ]),
-    { key: "kind", label: "Kind", widget: "input", placeholder: "bond, owns, at, rival..." },
-    { key: "state", label: "State", widget: "textarea", placeholder: "loves her, hides it" },
-    { key: "history", label: "History (one per line)", widget: "lines", placeholder: "day 12: she saw him kill" },
+    { key: "kind", label: tr("ui.tabs.codexTab.specs.kind"), widget: "input", placeholder: tr("ui.tabs.codexTab.specs.bondOwnsAtRival") },
+    { key: "state", label: tr("ui.tabs.codexTab.specs.state"), widget: "textarea", placeholder: tr("ui.tabs.codexTab.specs.lovesHerHidesIt") },
+    { key: "history", label: tr("ui.tabs.codexTab.specs.historyOnePerLine"), widget: "lines", placeholder: tr("ui.tabs.codexTab.specs.day12SheSawHimKill") },
   ];
   const form = renderRecordForm(
-    draft.index >= 0 ? "Edit relation" : "New relation",
+    draft.index >= 0 ? tr("ui.tabs.codexTab.form.editRelation") : tr("ui.tabs.codexTab.form.newRelation"),
     specs,
     draft,
     refListId,
@@ -1640,7 +1650,7 @@ function renderRelations(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Relations");
+  const sec = section(tr("ui.tabs.codexTab.sec.relations"));
   const nameOf = makeNameResolver(parsed);
   const refListId = ensureRefDatalist(parsed);
   const relationsOn = state.activeProfile.codexRelationsTable;
@@ -1649,13 +1659,13 @@ function renderRelations(
   viewRow.className = "lmb-actions";
   lessonMark(viewRow, "codex.rel.view");
   viewRow.append(
-    makeButton("List", () => {
+    makeButton(tr("ui.tabs.codexTab.renderRelations.list"), () => {
       if (local.relationsView === "list") return;
       local.relationsView = "list";
       local.recordDraft = null;
       rerender();
     }, { small: true }),
-    lessonMark(makeButton("Graph", () => {
+    lessonMark(makeButton(tr("ui.tabs.codexTab.renderRelations.graph"), () => {
       if (local.relationsView === "graph") return;
       local.relationsView = "graph";
       // An open editor doesn't exist in graph view: leaving it live would
@@ -1668,7 +1678,7 @@ function renderRelations(
   if (relationsOn && local.relationsView === "list") {
     const spacer = document.createElement("span");
     spacer.className = "lmb-spacer";
-    viewRow.append(spacer, lessonMark(makeButton("+ Relation", () => {
+    viewRow.append(spacer, lessonMark(makeButton(tr("ui.tabs.codexTab.renderRelations.relation"), () => {
       local.recordDraft = relationDraftFrom(null, -1);
       rerender();
     }, { small: true, primary: true }), "codex.rel.add"));
@@ -1684,8 +1694,8 @@ function renderRelations(
   if (parsed.relations.length === 0) {
     sec.body.appendChild(textNode(
       relationsOn
-        ? "No relations recorded yet, add one or let Memoria find them."
-        : "The relations table is off for this profile, connections live as ties on each entity sheet.",
+        ? tr("ui.tabs.codexTab.renderRelations.noRelationsRecordedYetAddOneOr")
+        : tr("ui.tabs.codexTab.renderRelations.theRelationsTableIsOffForThis"),
       "lmb-empty",
     ));
     host.appendChild(sec.wrap);
@@ -1774,13 +1784,13 @@ function renderRelations(
           sendCodexWrite("relations", { relations: next }, state, send);
         },
         ctx,
-        "Memoria will remove this relation from the codex.",
+        tr("ui.tabs.codexTab.renderRelations.memoriaWillRemoveThisRelationFromThe"),
       ));
     }
     list.appendChild(row);
   });
   if (shown === 0) {
-    sec.body.appendChild(textNode("No relation matches the search", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderRelations.noRelationMatchesTheSearch"), "lmb-empty"));
   } else {
     sec.body.appendChild(list);
   }
@@ -1790,7 +1800,7 @@ function renderRelations(
 function arrowSpan(): HTMLElement {
   const s = document.createElement("span");
   s.className = "lmb-relation-arrow";
-  s.textContent = "→";
+  s.textContent = tr("ui.tabs.codexTab.arrowSpan.value");
   return s;
 }
 
@@ -1940,7 +1950,7 @@ function renderRelationGraph(
   const { nodes, edges } = buildGraph(parsed, nameOf);
   if (nodes.length === 0) {
     host.appendChild(textNode(
-      local.query ? "No relation matches the search" : "No relations to chart yet",
+      local.query ? tr("ui.tabs.codexTab.renderRelationGraph.noRelationMatchesTheSearch") : tr("ui.tabs.codexTab.renderRelationGraph.noRelationsToChartYet"),
       "lmb-empty",
     ));
     return;
@@ -2064,7 +2074,7 @@ function renderRelationGraph(
     const g = svgEl("g");
     g.setAttribute("class", "lmb-graph-edgeg");
     const path = svgEl("path");
-    path.setAttribute("class", `lmb-graph-edge${e.group ? " group" : ""}`);
+    path.setAttribute("class", `lmb-graph-edge${e.group ? tr("ui.tabs.codexTab.renderRelationGraph.group") : ""}`);
     path.setAttribute("d", edgePath(a, b, e));
     if (e.directed) path.setAttribute("marker-end", "url(#lmb-arrow)");
     const hit = svgEl("path");
@@ -2127,7 +2137,7 @@ function renderRelationGraph(
     label.setAttribute("text-anchor", "middle");
     label.textContent = node.name.length > 14 ? `${node.name.slice(0, 13)}…` : node.name;
     const tip = svgEl("title");
-    tip.textContent = `${node.name} (${node.id})`;
+    tip.textContent = tr("ui.tabs.codexTab.renderRelationGraph.value", { name: node.name, id: node.id });
     g.append(rect, label, tip);
 
     // Drag to rearrange; a sub-threshold drag counts as a click and opens
@@ -2223,9 +2233,9 @@ function renderRelationGraph(
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   };
   tools.append(
-    makeButton("−", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1 / 1.4); }, { small: true, title: "Zoom out" }),
-    makeButton("+", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1.4); }, { small: true, title: "Zoom in" }),
-    makeButton("Fit", fitCamera, { small: true, title: "Frame the whole web" }),
+    makeButton("−", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1 / 1.4); }, { small: true, title: tr("ui.tabs.codexTab.renderRelationGraph.zoomOut") }),
+    makeButton("+", () => { const c = viewCenter(); zoomAt(c.x, c.y, 1.4); }, { small: true, title: tr("ui.tabs.codexTab.renderRelationGraph.zoomIn") }),
+    makeButton(tr("ui.tabs.codexTab.renderRelationGraph.fit"), fitCamera, { small: true, title: tr("ui.tabs.codexTab.renderRelationGraph.frameTheWholeWeb") }),
   );
 
   const wrap = document.createElement("div");
@@ -2240,9 +2250,9 @@ function renderRelationGraph(
   legend.className = "lmb-spine-legend";
   const present = new Set(nodes.map((node) => node.ns));
   const entries: { ns: GraphNs; label: string }[] = [
-    { ns: "char", label: "character" },
-    { ns: "loc", label: "location" },
-    { ns: "thing", label: "thing" },
+    { ns: "char", label: tr("ui.tabs.codexTab.entries.character") },
+    { ns: "loc", label: tr("ui.tabs.codexTab.entries.location") },
+    { ns: "thing", label: tr("ui.tabs.codexTab.entries.thing") },
   ];
   for (const e of entries) {
     if (!present.has(e.ns)) continue;
@@ -2255,7 +2265,7 @@ function renderRelationGraph(
   }
   host.appendChild(legend);
   host.appendChild(textNode(
-    "Tap an edge for the story, tap a diamond to open its sheet, drag diamonds to rearrange. Drag the background to pan, and pinch or scroll to zoom.",
+    tr("ui.tabs.codexTab.renderRelationGraph.tapAnEdgeForTheStoryTap"),
     "lmb-help",
   ));
 }
@@ -2284,7 +2294,7 @@ function saveEventDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   const when = (d.fields["when"] ?? "").trim();
   const eventText = (d.fields["event"] ?? "").trim();
   if (!when || !eventText) {
-    showToast("warn", "The event needs a when and what happened");
+    showToast("warn", tr("ui.tabs.codexTab.saveEventDraft.theEventNeedsAWhenAndWhat"));
     return;
   }
   const participants = splitComma(d.fields["participants"] ?? "");
@@ -2312,11 +2322,11 @@ function saveEventDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
 }
 
 const EVENT_SPECS: RecordFieldSpec[] = [
-  { key: "when", label: "When", widget: "input", placeholder: "day 12" },
-  { key: "event", label: "Event", widget: "textarea", placeholder: "Mara sees Elias kill the duke" },
-  { key: "participants", label: "Participants (comma separated refs)", widget: "input", refList: true },
-  { key: "where", label: "Where", widget: "input", refList: true, placeholder: "loc:ashford_manor" },
-  { key: "causes", label: "Causes", widget: "input", placeholder: "she flees the city" },
+  { key: "when", label: tr("ui.tabs.codexTab.eventSpecs.when"), widget: "input", placeholder: tr("ui.tabs.codexTab.eventSpecs.day12") },
+  { key: "event", label: tr("ui.tabs.codexTab.eventSpecs.event"), widget: "textarea", placeholder: tr("ui.tabs.codexTab.eventSpecs.maraSeesEliasKillTheDuke") },
+  { key: "participants", label: tr("ui.tabs.codexTab.eventSpecs.participantsCommaSeparatedRefs"), widget: "input", refList: true },
+  { key: "where", label: tr("ui.tabs.codexTab.eventSpecs.where"), widget: "input", refList: true, placeholder: tr("ui.tabs.codexTab.eventSpecs.locAshfordManor") },
+  { key: "causes", label: tr("ui.tabs.codexTab.eventSpecs.causes"), widget: "input", placeholder: tr("ui.tabs.codexTab.eventSpecs.sheFleesTheCity") },
 ];
 
 function renderTimeline(
@@ -2326,14 +2336,14 @@ function renderTimeline(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Timeline");
+  const sec = section(tr("ui.tabs.codexTab.sec.timeline"));
   lessonMark(sec.wrap, "codex.tl");
   const nameOf = makeNameResolver(parsed);
   const refListId = ensureRefDatalist(parsed);
 
   const toolbar = document.createElement("div");
   toolbar.className = "lmb-actions";
-  toolbar.appendChild(makeButton("+ Event", () => {
+  toolbar.appendChild(makeButton(tr("ui.tabs.codexTab.renderTimeline.event"), () => {
     local.recordDraft = eventDraftFrom(null, -1);
     rerender();
   }, { small: true, primary: true }));
@@ -2342,7 +2352,7 @@ function renderTimeline(
   const draft = local.recordDraft;
   if (draft?.kind === "event" && draft.index === -1) {
     sec.body.appendChild(renderRecordForm(
-      "New event",
+      tr("ui.tabs.codexTab.renderTimeline.newEvent"),
       EVENT_SPECS,
       draft,
       refListId,
@@ -2351,7 +2361,7 @@ function renderTimeline(
   }
 
   if (parsed.events.length === 0) {
-    sec.body.appendChild(textNode("No events recorded yet", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderTimeline.noEventsRecordedYet"), "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
@@ -2360,7 +2370,7 @@ function renderTimeline(
     matches(local.query, str(e["when"]), str(e["event"]), str(e["causes"]), strArray(e["participants"]).map(nameOf)),
   );
   if (all.length === 0) {
-    sec.body.appendChild(textNode("No event matches the search", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderTimeline.noEventMatchesTheSearch"), "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
@@ -2376,7 +2386,7 @@ function renderTimeline(
     // The event under edit is replaced by its form, right where it was.
     if (draft?.kind === "event" && draft.index === i) {
       rail.appendChild(renderRecordForm(
-        "Edit event",
+        tr("ui.tabs.codexTab.renderTimeline.editEvent"),
         EVENT_SPECS,
         draft,
         refListId,
@@ -2388,7 +2398,7 @@ function renderTimeline(
     const expanded = local.expandedEvents.has(i);
     const item = document.createElement("div");
     item.className = `lmb-timeline-item lmb-record-click${expanded ? " expanded" : ""}`;
-    item.title = "Click for edit and delete";
+    item.title = tr("ui.tabs.codexTab.renderTimeline.clickForEditAndDelete");
     const when = document.createElement("div");
     when.className = "lmb-timeline-when";
     when.textContent = str(e["when"]) || "?";
@@ -2426,7 +2436,7 @@ function renderTimeline(
           sendCodexWrite("timeline", { events: next }, state, send);
         },
         ctx,
-        "Memoria will remove this event from the timeline.",
+        tr("ui.tabs.codexTab.actions.memoriaWillRemoveThisEventFromThe"),
       );
       actions.addEventListener("click", (ev) => ev.stopPropagation());
       item.appendChild(actions);
@@ -2436,7 +2446,7 @@ function renderTimeline(
   sec.body.appendChild(rail);
   if (!local.query && all.length > TIMELINE_RECENT) {
     sec.body.appendChild(makeButton(
-      local.showFullTimeline ? "Show recent only" : `Show earlier (${all.length - TIMELINE_RECENT})`,
+      local.showFullTimeline ? tr("ui.tabs.codexTab.renderTimeline.showRecentOnly") : tr("ui.tabs.codexTab.renderTimeline.showEarlier", { lengthTimelineRecent: all.length - TIMELINE_RECENT }),
       () => {
         local.showFullTimeline = !local.showFullTimeline;
         rerender();
@@ -2473,16 +2483,16 @@ function threadDraftFrom(t: Record<string, unknown> | null, index: number): Reco
 }
 
 const THREAD_SPECS: RecordFieldSpec[] = [
-  { key: "name", label: "Name", widget: "input", placeholder: "The stolen crown" },
-  { key: "status", label: "Status", widget: "select", options: [
-    { value: "open", label: "open" },
-    { value: "stalled", label: "stalled" },
-    { value: "resolved", label: "resolved" },
-    { value: "abandoned", label: "abandoned" },
+  { key: "name", label: tr("ui.tabs.codexTab.threadSpecs.name"), widget: "input", placeholder: tr("ui.tabs.codexTab.threadSpecs.theStolenCrown") },
+  { key: "status", label: tr("ui.tabs.codexTab.threadSpecs.status"), widget: "select", options: [
+    { value: "open", label: tr("ui.tabs.codexTab.threadSpecs.open") },
+    { value: "stalled", label: tr("ui.tabs.codexTab.threadSpecs.stalled") },
+    { value: "resolved", label: tr("ui.tabs.codexTab.threadSpecs.resolved") },
+    { value: "abandoned", label: tr("ui.tabs.codexTab.threadSpecs.abandoned") },
   ] },
-  { key: "summary", label: "Summary", widget: "textarea" },
-  { key: "latest", label: "Latest development", widget: "input" },
-  { key: "planted", label: "Planted details (one per line)", widget: "lines" },
+  { key: "summary", label: tr("ui.tabs.codexTab.threadSpecs.summary"), widget: "textarea" },
+  { key: "latest", label: tr("ui.tabs.codexTab.threadSpecs.latestDevelopment"), widget: "input" },
+  { key: "planted", label: tr("ui.tabs.codexTab.threadSpecs.plantedDetailsOnePerLine"), widget: "lines" },
 ];
 
 function saveThreadDraft(d: RecordDraft, state: FrontendState, send: (m: FrontendToBackend) => void): void {
@@ -2491,7 +2501,7 @@ function saveThreadDraft(d: RecordDraft, state: FrontendState, send: (m: Fronten
   const name = (d.fields["name"] ?? "").trim();
   const summary = (d.fields["summary"] ?? "").trim();
   if (!name || !summary) {
-    showToast("warn", "The thread needs a name and a summary");
+    showToast("warn", tr("ui.tabs.codexTab.saveThreadDraft.theThreadNeedsANameAndA"));
     return;
   }
   const t: Record<string, unknown> = { name, status: d.fields["status"] || "open", summary };
@@ -2523,17 +2533,17 @@ function renderThreads(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Threads");
+  const sec = section(tr("ui.tabs.codexTab.sec.threads"));
   lessonMark(sec.wrap, "codex.th");
 
   const toolbar = document.createElement("div");
   toolbar.className = "lmb-actions";
   toolbar.append(
-    makeButton("+ Thread", () => {
+    makeButton(tr("ui.tabs.codexTab.renderThreads.thread"), () => {
       local.recordDraft = threadDraftFrom(null, -1);
       rerender();
     }, { small: true, primary: true }),
-    makeButton("Edit seeds", () => {
+    makeButton(tr("ui.tabs.codexTab.renderThreads.editSeeds"), () => {
       local.recordDraft = { kind: "seeds", index: -1, saving: false, fields: { seeds: parsed.seeds.join("\n") } };
       rerender();
     }, { small: true }),
@@ -2543,7 +2553,7 @@ function renderThreads(
   const draft = local.recordDraft;
   if (draft?.kind === "thread" && draft.index === -1) {
     sec.body.appendChild(renderRecordForm(
-      "New thread",
+      tr("ui.tabs.codexTab.renderThreads.newThread"),
       THREAD_SPECS,
       draft,
       null,
@@ -2551,8 +2561,8 @@ function renderThreads(
     ));
   } else if (draft?.kind === "seeds") {
     sec.body.appendChild(renderRecordForm(
-      "Edit seeds",
-      [{ key: "seeds", label: "Seeds (one per line)", widget: "lines" }],
+      tr("ui.tabs.codexTab.renderThreads.editSeeds"),
+      [{ key: "seeds", label: tr("ui.tabs.codexTab.renderThreads.seedsOnePerLine"), widget: "lines" }],
       draft,
       null,
       () => {
@@ -2564,13 +2574,13 @@ function renderThreads(
   }
 
   if (parsed.threads.length === 0 && parsed.seeds.length === 0) {
-    sec.body.appendChild(textNode("No open storylines tracked yet", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderThreads.noOpenStorylinesTrackedYet"), "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
   if (parsed.threads.some((t) => str(t["status"]) === "resolved")) {
     sec.body.appendChild(textNode(
-      "Resolved threads stay here as your archive. They no longer inject into the prompt or reach the agent.",
+      tr("ui.tabs.codexTab.renderThreads.resolvedThreadsStayHereAsYourArchive"),
       "lmb-help",
     ));
   }
@@ -2583,7 +2593,7 @@ function renderThreads(
     // The thread under edit is replaced by its form, right where it was.
     if (draft?.kind === "thread" && draft.index === i) {
       list.appendChild(renderRecordForm(
-        "Edit thread",
+        tr("ui.tabs.codexTab.renderThreads.editThread"),
         THREAD_SPECS,
         draft,
         null,
@@ -2598,7 +2608,7 @@ function renderThreads(
     head.type = "button";
     head.className = "lmb-thread-head";
     const status = str(t["status"]) || "open";
-    head.append(pill(status, THREAD_TONE[status]));
+    head.append(pill(tr("ui.tabs.codexTab.threadStatus", { status }), THREAD_TONE[status]));
     const title = document.createElement("span");
     title.className = "lmb-thread-name";
     title.textContent = name || "?";
@@ -2615,9 +2625,9 @@ function renderThreads(
     row.appendChild(textNode(str(t["summary"]), "lmb-thread-summary"));
     if (local.expandedThreads.has(name)) {
       const latest = str(t["latest"]);
-      if (latest) row.appendChild(textNode(`Latest: ${latest}`, "lmb-thread-detail"));
+      if (latest) row.appendChild(textNode(tr("ui.tabs.codexTab.renderThreads.latest", { latest: latest }), "lmb-thread-detail"));
       for (const p of strArray(t["planted"])) {
-        row.appendChild(textNode(`◆ planted: ${p}`, "lmb-thread-detail"));
+        row.appendChild(textNode(tr("ui.tabs.codexTab.renderThreads.planted", { p: p }), "lmb-thread-detail"));
       }
       row.appendChild(recordItemActions(
         () => { local.recordDraft = threadDraftFrom(t, i); rerender(); },
@@ -2628,19 +2638,19 @@ function renderThreads(
           sendCodexWrite("threads", { threads: next, seeds: cur.seeds }, state, send);
         },
         ctx,
-        "Memoria will remove this thread from the codex.",
+        tr("ui.tabs.codexTab.renderThreads.memoriaWillRemoveThisThreadFromThe"),
       ));
     }
     list.appendChild(row);
   });
   if (shown > 0) sec.body.appendChild(list);
-  else if (parsed.threads.length > 0) sec.body.appendChild(textNode("No thread matches the search", "lmb-empty"));
+  else if (parsed.threads.length > 0) sec.body.appendChild(textNode(tr("ui.tabs.codexTab.renderThreads.noThreadMatchesTheSearch"), "lmb-empty"));
 
   const seeds = parsed.seeds.filter((s) => matches(local.query, s));
   if (seeds.length) {
     const sub = document.createElement("div");
     sub.className = "lmb-section-title";
-    sub.textContent = `Seeds (${parsed.seeds.length})`;
+    sub.textContent = tr("ui.tabs.codexTab.renderThreads.seeds", { length: parsed.seeds.length });
     sec.body.appendChild(sub);
     for (const s of seeds) {
       sec.body.appendChild(textNode(`◆ ${s}`, "lmb-thread-detail"));
@@ -2691,7 +2701,7 @@ function saveWorldDraft(d: RecordDraft, state: FrontendState, send: (m: Frontend
   const topic = (d.fields["topic"] ?? "").trim();
   const facts = splitLines(d.fields["facts"] ?? "");
   if (!topic || facts.length === 0) {
-    showToast("warn", "The topic needs a name and at least one fact");
+    showToast("warn", tr("ui.tabs.codexTab.saveWorldDraft.theTopicNeedsANameAndAt"));
     return;
   }
   const entry: Record<string, unknown> = { topic, facts };
@@ -2719,7 +2729,7 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
   if (!parsed) return;
   const fact = (d.fields["fact"] ?? "").trim();
   if (!fact) {
-    showToast("warn", "The secret needs its fact");
+    showToast("warn", tr("ui.tabs.codexTab.saveKnowledgeDraft.theSecretNeedsItsFact"));
     return;
   }
   const item: Record<string, unknown> = { fact };
@@ -2759,18 +2769,18 @@ function saveKnowledgeDraft(d: RecordDraft, state: FrontendState, send: (m: Fron
 }
 
 const WORLD_SPECS: RecordFieldSpec[] = [
-  { key: "topic", label: "Topic", widget: "input", placeholder: "Magic" },
-  { key: "facts", label: "Facts (one per line)", widget: "lines", placeholder: "blood magic costs memories" },
-  { key: "keywords", label: "Keywords (comma separated, retrieval tags)", widget: "input", placeholder: "ritual, memories, blood magic" },
+  { key: "topic", label: tr("ui.tabs.codexTab.worldSpecs.topic"), widget: "input", placeholder: tr("ui.tabs.codexTab.worldSpecs.magic") },
+  { key: "facts", label: tr("ui.tabs.codexTab.worldSpecs.factsOnePerLine"), widget: "lines", placeholder: tr("ui.tabs.codexTab.worldSpecs.bloodMagicCostsMemories") },
+  { key: "keywords", label: tr("ui.tabs.codexTab.worldSpecs.keywordsCommaSeparatedRetrievalTags"), widget: "input", placeholder: tr("ui.tabs.codexTab.worldSpecs.ritualMemoriesBloodMagic") },
 ];
 
 const KNOWLEDGE_SPECS: RecordFieldSpec[] = [
-  { key: "fact", label: "Fact", widget: "textarea", placeholder: "Elias killed the duke" },
-  { key: "knownBy", label: "Known by (comma separated refs)", widget: "input", refList: true },
-  { key: "hiddenFrom", label: "Hidden from (comma separated refs)", widget: "input", refList: true },
-  { key: "falseBeliefs", label: "False beliefs (one per line, \"who => belief\")", widget: "lines", placeholder: "char:captain => bandits did it" },
-  { key: "note", label: "Note", widget: "input" },
-  { key: "keywords", label: "Keywords (comma separated, retrieval tags)", widget: "input", placeholder: "murder, dagger, duke" },
+  { key: "fact", label: tr("ui.tabs.codexTab.knowledgeSpecs.fact"), widget: "textarea", placeholder: tr("ui.tabs.codexTab.knowledgeSpecs.eliasKilledTheDuke") },
+  { key: "knownBy", label: tr("ui.tabs.codexTab.knowledgeSpecs.knownByCommaSeparatedRefs"), widget: "input", refList: true },
+  { key: "hiddenFrom", label: tr("ui.tabs.codexTab.knowledgeSpecs.hiddenFromCommaSeparatedRefs"), widget: "input", refList: true },
+  { key: "falseBeliefs", label: tr("ui.tabs.codexTab.knowledgeSpecs.falseBeliefsOnePerLineWhoBelief"), widget: "lines", placeholder: tr("ui.tabs.codexTab.knowledgeSpecs.charCaptainBanditsDidIt") },
+  { key: "note", label: tr("ui.tabs.codexTab.knowledgeSpecs.note"), widget: "input" },
+  { key: "keywords", label: tr("ui.tabs.codexTab.knowledgeSpecs.keywordsCommaSeparatedRetrievalTags"), widget: "input", placeholder: tr("ui.tabs.codexTab.knowledgeSpecs.murderDaggerDuke") },
 ];
 
 function renderLore(
@@ -2782,18 +2792,18 @@ function renderLore(
 ): void {
   const draft = local.recordDraft;
 
-  const world = section("World rules");
+  const world = section(tr("ui.tabs.codexTab.world.worldRules"));
   lessonMark(world.wrap, "codex.lore");
   const worldBar = document.createElement("div");
   worldBar.className = "lmb-actions";
-  worldBar.appendChild(makeButton("+ Topic", () => {
+  worldBar.appendChild(makeButton(tr("ui.tabs.codexTab.renderLore.topic"), () => {
     local.recordDraft = worldDraftFrom(null, -1);
     rerender();
   }, { small: true, primary: true }));
   world.body.appendChild(worldBar);
   if (draft?.kind === "world" && draft.index === -1) {
     world.body.appendChild(renderRecordForm(
-      "New topic",
+      tr("ui.tabs.codexTab.renderLore.newTopic"),
       WORLD_SPECS,
       draft,
       null,
@@ -2804,15 +2814,15 @@ function renderLore(
     .map((w, i) => ({ w, i }))
     .filter(({ w }) => matches(local.query, str(w["topic"]), strArray(w["facts"]), strArray(w["keywords"])));
   if (parsed.world.length === 0) {
-    world.body.appendChild(textNode("No world lore recorded yet", "lmb-empty"));
+    world.body.appendChild(textNode(tr("ui.tabs.codexTab.renderLore.noWorldLoreRecordedYet"), "lmb-empty"));
   } else if (worldShown.length === 0) {
-    world.body.appendChild(textNode("No topic matches the search", "lmb-empty"));
+    world.body.appendChild(textNode(tr("ui.tabs.codexTab.renderLore.noTopicMatchesTheSearch"), "lmb-empty"));
   }
   for (const { w, i } of worldShown) {
     // The topic under edit is replaced by its form, right where it was.
     if (draft?.kind === "world" && draft.index === i) {
       world.body.appendChild(renderRecordForm(
-        "Edit topic",
+        tr("ui.tabs.codexTab.renderLore.editTopic"),
         WORLD_SPECS,
         draft,
         null,
@@ -2823,7 +2833,7 @@ function renderLore(
     const expanded = local.expandedWorld.has(i);
     const block = document.createElement("div");
     block.className = "lmb-lore-topic lmb-record-click";
-    block.title = "Click for edit and delete";
+    block.title = tr("ui.tabs.codexTab.renderLore.clickForEditAndDelete");
     const t = document.createElement("div");
     t.className = "lmb-lore-title";
     t.textContent = str(w["topic"]) || "?";
@@ -2843,7 +2853,7 @@ function renderLore(
     });
     if (expanded) {
       const kws = strArray(w["keywords"]);
-      if (kws.length) block.appendChild(textNode(`keywords: ${kws.join(" · ")}`, "lmb-thread-detail"));
+      if (kws.length) block.appendChild(textNode(tr("ui.tabs.codexTab.renderLore.keywords", { join: kws.join(" · ") }), "lmb-thread-detail"));
       const actions = recordItemActions(
         () => { local.recordDraft = worldDraftFrom(w, i); rerender(); },
         () => {
@@ -2852,7 +2862,7 @@ function renderLore(
           sendCodexWrite("world", { entries: next }, state, send);
         },
         ctx,
-        "Memoria will remove this topic and its facts.",
+        tr("ui.tabs.codexTab.actions.memoriaWillRemoveThisTopicAndIts"),
       );
       actions.addEventListener("click", (ev) => ev.stopPropagation());
       block.appendChild(actions);
@@ -2873,18 +2883,18 @@ function renderSecrets(
   const refListId = ensureRefDatalist(parsed);
   const draft = local.recordDraft;
 
-  const secrets = section("Who knows what");
+  const secrets = section(tr("ui.tabs.codexTab.secrets.whoKnowsWhat"));
   lessonMark(secrets.wrap, "codex.secrets");
   const secretBar = document.createElement("div");
   secretBar.className = "lmb-actions";
-  secretBar.appendChild(makeButton("+ Secret", () => {
+  secretBar.appendChild(makeButton(tr("ui.tabs.codexTab.renderSecrets.secret"), () => {
     local.recordDraft = knowledgeDraftFrom(null, -1);
     rerender();
   }, { small: true, primary: true }));
   secrets.body.appendChild(secretBar);
   if (draft?.kind === "knowledge" && draft.index === -1) {
     secrets.body.appendChild(renderRecordForm(
-      "New secret",
+      tr("ui.tabs.codexTab.renderSecrets.newSecret"),
       KNOWLEDGE_SPECS,
       draft,
       refListId,
@@ -2904,15 +2914,15 @@ function renderSecrets(
       strArray(k["keywords"]),
     ));
   if (parsed.knowledge.length === 0) {
-    secrets.body.appendChild(textNode("No secrets or asymmetric knowledge tracked yet", "lmb-empty"));
+    secrets.body.appendChild(textNode(tr("ui.tabs.codexTab.renderSecrets.noSecretsOrAsymmetricKnowledgeTrackedYet"), "lmb-empty"));
   } else if (knowledgeShown.length === 0) {
-    secrets.body.appendChild(textNode("No secret matches the search", "lmb-empty"));
+    secrets.body.appendChild(textNode(tr("ui.tabs.codexTab.renderSecrets.noSecretMatchesTheSearch"), "lmb-empty"));
   }
   for (const { k, i } of knowledgeShown) {
     // The secret under edit is replaced by its form, right where it was.
     if (draft?.kind === "knowledge" && draft.index === i) {
       secrets.body.appendChild(renderRecordForm(
-        "Edit secret",
+        tr("ui.tabs.codexTab.renderSecrets.editSecret"),
         KNOWLEDGE_SPECS,
         draft,
         refListId,
@@ -2923,15 +2933,15 @@ function renderSecrets(
     const expanded = local.expandedSecrets.has(i);
     const block = document.createElement("div");
     block.className = "lmb-secret lmb-record-click";
-    block.title = "Click for edit and delete";
+    block.title = tr("ui.tabs.codexTab.renderSecrets.clickForEditAndDelete");
     block.appendChild(textNode(str(k["fact"]), "lmb-secret-fact"));
     const chips = document.createElement("div");
     chips.className = "lmb-actions";
-    for (const who of strArray(k["knownBy"])) chips.appendChild(pill(`knows: ${nameOf(who)}`, "ok"));
-    for (const who of strArray(k["hiddenFrom"])) chips.appendChild(pill(`hidden: ${nameOf(who)}`, "warn"));
+    for (const who of strArray(k["knownBy"])) chips.appendChild(pill(tr("ui.tabs.codexTab.renderSecrets.knows", { nameOf: nameOf(who) }), "ok"));
+    for (const who of strArray(k["hiddenFrom"])) chips.appendChild(pill(tr("ui.tabs.codexTab.renderSecrets.hidden", { nameOf: nameOf(who) }), "warn"));
     if (chips.childElementCount) block.appendChild(chips);
     for (const b of objArray(k["falseBeliefs"])) {
-      block.appendChild(textNode(`${nameOf(str(b["who"]))} wrongly believes: ${str(b["believes"])}`, "lmb-thread-detail"));
+      block.appendChild(textNode(tr("ui.tabs.codexTab.renderSecrets.wronglyBelieves", { nameOf: nameOf(str(b["who"])), str: str(b["believes"]) }), "lmb-thread-detail"));
     }
     const note = str(k["note"]);
     if (note) block.appendChild(textNode(note, "lmb-thread-detail"));
@@ -2942,7 +2952,7 @@ function renderSecrets(
     });
     if (expanded) {
       const kws = strArray(k["keywords"]);
-      if (kws.length) block.appendChild(textNode(`keywords: ${kws.join(" · ")}`, "lmb-thread-detail"));
+      if (kws.length) block.appendChild(textNode(tr("ui.tabs.codexTab.renderSecrets.keywords", { join: kws.join(" · ") }), "lmb-thread-detail"));
       const actions = recordItemActions(
         () => { local.recordDraft = knowledgeDraftFrom(k, i); rerender(); },
         () => {
@@ -2951,7 +2961,7 @@ function renderSecrets(
           sendCodexWrite("knowledge", { items: next }, state, send);
         },
         ctx,
-        "Memoria will remove this secret from the codex.",
+        tr("ui.tabs.codexTab.actions.memoriaWillRemoveThisSecretFromThe"),
       );
       actions.addEventListener("click", (ev) => ev.stopPropagation());
       block.appendChild(actions);

@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { SpindleAPI } from "lumiverse-spindle-types";
 import { normalizeBreakdown, type PromptBreakdownRequest, type PromptBreakdownResult } from "../prompt-breakdown";
 
@@ -10,7 +11,7 @@ declare const spindle: SpindleAPI;
 export async function loadPromptBreakdown(request: PromptBreakdownRequest, userId: string): Promise<PromptBreakdownResult> {
   const generate = spindle.generate as GenerateAPI;
   if (typeof generate.getBreakdown !== "function") {
-    throw new Error("The Prompt panel requires a Lumiverse update with the Spindle prompt-breakdown API.");
+    throw new Error(tr("backend.promptBreakdown.loadPromptBreakdown.thePromptPanelRequiresALumiverseUpdate"));
   }
   if (request.mode === "auto") {
     for (const messageId of request.messageIds.slice(-15).reverse()) {
@@ -30,6 +31,6 @@ export async function loadPromptBreakdown(request: PromptBreakdownRequest, userI
     maxContext: preview.contextClipStats?.maxContext ?? 0,
     model: preview.model,
   }, preview.chatHistoryTokens ?? 0);
-  if (!d || d.entries.length === 0) throw new Error("Dry run returned no breakdown.");
+  if (!d || d.entries.length === 0) throw new Error(tr("backend.promptBreakdown.loadPromptBreakdown.dryRunReturnedNoBreakdown"));
   return { d, source: "dry" };
 }

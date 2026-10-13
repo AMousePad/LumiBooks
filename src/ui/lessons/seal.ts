@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import { makeButton } from "../components";
 import { MEMORIA_AVATAR } from "./avatar";
@@ -20,7 +21,7 @@ export function memoriaSprite(size = 56): HTMLImageElement {
   const img = document.createElement("img");
   img.className = "lmb-memoria-sprite";
   img.src = MEMORIA_AVATAR;
-  img.alt = "Memoria";
+  img.alt = tr("ui.lessons.seal.memoriaSprite.memoria");
   img.width = size;
   img.height = size;
   return img;
@@ -32,7 +33,7 @@ function runeButton(label: string, onClick: () => void): HTMLButtonElement {
   const ring = document.createElement("span");
   ring.className = "lmb-rune-ring";
   ring.setAttribute("aria-hidden", "true");
-  ring.textContent = "◆ ◇ ◆ ◇ ◆ ◇ ◆ ◇";
+  ring.textContent = tr("ui.lessons.seal.runeButton.value");
   btn.appendChild(ring);
   return btn;
 }
@@ -52,7 +53,7 @@ export function renderSealPanel(
   const panel = document.createElement("div");
   panel.className = "lmb-seal-panel";
   panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "Lessons from Memoria");
+  panel.setAttribute("aria-label", tr("ui.lessons.seal.renderSealPanel.lessonsFromMemoria"));
 
   const hero = document.createElement("div");
   hero.className = "lmb-seal-hero";
@@ -60,10 +61,10 @@ export function renderSealPanel(
   const heroText = document.createElement("div");
   const title = document.createElement("div");
   title.className = "lmb-seal-title";
-  title.textContent = "Welcome Tutorial";
+  title.textContent = tr("ui.lessons.seal.renderSealPanel.welcomeTutorial");
   const pitch = document.createElement("div");
   pitch.className = "lmb-seal-pitch";
-  pitch.textContent = "Hi user! I'm teaching a tutorial on LumiBooks, you'll have to attend (˶ᵔ ᵕ ᵔ˶)";
+  pitch.textContent = tr("ui.lessons.seal.renderSealPanel.hiUserIMTeachingATutorial");
   heroText.append(title, pitch);
   hero.appendChild(heroText);
   panel.appendChild(hero);
@@ -73,20 +74,20 @@ export function renderSealPanel(
   actions.className = "lmb-seal-actions";
   actions.appendChild(
     runeButton(
-      inProgress ? "Resume the Lesson" : "Take Lesson from Memoria",
+      inProgress ? tr("ui.lessons.seal.renderSealPanel.resumeTheLesson") : tr("ui.lessons.seal.renderSealPanel.takeLessonFromMemoria"),
       () => requestLesson({ course: "books", mode: "lesson" }),
     ),
   );
   actions.appendChild(
-    makeButton("Sit the Exam", () => requestLesson({ course: "books", mode: "exam" }), {
+    makeButton(tr("ui.lessons.seal.renderSealPanel.sitTheExam"), () => requestLesson({ course: "books", mode: "exam" }), {
       small: true,
-      title: "Ten questions from the course. 9 of 10 graduates you.",
+      title: tr("ui.lessons.seal.renderSealPanel.tenQuestionsFromTheCourse9Of"),
     }),
   );
   const skip = document.createElement("button");
   skip.type = "button";
   skip.className = "lmb-lesson-skip";
-  skip.textContent = "Skip for now";
+  skip.textContent = tr("ui.lessons.seal.renderSealPanel.skipForNow");
   skip.addEventListener("click", () => renderGrumpySkip(panel, send));
   actions.appendChild(skip);
   panel.appendChild(actions);
@@ -95,7 +96,7 @@ export function renderSealPanel(
     const sec = state.lessons.books.section + 1;
     const note = document.createElement("div");
     note.className = "lmb-seal-note";
-    note.textContent = `Progress saved at section ${sec}.`;
+    note.textContent = tr("ui.lessons.seal.renderSealPanel.progressSavedAtSection", { sec: sec });
     panel.appendChild(note);
   }
 
@@ -117,17 +118,17 @@ function renderGrumpySkip(panel: HTMLElement, send: (m: FrontendToBackend) => vo
   const right = document.createElement("div");
   const title = document.createElement("div");
   title.className = "lmb-seal-title";
-  title.textContent = "Hmph. Fine.";
+  title.textContent = tr("ui.lessons.seal.renderGrumpySkip.hmphFine");
   const pitch = document.createElement("div");
   pitch.className = "lmb-seal-pitch";
   pitch.textContent =
-    "Skip if you must. But you had better not go asking my creator for help before taking my course (¬`‸´¬) A reminder will wait for you on Home.";
+    tr("ui.lessons.seal.renderGrumpySkip.skipIfYouMustButYouHad");
   right.append(title, pitch);
   hero.appendChild(right);
   const actions = document.createElement("div");
   actions.className = "lmb-seal-actions";
-  actions.appendChild(runeButton("Fine, Teach Me", () => requestLesson({ course: "books", mode: "lesson" })));
-  actions.appendChild(makeButton("Skip anyway", () => send({ type: "lesson_seal_skip" }), { small: true }));
+  actions.appendChild(runeButton(tr("ui.lessons.seal.renderGrumpySkip.fineTeachMe"), () => requestLesson({ course: "books", mode: "lesson" })));
+  actions.appendChild(makeButton(tr("ui.lessons.seal.renderGrumpySkip.skipAnyway"), () => send({ type: "lesson_seal_skip" }), { small: true }));
   panel.append(hero, actions);
 }
 
@@ -145,7 +146,7 @@ export function updateSealBusy(state: FrontendState): void {
     const label = document.createElement("span");
     label.className = "lmb-grow";
     label.textContent = b.label;
-    row.append(dot, label, makeButton("Abort", () => send({ type: "abort_busy", chatId: b.chatId, kind: b.kind }), {
+    row.append(dot, label, makeButton(tr("ui.lessons.seal.updateSealBusy.abort"), () => send({ type: "abort_busy", chatId: b.chatId, kind: b.kind }), {
       danger: true,
       small: true,
     }));
@@ -157,8 +158,8 @@ export function updateSealBusy(state: FrontendState): void {
     row.className = "lmb-seal-failure";
     const label = document.createElement("span");
     label.className = "lmb-grow";
-    label.textContent = `Last ${state.lastFailure.kind} attempt failed`;
-    row.append(label, makeButton("Retry", () => send({ type: "retry_last_failure", chatId }), { small: true, primary: true }));
+    label.textContent = tr("ui.lessons.seal.updateSealBusy.lastAttemptFailed", { kind: state.lastFailure.kind });
+    row.append(label, makeButton(tr("ui.lessons.seal.updateSealBusy.retry"), () => send({ type: "retry_last_failure", chatId }), { small: true, primary: true }));
     strip.appendChild(row);
   }
 }
@@ -171,14 +172,14 @@ export function clearSealBusy(): void {
 /* --------------------------------------------------- codex lock surfaces */
 
 const PREVIEW_TILES: { value: string; label: string; sub: string }[] = [
-  { value: "3", label: "Characters", sub: "~240 tokens" },
-  { value: "2", label: "Locations", sub: "~90 tokens" },
-  { value: "1", label: "Things", sub: "~50 tokens" },
-  { value: "4", label: "Relations", sub: "~170 tokens" },
-  { value: "5", label: "Timeline", sub: "~160 tokens" },
-  { value: "2", label: "Threads", sub: "~120 tokens" },
-  { value: "2", label: "Lore", sub: "~110 tokens" },
-  { value: "2", label: "Secrets", sub: "~90 tokens" },
+  { value: "3", label: tr("ui.lessons.seal.previewTiles.characters"), sub: tr("ui.lessons.seal.previewTiles.240Tokens") },
+  { value: "2", label: tr("ui.lessons.seal.previewTiles.locations"), sub: tr("ui.lessons.seal.previewTiles.90Tokens") },
+  { value: "1", label: tr("ui.lessons.seal.previewTiles.things"), sub: tr("ui.lessons.seal.previewTiles.50Tokens") },
+  { value: "4", label: tr("ui.lessons.seal.previewTiles.relations"), sub: tr("ui.lessons.seal.previewTiles.170Tokens") },
+  { value: "5", label: tr("ui.lessons.seal.previewTiles.timeline"), sub: tr("ui.lessons.seal.previewTiles.160Tokens") },
+  { value: "2", label: tr("ui.lessons.seal.previewTiles.threads"), sub: tr("ui.lessons.seal.previewTiles.120Tokens") },
+  { value: "2", label: tr("ui.lessons.seal.previewTiles.lore"), sub: tr("ui.lessons.seal.previewTiles.110Tokens") },
+  { value: "2", label: tr("ui.lessons.seal.previewTiles.secrets"), sub: tr("ui.lessons.seal.previewTiles.90Tokens") },
 ];
 
 /** Full Codex tab lock: hatched fixture preview plus the seal. Nobody has a
@@ -192,7 +193,7 @@ export function renderCodexTabLock(host: HTMLElement, send?: (m: FrontendToBacke
   preview.setAttribute("aria-hidden", "true");
   const watermark = document.createElement("div");
   watermark.className = "lmb-codex-lock-watermark";
-  watermark.textContent = "example";
+  watermark.textContent = tr("ui.lessons.seal.renderCodexTabLock.example");
   preview.appendChild(watermark);
   const tiles = document.createElement("div");
   tiles.className = "lmb-tiles";
@@ -215,8 +216,8 @@ export function renderCodexTabLock(host: HTMLElement, send?: (m: FrontendToBacke
   wrap.appendChild(preview);
 
   wrap.appendChild(codexSealCard(
-    "The Knowledge Codex",
-    "A story bible an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module.",
+    tr("ui.lessons.seal.renderCodexTabLock.theKnowledgeCodex"),
+    tr("ui.lessons.seal.renderCodexTabLock.aStoryBibleAnAgentKeepsFor"),
     send,
   ));
   host.appendChild(wrap);
@@ -225,8 +226,8 @@ export function renderCodexTabLock(host: HTMLElement, send?: (m: FrontendToBacke
 /** Compact lock for the Tuning → Codex pane and other small surfaces. */
 export function renderCodexPaneLock(host: HTMLElement): void {
   host.appendChild(codexSealCard(
-    "Sealed until the lesson",
-    "The codex settings unlock when you finish The Archivist's Codex. The final step is flipping this very pane on.",
+    tr("ui.lessons.seal.renderCodexPaneLock.sealedUntilTheLesson"),
+    tr("ui.lessons.seal.renderCodexPaneLock.theCodexSettingsUnlockWhenYouFinish"),
   ));
 }
 
@@ -247,12 +248,12 @@ function codexSealCard(title: string, text: string, send?: (m: FrontendToBackend
   hero.appendChild(right);
   const actions = document.createElement("div");
   actions.className = "lmb-seal-actions";
-  actions.appendChild(runeButton("Take a Lesson from Memoria", () => requestLesson({ course: "codex", mode: "lesson" })));
+  actions.appendChild(runeButton(tr("ui.lessons.seal.codexSealCard.takeALessonFromMemoria"), () => requestLesson({ course: "codex", mode: "lesson" })));
   if (send) {
     const skip = document.createElement("button");
     skip.type = "button";
     skip.className = "lmb-lesson-skip";
-    skip.textContent = "Skip for now";
+    skip.textContent = tr("ui.lessons.seal.codexSealCard.skipForNow");
     skip.addEventListener("click", () => renderCodexGrumpySkip(card, send));
     actions.appendChild(skip);
   }
@@ -269,16 +270,16 @@ function renderCodexGrumpySkip(card: HTMLElement, send: (m: FrontendToBackend) =
   const right = document.createElement("div");
   const title = document.createElement("div");
   title.className = "lmb-seal-title";
-  title.textContent = "Hmph. Fine.";
+  title.textContent = tr("ui.lessons.seal.renderCodexGrumpySkip.hmphFine");
   const pitch = document.createElement("div");
   pitch.className = "lmb-seal-pitch";
   pitch.textContent =
-    "Skip if you must (¬`‸´¬) The codex unlocks, but the agent stays off until you enable it in Tuning. A reminder will wait for you on Home.";
+    tr("ui.lessons.seal.renderCodexGrumpySkip.skipIfYouMustTheCodexUnlocks");
   right.append(title, pitch);
   hero.appendChild(right);
   const actions = document.createElement("div");
   actions.className = "lmb-seal-actions";
-  actions.appendChild(runeButton("Fine, Teach Me", () => requestLesson({ course: "codex", mode: "lesson" })));
-  actions.appendChild(makeButton("Skip anyway", () => send({ type: "lesson_seal_skip", course: "codex" }), { small: true }));
+  actions.appendChild(runeButton(tr("ui.lessons.seal.renderCodexGrumpySkip.fineTeachMe"), () => requestLesson({ course: "codex", mode: "lesson" })));
+  actions.appendChild(makeButton(tr("ui.lessons.seal.renderCodexGrumpySkip.skipAnyway"), () => send({ type: "lesson_seal_skip", course: "codex" }), { small: true }));
   card.append(hero, actions);
 }

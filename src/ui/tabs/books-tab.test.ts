@@ -8,6 +8,7 @@ import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
 import { renderCodexSettings } from "./profile-tab";
 import { renderAboutTab } from "./about-tab";
+import { createSummaryTransferPanel } from "../summary-transfer";
 import { makeDefaultProfile } from "../../shared";
 import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal, setCodexSubtab, setCodexExpandedEntity } from "./codex-tab";
 
@@ -121,6 +122,30 @@ test("Codex settings render the activation controls without secure-context crypt
   }
 });
 
+test("Codex window and lag controls keep distinct data bindings after text extraction", () => {
+  const host = new Element("host"), patches: any[] = [];
+  renderCodexSettings(host as unknown as HTMLElement, state(), makeDefaultProfile("p", "Test"), patch => patches.push(patch));
+  for (const [kind, value] of [["window", "32"], ["lag", "9"]] as const) {
+    const container = walk(host).find(node => node.dataset.lesson === `tuning.codex.${kind}`)!;
+    const input = walk(container).find(node => node.tagName === "input")!;
+    input.value = value; input.dispatch("blur");
+    const unit = walk(container).find(node => node.tagName === "select")!;
+    unit.value = "tokens"; unit.dispatch("change");
+  }
+  expect(patches).toEqual([{ codexWindowValue: 32 }, { codexWindowUnit: "tokens" }, { codexLagValue: 9 }, { codexLagUnit: "tokens" }]);
+});
+
+test("manual summary import visibility follows its status flag rather than English copy", () => {
+  const host = new Element("host");
+  const panel = createSummaryTransferPanel(host as unknown as HTMLElement, () => {});
+  panel.setChat("chat");
+  panel.deliver({ id: "import", chatId: "chat", stage: "manual", text: "Translated prompt", manualPromptOnly: true, messageCount: 30 });
+  expect(host.textContent).not.toContain("Translated prompt");
+  expect(host.textContent).toContain("Which message should coverage end at?");
+  panel.deliver({ id: "import", chatId: "chat", stage: "manual", text: "Translated error", manualPromptOnly: false, messageCount: 30 });
+  expect(host.textContent).toContain("Translated error");
+});
+
 test("Show all reveals rooted and compacted summaries at every tier and retains ghost chapters", () => {
   const host = render(state());
   for (const [index, name] of TIER_NAMES.entries()) {
@@ -215,9 +240,9 @@ for (const withChat of [true, false]) test(`Info exposes account diagnostics wit
   expect(host.textContent).not.toContain("Where things live");
   expect(host.textContent).toContain("Nyandere catgirl in a maid uniform.");
   expect(host.textContent).not.toContain("Young nyandere");
-  expect(host.textContent).toContain("No automatic uploads");
-  expect(host.textContent).toContain("as many events as fit in 10 MB");
-  const optOut = walk(host).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
+  expect(host.textContent).toContain("pseudonymous IDs");
+  expect(host.textContent).toContain("Excludes chat/summary text");
+  const optOut = walk(host).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This isn't recommended")!;
   const toggle = walk(optOut).find((e) => e.tagName === "input")!;
   expect(toggle.checked).toBe(false);
   toggle.checked = true;
@@ -226,7 +251,7 @@ for (const withChat of [true, false]) test(`Info exposes account diagnostics wit
   current.settings.localLogsDisabled = true;
   const disabledHost = new Element("div");
   renderAboutTab(disabledHost as any, current, (msg) => sent.push(msg));
-  const disabledToggle = walk(disabledHost).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
+  const disabledToggle = walk(disabledHost).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This isn't recommended")!;
   expect(walk(disabledToggle).find((e) => e.tagName === "input")!.checked).toBe(true);
   toggle.checked = false;
   toggle.dispatch("change");

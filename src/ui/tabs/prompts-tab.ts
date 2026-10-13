@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { CustomPreset, LMBProfile, PresetCategory } from "../../shared";
@@ -29,10 +30,10 @@ import { confirmDelete, promptForString } from "../modals";
 type PromptsCategory = PresetCategory;
 
 const CATEGORY_SUBTABS: { key: PromptsCategory; label: string }[] = [
-  { key: "chapter", label: "Chapter" },
-  { key: "arc", label: "Arc" },
-  { key: "volume", label: "Volume" },
-  { key: "codex", label: "Codex" },
+  { key: "chapter", label: tr("ui.tabs.promptsTab.categorySubtabs.chapter") },
+  { key: "arc", label: tr("ui.tabs.promptsTab.categorySubtabs.arc") },
+  { key: "volume", label: tr("ui.tabs.promptsTab.categorySubtabs.volume") },
+  { key: "codex", label: tr("ui.tabs.promptsTab.categorySubtabs.codex") },
 ];
 
 const local = {
@@ -102,12 +103,18 @@ export function renderPromptsPane(
 /* --------------------------------------------------- codex template list */
 
 const TEMPLATE_GROUPS: CodexTemplateGroup[] = ["File schemas", "Write protocol", "Pass instructions", "Run notes"];
+const GROUP_LABELS: Record<CodexTemplateGroup, string> = {
+  "File schemas": tr("ui.tabs.promptsTab.groups.fileSchemas"),
+  "Write protocol": tr("ui.tabs.promptsTab.groups.writeProtocol"),
+  "Pass instructions": tr("ui.tabs.promptsTab.groups.passInstructions"),
+  "Run notes": tr("ui.tabs.promptsTab.groups.runNotes"),
+};
 
 const GROUP_HELP: Record<CodexTemplateGroup, string> = {
-  "File schemas": "One block per codex file.",
-  "Write protocol": "How the agent is told to deliver its edits. Which one is sent follows the Use tool calls switch.",
-  "Pass instructions": "The task text for each kind of codex run.",
-  "Run notes": "Warnings prepended only when their situation applies.",
+  "File schemas": tr("ui.tabs.promptsTab.groupHelp.oneBlockPerCodexFile"),
+  "Write protocol": tr("ui.tabs.promptsTab.groupHelp.howTheAgentIsToldToDeliver"),
+  "Pass instructions": tr("ui.tabs.promptsTab.groupHelp.theTaskTextForEachKindOf"),
+  "Run notes": tr("ui.tabs.promptsTab.groupHelp.warningsPrependedOnlyWhenTheirSituationApplies"),
 };
 
 function renderCodexTemplates(
@@ -117,20 +124,20 @@ function renderCodexTemplates(
 ): void {
   const profile = state.activeProfile;
   const preset = state.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey) ?? null;
-  const sec = section("Codex prompt templates");
+  const sec = section(tr("ui.tabs.promptsTab.sec.codexPromptTemplates"));
   const draw = (): void => {
     sec.body.replaceChildren();
     const help = document.createElement("div");
     help.className = "lmb-help";
     help.textContent = preset
-      ? `Every other block of the codex agent's prompts. Edits save into the "${preset.displayName}" preset, so switching presets swaps the whole prompt set. Open a template's How To before changing it.`
-      : "Other blocks of the codex agent's prompts. These belong to the selected preset.";
+      ? tr("ui.tabs.promptsTab.draw.everyOtherBlockOfTheCodexAgent", { displayName: preset.displayName })
+      : tr("ui.tabs.promptsTab.draw.otherBlocksOfTheCodexAgentS");
     sec.body.appendChild(help);
 
     const overridden = preset?.templates ? Object.keys(preset.templates).length : 0;
     if (overridden > 0) {
       sec.body.appendChild(textNode(
-        `${overridden} template${overridden === 1 ? "" : "s"} customized in this preset.`,
+        tr("ui.tabs.promptsTab.draw.templateCustomizedInThisPreset", { overridden: overridden }),
         "lmb-help",
       ));
     }
@@ -140,7 +147,7 @@ function renderCodexTemplates(
       if (defs.length === 0) continue;
       const sub = document.createElement("div");
       sub.className = "lmb-section-title";
-      sub.textContent = group;
+      sub.textContent = GROUP_LABELS[group];
       sec.body.appendChild(sub);
       sec.body.appendChild(textNode(GROUP_HELP[group], "lmb-help"));
       const list = document.createElement("ul");
@@ -175,7 +182,7 @@ function renderTemplateRow(
   title.className = "lmb-entry-title";
   title.textContent = def.label;
   head.appendChild(title);
-  if (override !== undefined) head.appendChild(pill("customized", "warn"));
+  if (override !== undefined) head.appendChild(pill(tr("ui.tabs.promptsTab.renderTemplateRow.customized"), "warn"));
   const chevron = document.createElement("span");
   chevron.className = `lmb-chevron${expanded ? " open" : ""}`;
   head.appendChild(chevron);
@@ -192,7 +199,7 @@ function renderTemplateRow(
 
   // Compact How To expander: closed by default so the list stays scannable.
   const howToOpen = local.codexHowTo.has(def.key);
-  const howBtn = makeButton(howToOpen ? "Hide How To" : "How To", () => {
+  const howBtn = makeButton(howToOpen ? tr("ui.tabs.promptsTab.howBtn.hideHowTo") : tr("ui.tabs.promptsTab.howBtn.howTo"), () => {
     if (howToOpen) local.codexHowTo.delete(def.key);
     else local.codexHowTo.add(def.key);
     redraw();
@@ -207,7 +214,7 @@ function renderTemplateRow(
       detail.appendChild(textNode(`${v.token} - ${v.meaning}`, "lmb-field-hint"));
     }
     detail.appendChild(textNode(
-      "Host macros like {{user}} also work, they resolve when the prompt is sent.",
+      tr("ui.tabs.promptsTab.renderTemplateRow.hostMacrosLikeUserAlsoWorkThey"),
       "lmb-field-hint",
     ));
   }
@@ -217,7 +224,7 @@ function renderTemplateRow(
     view.className = "lmb-preset-text";
     view.textContent = def.defaultText;
     detail.appendChild(view);
-    detail.appendChild(textNode("Built-in preset, duplicate it above to edit this template.", "lmb-field-hint"));
+    detail.appendChild(textNode(tr("ui.tabs.promptsTab.renderTemplateRow.builtInPresetDuplicateItAboveTo"), "lmb-field-hint"));
     row.appendChild(detail);
     return row;
   }
@@ -241,12 +248,15 @@ function renderTemplateRow(
 
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
-  const resetBtn = makeButton("Reset to default", () => {
-    if (resetBtn.textContent === "Reset to default") {
-      resetBtn.textContent = "Click again to confirm";
+  let resetArmed = false;
+  const resetBtn = makeButton(tr("ui.tabs.promptsTab.resetBtn.resetToDefault"), () => {
+    if (!resetArmed) {
+      resetArmed = true;
+      resetBtn.textContent = tr("ui.tabs.promptsTab.resetBtn.clickAgainToConfirm");
       resetBtn.classList.add("danger");
       setTimeout(() => {
-        resetBtn.textContent = "Reset to default";
+        resetArmed = false;
+        resetBtn.textContent = tr("ui.tabs.promptsTab.resetBtn.resetToDefault");
         resetBtn.classList.remove("danger");
       }, 3000);
       return;
@@ -269,18 +279,18 @@ function renderMemoriaOverrides(
   state: FrontendState,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Memoria overrides");
+  const sec = section(tr("ui.tabs.promptsTab.sec.memoriaOverrides"));
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Persona is the system-prompt header. Short-comment rules control how {{memoria_short_comment_rules}} expands inside any prompt.";
+    tr("ui.tabs.promptsTab.renderMemoriaOverrides.personaIsTheSystemPromptHeaderShort");
   sec.body.appendChild(help);
 
   const profile = state.activeProfile;
   const chatId = state.activeChatId;
 
   sec.body.appendChild(buildOverrideBlock({
-    label: "Memoria persona",
+    label: tr("ui.tabs.promptsTab.renderMemoriaOverrides.memoriaPersona"),
     value: profile.memoriaPersonaOverride ?? personaTxt,
     defaultText: personaTxt,
     rows: 4,
@@ -292,7 +302,7 @@ function renderMemoriaOverrides(
   }));
 
   sec.body.appendChild(buildOverrideBlock({
-    label: "Memoria short-comment rules",
+    label: tr("ui.tabs.promptsTab.renderMemoriaOverrides.memoriaShortCommentRules"),
     value: profile.shortCommentRulesOverride ?? shortCommentRulesTxt,
     defaultText: shortCommentRulesTxt,
     rows: 4,
@@ -334,16 +344,16 @@ function buildOverrideBlock(opts: {
   const resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "lmb-btn small";
-  resetBtn.textContent = "Reset to default";
+  resetBtn.textContent = tr("ui.tabs.promptsTab.buildOverrideBlock.resetToDefault");
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   const restoreIdle = () => {
-    resetBtn.textContent = "Reset to default";
+    resetBtn.textContent = tr("ui.tabs.promptsTab.restoreIdle.resetToDefault");
     resetBtn.classList.remove("danger");
     confirmTimer = null;
   };
   resetBtn.addEventListener("click", () => {
     if (confirmTimer === null) {
-      resetBtn.textContent = "Click again to confirm";
+      resetBtn.textContent = tr("ui.tabs.promptsTab.buildOverrideBlock.clickAgainToConfirm");
       resetBtn.classList.add("danger");
       confirmTimer = setTimeout(restoreIdle, 3000);
       return;
@@ -372,14 +382,14 @@ function renderCategory(
 ): void {
   const isCodex = category === "codex";
   const sec = section(
-    category === "arc" ? "Arc prompt" : category === "volume" ? "Volume prompt" : isCodex ? "Codex directives" : "Chapter prompt",
+    category === "arc" ? tr("ui.tabs.promptsTab.sec.arcPrompt") : category === "volume" ? tr("ui.tabs.promptsTab.sec.volumePrompt") : isCodex ? tr("ui.tabs.promptsTab.sec.codexDirectives") : tr("ui.tabs.promptsTab.sec.chapterPrompt"),
   );
   lessonMark(sec.wrap, isCodex ? "tuning.prompts.codex" : "tuning.prompts");
   if (isCodex) {
     const help = document.createElement("div");
     help.className = "lmb-help";
     help.textContent =
-      "The mission block at the top of the codex agent's system prompt. A codex preset carries this text plus every template below, so switching presets swaps the complete prompt set. Dry run shows the exact assembled prompts.";
+      tr("ui.tabs.promptsTab.renderCategory.theMissionBlockAtTheTopOf");
     sec.body.appendChild(help);
   }
 
@@ -392,8 +402,8 @@ function renderCategory(
         : state.chapterPresets;
   const customs = state.customPresets.filter((p) => p.category === category);
   const opts = [
-    ...builtIns.map((b) => ({ value: b.key, label: `Built-in: ${b.displayName}` })),
-    ...customs.map((c) => ({ value: c.key, label: `Custom: ${c.displayName}` })),
+    ...builtIns.map((b) => ({ value: b.key, label: tr("ui.tabs.promptsTab.opts.builtIn", { displayName: b.displayName }) })),
+    ...customs.map((c) => ({ value: c.key, label: tr("ui.tabs.promptsTab.opts.custom", { displayName: c.displayName }) })),
   ];
 
   const pickerRow = document.createElement("div");
@@ -416,8 +426,8 @@ function renderCategory(
   const buttonsRow = document.createElement("div");
   buttonsRow.className = "lmb-actions";
   buttonsRow.append(
-    makeButton("New blank prompt", async () => {
-      const name = await promptForString(ctx, `Name for new ${category} prompt`, "Untitled");
+    makeButton(tr("ui.tabs.promptsTab.renderCategory.newBlankPrompt"), async () => {
+      const name = await promptForString(ctx, tr("ui.tabs.promptsTab.name.nameForNewPrompt", { category: category }), tr("ui.tabs.promptsTab.name.untitled"));
       if (!name) return;
       const key = `${category}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
       send({
@@ -433,11 +443,11 @@ function renderCategory(
       });
       setKey(category, key);
     }, { small: true }),
-    makeButton(isUserPreset ? "Duplicate to new" : "Duplicate to edit", async () => {
+    makeButton(isUserPreset ? tr("ui.tabs.promptsTab.renderCategory.duplicateToNew") : tr("ui.tabs.promptsTab.renderCategory.duplicateToEdit"), async () => {
       const sourceName = customs.find((c) => c.key === selectedKey)?.displayName
         ?? builtIns.find((b) => b.key === selectedKey)?.displayName
-        ?? "Untitled";
-      const name = await promptForString(ctx, `Name for duplicate`, `${sourceName} copy`);
+        ?? tr("ui.tabs.promptsTab.sourceName.untitled");
+      const name = await promptForString(ctx, tr("ui.tabs.promptsTab.name.nameForDuplicate"), `${sourceName} copy`);
       if (!name) return;
       const key = `${category}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
       send({
@@ -455,7 +465,7 @@ function renderCategory(
     }, { small: true }),
   );
   buttonsRow.append(
-    makeButton("Dry run", () => {
+    makeButton(tr("ui.tabs.promptsTab.renderCategory.dryRun"), () => {
       if (!state.activeChatId) return;
       send(category === "arc"
         ? { type: "dry_run_arc", chatId: state.activeChatId }
@@ -468,14 +478,14 @@ function renderCategory(
       small: true,
       disabled: !state.activeChatId || !state.settings.enabled,
       title: isCodex
-        ? "Assemble the next codex run's complete system and user prompts with macros resolved and show what would be sent. Does not call the model."
-        : "Assemble this preset's prompt with all macros resolved and show what would be sent. Does not call the model.",
+        ? tr("ui.tabs.promptsTab.renderCategory.assembleTheNextCodexRunSComplete")
+        : tr("ui.tabs.promptsTab.renderCategory.assembleThisPresetSPromptWithAll"),
     }),
   );
   buttonsRow.append(
-    makeButton("Delete", async () => {
+    makeButton(tr("ui.tabs.promptsTab.renderCategory.delete"), async () => {
       if (!isUserPreset) return;
-      const ok = await confirmDelete(ctx, "Delete prompt?", "This removes the custom prompt and falls back to the built-in default.");
+      const ok = await confirmDelete(ctx, tr("ui.tabs.promptsTab.ok.deletePrompt"), tr("ui.tabs.promptsTab.ok.thisRemovesTheCustomPromptAndFalls"));
       if (!ok) return;
       send({ type: "delete_custom_preset", key: selectedKey, category, chatId: state.activeChatId });
     }, { small: true, danger: true, disabled: !isUserPreset }),
@@ -490,7 +500,7 @@ function renderCategory(
       preset: { ...draft },
       chatId: state.activeChatId,
     });
-    const nameField = field("Display name");
+    const nameField = field(tr("ui.tabs.promptsTab.nameField.displayName"));
     nameField.body.appendChild(
       textInput({
         value: draft.displayName,
@@ -499,7 +509,7 @@ function renderCategory(
     );
     sec.body.appendChild(nameField.wrap);
 
-    const textField = field("Prompt");
+    const textField = field(tr("ui.tabs.promptsTab.textField.prompt"));
     textField.body.appendChild(
       textArea({
         value: draft.prompt,
@@ -511,7 +521,7 @@ function renderCategory(
   } else {
     const lbl = document.createElement("div");
     lbl.className = "lmb-field-label";
-    lbl.textContent = "Prompt (built-in, duplicate to edit)";
+    lbl.textContent = tr("ui.tabs.promptsTab.renderCategory.promptBuiltInDuplicateToEdit");
     sec.body.appendChild(lbl);
     const view = document.createElement("div");
     view.className = "lmb-preset-text";
@@ -548,18 +558,18 @@ function renderImport(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Import STMB presets");
+  const sec = section(tr("ui.tabs.promptsTab.sec.importStmbPresets"));
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Upload a SillyTavern Memory Books export. Memoria reads the prompts and adds them as custom presets you can edit.";
+    tr("ui.tabs.promptsTab.renderImport.uploadASillyTavernMemoryBooksExportMemoria");
   sec.body.appendChild(help);
 
   const row = document.createElement("div");
   row.className = "lmb-actions";
   row.append(
-    makeButton("Import chapter presets", () => importFile(ctx, "chapter", send, state.activeChatId)),
-    makeButton("Import arc presets", () => importFile(ctx, "arc", send, state.activeChatId)),
+    makeButton(tr("ui.tabs.promptsTab.renderImport.importChapterPresets"), () => importFile(ctx, "chapter", send, state.activeChatId)),
+    makeButton(tr("ui.tabs.promptsTab.renderImport.importArcPresets"), () => importFile(ctx, "arc", send, state.activeChatId)),
   );
   sec.body.appendChild(row);
 
@@ -573,13 +583,13 @@ function renderImport(
       head.className = "lmb-entry-head";
       const tag = document.createElement("span");
       tag.className = "lmb-entry-tag";
-      tag.textContent = p.category.toUpperCase();
+      tag.textContent = tr("shared.summaryKindTag", { kind: p.category });
       const title = document.createElement("div");
       title.className = "lmb-entry-title";
       title.textContent = p.displayName;
       head.append(tag, title);
-      head.append(makeButton("Delete", async () => {
-        const ok = await confirmDelete(ctx, "Delete preset?", "");
+      head.append(makeButton(tr("ui.tabs.promptsTab.renderImport.delete"), async () => {
+        const ok = await confirmDelete(ctx, tr("ui.tabs.promptsTab.ok.deletePreset"), "");
         if (ok) send({ type: "delete_custom_preset", key: p.key, category: p.category, chatId: state.activeChatId });
       }, { small: true, danger: true }));
       li.appendChild(head);
@@ -587,7 +597,7 @@ function renderImport(
     }
     sec.body.appendChild(list);
   } else {
-    sec.body.appendChild(textNode("No custom presets yet", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.promptsTab.renderImport.noCustomPresetsYet"), "lmb-empty"));
   }
 
   host.appendChild(sec.wrap);
@@ -608,7 +618,7 @@ function importFile(
         text = new TextDecoder().decode(file.bytes);
       } catch (err) {
         console.warn("[LumiBooks] preset file decode failed", err);
-        showImportFailure(ctx, "Memoria can't read this file");
+        showImportFailure(ctx, tr("ui.tabs.promptsTab.importFile.memoriaCanTReadThisFile"));
         return;
       }
       let parsed: unknown = null;
@@ -616,7 +626,7 @@ function importFile(
         parsed = JSON.parse(text);
       } catch (err) {
         console.warn("[LumiBooks] preset JSON parse failed", err);
-        showImportFailure(ctx, "Memoria couldn't parse the preset JSON");
+        showImportFailure(ctx, tr("ui.tabs.promptsTab.importFile.memoriaCouldnTParseThePresetJson"));
         return;
       }
       send({ type: "import_preset", category, raw: parsed, chatId });
@@ -629,11 +639,11 @@ function importFile(
 function showImportFailure(ctx: SpindleFrontendContext, message: string): void {
   try {
     void ctx.ui.showConfirm({
-      title: "Import failed",
+      title: tr("ui.tabs.promptsTab.showImportFailure.importFailed"),
       message,
       variant: "warning",
-      confirmLabel: "OK",
-      cancelLabel: "OK",
+      confirmLabel: tr("ui.tabs.promptsTab.showImportFailure.ok"),
+      cancelLabel: tr("ui.tabs.promptsTab.showImportFailure.ok"),
     });
   } catch {
     window.alert(message);
@@ -641,16 +651,20 @@ function showImportFailure(ctx: SpindleFrontendContext, message: string): void {
 }
 
 function renderHelp(host: HTMLElement): void {
-  const sec = section("Info");
+  const sec = section(tr("ui.tabs.promptsTab.sec.info"));
   const help = document.createElement("div");
   help.className = "lmb-help";
-  help.innerHTML = [
-    "Duplicate any built-in, or create new to edit.",
-    "Prompts must ask the model for strict JSON (examples below).",
-    "{{target_tokens}} expands to the active compression target.",
-    "{{memoria_short_comment_rules}} expands to this turn's nyandere short-comment rules.",
-    "Prompts are macro-evaluated.",
-  ].join("<br/>");
+  const lines = [
+    tr("ui.tabs.promptsTab.lines.duplicateAnyBuiltInOrCreateNew"),
+    tr("ui.tabs.promptsTab.lines.promptsMustAskTheModelForStrict"),
+    tr("ui.tabs.promptsTab.lines.targetTokensExpandsToTheActiveCompression"),
+    tr("ui.tabs.promptsTab.lines.memoriaShortCommentRulesExpandsToThis"),
+    tr("ui.tabs.promptsTab.lines.promptsAreMacroEvaluated"),
+  ];
+  lines.forEach((line, index) => {
+    if (index) help.appendChild(document.createElement("br"));
+    help.appendChild(document.createTextNode(line));
+  });
   sec.body.appendChild(help);
   host.appendChild(sec.wrap);
 }

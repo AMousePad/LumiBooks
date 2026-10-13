@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { LMBProfile, LessonCourseKey, LessonCourseState, LessonsState } from "../shared";
@@ -60,7 +61,7 @@ async function loadFromDisk(userId: string): Promise<LessonsState> {
     exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
   } catch (err) {
     error(`lessons: exists() failed, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    anomalyCb?.(userId, tr("backend.lessons.loadFromDisk.memoriaCouldnTReadHerLessonRegister", { describeError: describeError(err) }));
     failOpenUsers.add(userId);
     return unlockedLessons();
   }
@@ -81,7 +82,7 @@ async function loadFromDisk(userId: string): Promise<LessonsState> {
     return normalizeLessons(JSON.parse(raw) as unknown);
   } catch (err) {
     error(`lessons: file unreadable, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    anomalyCb?.(userId, tr("backend.lessons.loadFromDisk.memoriaCouldnTReadHerLessonRegister", { describeError: describeError(err) }));
     failOpenUsers.add(userId);
     return unlockedLessons();
   }
@@ -138,7 +139,7 @@ async function mutateLessons(userId: string, fn: (cur: LessonsState) => LessonsS
     if (failOpenUsers.has(userId)) {
       cache.set(userId, next);
       warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
-      anomalyCb?.(userId, "Memoria couldn't read her lesson register so this change is not saved to disk yet");
+      anomalyCb?.(userId, tr("backend.lessons.mutateLessons.memoriaCouldnTReadHerLessonRegister"));
       return next;
     }
     await spindle.userStorage.setJson(LESSONS_PATH, next, { indent: 0, userId });

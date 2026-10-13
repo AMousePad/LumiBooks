@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import { approximateTokensFromChars } from "../../shared";
 import { CODEX_FILE_KEYS, type CodexBundle, type CodexFileKey } from "./schema";
@@ -15,7 +16,7 @@ export async function countCodexText(text: string, userId: string): Promise<{ to
   if (!text) return { tokens: 0, approximate: false };
   try {
     const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
-    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0) throw new Error("Invalid token count");
+    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0) throw new Error(tr("backend.codex.tokens.countCodexText.invalidTokenCount"));
     return { tokens: result.total_tokens, approximate: result.approximate };
   } catch {
     return { tokens: approximateTokensFromChars(text.length), approximate: true };

@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
@@ -65,11 +66,11 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
 
   const tab = ctx.ui.registerDrawerTab({
     id: "lumi_books_tab",
-    title: "LumiBooks",
-    shortName: "Books",
-    description: "Memoria files your chat into chapters and arcs.",
-    keywords: ["lumibooks", "lumi books", "memoria", "memory", "chapters", "arcs", "summary", "codex"],
-    headerTitle: "LumiBooks",
+    title: tr("ui.app.tab.lumiBooks"),
+    shortName: tr("ui.app.tab.books"),
+    description: tr("ui.app.tab.memoriaFilesYourChatIntoChaptersAnd"),
+    keywords: ["lumibooks", tr("ui.app.tab.lumiBooks2"), "memoria", "memory", "chapters", "arcs", "summary", "codex"],
+    headerTitle: tr("ui.app.tab.lumiBooks"),
     iconSvg: ICON_SVG,
   });
 
@@ -107,7 +108,7 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
     else if (msg.type === "diagnostics_export") diagnostics.flush();
     else diagnostics.record("send", { op: msg.type as UiDiagnostic["op"] });
     if (msg.type === "summary_export" || msg.type === "summary_import") {
-      transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? "Preparing summary export…" : "Checking summary coverage…" });
+      transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? tr("ui.app.send.preparingSummaryExport") : tr("ui.app.send.checkingSummaryCoverage") });
     }
     try { ctx.sendToBackend(msg); }
     catch (error) { diagnostics.record("error", { op: msg.type as UiDiagnostic["op"], code: uiErrorCode(error) }); throw error; }
@@ -127,22 +128,22 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
       loadNotice.appendChild(spinner);
     }
     loadNotice.append(document.createTextNode(text));
-    if (!loading) loadNotice.appendChild(makeButton("Retry", () => requestState("refresh")));
+    if (!loading) loadNotice.appendChild(makeButton(tr("ui.app.showLoadNotice.retry"), () => requestState("refresh")));
   };
   const requestState = (type: "ready" | "refresh") => {
     if (disposed) return;
     clearLoadTimer();
-    if (!lastState) showLoadNotice("Loading LumiBooks…", true);
+    if (!lastState) showLoadNotice(tr("ui.app.requestState.loadingLumiBooks"), true);
     // Retry a lost startup handshake, but stop resending once the backend
     // acknowledges it: building a large chat's state can take a while.
     loadTimer = setTimeout(() => {
       if (disposed || lastState) return;
       diagnostics.record("timeout", { code: "state", op: type });
       if (handshakeRetries++ < 2) requestState("ready");
-      else showLoadNotice("LumiBooks hasn't responded. You can retry loading it.");
+      else showLoadNotice(tr("ui.app.requestState.lumiBooksHasnTRespondedYouCanRetry"));
     }, 5000);
     try { send({ type, chatId: null }); }
-    catch (err) { clearLoadTimer(); showLoadNotice(`Could not load LumiBooks: ${String(err)}`); }
+    catch (err) { clearLoadTimer(); showLoadNotice(tr("ui.app.requestState.couldNotLoadLumiBooks", { string: String(err) })); }
   };
 
   const engine = createLessonEngine({
@@ -285,7 +286,7 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
       console.error("[LumiBooks] render failed", err);
       content.replaceChildren();
       lastRenderedTab = null;
-      showLoadNotice("LumiBooks couldn't display this view. Retry to reload its data.");
+      showLoadNotice(tr("ui.app.doRender.lumiBooksCouldnTDisplayThisViewRetry"));
     }
   };
 
@@ -340,10 +341,10 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
       case "state_loading":
         clearLoadTimer();
         if (!lastState) {
-          showLoadNotice("Loading LumiBooks…", true);
+          showLoadNotice(tr("ui.app.unsub.loadingLumiBooks"), true);
           loadTimer = setTimeout(() => {
             diagnostics.record("timeout", { code: "state" });
-            showLoadNotice("This chat is taking longer to load. You can wait or retry.");
+            showLoadNotice(tr("ui.app.unsub.thisChatIsTakingLongerToLoad"));
           }, 20000);
         }
         break;

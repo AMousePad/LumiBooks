@@ -1,46 +1,47 @@
+import { t as tr } from "../i18n";
 import shortCommentRulesTxt from "../prompts/memoria/short-comment-rules.txt";
 import personaTxt from "../prompts/memoria/persona.txt";
 
 export const DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = shortCommentRulesTxt;
 
 const FIRE_PHRASES: string[] = [
-  "Memoria stirs the inkpot, nyaa~",
-  "Memoria is shelving this scene, hush a moment",
-  "Memoria flicks her tail and starts writing",
-  "Memoria opens a fresh page for you, nya",
-  "Memoria pads off to compress this in the stacks",
+  tr("backend.memoria.firePhrases.memoriaStirsTheInkpotNyaa"),
+  tr("backend.memoria.firePhrases.memoriaIsShelvingThisSceneHushA"),
+  tr("backend.memoria.firePhrases.memoriaFlicksHerTailAndStartsWriting"),
+  tr("backend.memoria.firePhrases.memoriaOpensAFreshPageForYou"),
+  tr("backend.memoria.firePhrases.memoriaPadsOffToCompressThisIn"),
 ];
 
 const RETRY_PHRASES: string[] = [
-  "Memoria tripped on a quill, trying again",
-  "Memoria's ink smudged, one more try nyaa",
-  "Memoria reshuffles the index cards, retrying",
+  tr("backend.memoria.retryPhrases.memoriaTrippedOnAQuillTryingAgain"),
+  tr("backend.memoria.retryPhrases.memoriaSInkSmudgedOneMoreTry"),
+  tr("backend.memoria.retryPhrases.memoriaReshufflesTheIndexCardsRetrying"),
 ];
 
 const SUCCESS_PHRASES: string[] = [
-  "Memoria slid the chapter onto your shelf, nyaa~",
-  "Memoria filed it neatly between the others",
-  "Memoria stamped the spine, all yours",
-  "Memoria purrs, the page is done",
-  "Memoria taps the chapter into place",
+  tr("backend.memoria.successPhrases.memoriaSlidTheChapterOntoYourShelf"),
+  tr("backend.memoria.successPhrases.memoriaFiledItNeatlyBetweenTheOthers"),
+  tr("backend.memoria.successPhrases.memoriaStampedTheSpineAllYours"),
+  tr("backend.memoria.successPhrases.memoriaPurrsThePageIsDone"),
+  tr("backend.memoria.successPhrases.memoriaTapsTheChapterIntoPlace"),
 ];
 
 const ARC_FIRE_PHRASES: string[] = [
-  "Memoria gathers the chapters for an arc, nya",
-  "Memoria is binding several chapters together",
+  tr("backend.memoria.arcFirePhrases.memoriaGathersTheChaptersForAnArc"),
+  tr("backend.memoria.arcFirePhrases.memoriaIsBindingSeveralChaptersTogether"),
 ];
 
 const ARC_SUCCESS_PHRASES: string[] = [
-  "Memoria bound the arc and pressed it shut, nyaa~",
-  "Memoria stitched the spine of a new arc",
+  tr("backend.memoria.arcSuccessPhrases.memoriaBoundTheArcAndPressedIt"),
+  tr("backend.memoria.arcSuccessPhrases.memoriaStitchedTheSpineOfANew"),
 ];
 
 const VOLUME_FIRE_PHRASES: string[] = [
-  "Memoria is pressing a whole volume together",
+  tr("backend.memoria.volumeFirePhrases.memoriaIsPressingAWholeVolumeTogether"),
 ];
 
 const VOLUME_SUCCESS_PHRASES: string[] = [
-  "Memoria embossed the spine of a new volume",
+  tr("backend.memoria.volumeSuccessPhrases.memoriaEmbossedTheSpineOfANew"),
 ];
 
 export type PhraseKind = "fire" | "retry" | "success" | "arc_fire" | "arc_success" | "volume_fire" | "volume_success";
@@ -54,7 +55,7 @@ export function pickPhrase(kind: PhraseKind): string {
       : kind === "arc_success" ? ARC_SUCCESS_PHRASES
       : kind === "volume_fire" ? VOLUME_FIRE_PHRASES
       : VOLUME_SUCCESS_PHRASES;
-  return pool[Math.floor(Math.random() * pool.length)] ?? "Memoria nyaa";
+  return pool[Math.floor(Math.random() * pool.length)] ?? tr("backend.memoria.pickPhrase.memoriaNyaa");
 }
 
 export const MEMORIA_PERSONA_LINE = personaTxt;

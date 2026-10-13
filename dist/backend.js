@@ -1,4 +1,5844 @@
 // @bun
+// node_modules/@formatjs/fast-memoize/index.js
+function memoize(fn, options) {
+  const cache = options && options.cache ? options.cache : cacheDefault;
+  const serializer = options && options.serializer ? options.serializer : serializerDefault;
+  return (options && options.strategy ? options.strategy : strategyDefault)(fn, {
+    cache,
+    serializer
+  });
+}
+function isPrimitive(value) {
+  return value == null || typeof value === "number" || typeof value === "boolean";
+}
+function monadic(fn, cache, serializer, arg) {
+  const cacheKey = isPrimitive(arg) ? arg : serializer(arg);
+  let computedValue = cache.get(cacheKey);
+  if (typeof computedValue === "undefined") {
+    computedValue = fn.call(this, arg);
+    cache.set(cacheKey, computedValue);
+  }
+  return computedValue;
+}
+function variadic(fn, cache, serializer) {
+  const args = Array.prototype.slice.call(arguments, 3);
+  const cacheKey = serializer(args);
+  let computedValue = cache.get(cacheKey);
+  if (typeof computedValue === "undefined") {
+    computedValue = fn.apply(this, args);
+    cache.set(cacheKey, computedValue);
+  }
+  return computedValue;
+}
+function assemble(fn, context, strategy, cache, serialize) {
+  return strategy.bind(context, fn, cache, serialize);
+}
+function strategyDefault(fn, options) {
+  const strategy = fn.length === 1 ? monadic : variadic;
+  return assemble(fn, this, strategy, options.cache.create(), options.serializer);
+}
+function strategyVariadic(fn, options) {
+  return assemble(fn, this, variadic, options.cache.create(), options.serializer);
+}
+function strategyMonadic(fn, options) {
+  return assemble(fn, this, monadic, options.cache.create(), options.serializer);
+}
+var serializerDefault = function() {
+  return JSON.stringify(arguments);
+};
+var ObjectWithoutPrototypeCache = class {
+  constructor() {
+    this.cache = Object.create(null);
+  }
+  get(key) {
+    return this.cache[key];
+  }
+  set(key, value) {
+    this.cache[key] = value;
+  }
+};
+var cacheDefault = { create: function create() {
+  return new ObjectWithoutPrototypeCache;
+} };
+var strategies = {
+  variadic: strategyVariadic,
+  monadic: strategyMonadic
+};
+
+// node_modules/@formatjs/icu-skeleton-parser/index.js
+var DATE_TIME_REGEX = /(?:[Eec]{1,6}|G{1,5}|[Qq]{1,5}|(?:[yYur]+|U{1,5})|[ML]{1,5}|d{1,2}|D{1,3}|F{1}|[abB]{1,5}|[hkHK]{1,2}|w{1,2}|W{1}|m{1,2}|s{1,2}|[zZOvVxX]{1,4})(?=([^']*'[^']*')*[^']*$)/g;
+function parseDateTimeSkeleton(skeleton) {
+  const result = {};
+  skeleton.replace(DATE_TIME_REGEX, (match) => {
+    const len = match.length;
+    switch (match[0]) {
+      case "G":
+        result.era = len === 4 ? "long" : len === 5 ? "narrow" : "short";
+        break;
+      case "y":
+        result.year = len === 2 ? "2-digit" : "numeric";
+        break;
+      case "Y":
+      case "u":
+      case "U":
+      case "r":
+        throw new RangeError("`Y/u/U/r` (year) patterns are not supported, use `y` instead");
+      case "q":
+      case "Q":
+        throw new RangeError("`q/Q` (quarter) patterns are not supported");
+      case "M":
+      case "L":
+        result.month = [
+          "numeric",
+          "2-digit",
+          "short",
+          "long",
+          "narrow"
+        ][len - 1];
+        break;
+      case "w":
+      case "W":
+        throw new RangeError("`w/W` (week) patterns are not supported");
+      case "d":
+        result.day = ["numeric", "2-digit"][len - 1];
+        break;
+      case "D":
+      case "F":
+      case "g":
+        throw new RangeError("`D/F/g` (day) patterns are not supported, use `d` instead");
+      case "E":
+        result.weekday = len === 4 ? "long" : len === 5 ? "narrow" : "short";
+        break;
+      case "e":
+        if (len < 4)
+          throw new RangeError("`e..eee` (weekday) patterns are not supported");
+        result.weekday = [
+          "short",
+          "long",
+          "narrow",
+          "short"
+        ][len - 3];
+        break;
+      case "c":
+        if (len < 4)
+          throw new RangeError("`c..ccc` (weekday) patterns are not supported");
+        result.weekday = [
+          "short",
+          "long",
+          "narrow",
+          "short"
+        ][len - 3];
+        break;
+      case "a":
+        result.hour12 = true;
+        break;
+      case "b":
+      case "B":
+        throw new RangeError("`b/B` (period) patterns are not supported, use `a` instead");
+      case "h":
+        result.hourCycle = "h12";
+        result.hour = ["numeric", "2-digit"][len - 1];
+        break;
+      case "H":
+        result.hourCycle = "h23";
+        result.hour = ["numeric", "2-digit"][len - 1];
+        break;
+      case "K":
+        result.hourCycle = "h11";
+        result.hour = ["numeric", "2-digit"][len - 1];
+        break;
+      case "k":
+        result.hourCycle = "h24";
+        result.hour = ["numeric", "2-digit"][len - 1];
+        break;
+      case "j":
+      case "J":
+      case "C":
+        throw new RangeError("`j/J/C` (hour) patterns are not supported, use `h/H/K/k` instead");
+      case "m":
+        result.minute = ["numeric", "2-digit"][len - 1];
+        break;
+      case "s":
+        result.second = ["numeric", "2-digit"][len - 1];
+        break;
+      case "S":
+      case "A":
+        throw new RangeError("`S/A` (second) patterns are not supported, use `s` instead");
+      case "z":
+        result.timeZoneName = len < 4 ? "short" : "long";
+        break;
+      case "Z":
+      case "O":
+      case "v":
+      case "V":
+      case "X":
+      case "x":
+        throw new RangeError("`Z/O/v/V/X/x` (timeZone) patterns are not supported, use `z` instead");
+    }
+    return "";
+  });
+  return result;
+}
+var WHITE_SPACE_REGEX = /[\t-\r \x85\u200E\u200F\u2028\u2029]/i;
+function parseNumberSkeletonFromString(skeleton) {
+  if (skeleton.length === 0)
+    throw new Error("Number skeleton cannot be empty");
+  const stringTokens = skeleton.split(WHITE_SPACE_REGEX).filter((x) => x.length > 0);
+  const tokens = [];
+  for (const stringToken of stringTokens) {
+    let stemAndOptions = stringToken.split("/");
+    if (stemAndOptions.length === 0)
+      throw new Error("Invalid number skeleton");
+    const [stem, ...options] = stemAndOptions;
+    for (const option of options)
+      if (option.length === 0)
+        throw new Error("Invalid number skeleton");
+    tokens.push({
+      stem,
+      options
+    });
+  }
+  return tokens;
+}
+function icuUnitToEcma(unit) {
+  return unit.replace(/^(.*?)-/, "");
+}
+var FRACTION_PRECISION_REGEX = /^\.(?:(0+)(\*)?|(#+)|(0+)(#+))$/g;
+var SIGNIFICANT_PRECISION_REGEX = /^(@+)?(\+|#+)?[rs]?$/g;
+var INTEGER_WIDTH_REGEX = /(\*)(0+)|(#+)(0+)|(0+)/g;
+var CONCISE_INTEGER_WIDTH_REGEX = /^(0+)$/;
+function parseSignificantPrecision(str) {
+  const result = {};
+  if (str[str.length - 1] === "r")
+    result.roundingPriority = "morePrecision";
+  else if (str[str.length - 1] === "s")
+    result.roundingPriority = "lessPrecision";
+  str.replace(SIGNIFICANT_PRECISION_REGEX, function(_, g1, g2) {
+    if (typeof g2 !== "string") {
+      result.minimumSignificantDigits = g1.length;
+      result.maximumSignificantDigits = g1.length;
+    } else if (g2 === "+")
+      result.minimumSignificantDigits = g1.length;
+    else if (g1[0] === "#")
+      result.maximumSignificantDigits = g1.length;
+    else {
+      result.minimumSignificantDigits = g1.length;
+      result.maximumSignificantDigits = g1.length + (typeof g2 === "string" ? g2.length : 0);
+    }
+    return "";
+  });
+  return result;
+}
+function parseSign(str) {
+  switch (str) {
+    case "sign-auto":
+      return { signDisplay: "auto" };
+    case "sign-accounting":
+    case "()":
+      return { currencySign: "accounting" };
+    case "sign-always":
+    case "+!":
+      return { signDisplay: "always" };
+    case "sign-accounting-always":
+    case "()!":
+      return {
+        signDisplay: "always",
+        currencySign: "accounting"
+      };
+    case "sign-except-zero":
+    case "+?":
+      return { signDisplay: "exceptZero" };
+    case "sign-accounting-except-zero":
+    case "()?":
+      return {
+        signDisplay: "exceptZero",
+        currencySign: "accounting"
+      };
+    case "sign-never":
+    case "+_":
+      return { signDisplay: "never" };
+  }
+}
+function parseConciseScientificAndEngineeringStem(stem) {
+  let result;
+  if (stem[0] === "E" && stem[1] === "E") {
+    result = { notation: "engineering" };
+    stem = stem.slice(2);
+  } else if (stem[0] === "E") {
+    result = { notation: "scientific" };
+    stem = stem.slice(1);
+  }
+  if (result) {
+    const signDisplay = stem.slice(0, 2);
+    if (signDisplay === "+!") {
+      result.signDisplay = "always";
+      stem = stem.slice(2);
+    } else if (signDisplay === "+?") {
+      result.signDisplay = "exceptZero";
+      stem = stem.slice(2);
+    }
+    if (!CONCISE_INTEGER_WIDTH_REGEX.test(stem))
+      throw new Error("Malformed concise eng/scientific notation");
+    result.minimumIntegerDigits = stem.length;
+  }
+  return result;
+}
+function parseNotationOptions(opt) {
+  const result = {};
+  const signOpts = parseSign(opt);
+  if (signOpts)
+    return signOpts;
+  return result;
+}
+function parseNumberSkeleton(tokens) {
+  let result = {};
+  for (const token of tokens) {
+    switch (token.stem) {
+      case "percent":
+      case "%":
+        result.style = "percent";
+        continue;
+      case "%x100":
+        result.style = "percent";
+        result.scale = 100;
+        continue;
+      case "currency":
+        result.style = "currency";
+        result.currency = token.options[0];
+        continue;
+      case "group-off":
+      case ",_":
+        result.useGrouping = false;
+        continue;
+      case "precision-integer":
+      case ".":
+        result.maximumFractionDigits = 0;
+        continue;
+      case "measure-unit":
+      case "unit":
+        result.style = "unit";
+        result.unit = icuUnitToEcma(token.options[0]);
+        continue;
+      case "compact-short":
+      case "K":
+        result.notation = "compact";
+        result.compactDisplay = "short";
+        continue;
+      case "compact-long":
+      case "KK":
+        result.notation = "compact";
+        result.compactDisplay = "long";
+        continue;
+      case "scientific":
+        result = {
+          ...result,
+          notation: "scientific",
+          ...token.options.reduce((all, opt) => ({
+            ...all,
+            ...parseNotationOptions(opt)
+          }), {})
+        };
+        continue;
+      case "engineering":
+        result = {
+          ...result,
+          notation: "engineering",
+          ...token.options.reduce((all, opt) => ({
+            ...all,
+            ...parseNotationOptions(opt)
+          }), {})
+        };
+        continue;
+      case "notation-simple":
+        result.notation = "standard";
+        continue;
+      case "unit-width-narrow":
+        result.currencyDisplay = "narrowSymbol";
+        result.unitDisplay = "narrow";
+        continue;
+      case "unit-width-short":
+        result.currencyDisplay = "code";
+        result.unitDisplay = "short";
+        continue;
+      case "unit-width-full-name":
+        result.currencyDisplay = "name";
+        result.unitDisplay = "long";
+        continue;
+      case "unit-width-iso-code":
+        result.currencyDisplay = "symbol";
+        continue;
+      case "scale":
+        result.scale = parseFloat(token.options[0]);
+        continue;
+      case "rounding-mode-floor":
+        result.roundingMode = "floor";
+        continue;
+      case "rounding-mode-ceiling":
+        result.roundingMode = "ceil";
+        continue;
+      case "rounding-mode-down":
+        result.roundingMode = "trunc";
+        continue;
+      case "rounding-mode-up":
+        result.roundingMode = "expand";
+        continue;
+      case "rounding-mode-half-even":
+        result.roundingMode = "halfEven";
+        continue;
+      case "rounding-mode-half-down":
+        result.roundingMode = "halfTrunc";
+        continue;
+      case "rounding-mode-half-up":
+        result.roundingMode = "halfExpand";
+        continue;
+      case "integer-width":
+        if (token.options.length > 1)
+          throw new RangeError("integer-width stems only accept a single optional option");
+        token.options[0].replace(INTEGER_WIDTH_REGEX, function(_, g1, g2, g3, g4, g5) {
+          if (g1)
+            result.minimumIntegerDigits = g2.length;
+          else if (g3 && g4)
+            throw new Error("We currently do not support maximum integer digits");
+          else if (g5)
+            throw new Error("We currently do not support exact integer digits");
+          return "";
+        });
+        continue;
+    }
+    if (CONCISE_INTEGER_WIDTH_REGEX.test(token.stem)) {
+      result.minimumIntegerDigits = token.stem.length;
+      continue;
+    }
+    if (FRACTION_PRECISION_REGEX.test(token.stem)) {
+      if (token.options.length > 1)
+        throw new RangeError("Fraction-precision stems only accept a single optional option");
+      token.stem.replace(FRACTION_PRECISION_REGEX, function(_, g1, g2, g3, g4, g5) {
+        if (g2 === "*")
+          result.minimumFractionDigits = g1.length;
+        else if (g3 && g3[0] === "#")
+          result.maximumFractionDigits = g3.length;
+        else if (g4 && g5) {
+          result.minimumFractionDigits = g4.length;
+          result.maximumFractionDigits = g4.length + g5.length;
+        } else {
+          result.minimumFractionDigits = g1.length;
+          result.maximumFractionDigits = g1.length;
+        }
+        return "";
+      });
+      const opt = token.options[0];
+      if (opt === "w")
+        result = {
+          ...result,
+          trailingZeroDisplay: "stripIfInteger"
+        };
+      else if (opt)
+        result = {
+          ...result,
+          ...parseSignificantPrecision(opt)
+        };
+      continue;
+    }
+    if (SIGNIFICANT_PRECISION_REGEX.test(token.stem)) {
+      result = {
+        ...result,
+        ...parseSignificantPrecision(token.stem)
+      };
+      continue;
+    }
+    const signOpts = parseSign(token.stem);
+    if (signOpts)
+      result = {
+        ...result,
+        ...signOpts
+      };
+    const conciseScientificAndEngineeringOpts = parseConciseScientificAndEngineeringStem(token.stem);
+    if (conciseScientificAndEngineeringOpts)
+      result = {
+        ...result,
+        ...conciseScientificAndEngineeringOpts
+      };
+  }
+  return result;
+}
+
+// node_modules/@formatjs/icu-messageformat-parser/index.js
+var ErrorKind = /* @__PURE__ */ function(ErrorKind) {
+  ErrorKind[ErrorKind["EXPECT_ARGUMENT_CLOSING_BRACE"] = 1] = "EXPECT_ARGUMENT_CLOSING_BRACE";
+  ErrorKind[ErrorKind["EMPTY_ARGUMENT"] = 2] = "EMPTY_ARGUMENT";
+  ErrorKind[ErrorKind["MALFORMED_ARGUMENT"] = 3] = "MALFORMED_ARGUMENT";
+  ErrorKind[ErrorKind["EXPECT_ARGUMENT_TYPE"] = 4] = "EXPECT_ARGUMENT_TYPE";
+  ErrorKind[ErrorKind["INVALID_ARGUMENT_TYPE"] = 5] = "INVALID_ARGUMENT_TYPE";
+  ErrorKind[ErrorKind["EXPECT_ARGUMENT_STYLE"] = 6] = "EXPECT_ARGUMENT_STYLE";
+  ErrorKind[ErrorKind["INVALID_NUMBER_SKELETON"] = 7] = "INVALID_NUMBER_SKELETON";
+  ErrorKind[ErrorKind["INVALID_DATE_TIME_SKELETON"] = 8] = "INVALID_DATE_TIME_SKELETON";
+  ErrorKind[ErrorKind["EXPECT_NUMBER_SKELETON"] = 9] = "EXPECT_NUMBER_SKELETON";
+  ErrorKind[ErrorKind["EXPECT_DATE_TIME_SKELETON"] = 10] = "EXPECT_DATE_TIME_SKELETON";
+  ErrorKind[ErrorKind["UNCLOSED_QUOTE_IN_ARGUMENT_STYLE"] = 11] = "UNCLOSED_QUOTE_IN_ARGUMENT_STYLE";
+  ErrorKind[ErrorKind["EXPECT_SELECT_ARGUMENT_OPTIONS"] = 12] = "EXPECT_SELECT_ARGUMENT_OPTIONS";
+  ErrorKind[ErrorKind["EXPECT_PLURAL_ARGUMENT_OFFSET_VALUE"] = 13] = "EXPECT_PLURAL_ARGUMENT_OFFSET_VALUE";
+  ErrorKind[ErrorKind["INVALID_PLURAL_ARGUMENT_OFFSET_VALUE"] = 14] = "INVALID_PLURAL_ARGUMENT_OFFSET_VALUE";
+  ErrorKind[ErrorKind["EXPECT_SELECT_ARGUMENT_SELECTOR"] = 15] = "EXPECT_SELECT_ARGUMENT_SELECTOR";
+  ErrorKind[ErrorKind["EXPECT_PLURAL_ARGUMENT_SELECTOR"] = 16] = "EXPECT_PLURAL_ARGUMENT_SELECTOR";
+  ErrorKind[ErrorKind["EXPECT_SELECT_ARGUMENT_SELECTOR_FRAGMENT"] = 17] = "EXPECT_SELECT_ARGUMENT_SELECTOR_FRAGMENT";
+  ErrorKind[ErrorKind["EXPECT_PLURAL_ARGUMENT_SELECTOR_FRAGMENT"] = 18] = "EXPECT_PLURAL_ARGUMENT_SELECTOR_FRAGMENT";
+  ErrorKind[ErrorKind["INVALID_PLURAL_ARGUMENT_SELECTOR"] = 19] = "INVALID_PLURAL_ARGUMENT_SELECTOR";
+  ErrorKind[ErrorKind["DUPLICATE_PLURAL_ARGUMENT_SELECTOR"] = 20] = "DUPLICATE_PLURAL_ARGUMENT_SELECTOR";
+  ErrorKind[ErrorKind["DUPLICATE_SELECT_ARGUMENT_SELECTOR"] = 21] = "DUPLICATE_SELECT_ARGUMENT_SELECTOR";
+  ErrorKind[ErrorKind["MISSING_OTHER_CLAUSE"] = 22] = "MISSING_OTHER_CLAUSE";
+  ErrorKind[ErrorKind["INVALID_TAG"] = 23] = "INVALID_TAG";
+  ErrorKind[ErrorKind["INVALID_TAG_NAME"] = 25] = "INVALID_TAG_NAME";
+  ErrorKind[ErrorKind["UNMATCHED_CLOSING_TAG"] = 26] = "UNMATCHED_CLOSING_TAG";
+  ErrorKind[ErrorKind["UNCLOSED_TAG"] = 27] = "UNCLOSED_TAG";
+  return ErrorKind;
+}({});
+function isLiteralElement(el) {
+  return el.type === 0;
+}
+function isArgumentElement(el) {
+  return el.type === 1;
+}
+function isNumberElement(el) {
+  return el.type === 2;
+}
+function isDateElement(el) {
+  return el.type === 3;
+}
+function isTimeElement(el) {
+  return el.type === 4;
+}
+function isSelectElement(el) {
+  return el.type === 5;
+}
+function isPluralElement(el) {
+  return el.type === 6;
+}
+function isPoundElement(el) {
+  return el.type === 7;
+}
+function isTagElement(el) {
+  return el.type === 8;
+}
+function isNumberSkeleton(el) {
+  return !!(el && typeof el === "object" && el.type === 0);
+}
+function isDateTimeSkeleton(el) {
+  return !!(el && typeof el === "object" && el.type === 1);
+}
+var SPACE_SEPARATOR_REGEX = /[ \xA0\u1680\u2000-\u200A\u202F\u205F\u3000]/;
+var IDENTIFIER_PREFIX_REGEX = /([^\t-\r -\/:-@\[-\^`\{-~\x85\xA0-\xA7\xA9\xAB\xAC\xAE\xB0\xB1\xB6\xBB\xBF\xD7\xF7\u1680\u2000-\u200A\u2010-\u2029\u202F-\u203E\u2041-\u2053\u2055-\u205F\u2190-\u245F\u2500-\u2775\u2794-\u2BFF\u2E00-\u2E7F\u3000-\u3003\u3008-\u3020\u3030\uFD3E\uFD3F\uFE45\uFE46]*)/g;
+var timeData = {
+  "001": ["H", "h"],
+  "419": [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  AC: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  AD: ["H", "hB"],
+  AE: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  AF: [
+    "H",
+    "hb",
+    "hB",
+    "h"
+  ],
+  AG: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  AI: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  AL: [
+    "h",
+    "H",
+    "hB"
+  ],
+  AM: ["H", "hB"],
+  AO: ["H", "hB"],
+  AR: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  AS: ["h", "H"],
+  AT: ["H", "hB"],
+  AU: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  AW: ["H", "hB"],
+  AX: ["H"],
+  AZ: [
+    "H",
+    "hB",
+    "h"
+  ],
+  BA: [
+    "H",
+    "hB",
+    "h"
+  ],
+  BB: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  BD: [
+    "h",
+    "hB",
+    "H"
+  ],
+  BE: ["H", "hB"],
+  BF: ["H", "hB"],
+  BG: [
+    "H",
+    "hB",
+    "h"
+  ],
+  BH: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  BI: ["H", "h"],
+  BJ: ["H", "hB"],
+  BL: ["H", "hB"],
+  BM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  BN: [
+    "hb",
+    "hB",
+    "h",
+    "H"
+  ],
+  BO: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  BQ: ["H"],
+  BR: ["H", "hB"],
+  BS: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  BT: ["h", "H"],
+  BW: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  BY: ["H", "h"],
+  BZ: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  CA: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  CC: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  CD: ["hB", "H"],
+  CF: [
+    "H",
+    "h",
+    "hB"
+  ],
+  CG: ["H", "hB"],
+  CH: [
+    "H",
+    "hB",
+    "h"
+  ],
+  CI: ["H", "hB"],
+  CK: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  CL: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  CM: [
+    "H",
+    "h",
+    "hB"
+  ],
+  CN: [
+    "H",
+    "hB",
+    "hb",
+    "h"
+  ],
+  CO: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  CP: ["H"],
+  CR: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  CU: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  CV: ["H", "hB"],
+  CW: ["H", "hB"],
+  CX: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  CY: [
+    "h",
+    "H",
+    "hb",
+    "hB"
+  ],
+  CZ: ["H"],
+  DE: ["H", "hB"],
+  DG: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  DJ: ["h", "H"],
+  DK: ["H"],
+  DM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  DO: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  DZ: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  EA: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  EC: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  EE: ["H", "hB"],
+  EG: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  EH: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  ER: ["h", "H"],
+  ES: [
+    "H",
+    "hB",
+    "h",
+    "hb"
+  ],
+  ET: [
+    "hB",
+    "hb",
+    "h",
+    "H"
+  ],
+  FI: ["H"],
+  FJ: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  FK: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  FM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  FO: ["H", "h"],
+  FR: ["H", "hB"],
+  GA: ["H", "hB"],
+  GB: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  GD: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  GE: [
+    "H",
+    "hB",
+    "h"
+  ],
+  GF: ["H", "hB"],
+  GG: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  GH: ["h", "H"],
+  GI: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  GL: ["H", "h"],
+  GM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  GN: ["H", "hB"],
+  GP: ["H", "hB"],
+  GQ: [
+    "H",
+    "hB",
+    "h",
+    "hb"
+  ],
+  GR: [
+    "h",
+    "H",
+    "hb",
+    "hB"
+  ],
+  GS: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  GT: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  GU: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  GW: ["H", "hB"],
+  GY: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  HK: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  HN: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  HR: ["H", "hB"],
+  HU: ["H", "h"],
+  IC: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  ID: ["H"],
+  IE: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  IL: ["H", "hB"],
+  IM: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  IN: ["h", "H"],
+  IO: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  IQ: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  IR: ["hB", "H"],
+  IS: ["H"],
+  IT: ["H", "hB"],
+  JE: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  JM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  JO: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  JP: [
+    "H",
+    "K",
+    "h"
+  ],
+  KE: [
+    "hB",
+    "hb",
+    "H",
+    "h"
+  ],
+  KG: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  KH: [
+    "hB",
+    "h",
+    "H",
+    "hb"
+  ],
+  KI: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  KM: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  KN: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  KP: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  KR: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  KW: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  KY: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  KZ: ["H", "hB"],
+  LA: [
+    "H",
+    "hb",
+    "hB",
+    "h"
+  ],
+  LB: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  LC: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  LI: [
+    "H",
+    "hB",
+    "h"
+  ],
+  LK: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  LR: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  LS: ["h", "H"],
+  LT: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  LU: [
+    "H",
+    "h",
+    "hB"
+  ],
+  LV: [
+    "H",
+    "hB",
+    "hb",
+    "h"
+  ],
+  LY: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  MA: [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  MC: ["H", "hB"],
+  MD: ["H", "hB"],
+  ME: [
+    "H",
+    "hB",
+    "h"
+  ],
+  MF: ["H", "hB"],
+  MG: ["H", "h"],
+  MH: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  MK: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  ML: ["H"],
+  MM: [
+    "hB",
+    "hb",
+    "H",
+    "h"
+  ],
+  MN: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  MO: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  MP: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  MQ: ["H", "hB"],
+  MR: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  MS: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  MT: ["H", "h"],
+  MU: ["H", "h"],
+  MV: ["H", "h"],
+  MW: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  MX: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  MY: [
+    "hb",
+    "hB",
+    "h",
+    "H"
+  ],
+  MZ: ["H", "hB"],
+  NA: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  NC: ["H", "hB"],
+  NE: ["H"],
+  NF: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  NG: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  NI: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  NL: ["H", "hB"],
+  NO: ["H", "h"],
+  NP: [
+    "H",
+    "h",
+    "hB"
+  ],
+  NR: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  NU: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  NZ: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  OM: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  PA: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  PE: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  PF: [
+    "H",
+    "h",
+    "hB"
+  ],
+  PG: ["h", "H"],
+  PH: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  PK: [
+    "h",
+    "hB",
+    "H"
+  ],
+  PL: ["H", "h"],
+  PM: ["H", "hB"],
+  PN: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  PR: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  PS: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  PT: ["H", "hB"],
+  PW: ["h", "H"],
+  PY: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  QA: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  RE: ["H", "hB"],
+  RO: ["H", "hB"],
+  RS: [
+    "H",
+    "hB",
+    "h"
+  ],
+  RU: ["H"],
+  RW: ["H", "h"],
+  SA: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  SB: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  SC: [
+    "H",
+    "h",
+    "hB"
+  ],
+  SD: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  SE: ["H"],
+  SG: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  SH: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  SI: ["H", "hB"],
+  SJ: ["H"],
+  SK: ["H"],
+  SL: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  SM: [
+    "H",
+    "h",
+    "hB"
+  ],
+  SN: [
+    "H",
+    "h",
+    "hB"
+  ],
+  SO: ["h", "H"],
+  SR: ["H", "hB"],
+  SS: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  ST: ["H", "hB"],
+  SV: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  SX: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  SY: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  SZ: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  TA: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  TC: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  TD: [
+    "h",
+    "H",
+    "hB"
+  ],
+  TF: [
+    "H",
+    "h",
+    "hB"
+  ],
+  TG: ["H", "hB"],
+  TH: ["H", "h"],
+  TJ: ["H", "h"],
+  TL: [
+    "H",
+    "hB",
+    "hb",
+    "h"
+  ],
+  TM: ["H", "h"],
+  TN: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  TO: ["h", "H"],
+  TR: ["H", "hB"],
+  TT: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  TW: [
+    "hB",
+    "hb",
+    "h",
+    "H"
+  ],
+  TZ: [
+    "hB",
+    "hb",
+    "H",
+    "h"
+  ],
+  UA: [
+    "H",
+    "hB",
+    "h"
+  ],
+  UG: [
+    "hB",
+    "hb",
+    "H",
+    "h"
+  ],
+  UM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  US: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  UY: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  UZ: [
+    "H",
+    "hB",
+    "h"
+  ],
+  VA: [
+    "H",
+    "h",
+    "hB"
+  ],
+  VC: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  VE: [
+    "h",
+    "H",
+    "hB",
+    "hb"
+  ],
+  VG: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  VI: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  VN: ["H", "h"],
+  VU: ["h", "H"],
+  WF: ["H", "hB"],
+  WS: ["h", "H"],
+  XK: [
+    "H",
+    "hB",
+    "h"
+  ],
+  YE: [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  YT: ["H", "hB"],
+  ZA: [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  ZM: [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  ZW: ["H", "h"],
+  "af-ZA": [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  "ar-001": [
+    "h",
+    "hB",
+    "hb",
+    "H"
+  ],
+  "ca-ES": [
+    "H",
+    "h",
+    "hB"
+  ],
+  "en-001": [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  "en-HK": [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  "en-IL": [
+    "H",
+    "h",
+    "hb",
+    "hB"
+  ],
+  "en-MY": [
+    "h",
+    "hb",
+    "H",
+    "hB"
+  ],
+  "es-BR": [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  "es-ES": [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  "es-GQ": [
+    "H",
+    "h",
+    "hB",
+    "hb"
+  ],
+  "fr-CA": [
+    "H",
+    "h",
+    "hB"
+  ],
+  "gl-ES": [
+    "H",
+    "h",
+    "hB"
+  ],
+  "gu-IN": [
+    "hB",
+    "hb",
+    "h",
+    "H"
+  ],
+  "hi-IN": [
+    "hB",
+    "h",
+    "H"
+  ],
+  "it-CH": [
+    "H",
+    "h",
+    "hB"
+  ],
+  "it-IT": [
+    "H",
+    "h",
+    "hB"
+  ],
+  "kn-IN": [
+    "hB",
+    "h",
+    "H"
+  ],
+  "ku-SY": ["H", "hB"],
+  "ml-IN": [
+    "hB",
+    "h",
+    "H"
+  ],
+  "mr-IN": [
+    "hB",
+    "hb",
+    "h",
+    "H"
+  ],
+  "pa-IN": [
+    "hB",
+    "hb",
+    "h",
+    "H"
+  ],
+  "ta-IN": [
+    "hB",
+    "h",
+    "hb",
+    "H"
+  ],
+  "te-IN": [
+    "hB",
+    "h",
+    "H"
+  ],
+  "zu-ZA": [
+    "H",
+    "hB",
+    "hb",
+    "h"
+  ]
+};
+function getBestPattern(skeleton, locale) {
+  let skeletonCopy = "";
+  for (let patternPos = 0;patternPos < skeleton.length; patternPos++) {
+    const patternChar = skeleton.charAt(patternPos);
+    if (patternChar === "j") {
+      let extraLength = 0;
+      while (patternPos + 1 < skeleton.length && skeleton.charAt(patternPos + 1) === patternChar) {
+        extraLength++;
+        patternPos++;
+      }
+      let hourLen = 1 + (extraLength & 1);
+      let dayPeriodLen = extraLength < 2 ? 1 : 3 + (extraLength >> 1);
+      let dayPeriodChar = "a";
+      let hourChar = getDefaultHourSymbolFromLocale(locale);
+      if (hourChar == "H" || hourChar == "k")
+        dayPeriodLen = 0;
+      while (dayPeriodLen-- > 0)
+        skeletonCopy += dayPeriodChar;
+      while (hourLen-- > 0)
+        skeletonCopy = hourChar + skeletonCopy;
+    } else if (patternChar === "J")
+      skeletonCopy += "H";
+    else
+      skeletonCopy += patternChar;
+  }
+  return skeletonCopy;
+}
+function getDefaultHourSymbolFromLocale(locale) {
+  let hourCycle = locale.hourCycle;
+  if (hourCycle === undefined) {
+    const localeWithHourCycles = locale;
+    hourCycle = localeWithHourCycles.getHourCycles?.()[0] ?? localeWithHourCycles.hourCycles?.[0];
+  }
+  if (hourCycle)
+    switch (hourCycle) {
+      case "h24":
+        return "k";
+      case "h23":
+        return "H";
+      case "h12":
+        return "h";
+      case "h11":
+        return "K";
+      default:
+        throw new Error("Invalid hourCycle");
+    }
+  const languageTag = locale.language;
+  let regionTag;
+  if (languageTag !== "root")
+    regionTag = locale.maximize().region;
+  return (timeData[`${languageTag}-${regionTag}`] || timeData[regionTag || ""] || timeData[languageTag || ""] || timeData[`${languageTag}-001`] || timeData["001"])[0].charAt(0);
+}
+var SPACE_SEPARATOR_START_REGEX = new RegExp(`^${SPACE_SEPARATOR_REGEX.source}*`);
+var SPACE_SEPARATOR_END_REGEX = new RegExp(`${SPACE_SEPARATOR_REGEX.source}*$`);
+function createLocation(start, end) {
+  return {
+    start,
+    end
+  };
+}
+var hasNativeFromEntries = !!Object.fromEntries;
+var hasTrimStart = !!String.prototype.trimStart;
+var hasTrimEnd = !!String.prototype.trimEnd;
+var fromEntries = hasNativeFromEntries ? Object.fromEntries : function fromEntries(entries) {
+  const obj = {};
+  for (const [k, v] of entries)
+    obj[k] = v;
+  return obj;
+};
+var trimStart = hasTrimStart ? function trimStart(s) {
+  return s.trimStart();
+} : function trimStart(s) {
+  return s.replace(SPACE_SEPARATOR_START_REGEX, "");
+};
+var trimEnd = hasTrimEnd ? function trimEnd(s) {
+  return s.trimEnd();
+} : function trimEnd(s) {
+  return s.replace(SPACE_SEPARATOR_END_REGEX, "");
+};
+var IDENTIFIER_PREFIX_RE = createIdentifierPrefixRegex();
+function createIdentifierPrefixRegex() {
+  try {
+    const regex = new RegExp("([^\\p{White_Space}\\p{Pattern_Syntax}]*)", "yu");
+    if (regex.exec("a ")?.[1] === "a")
+      return regex;
+  } catch {}
+  return IDENTIFIER_PREFIX_REGEX;
+}
+function matchIdentifierAtIndex(s, index) {
+  IDENTIFIER_PREFIX_RE.lastIndex = index;
+  return IDENTIFIER_PREFIX_RE.exec(s)[1] ?? "";
+}
+function plainTopLevelEndPosition(message) {
+  if (message.length === 0)
+    return null;
+  let line = 1;
+  let column = 1;
+  for (let offset = 0;offset < message.length; ) {
+    const code = message.charCodeAt(offset);
+    switch (code) {
+      case 35:
+      case 39:
+      case 60:
+      case 123:
+      case 125:
+        return null;
+    }
+    if (code === 10) {
+      line++;
+      column = 1;
+      offset++;
+    } else {
+      column++;
+      if (code >= 55296 && code <= 56319 && offset + 1 < message.length) {
+        const next = message.charCodeAt(offset + 1);
+        offset += next >= 56320 && next <= 57343 ? 2 : 1;
+      } else
+        offset++;
+    }
+  }
+  return {
+    offset: message.length,
+    line,
+    column
+  };
+}
+var Parser = class {
+  constructor(message, options = {}) {
+    this.message = message;
+    this.position = {
+      offset: 0,
+      line: 1,
+      column: 1
+    };
+    this.ignoreTag = !!options.ignoreTag;
+    this.locale = options.locale;
+    this.requiresOtherClause = !!options.requiresOtherClause;
+    this.shouldParseSkeletons = !!options.shouldParseSkeletons;
+  }
+  parse() {
+    if (this.offset() !== 0)
+      throw Error("parser can only be used once");
+    if (this.message.length > 0) {
+      const firstCode = this.message.charCodeAt(0);
+      if (firstCode !== 35 && firstCode !== 39 && firstCode !== 60 && firstCode !== 123 && firstCode !== 125) {
+        const plainEndPosition = plainTopLevelEndPosition(this.message);
+        if (plainEndPosition) {
+          const start = this.clonePosition();
+          this.position = plainEndPosition;
+          return {
+            val: [{
+              type: 0,
+              value: this.message,
+              location: createLocation(start, this.clonePosition())
+            }],
+            err: null
+          };
+        }
+      }
+    }
+    return this.parseMessage(0, "", false);
+  }
+  parseMessage(nestingLevel, parentArgType, expectingCloseTag) {
+    let elements = [];
+    while (!this.isEOF()) {
+      const char = this.char();
+      if (char === 123) {
+        const result = this.parseArgument(nestingLevel, expectingCloseTag);
+        if (result.err)
+          return result;
+        elements.push(result.val);
+      } else if (char === 125 && nestingLevel > 0)
+        break;
+      else if (char === 35 && (parentArgType === "plural" || parentArgType === "selectordinal")) {
+        const position = this.clonePosition();
+        this.bump();
+        elements.push({
+          type: 7,
+          location: createLocation(position, this.clonePosition())
+        });
+      } else if (char === 60 && !this.ignoreTag && this.peek() === 47) {
+        if (expectingCloseTag)
+          break;
+        else
+          return this.error(26, createLocation(this.clonePosition(), this.clonePosition()));
+      } else if (char === 60 && !this.ignoreTag && _isAlpha(this.peek() || 0)) {
+        const result = this.parseTag(nestingLevel, parentArgType);
+        if (result.err)
+          return result;
+        elements.push(result.val);
+      } else {
+        const result = this.parseLiteral(nestingLevel, parentArgType);
+        if (result.err)
+          return result;
+        elements.push(result.val);
+      }
+    }
+    return {
+      val: elements,
+      err: null
+    };
+  }
+  parseTag(nestingLevel, parentArgType) {
+    const startPosition = this.clonePosition();
+    this.bump();
+    const tagName = this.parseTagName();
+    this.bumpSpace();
+    if (this.bumpIf("/>"))
+      return {
+        val: {
+          type: 0,
+          value: `<${tagName}/>`,
+          location: createLocation(startPosition, this.clonePosition())
+        },
+        err: null
+      };
+    else if (this.bumpIf(">")) {
+      const childrenResult = this.parseMessage(nestingLevel + 1, parentArgType, true);
+      if (childrenResult.err)
+        return childrenResult;
+      const children = childrenResult.val;
+      const endTagStartPosition = this.clonePosition();
+      if (this.bumpIf("</")) {
+        if (this.isEOF() || !_isAlpha(this.char()))
+          return this.error(23, createLocation(endTagStartPosition, this.clonePosition()));
+        const closingTagNameStartPosition = this.clonePosition();
+        if (tagName !== this.parseTagName())
+          return this.error(26, createLocation(closingTagNameStartPosition, this.clonePosition()));
+        this.bumpSpace();
+        if (!this.bumpIf(">"))
+          return this.error(23, createLocation(endTagStartPosition, this.clonePosition()));
+        return {
+          val: {
+            type: 8,
+            value: tagName,
+            children,
+            location: createLocation(startPosition, this.clonePosition())
+          },
+          err: null
+        };
+      } else
+        return this.error(27, createLocation(startPosition, this.clonePosition()));
+    } else
+      return this.error(23, createLocation(startPosition, this.clonePosition()));
+  }
+  parseTagName() {
+    const startOffset = this.offset();
+    this.bump();
+    while (!this.isEOF() && _isPotentialElementNameChar(this.char()))
+      this.bump();
+    return this.message.slice(startOffset, this.offset());
+  }
+  parseLiteral(nestingLevel, parentArgType) {
+    const start = this.clonePosition();
+    let value = "";
+    while (true) {
+      const parseQuoteResult = this.tryParseQuote(parentArgType);
+      if (parseQuoteResult) {
+        value += parseQuoteResult;
+        continue;
+      }
+      const parseUnquotedResult = this.tryParseUnquoted(nestingLevel, parentArgType);
+      if (parseUnquotedResult) {
+        value += parseUnquotedResult;
+        continue;
+      }
+      const parseLeftAngleResult = this.tryParseLeftAngleBracket();
+      if (parseLeftAngleResult) {
+        value += parseLeftAngleResult;
+        continue;
+      }
+      break;
+    }
+    const location = createLocation(start, this.clonePosition());
+    return {
+      val: {
+        type: 0,
+        value,
+        location
+      },
+      err: null
+    };
+  }
+  tryParseLeftAngleBracket() {
+    if (!this.isEOF() && this.char() === 60 && (this.ignoreTag || !_isAlphaOrSlash(this.peek() || 0))) {
+      this.bump();
+      return "<";
+    }
+    return null;
+  }
+  tryParseQuote(parentArgType) {
+    if (this.isEOF() || this.char() !== 39)
+      return null;
+    switch (this.peek()) {
+      case 39:
+        this.bump();
+        this.bump();
+        return "'";
+      case 123:
+      case 60:
+      case 62:
+      case 125:
+        break;
+      case 35:
+        if (parentArgType === "plural" || parentArgType === "selectordinal")
+          break;
+        return null;
+      default:
+        return null;
+    }
+    this.bump();
+    const codePoints = [this.char()];
+    this.bump();
+    while (!this.isEOF()) {
+      const ch = this.char();
+      if (ch === 39) {
+        if (this.peek() === 39) {
+          codePoints.push(39);
+          this.bump();
+        } else {
+          this.bump();
+          break;
+        }
+      } else
+        codePoints.push(ch);
+      this.bump();
+    }
+    return String.fromCodePoint(...codePoints);
+  }
+  tryParseUnquoted(nestingLevel, parentArgType) {
+    if (this.isEOF())
+      return null;
+    const ch = this.char();
+    if (ch === 60 || ch === 123 || ch === 35 && (parentArgType === "plural" || parentArgType === "selectordinal") || ch === 125 && nestingLevel > 0)
+      return null;
+    else {
+      this.bump();
+      return String.fromCodePoint(ch);
+    }
+  }
+  parseArgument(nestingLevel, expectingCloseTag) {
+    const openingBracePosition = this.clonePosition();
+    this.bump();
+    this.bumpSpace();
+    if (this.isEOF())
+      return this.error(1, createLocation(openingBracePosition, this.clonePosition()));
+    if (this.char() === 125) {
+      this.bump();
+      return this.error(2, createLocation(openingBracePosition, this.clonePosition()));
+    }
+    let value = this.parseIdentifierIfPossible().value;
+    if (!value)
+      return this.error(3, createLocation(openingBracePosition, this.clonePosition()));
+    this.bumpSpace();
+    if (this.isEOF())
+      return this.error(1, createLocation(openingBracePosition, this.clonePosition()));
+    switch (this.char()) {
+      case 125:
+        this.bump();
+        return {
+          val: {
+            type: 1,
+            value,
+            location: createLocation(openingBracePosition, this.clonePosition())
+          },
+          err: null
+        };
+      case 44:
+        this.bump();
+        this.bumpSpace();
+        if (this.isEOF())
+          return this.error(1, createLocation(openingBracePosition, this.clonePosition()));
+        return this.parseArgumentOptions(nestingLevel, expectingCloseTag, value, openingBracePosition);
+      default:
+        return this.error(3, createLocation(openingBracePosition, this.clonePosition()));
+    }
+  }
+  parseIdentifierIfPossible() {
+    const startingPosition = this.clonePosition();
+    const startOffset = this.offset();
+    const value = matchIdentifierAtIndex(this.message, startOffset);
+    const endOffset = startOffset + value.length;
+    this.bumpTo(endOffset);
+    return {
+      value,
+      location: createLocation(startingPosition, this.clonePosition())
+    };
+  }
+  parseArgumentOptions(nestingLevel, expectingCloseTag, value, openingBracePosition) {
+    let typeStartPosition = this.clonePosition();
+    let argType = this.parseIdentifierIfPossible().value;
+    let typeEndPosition = this.clonePosition();
+    switch (argType) {
+      case "":
+        return this.error(4, createLocation(typeStartPosition, typeEndPosition));
+      case "number":
+      case "date":
+      case "time": {
+        this.bumpSpace();
+        let styleAndLocation = null;
+        if (this.bumpIf(",")) {
+          this.bumpSpace();
+          const styleStartPosition = this.clonePosition();
+          const result = this.parseSimpleArgStyleIfPossible();
+          if (result.err)
+            return result;
+          const style = trimEnd(result.val);
+          if (style.length === 0)
+            return this.error(6, createLocation(this.clonePosition(), this.clonePosition()));
+          styleAndLocation = {
+            style,
+            styleLocation: createLocation(styleStartPosition, this.clonePosition())
+          };
+        }
+        const argCloseResult = this.tryParseArgumentClose(openingBracePosition);
+        if (argCloseResult.err)
+          return argCloseResult;
+        const location = createLocation(openingBracePosition, this.clonePosition());
+        if (styleAndLocation && styleAndLocation.style.startsWith("::")) {
+          let skeleton = trimStart(styleAndLocation.style.slice(2));
+          if (argType === "number") {
+            const result = this.parseNumberSkeletonFromString(skeleton, styleAndLocation.styleLocation);
+            if (result.err)
+              return result;
+            return {
+              val: {
+                type: 2,
+                value,
+                location,
+                style: result.val
+              },
+              err: null
+            };
+          } else {
+            if (skeleton.length === 0)
+              return this.error(10, location);
+            let dateTimePattern = skeleton;
+            if (this.locale)
+              dateTimePattern = getBestPattern(skeleton, this.locale);
+            const style = {
+              type: 1,
+              pattern: dateTimePattern,
+              location: styleAndLocation.styleLocation,
+              parsedOptions: this.shouldParseSkeletons ? parseDateTimeSkeleton(dateTimePattern) : {}
+            };
+            return {
+              val: {
+                type: argType === "date" ? 3 : 4,
+                value,
+                location,
+                style
+              },
+              err: null
+            };
+          }
+        }
+        return {
+          val: {
+            type: argType === "number" ? 2 : argType === "date" ? 3 : 4,
+            value,
+            location,
+            style: styleAndLocation?.style ?? null
+          },
+          err: null
+        };
+      }
+      case "plural":
+      case "selectordinal":
+      case "select": {
+        const typeEndPosition = this.clonePosition();
+        this.bumpSpace();
+        if (!this.bumpIf(","))
+          return this.error(12, createLocation(typeEndPosition, { ...typeEndPosition }));
+        this.bumpSpace();
+        let identifierAndLocation = this.parseIdentifierIfPossible();
+        let pluralOffset = 0;
+        if (argType !== "select" && identifierAndLocation.value === "offset") {
+          if (!this.bumpIf(":"))
+            return this.error(13, createLocation(this.clonePosition(), this.clonePosition()));
+          this.bumpSpace();
+          const result = this.tryParseDecimalInteger(13, 14);
+          if (result.err)
+            return result;
+          this.bumpSpace();
+          identifierAndLocation = this.parseIdentifierIfPossible();
+          pluralOffset = result.val;
+        }
+        const optionsResult = this.tryParsePluralOrSelectOptions(nestingLevel, argType, expectingCloseTag, identifierAndLocation);
+        if (optionsResult.err)
+          return optionsResult;
+        const argCloseResult = this.tryParseArgumentClose(openingBracePosition);
+        if (argCloseResult.err)
+          return argCloseResult;
+        const location = createLocation(openingBracePosition, this.clonePosition());
+        if (argType === "select")
+          return {
+            val: {
+              type: 5,
+              value,
+              options: fromEntries(optionsResult.val),
+              location
+            },
+            err: null
+          };
+        else
+          return {
+            val: {
+              type: 6,
+              value,
+              options: fromEntries(optionsResult.val),
+              offset: pluralOffset,
+              pluralType: argType === "plural" ? "cardinal" : "ordinal",
+              location
+            },
+            err: null
+          };
+      }
+      default:
+        return this.error(5, createLocation(typeStartPosition, typeEndPosition));
+    }
+  }
+  tryParseArgumentClose(openingBracePosition) {
+    if (this.isEOF() || this.char() !== 125)
+      return this.error(1, createLocation(openingBracePosition, this.clonePosition()));
+    this.bump();
+    return {
+      val: true,
+      err: null
+    };
+  }
+  parseSimpleArgStyleIfPossible() {
+    let nestedBraces = 0;
+    const startPosition = this.clonePosition();
+    while (!this.isEOF())
+      switch (this.char()) {
+        case 39: {
+          this.bump();
+          let apostrophePosition = this.clonePosition();
+          if (!this.bumpUntil("'"))
+            return this.error(11, createLocation(apostrophePosition, this.clonePosition()));
+          this.bump();
+          break;
+        }
+        case 123:
+          nestedBraces += 1;
+          this.bump();
+          break;
+        case 125:
+          if (nestedBraces > 0)
+            nestedBraces -= 1;
+          else
+            return {
+              val: this.message.slice(startPosition.offset, this.offset()),
+              err: null
+            };
+          break;
+        default:
+          this.bump();
+      }
+    return {
+      val: this.message.slice(startPosition.offset, this.offset()),
+      err: null
+    };
+  }
+  parseNumberSkeletonFromString(skeleton, location) {
+    let tokens = [];
+    try {
+      tokens = parseNumberSkeletonFromString(skeleton);
+    } catch {
+      return this.error(7, location);
+    }
+    return {
+      val: {
+        type: 0,
+        tokens,
+        location,
+        parsedOptions: this.shouldParseSkeletons ? parseNumberSkeleton(tokens) : {}
+      },
+      err: null
+    };
+  }
+  tryParsePluralOrSelectOptions(nestingLevel, parentArgType, expectCloseTag, parsedFirstIdentifier) {
+    let hasOtherClause = false;
+    const options = [];
+    const parsedSelectors = /* @__PURE__ */ new Set;
+    let { value: selector, location: selectorLocation } = parsedFirstIdentifier;
+    while (true) {
+      if (selector.length === 0) {
+        const startPosition = this.clonePosition();
+        if (parentArgType !== "select" && this.bumpIf("=")) {
+          const result = this.tryParseDecimalInteger(16, 19);
+          if (result.err)
+            return result;
+          selectorLocation = createLocation(startPosition, this.clonePosition());
+          selector = this.message.slice(startPosition.offset, this.offset());
+        } else
+          break;
+      }
+      if (parsedSelectors.has(selector))
+        return this.error(parentArgType === "select" ? 21 : 20, selectorLocation);
+      if (selector === "other")
+        hasOtherClause = true;
+      this.bumpSpace();
+      const openingBracePosition = this.clonePosition();
+      if (!this.bumpIf("{"))
+        return this.error(parentArgType === "select" ? 17 : 18, createLocation(this.clonePosition(), this.clonePosition()));
+      const fragmentResult = this.parseMessage(nestingLevel + 1, parentArgType, expectCloseTag);
+      if (fragmentResult.err)
+        return fragmentResult;
+      const argCloseResult = this.tryParseArgumentClose(openingBracePosition);
+      if (argCloseResult.err)
+        return argCloseResult;
+      options.push([selector, {
+        value: fragmentResult.val,
+        location: createLocation(openingBracePosition, this.clonePosition())
+      }]);
+      parsedSelectors.add(selector);
+      this.bumpSpace();
+      ({ value: selector, location: selectorLocation } = this.parseIdentifierIfPossible());
+    }
+    if (options.length === 0)
+      return this.error(parentArgType === "select" ? 15 : 16, createLocation(this.clonePosition(), this.clonePosition()));
+    if (this.requiresOtherClause && !hasOtherClause)
+      return this.error(22, createLocation(this.clonePosition(), this.clonePosition()));
+    return {
+      val: options,
+      err: null
+    };
+  }
+  tryParseDecimalInteger(expectNumberError, invalidNumberError) {
+    let sign = 1;
+    const startingPosition = this.clonePosition();
+    if (this.bumpIf("+")) {} else if (this.bumpIf("-"))
+      sign = -1;
+    let hasDigits = false;
+    let decimal = 0;
+    while (!this.isEOF()) {
+      const ch = this.char();
+      if (ch >= 48 && ch <= 57) {
+        hasDigits = true;
+        decimal = decimal * 10 + (ch - 48);
+        this.bump();
+      } else
+        break;
+    }
+    const location = createLocation(startingPosition, this.clonePosition());
+    if (!hasDigits)
+      return this.error(expectNumberError, location);
+    decimal *= sign;
+    if (!Number.isSafeInteger(decimal))
+      return this.error(invalidNumberError, location);
+    return {
+      val: decimal,
+      err: null
+    };
+  }
+  offset() {
+    return this.position.offset;
+  }
+  isEOF() {
+    return this.offset() === this.message.length;
+  }
+  clonePosition() {
+    return {
+      offset: this.position.offset,
+      line: this.position.line,
+      column: this.position.column
+    };
+  }
+  char() {
+    const offset = this.position.offset;
+    if (offset >= this.message.length)
+      throw Error("out of bound");
+    const code = this.message.codePointAt(offset);
+    if (code === undefined)
+      throw Error(`Offset ${offset} is at invalid UTF-16 code unit boundary`);
+    return code;
+  }
+  error(kind, location) {
+    return {
+      val: null,
+      err: {
+        kind,
+        message: this.message,
+        location
+      }
+    };
+  }
+  bump() {
+    if (this.isEOF())
+      return;
+    const code = this.char();
+    if (code === 10) {
+      this.position.line += 1;
+      this.position.column = 1;
+      this.position.offset += 1;
+    } else {
+      this.position.column += 1;
+      this.position.offset += code < 65536 ? 1 : 2;
+    }
+  }
+  bumpIf(prefix) {
+    const offset = this.offset();
+    if (this.message.slice(offset, offset + prefix.length) === prefix) {
+      for (let i = 0;i < prefix.length; i++)
+        this.bump();
+      return true;
+    }
+    return false;
+  }
+  bumpUntil(pattern) {
+    const currentOffset = this.offset();
+    const index = this.message.indexOf(pattern, currentOffset);
+    if (index >= 0) {
+      this.bumpTo(index);
+      return true;
+    } else {
+      this.bumpTo(this.message.length);
+      return false;
+    }
+  }
+  bumpTo(targetOffset) {
+    if (this.offset() > targetOffset)
+      throw Error(`targetOffset ${targetOffset} must be greater than or equal to the current offset ${this.offset()}`);
+    targetOffset = Math.min(targetOffset, this.message.length);
+    while (true) {
+      const offset = this.offset();
+      if (offset === targetOffset)
+        break;
+      if (offset > targetOffset)
+        throw Error(`targetOffset ${targetOffset} is at invalid UTF-16 code unit boundary`);
+      this.bump();
+      if (this.isEOF())
+        break;
+    }
+  }
+  bumpSpace() {
+    while (!this.isEOF() && _isWhiteSpace(this.char()))
+      this.bump();
+  }
+  peek() {
+    if (this.isEOF())
+      return null;
+    const code = this.char();
+    const offset = this.offset();
+    return this.message.charCodeAt(offset + (code >= 65536 ? 2 : 1)) ?? null;
+  }
+};
+function _isAlpha(codepoint) {
+  return codepoint >= 97 && codepoint <= 122 || codepoint >= 65 && codepoint <= 90;
+}
+function _isAlphaOrSlash(codepoint) {
+  return _isAlpha(codepoint) || codepoint === 47;
+}
+function _isPotentialElementNameChar(c) {
+  return c === 45 || c === 46 || c >= 48 && c <= 57 || c === 95 || c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 183 || c >= 192 && c <= 214 || c >= 216 && c <= 246 || c >= 248 && c <= 893 || c >= 895 && c <= 8191 || c >= 8204 && c <= 8205 || c >= 8255 && c <= 8256 || c >= 8304 && c <= 8591 || c >= 11264 && c <= 12271 || c >= 12289 && c <= 55295 || c >= 63744 && c <= 64975 || c >= 65008 && c <= 65533 || c >= 65536 && c <= 983039;
+}
+function _isWhiteSpace(c) {
+  return c >= 9 && c <= 13 || c === 32 || c === 133 || c >= 8206 && c <= 8207 || c === 8232 || c === 8233;
+}
+function pruneLocation(els) {
+  els.forEach((el) => {
+    delete el.location;
+    if (isSelectElement(el) || isPluralElement(el))
+      for (const k in el.options) {
+        delete el.options[k].location;
+        pruneLocation(el.options[k].value);
+      }
+    else if (isNumberElement(el) && isNumberSkeleton(el.style))
+      delete el.style.location;
+    else if ((isDateElement(el) || isTimeElement(el)) && isDateTimeSkeleton(el.style))
+      delete el.style.location;
+    else if (isTagElement(el))
+      pruneLocation(el.children);
+  });
+}
+function parse(message, opts = {}) {
+  opts = {
+    shouldParseSkeletons: true,
+    requiresOtherClause: true,
+    ...opts
+  };
+  const result = new Parser(message, opts).parse();
+  if (result.err) {
+    const error = SyntaxError(ErrorKind[result.err.kind]);
+    error.location = result.err.location;
+    error.originalMessage = result.err.message;
+    throw error;
+  }
+  if (!opts?.captureLocation)
+    pruneLocation(result.val);
+  return result.val;
+}
+
+// node_modules/intl-messageformat/index.js
+var FormatError = class extends Error {
+  constructor(msg, code, originalMessage) {
+    super(msg);
+    this.code = code;
+    this.originalMessage = originalMessage;
+  }
+  toString() {
+    return `[formatjs Error: ${this.code}] ${this.message}`;
+  }
+};
+var InvalidValueError = class extends FormatError {
+  constructor(variableId, value, options, originalMessage) {
+    super(`Invalid values for "${variableId}": "${value}". Options are "${Object.keys(options).join('", "')}"`, "INVALID_VALUE", originalMessage);
+  }
+};
+var InvalidValueTypeError = class extends FormatError {
+  constructor(value, type, originalMessage) {
+    super(`Value for "${value}" must be of type ${type}`, "INVALID_VALUE", originalMessage);
+  }
+};
+var MissingValueError = class extends FormatError {
+  constructor(variableId, originalMessage) {
+    super(`The intl string context variable "${variableId}" was not provided to the string "${originalMessage}"`, "MISSING_VALUE", originalMessage);
+  }
+};
+function mergeLiteral(parts) {
+  if (parts.length < 2)
+    return parts;
+  return parts.reduce((all, part) => {
+    const lastPart = all[all.length - 1];
+    if (!lastPart || lastPart.type !== 0 || part.type !== 0)
+      all.push(part);
+    else
+      lastPart.value += part.value;
+    return all;
+  }, []);
+}
+function isFormatXMLElementFn(el) {
+  return typeof el === "function";
+}
+function formatToParts(els, locales, formatters, formats, values, currentPluralValue, originalMessage) {
+  if (els.length === 1 && isLiteralElement(els[0]))
+    return [{
+      type: 0,
+      value: els[0].value
+    }];
+  const result = [];
+  for (const el of els) {
+    if (isLiteralElement(el)) {
+      result.push({
+        type: 0,
+        value: el.value
+      });
+      continue;
+    }
+    if (isPoundElement(el)) {
+      if (typeof currentPluralValue === "number")
+        result.push({
+          type: 0,
+          value: formatters.getNumberFormat(locales).format(currentPluralValue)
+        });
+      continue;
+    }
+    const { value: varName } = el;
+    if (!(values && (varName in values)))
+      throw new MissingValueError(varName, originalMessage);
+    let value = values[varName];
+    if (isArgumentElement(el)) {
+      if (!value || typeof value === "string" || typeof value === "number" || typeof value === "bigint")
+        value = typeof value === "string" || typeof value === "number" || typeof value === "bigint" ? String(value) : "";
+      result.push({
+        type: typeof value === "string" ? 0 : 1,
+        value
+      });
+      continue;
+    }
+    if (isDateElement(el)) {
+      const style = typeof el.style === "string" ? formats.date[el.style] : isDateTimeSkeleton(el.style) ? el.style.parsedOptions : undefined;
+      result.push({
+        type: 0,
+        value: formatters.getDateTimeFormat(locales, style).format(value)
+      });
+      continue;
+    }
+    if (isTimeElement(el)) {
+      const style = typeof el.style === "string" ? formats.time[el.style] : isDateTimeSkeleton(el.style) ? el.style.parsedOptions : formats.time.medium;
+      result.push({
+        type: 0,
+        value: formatters.getDateTimeFormat(locales, style).format(value)
+      });
+      continue;
+    }
+    if (isNumberElement(el)) {
+      const style = typeof el.style === "string" ? formats.number[el.style] : isNumberSkeleton(el.style) ? el.style.parsedOptions : undefined;
+      if (style && style.scale) {
+        const scale = style.scale || 1;
+        if (typeof value === "bigint") {
+          if (!Number.isInteger(scale))
+            throw new TypeError(`Cannot apply fractional scale ${scale} to bigint value. Scale must be an integer when formatting bigint.`);
+          value = value * BigInt(scale);
+        } else
+          value = value * scale;
+      }
+      result.push({
+        type: 0,
+        value: formatters.getNumberFormat(locales, style).format(value)
+      });
+      continue;
+    }
+    if (isTagElement(el)) {
+      const { children, value } = el;
+      const formatFn = values[value];
+      if (!isFormatXMLElementFn(formatFn))
+        throw new InvalidValueTypeError(value, "function", originalMessage);
+      let chunks = formatFn(formatToParts(children, locales, formatters, formats, values, currentPluralValue).map((p) => p.value));
+      if (!Array.isArray(chunks))
+        chunks = [chunks];
+      result.push(...chunks.map((c) => {
+        return {
+          type: typeof c === "string" ? 0 : 1,
+          value: c
+        };
+      }));
+    }
+    if (isSelectElement(el)) {
+      const key = value;
+      const opt = (Object.prototype.hasOwnProperty.call(el.options, key) ? el.options[key] : undefined) || el.options.other;
+      if (!opt)
+        throw new InvalidValueError(el.value, value, Object.keys(el.options), originalMessage);
+      result.push(...formatToParts(opt.value, locales, formatters, formats, values));
+      continue;
+    }
+    if (isPluralElement(el)) {
+      const exactKey = `=${value}`;
+      let opt = Object.prototype.hasOwnProperty.call(el.options, exactKey) ? el.options[exactKey] : undefined;
+      if (!opt) {
+        if (!Intl.PluralRules)
+          throw new FormatError(`Intl.PluralRules is not available in this environment.
+Try polyfilling it using "@formatjs/intl-pluralrules"
+`, "MISSING_INTL_API", originalMessage);
+        const numericValue = typeof value === "bigint" ? Number(value) : value;
+        const rule = formatters.getPluralRules(locales, { type: el.pluralType }).select(numericValue - (el.offset || 0));
+        opt = (Object.prototype.hasOwnProperty.call(el.options, rule) ? el.options[rule] : undefined) || el.options.other;
+      }
+      if (!opt)
+        throw new InvalidValueError(el.value, value, Object.keys(el.options), originalMessage);
+      const numericValue = typeof value === "bigint" ? Number(value) : value;
+      result.push(...formatToParts(opt.value, locales, formatters, formats, values, numericValue - (el.offset || 0)));
+      continue;
+    }
+  }
+  return mergeLiteral(result);
+}
+function mergeConfig(c1, c2) {
+  if (!c2)
+    return c1;
+  return {
+    ...c1,
+    ...c2,
+    ...Object.keys(c1).reduce((all, k) => {
+      all[k] = {
+        ...c1[k],
+        ...c2[k]
+      };
+      return all;
+    }, {})
+  };
+}
+function mergeConfigs(defaultConfig, configs) {
+  if (!configs)
+    return defaultConfig;
+  return Object.keys(defaultConfig).reduce((all, k) => {
+    all[k] = mergeConfig(defaultConfig[k], configs[k]);
+    return all;
+  }, { ...defaultConfig });
+}
+function createFastMemoizeCache(store) {
+  return { create() {
+    return {
+      get(key) {
+        return store[key];
+      },
+      set(key, value) {
+        store[key] = value;
+      }
+    };
+  } };
+}
+function createDefaultFormatters(cache = {
+  number: {},
+  dateTime: {},
+  pluralRules: {}
+}) {
+  return {
+    getNumberFormat: memoize((...args) => new Intl.NumberFormat(...args), {
+      cache: createFastMemoizeCache(cache.number),
+      strategy: strategies.variadic
+    }),
+    getDateTimeFormat: memoize((...args) => new Intl.DateTimeFormat(...args), {
+      cache: createFastMemoizeCache(cache.dateTime),
+      strategy: strategies.variadic
+    }),
+    getPluralRules: memoize((...args) => new Intl.PluralRules(...args), {
+      cache: createFastMemoizeCache(cache.pluralRules),
+      strategy: strategies.variadic
+    })
+  };
+}
+var IntlMessageFormat = class IntlMessageFormat {
+  constructor(message, locales = IntlMessageFormat.defaultLocale, overrideFormats, opts) {
+    this.formatterCache = {
+      number: {},
+      dateTime: {},
+      pluralRules: {}
+    };
+    this.format = (values) => {
+      const parts = this.formatToParts(values);
+      if (parts.length === 1)
+        return parts[0].value;
+      const result = parts.reduce((all, part) => {
+        if (!all.length || part.type !== 0 || typeof all[all.length - 1] !== "string")
+          all.push(part.value);
+        else
+          all[all.length - 1] += part.value;
+        return all;
+      }, []);
+      if (result.length <= 1)
+        return result[0] || "";
+      return result;
+    };
+    this.formatToParts = (values) => formatToParts(this.ast, this.locales, this.formatters, this.formats, values, undefined, this.message);
+    this.resolvedOptions = () => ({ locale: this.resolvedLocale?.toString() || Intl.NumberFormat.supportedLocalesOf(this.locales)[0] });
+    this.getAst = () => this.ast;
+    this.locales = locales;
+    this.resolvedLocale = IntlMessageFormat.resolveLocale(locales);
+    if (typeof message === "string") {
+      this.message = message;
+      if (!IntlMessageFormat.__parse)
+        throw new TypeError("IntlMessageFormat.__parse must be set to process `message` of type `string`");
+      const { ...parseOpts } = opts || {};
+      this.ast = IntlMessageFormat.__parse(message, {
+        ...parseOpts,
+        locale: this.resolvedLocale
+      });
+    } else
+      this.ast = message;
+    if (!Array.isArray(this.ast))
+      throw new TypeError("A message must be provided as a String or AST.");
+    this.formats = mergeConfigs(IntlMessageFormat.formats, overrideFormats);
+    this.formatters = opts && opts.formatters || createDefaultFormatters(this.formatterCache);
+  }
+  static {
+    this.memoizedDefaultLocale = null;
+  }
+  static get defaultLocale() {
+    if (!IntlMessageFormat.memoizedDefaultLocale)
+      IntlMessageFormat.memoizedDefaultLocale = new Intl.NumberFormat().resolvedOptions().locale;
+    return IntlMessageFormat.memoizedDefaultLocale;
+  }
+  static {
+    this.resolveLocale = (locales) => {
+      if (typeof Intl.Locale === "undefined")
+        return;
+      const supportedLocales = Intl.NumberFormat.supportedLocalesOf(locales);
+      if (supportedLocales.length > 0)
+        return new Intl.Locale(supportedLocales[0]);
+      return new Intl.Locale(typeof locales === "string" ? locales : locales[0]);
+    };
+  }
+  static {
+    this.__parse = parse;
+  }
+  static {
+    this.formats = {
+      number: {
+        integer: { maximumFractionDigits: 0 },
+        currency: { style: "currency" },
+        percent: { style: "percent" }
+      },
+      date: {
+        short: {
+          month: "numeric",
+          day: "numeric",
+          year: "2-digit"
+        },
+        medium: {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        },
+        long: {
+          month: "long",
+          day: "numeric",
+          year: "numeric"
+        },
+        full: {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric"
+        }
+      },
+      time: {
+        short: {
+          hour: "numeric",
+          minute: "numeric"
+        },
+        medium: {
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric"
+        },
+        long: {
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric",
+          timeZoneName: "short"
+        },
+        full: {
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric",
+          timeZoneName: "short"
+        }
+      }
+    };
+  }
+};
+// src/locales/en.json
+var en_default = {
+  backend: {
+    binding: {
+      messages: {
+        selectConsecutiveSummariesWithoutCrossingAnotherSummary: "Select consecutive summaries without crossing another summary tier"
+      }
+    },
+    codex: {
+      agent: {
+        messages: {
+          theAssembledCodexPromptIsKTokens: "Codex prompt: ~{round}k tokens; limit: {round2}k. Raise Max input tokens in Tuning > Connection > Codex, or reduce the window, Chapters provided, or lore limit in Tuning > Settings > Codex. Freezing records in Codex > Overview also reduces input."
+        },
+        resolveCodexConnection: {
+          codexConnectionHasNoModelSetPick: 'Codex connection "{id}" has no model set, pick one in settings',
+          noConnectionAvailableForTheCodex: "No connection available for Codex"
+        },
+        keptSuffix: {
+          memoriaKeptTheRecordSheFinishedAnd: " Saved {length} record{length, plural, one {} other {s}}; the rest will retry next time."
+        },
+        runCodexAgentInner: {
+          round: `
+
+\u2550\u2550\u2550 round {rounds} \u2550\u2550\u2550
+`,
+          fullRewriteKChars: "full rewrite, {toFixed}k chars",
+          codexWriteJson: `
+\u27A4 codex_write {f}.json ({label})`,
+          codexDone: `
+\u2726 codex_done{note}`,
+          codexSkip: `
+\u25CB codex_skip {choice, select, yes {{join}} other {(no files)}}`,
+          unknownTool: `
+\u2717 unknown tool {name}`,
+          theCodexAgentReturnedAnEmptyResponse: "The codex agent returned an empty response",
+          noJsonObjectFoundInTheReply: `
+\u2717 no JSON found in the reply. Retrying...`,
+          memoriaCouldnTFinishTheCodexUpdate: "The model wasn't able to follow instructions :(.{keptSuffix}",
+          theCodexAgentNarratedInsteadOfCalling: "The codex agent didn't call tools. Does your connection support tool calls?",
+          theCodexAgentRepliedWithoutAParsable: "The codex agent returned faulty JSON",
+          memoriaCouldnTFinishTheCodexUpdate2: "The model stopped before writing {join}.{keptSuffix}",
+          keptStillReferencedByUnchangedJson: `
+\u2933 Kept {ref}: still referenced by unchanged {file}.json`,
+          value: `
+\u2933 {r}`,
+          rejected: `
+\u2717 rejected{choice, select, yes { {file}.json} other {}}: {errors0}`,
+          integrity: `
+\u2717 integrity: {e}`,
+          memoriaCouldnTFinishTheCodexUpdate3: "The model returned invalid JSON after {rounds} tries: {join}.{keptSuffix}",
+          memoriaCouldnTFinishTheCodexUpdate4: "The model returned invalid records: {join}.{keptSuffix}",
+          memoriaCouldnTFinishTheCodexUpdate5: "The model didn''t write {join}.{keptSuffix}",
+          memoriaCouldnTFinishTheCodexUpdate6: "The model referenced missing entities: {join}.{keptSuffix}",
+          tableMigrationLeftTiesOnTheRun: "Relations migration failed: ties remain on {join}.",
+          inlineMigrationProducedNoTiesFromThe: "Relations migration failed: no ties were created from the table.",
+          failedToSaveJson: "Failed to save {key}.json: {describeError}"
+        },
+        stream: {
+          set: "{count} set",
+          drop: "{count} drop",
+          seeds: "seeds",
+          empty: "empty"
+        }
+      },
+      backup: {
+        parseCodexBackup: {
+          thatFileIsNotACodexBackup: "This file isn''t a Codex backup",
+          thisBackupWasWrittenByANewer: "This backup needs a newer LumiBooks (version {version})",
+          theBackupHasNoCodexFilesIn: "The backup has no Codex files",
+          jsonInTheBackupIsNotValid: "{key}.json isn''t valid JSON",
+          jsonInTheBackupIsInvalid: "{key}.json in the backup is invalid: {errors0}"
+        }
+      },
+      index: {
+        reportCodexFailure: {
+          memoriaCouldnTTheCodex: "Couldn''t {verb, select, tidy {tidy} refresh {refresh} rebuild {rebuild} other {update}} the Codex: {shortErrorText}"
+        },
+        syncEntriesGuarded: {
+          memoriaCouldnTSyncTheCodexTo: "Couldn''t sync the Codex to the lorebook: {shortErrorText}"
+        },
+        ensureCodexEntriesSynced: {
+          memoriaCouldnTSyncTheCodexTo: "Couldn''t sync the Codex to the lorebook: {shortErrorText}"
+        },
+        dryRunCodex: {
+          theWindowHasNotFilledYetAutomation: "Window isn''t full. Run manually to bypass.",
+          theLagReserveStillHoldsTheseTurns: "Lag isn''t met. Run manually to bypass.",
+          chatHasNoMessages: "Chat has no messages",
+          theCodexHasReadEverythingSoThis: "Codex is up to date. Preview uses previous messages.",
+          noConsumableWindowSendAMessageAnd: "No messages to process. Send a message and retry.",
+          everyCodexRecordIsFrozenUnfreezeOne: "Codex records are frozen. Unfreeze a record to preview.",
+          connection: "Connection: {name} ({provider}/{model})",
+          transport: "Transport: {choice, select, yes {tool calls} other {strict JSON}}",
+          updateDeliveryAndEveryRecordMustBe: "Update delivery: {choice, select, yes {record by record} other {batched}}. Write or skip the {length} records to complete the update.",
+          preset: "Preset: {choice, select, yes {Custom: {displayName}} other {Built-in: Default}}{choice2, select, yes { ({value} template{value2, plural, one {} other {s}} customized)} other {}}",
+          relationsMode: "Relations mode: {choice, select, yes {table} other {inline ties}}{choice2, select, yes { (format changed, this run would migrate)} other {}}",
+          activeFiles: "Active files: {join}",
+          frozenOmittedFromThePromptEntirely: "Frozen from the prompt: {join}",
+          chunkMessage: "Chunk: {chunkLabel} ({length} message{length, plural, one {} other {s}})",
+          reconcilePendingTheStoryWasEditedBehind: "Story edits detected. Reconcile note included.",
+          unreadableFilesShownEmpty: "Unreadable files shown empty: {join}",
+          locksLockedEntitWithLockedFieldsMasked: "Locks: {length} entit{length, plural, one {y} other {ies}}, {length2} with locked fields hidden from the model",
+          storySoFarContextTokens: "Story-so-far context: ~{length} tokens",
+          activatedLoreReferenceTokens: "Activated lore reference: ~{length} tokens",
+          activatedLoreExceededTheLoreLimitTokens: "Lore exceeded the lore limit ({effectiveLoreLimitTokens} tokens) and was cut off",
+          thoroughMode: "Thorough mode: {choice, select, yes {on, adds a verification round} other {off}}",
+          promptSizeTokensSystemTokensUserCodex: "Prompt size: ~{length} tokens system + ~{length2} tokens user (codex max input {codexMaxInputTokens})",
+          wouldFail: "WOULD FAIL: {message}",
+          samplerParametersBeingSentOnTheWire: "Sampler parameters: {stringify}"
+        },
+        chunkLabel: {
+          messagesOf: "messages {firstIdx1}-{lastIdx1} of {length}"
+        },
+        runChunk: {
+          theRelationsFormatChangedUnfreezeSoMemoria: "Relations format changed. Unfreeze {join} to migrate.",
+          relationBetweenLockedEntriesCouldNotBe: "{stuck} relation{stuck, plural, one {} other {s}} between locked entries couldn''t be rewritten and will be dropped",
+          memoriaUpdatedTheCodexFile: "Codex updated ({length} file{length, plural, one {} other {s}})"
+        },
+        drain: {
+          memoriaIsUpdatingTheCodex: "Updating Codex"
+        },
+        maybeRunCodex: {
+          automaticUpdate: "automatic update",
+          memoriaClosesTheCodexForNow: "Codex update cancelled"
+        },
+        runCodexNow: {
+          memoriaIsAlreadyUpdatingTheCodex: "Codex update in progress",
+          memoriaIsStillCarryingTheCodexInto: "Codex fork inheritance is in progress. Try again shortly.",
+          everyCodexRecordIsFrozenUnfreezeOne: "Codex records are frozen. Unfreeze a record to update.",
+          theCodexIsAlreadyCaughtUp: "Codex is up to date",
+          memoriaClosesTheCodexForNow: "Codex update cancelled",
+          fastCatchUpNeedsTheCodexModel: "Fast catch-up needs the codex model''s context to be at least the story model''s. Raise your max context size"
+        },
+        catchupCodex: {
+          memoriaIsCatchingUpTheCodex: "Catching up Codex ({choice, select, yes {ultra fast} other {fast}})",
+          memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress"
+        },
+        maybeReconcileSweep: {
+          memoriaIsReconcilingTheCodexWithThe: "Updating Codex after story edits",
+          memoriaReconciledTheCodexWithTheEdited: "Codex updated after story edits ({length} file{length, plural, one {} other {s}})",
+          memoriaCheckedTheCodexAgainstTheEdited: "Codex updated after story edits"
+        },
+        rebuildCodex: {
+          memoriaIsClearingTheCodexForA: "Clearing Codex for rebuild",
+          memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
+          memoriaCouldnTReadTheCodexCursor: "The codex state has an issue, rebuild aborted: {shortErrorText}",
+          memoriaCouldnTClearCodexFileRun: "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry Rebuild.",
+          memoriaCouldnTClearTheCodexLorebook: "Couldn''t clear Codex lorebook entries: {shortErrorText}"
+        },
+        runCodexTidy: {
+          memoriaIsTidyingTheCodex: "Tidying Codex",
+          memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
+          theRelationsFormatChangedRunUpdateNow: "The relations format changed, please update the codex",
+          nothingToTidyThoseRecordsAreEmpty: "Nothing to tidy: records are empty, frozen, or unreadable",
+          theSelectedRecordsAlreadyFitTokensLimit: "Records already fit within the limit ({limit} tokens)",
+          tidyTokensLimitModelTargetCallsLeft: `
+Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} calls left.
+`,
+          aCodexFileCouldNotBeRead: "Codex state issue after tidying: {details}. Undo restores the original.",
+          codexTidiedToTokensLimitInModel: "Codex tidied to {size} tokens (limit {limit}) in {used} model call{used, plural, one {} other {s}}",
+          stoppedAfterModelCallsTokensStillAbove: "Stopped after {used} model calls: {size} tokens, above the limit of {limit}. Edits saved; Undo restores the original.",
+          tidyingStoppedCompletedEditsAreKeptUndo: "Tidying cancelled. Edits saved; Undo restores the original."
+        },
+        refreshCodexFiles: {
+          memoriaIsCatchingUpReEnabledRecords: "Catching up re-enabled records",
+          memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
+          theRelationsFormatChangedRunUpdateNow: "Relations format changed. Run Update now before catching up records.",
+          noReEnabledRecordsAreWaitingFor: "No records need catch-up",
+          memoriaCaughtUpRecord: "Caught up {length} record{length, plural, one {} other {s}}",
+          memoriaSetsTheCatchUpAside: "Catch-up cancelled",
+          theCatchUpPassNeedsTheCodex: "Catch-up needs a Codex context at least as large as the story model''s. Increase it or rebuild in slow mode."
+        },
+        rebuildCodexFiles: {
+          memoriaIsRebuildingCodexRecords: "Rebuilding Codex records",
+          memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
+          theRelationsFormatChangedRunUpdateNow: "Relations format changed. Run Update now before rebuilding records.",
+          thoseRecordsAreFrozenUnfreezeThemFirst: "Unfreeze these records first",
+          memoriaRebuiltRecordFromTheStory: "Rebuilt {length} record{length, plural, one {} other {s}}",
+          memoriaSetsTheRebuildAside: "Rebuild cancelled",
+          theRebuildPassNeedsTheCodexModel: "Rebuild needs a Codex context at least as large as the story model''s. Increase it in connection settings."
+        }
+      },
+      schema: {
+        keywordArray: {
+          keptOfDroppedTheRestAsDuplicates: "{path}: kept {length} of {length2}, dropped the rest as duplicates, over {keywordMaxWords} words, already matched by the record''s own name, or past the {keywordLimit} keyword limit"
+        },
+        str: {
+          requiredNonEmptyString: "{path}: required non-empty string",
+          expectedAString: "{path}: expected a string"
+        },
+        strArray: {
+          expectedAnArrayOfStrings: "{path}: expected an array of strings",
+          expectedAString: "{path}[{i}]: expected a string"
+        },
+        objArray: {
+          expectedAnArray: "{path}: expected an array",
+          expectedAnObject: "{path}[{i}]: expected an object"
+        },
+        asRecord: {
+          expectedAJsonObject: "{path}: expected a JSON object"
+        },
+        keepExtras: {
+          useLowercase: '{path}.{k}: use lowercase "{lower}"',
+          extraFieldsMustBePrimitiveStringNumber: "{path}.{k}: extra fields must be primitive (string, number, boolean, or string[]), flatten this"
+        },
+        ridOf: {
+          ridExpectedAShortString: "{path}.rid: expected a short string"
+        },
+        validateEntityFile: {
+          idMustMatch: '{path}.id: "{id}" must match {ns}:<lowercase_snake_case>',
+          idBelongsInAnotherFileIdsHere: '{path}.id: "{id}" belongs in another file, ids here must start with "{ns}:"',
+          idDuplicateId: '{path}.id: duplicate id "{id}"',
+          statusThisFieldWasRemovedKeepDurable: "{path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state",
+          tiesTheRelationsTableIsEnabledMove: "{path}.ties: the relations table is enabled, move these into relations.json rows"
+        },
+        validateRelationsFile: {
+          relationsTheRelationsTableIsDisabledFor: "relations: the relations table is disabled for this profile, keep connections as ties on entity sheets instead",
+          aIsNotAValidEntityRef: '{path}.a: "{a}" is not a valid entity ref',
+          bIsNotAValidEntityRef: '{path}.b: "{b}" is not a valid entity ref',
+          aAndBAreTheSameEntity: "{path}: a and b are the same entity",
+          membersAGroupNeedsAtLeast2: "{path}.members: a group needs at least 2 distinct members",
+          membersIsNotAValidEntityRef: '{path}.members: "{m}" is not a valid entity ref',
+          rolesKeyIsNotAValidEntity: '{path}.roles: key "{k}" is not a valid entity ref',
+          rolesExpectedAStringRole: '{path}.roles["{k}"]: expected a string role',
+          typeExpectedPairOrGroup: '{path}.type: expected "pair" or "group"'
+        },
+        validateThreadsFile: {
+          statusExpectedOpenStalledResolvedAbandoned: "{path}.status: expected open | stalled | resolved | abandoned"
+        },
+        validateWorldFile: {
+          factsAtLeastOneFactRequiredDrop: "{path}.facts: at least one fact required, drop the topic if it has none"
+        },
+        validateKnowledgeFile: {
+          appearsInBothKnownByAndHiddenFromWrite: '{path}: {join} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as "fact", then list who knows it and who it is hidden from - never write the ignorance as the fact',
+          needsAtLeastOneOfKnownByHiddenFrom: "{path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline",
+          omittedDuplicateKnowledgeItem: "{path}: omitted duplicate knowledge item"
+        },
+        formatDangling: {
+          isNotDefinedInAnyEntityFile: '{path}: "{ref}" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)',
+          isNotDefinedInAnyEntityFile2: '{path}: "{ref}" is not defined in any entity file - add the entity or use plain text'
+        },
+        fix: {
+          wasNotAKnownEntityRecordedAs: '{path}: "{ref}" was not a known entity, recorded as "{plain}"'
+        }
+      },
+      store: {
+        loadCursor: {
+          theCodexCursorIsUnreadable: "Codex cursor issue: {error}"
+        },
+        loadCodex: {
+          unreadableOnDisk: "unreadable on disk: {error}"
+        },
+        copyCodexToEmptyChat: {
+          jsonIsUnreadableOnTheSourceChat: "{key}.json is unreadable on the source chat: {error}"
+        },
+        readCodexFilesRaw: {
+          unreadableJsonTheFileExistsButCannot: "Can''t read {key}.json: {error}. Fix or delete it before saving."
+        }
+      },
+      sync: {
+        doSync: {
+          codexSyncSkippedUnreadableOrInvalidFile: "Codex sync failed. Unreadable or invalid file{length, plural, one {} other {s}}: {join}",
+          outdatedCodexEntrCouldNotBeRemoved: "Couldn''t remove {failedDeletes} outdated Codex entr{failedDeletes, plural, one {y} other {ies}}. They may still inject."
+        },
+        doWipe: {
+          failedToDeleteCodexEntrTheyMay: "Couldn''t delete {failed} Codex entr{failed, plural, one {y} other {ies}}. They may still inject."
+        }
+      },
+      tokens: {
+        countCodexText: {
+          invalidTokenCount: "Invalid token count"
+        }
+      }
+    },
+    coverage: {
+      setHidden: {
+        couldNotUpdateVisibilityForMessagesRun: "Couldn''t update visibility for {length} messages. Retry Resync visibility."
+      }
+    },
+    fork: {
+      inheritedMessageIds: {
+        forkAncestryCouldNotBeResolved: "Fork ancestry couldn''t be resolved",
+        forkAncestryIsIncomplete: "Fork ancestry is incomplete"
+      },
+      requireForkShelf: {
+        forkInheritanceIsStillPendingRetryAfter: "Fork inheritance is pending. Wait for it to finish, then retry."
+      },
+      doForkAdoption: {
+        memoriaCouldnTCarryTheShelfInto: "Summary fork inheritance failed; will retry: {shortErrorText}"
+      },
+      adoptForkCodex: {
+        memoriaCouldnTCarryTheCodexInto: "Codex fork inheritance failed; will retry: {shortErrorText}"
+      },
+      markCodexAdopted: {
+        forkChatVanishedWhileRecordingCodexAdoption: "Chat was deleted during Codex fork inheritance"
+      },
+      newBook: {
+        memoriaSShelfForThisChatChapters: "LumiBooks chapters and arcs for this chat."
+      }
+    },
+    index: {
+      doPushState: {
+        lumiBooksStateRefreshFailed: "LumiBooks state refresh failed: {describeError}"
+      },
+      messages: {
+        summaryRepairFailed: "Summary repair failed: {describeError}",
+        savedDiagnosticsCleared: "Saved diagnostics cleared.",
+        recallSettingSavedEntryOrBookUpdates: "Recall saved, but {failed} updates failed. Reapply to retry.",
+        invalidProfilePayload: "Invalid profile payload.",
+        profileNoLongerExists: "Profile {id} no longer exists.",
+        memoriaKeepsAtLeastOneProfile: "A profile is required",
+        memoriaIsAlreadyFilingAChapter: "Chapter creation in progress",
+        yourStoryNeedsMoreMessagesForMe: "Not enough messages to create an entry",
+        memoriaIsAlreadyBindingAnArc: "Arc creation in progress",
+        memoriaIsAlreadyPressingAVolume: "Volume creation in progress",
+        memoriaCanTFindThatEntry: "Entry not found",
+        memoriaReleasedTheEntryToYourLorebook: "Entry released to the lorebook",
+        memoriaCanTFindThatEntryTo: "Entry not found",
+        memoriaIsAlreadyBusyWithA: "A {busyKind} task is in progress",
+        memoriaCanTRegenerateInheritedChapters: "Inherited chapters can''t be regenerated",
+        memoriaCanTRegenerateAGhostChapter: "File the ghost chapter before regenerating it",
+        memoriaHasNoArcSourcesToRegenerate: "No source arcs to regenerate this volume",
+        memoriaHasNoChapterSourcesToRegenerate: "No source chapters to regenerate this arc",
+        memoriaHasNoMessagesToRegenerateThis: "No source messages to regenerate this chapter",
+        theseMessagesAreBoundIntoReleaseOr: "These messages are bound into {blockerLabel}, release or delete it first",
+        dryRunFailed: "Dry run failed: {text}",
+        memoriaIsNotInTheMiddleOf: "No task to cancel",
+        summaryRecallSavedEntriesUpdated: "Summary recall saved; {updated} entries updated.",
+        waitForTheCurrentTaskToFinish: "Wait for the current task to finish before importing summaries",
+        importingSummaries: "Importing summaries",
+        memoriaFoundNoUsablePresetsInThat: "No usable presets in this file",
+        memoriaImportedPreset: "Imported {length} preset{length, plural, one {} other {s}}",
+        invalidPresetPayload: "Invalid preset payload.",
+        memoriaIsBusyWaitForHerTo: "Wait for the current task to finish",
+        memoriaSeededInheritedMemorBeforeTheGreeting: "Added {count} inherited memor{count, plural, one {y} other {ies}} before the greeting",
+        memoriaRebuiltOntoInheritedMemorAndIs: "Added {count} inherited memor{count, plural, one {y} other {ies}}. Re-summarizing this chat.",
+        memoriaWillLeaveMessageUntouched: "Excluded {length} message{length, plural, one {} other {s}} from compression",
+        memoriaWillCompressMessageAgain: "Allowed compression for {length} message{length, plural, one {} other {s}}",
+        memoriaTeachesTheCodexBeforeSheOpens: "Memoria teaches the codex before she opens it, take her lesson first",
+        enableTheCodexInTuningFirst: "Enable the codex in Tuning first",
+        acceptingCurrentCodexRecords: "Accepting current codex records",
+        clearStaleTags: "clear stale tags",
+        memoriaIsUpdatingTheCodexRestoreAgain: "Codex update in progress. Wait before restoring.",
+        memoriaCouldnTRestoreThatBackup: "Couldn''t restore backup: {error}",
+        memoriaCouldnTSyncTheCodexTo: "Couldn''t sync the Codex to the lorebook: {shortErrorText}",
+        memoriaRestoredCodexFile: "Restored {length} Codex file{length, plural, one {} other {s}}",
+        memoriaIsUpdatingTheCodexAbortThat: "Cancel the Codex update first",
+        memoriaCouldnTCarryThatCodexOver: "Couldn''t copy Codex: {shortErrorText}",
+        memoriaCarriedTheCodexOverSheWill: "Codex copied. Indexing will start from the beginning of this chat.",
+        memoriaHasNoCodexSnapshotToUndo: "No Codex snapshot to restore",
+        memoriaCouldnTUndo: "Couldn''t undo: {error}",
+        memoriaRolledTheCodexBack: "Codex restored",
+        unknownCodexFile: 'Unknown codex file "{file}".',
+        memoriaIsUpdatingTheCodexSaveAgain: "Codex update in progress. Wait before saving.",
+        thatIsNotValidJson: "Invalid JSON: {describeError}",
+        validationFailed: "Validation failed: {errors0}{extra}",
+        savedButCouldNotBeReadSo: "Saved, but couldn''t read {names}. Cross-file checks skipped.",
+        savedWithDanglingReferenceToFixIn: "Saved with {length} dangling reference{length, plural, one {} other {s}}",
+        memoriaSavedJson: "Saved {file}.json",
+        memoriaIsClearingTheCodex: "Clearing Codex",
+        memoriaCouldnTClearCodexFileTry: "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry.",
+        memoriaCouldnTClearTheCodexLorebook: "Couldn''t clear Codex lorebook entries: {shortErrorText}",
+        memoriaClearedTheCodexForThisChat: "Codex cleared",
+        rebuildFiles: "rebuild files",
+        memoriaClearedEntrFromTheShelf: "Cleared {removed} entr{removed, plural, one {y} other {ies}}",
+        theShelfIsAlreadyEmpty: "Shelf is empty",
+        memoriaClearedEntrAndIsReSummarizing: "Cleared {removed} entr{removed, plural, one {y} other {ies}}. Re-summarizing this chat."
+      },
+      handleExternalEntryDeletion: {
+        memoriaUnhidMessageAfterAnExternalLorebook: "Unhid {unhidden} message{unhidden, plural, one {} other {s}} after a lorebook change"
+      },
+      msg: {
+        memoriaHasNoChaptersLeftToRetry: "No chapters left to retry the arc"
+      },
+      retryLastFailure: {
+        nothingToRetryYetMemoriaWillCatch: "Nothing to retry. Waiting for the next message."
+      },
+      syncProfileSettings: {
+        profileSavedButCodexInjectionSettingsCould: "Profile saved. Codex injection sync failed for {length} chat(s): {join}. Fix the errors, then reapply settings.",
+        profileSavedButCodexInjectionSettingsCould2: "Profile saved. Codex injection sync failed: {describeError}"
+      },
+      next: {
+        newProfile: "New profile"
+      },
+      blockerLabel: {
+        aVolume: "a volume",
+        anArc: "an arc",
+        anotherEntry: "another entry"
+      },
+      text: {
+        memoriaSShelfIsAlreadyAlignedNya: "Message visibility is up to date",
+        memoriaResyncedMessageHiddenUnhidden: "Resynced {total} message{total, plural, one {} other {s}} ({hidden} hidden, {unhidden} unhidden)",
+        thisChatAlreadyHasMemoriesUseRebuild: "This chat has summaries. Use Rebuild.",
+        thatChatHasNoMemoriesToInherit: "Source chat has no summaries to inherit",
+        memoriaIsAlreadyRebasingThisChat: "Rebase in progress",
+        memoriaCanTRebaseAChatOnto: "Choose a different chat to rebase from",
+        memoriaIsAlreadyRebuildingThisChat: "Rebuild in progress",
+        memoriaCanTRebuildAChatOnto: "Choose a different chat to rebuild from",
+        thisChatAlreadyHasACodexWipe: "Wipe this chat''s Codex first",
+        thatChatHasNoCodexToCarry: "Source chat has no Codex to copy",
+        memoriaCanTCarryACodexOnto: "Choose a different chat to copy the Codex from",
+        thisChatHasNoInheritedMemoriesTo: "No inherited memories to detach",
+        memoriaDetachedInheritedMemor: "Detached {removed} inherited memor{removed, plural, one {y} other {ies}}"
+      },
+      extra: {
+        more: " (+{length1} more)"
+      }
+    },
+    injection: {
+      label: {
+        msgs: "{tierName} msgs {firstIdx1}-{lastIdx1}"
+      },
+      buildInjection: {
+        memoriaCouldnTReadTheChatAnd: "Couldn''t read the chat. Summary injection skipped.",
+        memoriaCouldnTFindTheChatHistory: "Chat history wasn''t found in the prompt. Summary injection skipped."
+      }
+    },
+    lessons: {
+      loadFromDisk: {
+        memoriaCouldnTReadHerLessonRegister: "Memoria couldn''t read her lesson register and unsealed the archive: {describeError}"
+      },
+      mutateLessons: {
+        memoriaCouldnTReadHerLessonRegister: "Memoria couldn''t read her lesson register so this change is not saved to disk yet"
+      }
+    },
+    memoria: {
+      firePhrases: {
+        memoriaStirsTheInkpotNyaa: "Creating chapter\u2026",
+        memoriaIsShelvingThisSceneHushA: "Creating chapter\u2026",
+        memoriaFlicksHerTailAndStartsWriting: "Creating chapter\u2026",
+        memoriaOpensAFreshPageForYou: "Creating chapter\u2026",
+        memoriaPadsOffToCompressThisIn: "Creating chapter\u2026"
+      },
+      retryPhrases: {
+        memoriaTrippedOnAQuillTryingAgain: "Retrying\u2026",
+        memoriaSInkSmudgedOneMoreTry: "Retrying\u2026",
+        memoriaReshufflesTheIndexCardsRetrying: "Retrying\u2026"
+      },
+      successPhrases: {
+        memoriaSlidTheChapterOntoYourShelf: "Chapter created",
+        memoriaFiledItNeatlyBetweenTheOthers: "Chapter created",
+        memoriaStampedTheSpineAllYours: "Chapter created",
+        memoriaPurrsThePageIsDone: "Chapter created",
+        memoriaTapsTheChapterIntoPlace: "Chapter created"
+      },
+      arcFirePhrases: {
+        memoriaGathersTheChaptersForAnArc: "Creating arc\u2026",
+        memoriaIsBindingSeveralChaptersTogether: "Creating arc\u2026"
+      },
+      arcSuccessPhrases: {
+        memoriaBoundTheArcAndPressedIt: "Arc created",
+        memoriaStitchedTheSpineOfANew: "Arc created"
+      },
+      volumeFirePhrases: {
+        memoriaIsPressingAWholeVolumeTogether: "Creating volume\u2026"
+      },
+      volumeSuccessPhrases: {
+        memoriaEmbossedTheSpineOfANew: "Volume created"
+      },
+      pickPhrase: {
+        memoriaNyaa: "Done"
+      }
+    },
+    pipeline: {
+      changedSources: {
+        summarySourcesChangedDiscardThisResultAnd: "Summary sources changed. Discard and regenerate."
+      },
+      registerPipelineCallbacks: {
+        busyStatus: "busy status",
+        streamViewer: "stream viewer"
+      },
+      busyPhrases: {
+        memoriaIsFilingAChapter: "Creating chapter",
+        memoriaIsWritingAChapter: "Writing chapter",
+        memoriaIsBindingAnArc: "Creating arc",
+        memoriaIsPressingAVolume: "Creating volume",
+        memoriaIsBindingASeries: "Creating series",
+        memoriaIsBindingASaga: "Creating saga",
+        memoriaIsBindingALibrary: "Creating library",
+        memoriaIsBindingAUniverse: "Creating universe",
+        memoriaIsUpdatingTheCodex: "Updating Codex"
+      },
+      formatBusyLabel: {
+        memoriaIsThinkingT: "Reasoning (~{thinkTokens}t, {t})",
+        tWrittenTThought: "{writing} (~{tokens}t output, ~{thinkTokens}t reasoning, {t})"
+      },
+      capStreamPart: {
+        earlierOutputTrimmed: `[...earlier output trimmed...]
+{slice}`
+      },
+      noun: {
+        bindTheArc: "create arc",
+        pressTheVolume: "create volume",
+        fileTheChapter: "create chapter"
+      },
+      failToast: {
+        memoriaCouldnT: "Couldn''t {noun}: {shortErrorText}"
+      },
+      createChapterAuto: {
+        memoriaIsFilingAChapter: "Creating chapter"
+      },
+      createChapterFromRange: {
+        memoriaIsFilingAChapter: "Creating chapter"
+      },
+      runChapter: {
+        memoriaSetsThePenDown: "Summary cancelled"
+      },
+      commitChapter: {
+        extraContextModeWasTurnedOffWhile: "Extra context mode was turned off during ghost chapter creation",
+        thoseMessagesAreAlreadyStagedAsA: "These messages have a ghost chapter. It''ll file automatically.",
+        allMessagesInThisWindowWereJust: "These messages were already summarized by another chapter"
+      },
+      title: {
+        chapterMsgs: "Chapter - msgs {firstIdx1}-{lastIdx1}"
+      },
+      baseComment: {
+        chapterMsgs: "Chapter - msgs {firstIdx1}-{lastIdx1}",
+        arcMsgs: "Arc - msgs {firstIdx1}-{lastIdx1}",
+        volumeMsgs: "Volume - msgs {firstIdx1}-{lastIdx1}"
+      },
+      createArcFromChapters: {
+        memoriaIsBindingAnArc: "Creating arc"
+      },
+      runArc: {
+        memoriaSetsThePenDown: "Summary cancelled"
+      },
+      commitArc: {
+        allSourceChaptersWereAlreadyBoundBy: "Source chapters were already bound or deleted",
+        theArcSavedButChapterCouldnT: "Arc saved, but couldn''t mark {length} chapter{length, plural, one {} other {s}} as superseded"
+      },
+      arcTitle: {
+        inheritedArc: "Inherited Arc"
+      },
+      comment: {
+        arc: "{choice, select, yes {[Root] } other {}}Arc #{sceneNumber} - {baseComment}"
+      },
+      createHigherFromEntries: {
+        memoriaIsBindingA: "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}"
+      },
+      runVolume: {
+        memoriaSetsThePenDown: "Summary cancelled"
+      },
+      commitVolume: {
+        allSourceArcsWereAlreadyBoundBy: "Source arcs were already bound or deleted",
+        theVolumeSavedButArcCouldnT: "Volume saved, but couldn''t mark {length} arc{length, plural, one {} other {s}} as superseded"
+      },
+      volumeTitle: {
+        inheritedVolume: "Inherited Volume"
+      },
+      dryRunChapter: {
+        chatHasNoMessages: "Chat has no messages",
+        noWindowAvailableLowerTheLagOr: "No window available. Lower lag or window thresholds."
+      },
+      dryRunArc: {
+        noChaptersToBindYet: "No chapters to bind"
+      },
+      dryRunVolume: {
+        noArcsToPressYet: "No arcs to press"
+      },
+      promoteGhostChapters: {
+        memoriaShelvedGhostChapter: "Filed {length} ghost chapter{length, plural, one {} other {s}}"
+      },
+      deriveTitle: {
+        msgs: "{trim} (msgs {firstMsg}-{lastMsg})",
+        msgs2: "{trimmed}{choice, select, yes {...} other {}} (msgs {firstMsg}-{lastMsg})",
+        compressedMsgs: "Compressed - msgs {firstMsg}-{lastMsg}"
+      },
+      preview: {
+        chapterMsgs: "Chapter - msgs {firstIdx1}-{lastIdx1}",
+        msgs: "{indexOf} - msgs {firstIdx1}-{lastIdx1}"
+      }
+    },
+    presets: {
+      builtinChapterPresets: {
+        summary: "Summary",
+        summarize: "Summarize",
+        synopsis: "Synopsis",
+        minimal: "Minimal"
+      },
+      builtinArcPresets: {
+        arc: "Arc"
+      },
+      builtinVolumePresets: {
+        volume: "Volume"
+      },
+      builtinCodexPresets: {
+        default: "Default"
+      }
+    },
+    promptBreakdown: {
+      loadPromptBreakdown: {
+        thePromptPanelRequiresALumiverseUpdate: "Update Lumiverse to use the Prompt panel. Spindle''s prompt-breakdown API is required.",
+        dryRunReturnedNoBreakdown: "Dry run returned no breakdown."
+      }
+    },
+    rebase: {
+      retireEntries: {
+        someOldSummariesCouldNotBeRemoved: "Couldn''t remove or disable some old summaries. Refresh Books before retrying."
+      }
+    },
+    runtime: {
+      debug: {
+        lmb: "[lmb:{slice}] {join}"
+      }
+    },
+    shelfActions: {
+      editSummaryEntry: {
+        thisSummaryIsNoLongerAvailableTo: "Summary no longer available. Refresh Books."
+      },
+      clearSummaryShelf: {
+        removedSummariesButCouldNotBeDeleted: "Removed {removed} summaries; couldn''t delete {length}. Retry clearing before rebuilding."
+      },
+      removeSummaryEntry: {
+        aGhostChapterMustBeShelvedBefore: "File the ghost chapter before releasing it"
+      }
+    },
+    storage: {
+      flipped: {
+        directives: "{hasName, select, yes {{name}} other {Profile}} directives"
+      }
+    },
+    summarizer: {
+      resolveConnection: {
+        connectionHasNoModelSetPickOne: 'Connection "{id}" has no model set, pick one in settings'
+      },
+      messages: {
+        abortedByUser: "Cancelled"
+      },
+      assertRunning: {
+        noTokenWithinSTheProviderMay: "No token within {firstTokenTimeoutMs1000}s, the provider may be slow or unreachable",
+        theResponseDidNotFinishWithinS: "Response didn''t finish within {overallDeadlineMs1000}s"
+      },
+      consumeGenerationStream: {
+        theStreamEndedBeforeCompleting: "Stream ended before completion"
+      },
+      resolveMacrosWithDiagnostics: {
+        macroOffsetLength: "macro: {message} (offset {offset}, length {length})",
+        macrosResolveFailed: "macros.resolve failed: {describeError}"
+      },
+      assembleChapterPrompt: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        chapterPresetMissing: "Chapter preset missing",
+        emptyTranscript: "Empty transcript",
+        outgoingRegexAppliedScriptS: "Outgoing regex: {length} script(s)"
+      },
+      diagnostics: {
+        connection: "Connection: {name} ({provider}/{model})",
+        windowMessageS: "Window: {length} message(s)",
+        transcriptTokensModelTokenizer: "Transcript: {transcriptTokens} tokens (model tokenizer)",
+        targetTokens: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{chapterTargetUnitTokens}% of input} other {{chapterTargetPercent}% of input}})",
+        targetWordsShownToModel: "Target words: {value}",
+        previousMemoriesIncluded: "Previous summaries: {length}",
+        opener: "Opener: {opener}",
+        presetKey: "Preset key: {chapterPresetKey}",
+        samplerParametersBeingSentOnTheWire: "Sampler parameters: {stringify}",
+        sourceChapters: "Source chapters: {length}",
+        concatenatedChapterBodyTokensModelTokenizer: "Source chapters: {bodyTokens} tokens (model tokenizer)",
+        targetTokens2: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{arcTargetUnitTokens}% of input} other {{arcTargetPercent}% of input}})",
+        presetKey2: "Preset key: {arcPresetKey}",
+        sourceArcs: "Source arcs: {length}",
+        concatenatedArcBodyTokensModelTokenizer: "Source arcs: {bodyTokens} tokens (model tokenizer)",
+        targetTokens3: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{volumeTargetUnitTokens}% of input} other {{volumeTargetPercent}% of input}})",
+        presetKey3: "Preset key: {volumePresetKey}"
+      },
+      assembleArcPrompt: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        arcPresetMissing: "Arc preset missing",
+        outgoingRegexAppliedScriptS: "Outgoing regex: {length} script(s)"
+      },
+      assembleVolumePrompt: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        volumePresetMissing: "Volume preset missing",
+        outgoingRegexAppliedScriptS: "Outgoing regex: {length} script(s)"
+      },
+      summarizeVolume: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        volumePresetMissing: "Volume preset missing",
+        emptyModelOutput: "Empty model output",
+        theVolumeSummaryCameBackEmpty: "The model returned an empty volume summary"
+      },
+      summarizeChapter: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        chapterPresetMissing: "Chapter preset missing",
+        emptyTranscript: "Empty transcript",
+        emptyModelOutput: "Empty model output",
+        theSummaryCameBackEmpty: "The model returned an empty summary"
+      },
+      summarizeArc: {
+        noConnectionAvailableForMemoria: "No summary connection available",
+        arcPresetMissing: "Arc preset missing",
+        emptyModelOutput: "Empty model output",
+        theArcSummaryCameBackEmpty: "The model returned an empty arc summary"
+      },
+      parseSummaryJson: {
+        theModelSJsonHadNoContent: "The model''s JSON had no content field",
+        theModelDidnTReturnValidJson: "The model didn''t return valid JSON"
+      }
+    },
+    summaryBackup: {
+      summaryLorebook: {
+        lumiBooksSummariesImportThroughBooksToRestore: "LumiBooks summaries. Import in Books to restore message coverage or use as inherited memories.",
+        summary: "Summary {i1}"
+      },
+      exportSummaryLorebook: {
+        thereAreNoActiveSummariesToExport: "No active summaries to export",
+        fetchingRawChatMessages: "Fetching raw chat messages\u2026",
+        lumiBooksSummaries: "LumiBooks summaries - {slice}"
+      },
+      hashes: {
+        hashingRawMessages: "Hashing raw messages\u2026 {done} / {length}"
+      },
+      parseSummaryLorebook: {
+        chooseALorebookJsonFileWithEntries: "Choose a lorebook JSON file with entries",
+        theLorebookHasNoEntries: "The lorebook has no entries",
+        theLorebookHasMoreThan10000: "The lorebook has more than 10,000 entries",
+        invalidLorebookEntry: "Invalid lorebook entry",
+        everyLorebookEntryNeedsTextContent: "Lorebook entries need text content",
+        invalidSummaryCoverageIndices: "Invalid summary coverage indices",
+        importedSummary: "Imported summary",
+        theLorebookHasNoEnabledSummaries: "The lorebook has no enabled summaries"
+      },
+      readSummaryImport: {
+        theSummaryCoverageDoesNotMatchIts: "Summary coverage doesn''t match its fingerprint"
+      },
+      commitImportedSummaries: {
+        invalidDestinationCoverage: "Invalid destination coverage",
+        thisImportContainsOverlappingSummaryCoverageResolve: "Summary ranges overlap. Fix them before importing.",
+        someOfTheseMessagesAlreadyHaveSummaries: "Some messages already have summaries. Release them in Books before importing.",
+        theChatChangedWhilePreparingTheImport: "Chat changed during import. Choose the file again.",
+        importFailedAndSomeImportedSummariesCould: "Import failed. Some imported summaries couldn''t be removed; check Books before retrying."
+      }
+    },
+    summaryMatching: {
+      parseFingerprint: {
+        invalidSummaryMessageFingerprint: "Invalid summary message fingerprint",
+        theSummaryMessageFingerprintIsDamaged: "The summary message fingerprint is damaged"
+      }
+    },
+    summaryTransfer: {
+      runSummaryTransfer: {
+        thisImportIsNoLongerAvailableChoose: "Import no longer available. Choose the file again.",
+        importCancelled: "Import cancelled",
+        readingSummaries: "Reading summaries\u2026",
+        preparingSummaryExport: "Preparing summary export\u2026",
+        readingRawChatMessages: "Reading raw chat messages\u2026",
+        summaryExportReady: "Summary export ready",
+        enterAWholeMessageNumberFrom0: "Enter a whole message number from 0 to {length}.",
+        importedSummaries: "Imported summaries",
+        automaticMatchingWasIncompleteOrAmbiguousUp: "Matching was incomplete or ambiguous. Which message should coverage end at?",
+        theContentOfThisChatIsDifferent: "This chat differs from the imported summary''s source. Try matching messages?",
+        someOfTheseMessagesAlreadyHaveSummaries: "Some messages already have summaries. Release them in Books before importing.",
+        theChatChangedWhilePreparingTheImport: "Chat changed during import. Which message should coverage end at?",
+        savingImportedSummaries: "Saving imported summaries\u2026",
+        importedSummaries2: "Imported {length} summaries{choice, select, yes { covering {size} messages} other { as root memories}}"
+      },
+      manual: {
+        upUntilWhichMessageShouldTheseSummaries: "Which message should coverage end at?"
+      },
+      computed: {
+        comparingRawMessages: "Comparing raw messages\u2026 {done} / {length}"
+      }
+    },
+    worldBook: {
+      doEnsureBookForChat: {
+        chatNotFoundForUser: "Chat {chatId} not found for user",
+        memoriaReLinkedThisChatSNotebook: "Notebook link restored. Found {candidates} candidates; check for duplicate notebooks.",
+        memoriaReLinkedThisChatSNotebook2: "Notebook link restored",
+        memoriaCouldnTFindThisChatS: "Previous notebook not found. Created a notebook; older chapters may be in another."
+      },
+      book: {
+        memoriaSShelfForThisChatChapters: "LumiBooks chapters and arcs for this chat.",
+        managedByLumiBooksThisBookMirrorsThe: "Managed by LumiBooks. Codex updates overwrite these lorebook entries. Edit records in LumiBooks > Codex."
+      },
+      bindBookToChat: {
+        theChatIsNoLongerAvailableIts: "Chat no longer available. Couldn''t attach its summary book."
+      },
+      bindCodexBookToChat: {
+        theChatIsNoLongerAvailableIts: "Chat no longer available. Couldn''t attach its Codex book."
+      },
+      doEnsureCodexBookForChat: {
+        chatNotFoundForUser: "Chat {chatId} not found for user"
+      }
+    }
+  },
+  codexTidy: {
+    resolveTidyTarget: {
+      enterAPositiveTokenLimitOrA: "Enter a positive token limit or a percentage between 0 and 100.",
+      theTargetMustBeAtLeastOne: "The target must be at least one token."
+    }
+  },
+  prompts: {
+    codex: {
+      registry: {
+        codexTemplates: {
+          entitySheetsRelationsTableOn: "Entity sheets (relations table on)",
+          describesCharactersJsonLocationsJsonAndThings: "Entity schemas with the relations table enabled. Relationships go in relations.json. {schemaHowtoTail}",
+          theEntityFilesActiveThisRunE: "the entity files active this run, e.g. characters.json / locations.json",
+          entitySheetsRelationsTableOff: "Entity sheets (relations table off)",
+          describesTheEntityFilesWhenTheRelations: 'Entity schemas with the relations table disabled. Relationships go in sheet "ties". {schemaHowtoTail}',
+          theEntityFilesActiveThisRun: "the entity files active this run",
+          relationsTable: "Relations table",
+          describesRelationsJsonAndTheCoverageRules: "Schema and coverage rules for relations.json. Sent when the relations table is enabled and unfrozen. {schemaHowtoTail}",
+          timeline: "Timeline",
+          describesTimelineJsonIncludingTheAppendOnly: "Schema for timeline.json. Normal updates can append events; the app enforces this. {schemaHowtoTail}",
+          threads: "Threads",
+          describesThreadsJsonResolvedThreadsAreArchived: "Schema for threads.json. Resolved threads are archived and hidden from the agent; this tells it not to re-add them. {schemaHowtoTail}",
+          worldRules: "World rules",
+          describesWorldJson: "Describes world.json. {schemaHowtoTail}",
+          secrets: "Secrets",
+          describesKnowledgeJsonTheValidatorRejectsItems: "Schema for knowledge.json. Items need knownBy, hiddenFrom, or falseBeliefs to pass validation. {schemaHowtoTail}",
+          retrievalKeywords: "Retrieval keywords",
+          theRulesForTheKeywordsListsOn: "Keyword rules for entities, lore, and secrets. Keywords control recall in Keywords mode and supplement vector recall. Too few can miss records; broad keywords can activate them too often. The app keeps up to 12 keywords, with up to two words per keyword.",
+          patchRulesSetDropContent: "Patch rules (set / drop / content)",
+          theSharedExplanationOfSetDropSeeds: "Patch rules for set, drop, seeds, and content, used by both protocols below. Keep these consistent with the app''s merge behavior.",
+          protocolToolCalls: "Protocol (tool calls)",
+          sentWhenTheProfileUsesToolCalls: "Tool-call protocol for batched updates. Keep the tool names codex_write, codex_skip, and codex_done, and the requirement to write or skip the active records. Also defines <think> for models without native reasoning.",
+          thePatchRulesTemplateAbove: "the patch rules template above",
+          protocolToolCallsOneFileAtA: "Protocol (tool calls, one file at a time)",
+          sentWhenTheProfileUsesToolCalls2: "Tool-call protocol for record-by-record updates. Uses the same tools and write-or-skip requirement as batched updates. Smaller replies reduce the risk of output being cut off.",
+          protocolJsonMode: "Protocol (JSON mode)",
+          sentWhenTheProfileWritesStrictJson: 'JSON protocol for batched updates. Keep the "writes" array, "skip" list, and "done" flag, and the requirement to write or skip the active records.',
+          protocolJsonModeOneFileAtA: "Protocol (JSON mode, one file at a time)",
+          sentWhenTheProfileWritesStrictJson2: "JSON protocol for record-by-record updates. Uses the same reply structure and write-or-skip requirement as batched updates. Smaller replies reduce the risk of output being cut off.",
+          taskClosingBlock: "Task closing block",
+          theClosingBlockOfEveryNormalUpdate: "Closes update and catch-up prompts, after the story text. Restates the task''s three passes and reasoning instructions.",
+          verificationNudge: "Verification nudge",
+          sentAsAnExtraRoundAfterA: "Extra round after a successful update in Thorough mode. The app appends a closing instruction for the selected protocol.",
+          tidyPass: "Tidy pass",
+          theInstructionBlockForTidyUpThe: "Tidy instructions. The app appends target files, locks, current records, and a closing instruction.",
+          refreshPass: "Refresh pass",
+          sentWhenReEnabledRecordsCatchUp: "Catch-up instructions for re-enabled records. Requires complete file rewrites.",
+          theFilesBeingRefreshed: "the files being refreshed",
+          itOrTheyToMatchTheTarget: '"it" or "they" to match the target count',
+          itLagsOrTheyLagToMatch: '"it lags" or "they lag" to match the target count',
+          howTheStoryInputIsArrangedE: "story input format, e.g. summaries and raw messages",
+          rebuildPass: "Rebuild pass",
+          sentWhenACategorySRebuildButton: "Category rebuild instructions. Targets appear empty except for locked rows. Requires complete file rewrites. Files are replaced on success; the cursor stays unchanged.",
+          theFilesBeingRebuilt: "the files being rebuilt",
+          howTheStoryInputIsArranged: "how the story input is arranged",
+          reconcileSweep: "Reconcile sweep",
+          sentWhenMessagesWereDeletedBehindThe: "Sent after message deletions when no new messages remain. Checks existing claims against the remaining story.",
+          fastCatchUp: "Fast catch-up",
+          thePreambleForEachFastCatchUp: "Introduces fast catch-up batches, which use chapter summaries instead of raw messages.",
+          theMessageRangeThisBatchCovers: "the message range this batch covers",
+          ultraCatchUp: "Ultra catch-up",
+          thePreambleForTheSinglePassUltra: "Introduces ultra catch-up: a pass over filed summaries and recent raw messages.",
+          theMessageRangeCovered: "the message range covered",
+          partialViewGuard: "Partial view guard",
+          prependedToEveryNormalUpdateTheAgent: "Tells the agent it sees part of the story. Prevents changes based on information missing from that window.",
+          reconcileWarning: "Reconcile warning",
+          prependedWhenEditsOrDeletionsWereDetected: "Flags existing records for review after edits or deletions behind the Codex cursor.",
+          migrationToRelationsTable: "Migration to relations table",
+          prependedOnTheFirstRunAfterThe: "Sent after enabling the relations table. Keep the migration instruction; the app checks the result.",
+          migrationToInlineTies: "Migration to inline ties",
+          prependedOnTheFirstRunAfterThe2: "Sent after disabling the relations table.",
+          repairWarning: "Repair warning",
+          prependedWhenFilesOnDiskWereUnreadable: "Sent when unreadable files are shown as empty.",
+          theUnreadableFiles: "the unreadable files",
+          lockedEntities: "Locked entities",
+          prependedWhenEntitiesAreLockedTheApp: "Identifies locked entities. The app also rejects changes to them.",
+          theLockedEntityIds: "the locked entity ids",
+          lockedFields: "Locked fields",
+          prependedWhenIndividualFieldsAreLockedOn: 'Identifies locked fields. The agent sees "Locked, do not edit" in place of their values. The app restores those values on writes.',
+          theEntitiesCarryingLockedFields: "the entities carrying locked fields"
+        },
+        schemaHowtoTail: "Keep the JSON structure consistent with the validator or writes will fail. Guidance can be reworded."
+      }
+    }
+  },
+  shared: {
+    tierNames: {
+      chapter: "Chapter",
+      arc: "Arc",
+      volume: "Volume",
+      series: "Series",
+      saga: "Saga",
+      library: "Library",
+      universe: "Universe"
+    },
+    defaultSettings: {
+      default: "Default"
+    },
+    normalizeSettings: {
+      default: "Default"
+    },
+    base: {
+      untitled: "Untitled"
+    },
+    codexBookNameFor: {
+      codexDoNotEdit: "{worldBookNamePrefix} Codex [Do Not Edit] - {suffix}"
+    },
+    lessonGradeLabel: {
+      gilded: "Gilded",
+      silver: "Silver",
+      bronze: "Bronze",
+      apprentice: "Apprentice"
+    },
+    summaryKindTag: "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {CODEX} other {{kind}}}"
+  },
+  ui: {
+    activationControl: {
+      activationControl: {
+        always: "Always",
+        keywords: "Keywords",
+        vectorKeywords: "Vector + keywords"
+      },
+      vectorSetupHint: {
+        vectorRecallNeedsATestedEmbeddingConnection: "Requires a tested embedding connection and lorebook vectorization in Lumiverse. Indexing runs in the background using its configured provider. Falls back to keywords until ready or if retrieval fails."
+      }
+    },
+    app: {
+      tab: {
+        lumiBooks: "LumiBooks",
+        books: "Books",
+        memoriaFilesYourChatIntoChaptersAnd: "Summarizes chats into chapters and arcs.",
+        lumiBooks2: "lumi books"
+      },
+      send: {
+        preparingSummaryExport: "Preparing summary export\u2026",
+        checkingSummaryCoverage: "Checking summary coverage\u2026"
+      },
+      showLoadNotice: {
+        retry: "Retry"
+      },
+      requestState: {
+        loadingLumiBooks: "Loading LumiBooks\u2026",
+        lumiBooksHasnTRespondedYouCanRetry: "LumiBooks hasn''t responded. Retry loading.",
+        couldNotLoadLumiBooks: "Couldn''t load LumiBooks: {string}"
+      },
+      doRender: {
+        lumiBooksCouldnTDisplayThisViewRetry: "Couldn''t display this view. Retry to reload."
+      },
+      unsub: {
+        loadingLumiBooks: "Loading LumiBooks\u2026",
+        thisChatIsTakingLongerToLoad: "Loading is taking longer than usual. Wait or retry."
+      }
+    },
+    codexExtraFields: {
+      applyExtraFields: {
+        mustBeAValidNumber: "{key} must be a valid number."
+      }
+    },
+    components: {
+      multiSelect: {
+        nothingToPick: "No options"
+      },
+      searchField: {
+        value: "\xD7",
+        clearSearch: "Clear search"
+      },
+      relativeTime: {
+        justNow: "just now",
+        mAgo: "{m}m ago",
+        hAgo: "{h}h ago",
+        dAgo: "{floor}d ago"
+      },
+      formatTokens: {
+        thousands: "{value}k"
+      }
+    },
+    continuity: {
+      sec: {
+        continuityRoot: "Continuity (root)"
+      }
+    },
+    lessons: {
+      contentBooks: {
+        courseBooks: {
+          theLibrarianSPrimer: "The Librarian''s Primer",
+          whyMemoriaExists: "Why Memoria exists",
+          goodMorningWhyDoIExistAs: "GOOD MORNING!! Why do I exist? As you roleplay, you''ll notice that chats that are very large can''t fit in model''s context. Old messages get clipped out, and your model will soon forget important information. How do we fix that?",
+          beholdMeITakeYourOlderMessages: "BEHOLD, ME. I take your older messages, and compact chunks of them them into summaries called chapters. When there are too many summaries, I compact them into arcs, and then volumes. Each summary is injected in place of the messages it replaces, so your chat history timeline is preserved!",
+          compactedMessagesAreHiddenSoYourLlm: "Compacted messages are hidden so your LLM reads my compact summary instead. And if you delete a chapter, the messages that it once hid unhide again.",
+          afterICompactMessagesOfRange1: "After I compact messages of range 1-18 into a chapter, what does the LLM model see for that range?",
+          bothTheSummaryAndTheOriginalMessages: "Both the summary and the original messages",
+          nothingItSForgotten: "Nothing, it''s forgotten!",
+          theChapterSummariesThereInstead: "The chapter summaries there instead",
+          aLorebookEntryInTheWorldInfo: "A lorebook entry in the world-info section of the prompt",
+          theSummariesReplaceTheMessagesInPlace: "The summaries replace the messages in place :)",
+          theFirstFiling: "The first filing",
+          thisIsAPracticeChatIMade: "This is a practice chat I made just for teaching you \uD83D\uDE3E. These highlighted buttons are my quick actions.",
+          thisPracticeStoryHasPlentyOfOld: "This practice story has plenty of old messages ready to compact into summaries. Press the File chapter button and watch what happens.",
+          boomTheStoryIsNowMoreCompact: "BOOM\uD83D\uDCA3. The story is now more compact, the new summary chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
+          importantThereSAutomationTooNowYou: `IMPORTANT. There''s automation too! Now you may ask the very important question of: when do I summarize on my own?? And I''ll graciously answer that very important question! That depends on exactly about TWO 2\uFE0F\u20E3 settings. Consider: Uncompressed messages are large, but hold detailed info so we don''t want to compress them right away right? Therefore, first setting is what I call the "lag", 65 by default. This represents the number of most recent messages we leave uncompressed always! \uD83D\uDDFF`,
+          theSecondSettingIsTheWindowWe: `The second setting is the "window" \uD83E\uDE9F. We don''t want to summarize every single message individually, instead we probably want toi summarize like, 18, into one chapter! Turns out 18 is the default, what a coincidence! Once 18 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`,
+          theDefaultValuesAreMadeFor200k: "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size. But I do reccomend keeping context at 200k. Unless you''re living in 2028 when LLMs are long context GODS (presumably).",
+          fileAllFilesChaptersUntilTheLag: '"File all" files chapters until the lag is reached. Bind arc takes my oldest chapters and compresses them into one smaller summary called an arc. When work is waiting to be done, a little pill appears here telling you how much.',
+          everythingIFileIsStoredInA: "Everything I file is stored in a lorebook created just for this chat, named after it. It appears the first time a chapter is filed.",
+          normallyYouNeverNeedTheseButtonsWith: "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I''m busy or you switched me off >:(",
+          "70OldMessagesLag65Window18": "70 old messages \xB7 lag 65 \xB7 window 18",
+          thesePillsSayLagReadyButWindow: "These pills say lag ready but window building, and I''m not filing. Why not?",
+          theLagHasNotFilledUpYet: "The lag has not filled up yet",
+          theChatHasNoLorebookYet: "The chat has no lorebook yet",
+          "70MessagesMinusThe65ProtectedBy": "70 messages minus the 65 protected by the lag leaves only 5, and a chapter needs 18",
+          aChapterCanOnlyBeFiledAfter: "A chapter can only be filed after an arc exists",
+          theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 70 minus 65 is 5, short of 18. This is also when I''d notify you that your story needs more messages if you click file~",
+          theDesk: "The desk",
+          thisColoredBarIsTheSpineA: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the codex, that''s my second course (it''s really cool).",
+          clickAnyColoredBlockAndILl: "Click any colored block and I''ll jump you straight to that chapter or arc on my shelf \uD83D\uDC30. Handy when you want to check what I wrote about a scene.",
+          theListUnderItShowsTheSame: "The list under it shows the same picture in numbers: what my volumes, arcs, and chapters cost, plus the recent messages I haven''t touched yet.",
+          theseTilesAreTheQuickSummaryFiled: "These tiles are the quick summary. Filed is how much of the chat I''ve compacted. Tail is the recent part I haven''t. Shelf counts everything I''ve made. The Codex tile belongs to my second course \uD83E\uDD77.",
+          thePromptPanelShowsThePromptBreakdown: "The Prompt panel shows the prompt breakdown your last generation sent, split into groups. Simulate... simulates your next prompt (what a surprise). And if the prompt goes past 90% of the model''s limit, I warn you here. Bad things happen if you go past 100%... trust me \uD83E\uDD1E",
+          iWroteTooMuchThePreviousStep: "I wrote too much the previous step, so I''m continuing here. If you''re approaching 100%, turn down the lag! Anyways. While I write, a row like this appears. If you''re a creep \uD83D\uDC7E, watch lets you read my raw output live, thoughts included.",
+          ifIFailEvenAfterRetryingThis: "If I fail even after retrying, this red box shows an error. Please read it.",
+          arc154Msgs08kTokens: "ARC 1 \xB7 54 msgs \u2192 0.8k tokens",
+          lookAtTheSpineTheArcBlock: "Look at the spine. The arc block at the far left covers 54 messages but is drawn as a thin sliver, while the uncompressed tail at the end takes most of the bar. Why?",
+          witnessThePowerOfLumibooks: "WITNESS THE POWER OF LUMIBOOKS",
+          newerStoryIsAlwaysDrawnBigger: "Newer story is always drawn bigger",
+          theArcLostMostOfItsMessages: "The arc lost most of its messages",
+          theBarShowsTimePassingNotSize: "The bar shows time passing, not size",
+          theSpineIsACostMapThin: "The spine is a cost map. Thin blocks mean my awesome compression technology is working, the fat block are the uncompressed messages.",
+          compressionIsRunningYetYourPromptIs: "Compression is running, yet your prompt is still huge. Which number here explains it?",
+          theTailRecentMessagesAreUncompressedUntil: "The Tail, recent messages are uncompressed until they pass the lag+window",
+          theFiledTileFilingGrowsThePrompt: "The Filed tile, filing grows the prompt",
+          theShelfTileTooManyChapters: "The Shelf tile, too many chapters",
+          theCodexTileEvenThoughYouDon: "The Codex tile, even though you don''t know what it is yet \uD83E\uDD25",
+          theUncompressedTailIsUsuallyTheFat: "The uncompressed tail is usually the fat part of the prompt. If it doesn''t fit your context, lower the lag so I file closer to the present.",
+          theShelf: "The Shelf",
+          everythingIFileEndsUpOnMy: "Everything I file ends up on my Shelf. Let''s visit it. Tap the Books tab.",
+          myShelf: "My shelf.",
+          witnessMyShelfEverythingIVeFiled: "Witness my Shelf \uD83D\uDE08. Everything I''ve filed for this chat lives here, sorted into volumes, arcs, and chapters.",
+          entriesOpenWithAClickTapThe: "Entries open with a click. Tap the chapter called The Captain Asks Questions.",
+          thereSTheWholeRecord: "There''s the whole record.",
+          youLlSeeItsSizeBeforeAnd: "You''ll see its size before and after compacting, my little note, and four buttons. Edit rewrites the text. Regenerate throws the summary away and writes it again from the same messages. Release turns it into a normal lorebook entry that I stop managing. Delete removes it. Boring stuff \uD83D\uDCA4",
+          fadedEntriesMeansAnArcOrVolume: "Faded entries means an arc or volume replaced them, like how chapters replace messages. Delete the arc and its chapters unhide again.",
+          importantTheGhostTagMarksAChapter: "\uD83D\uDEA9IMPORTANT\uD83D\uDEA9 The GHOST tag marks a chapter I prepared early for codex, but I don''t actually inject it or use it in the summaries yet until it passes the lag. My codex course explains those. If you ask about this on Discord I will kill you.",
+          youDeleteAnArcThatWasMade: "You delete an arc that was made from 3 chapters. What happens?",
+          the3ChaptersUnhideAndInjectAgain: "The 3 chapters unhide and inject again, and the messages stay hidden",
+          theChaptersAndAllTheirMessagesReturn: "The chapters and all their messages return to the prompt",
+          the3ChaptersAreDeletedAlongWith: "The 3 chapters are deleted along with the arc",
+          prolixTakesAShit: "Prolix takes a shit",
+          deletingATierHandsTheJobBack: "Deleting a tier hands the job back down to the one below. The messages themselves only return when nothing covers them at all.",
+          halfTheChaptersHereAreFadedAnd: "Half the chapters here are faded and labeled superseded. Did something break?",
+          noAnArcReplacedThemTheyStay: "No, an arc replaced them, they stay stored while the arc speaks for those scenes",
+          yesTheyFailedToSave: "Yes, they failed to save",
+          yesTheirMessagesWereDeleted: "Yes, their messages were deleted",
+          theyWereAccidentallyExcluded: "They were accidentally excluded",
+          supersededIsNormalHousekeepingAfterAnArc: "Superseded is normal housekeeping after an arc binds. Delete the arc and those chapters wake up again.",
+          whichOfTheseButtonsActuallyCallsThe: "Which of these buttons actually calls the AI model?",
+          regenerate: "Regenerate",
+          delete: "Delete",
+          release: "Release",
+          exclude: "Exclude",
+          value: "\uD83D\uDC0C",
+          composeManualControl: "Compose, manual control",
+          anywayManualControlsNext: "Anyway. Manual controls next!",
+          ready: "Ready?",
+          theComposeTabIsManualModeFilter: "The Compose tab is manual mode. Filter or search these messages, tick the boxes, and shift-click (or long-press on a phone) to grab a whole range. A \u2713 means already filed, a \u2298 means excluded.",
+          compressFilesWhatYouSelectedIntoA: "Compress files what you selected into a chapter. Wow no way!",
+          excludeProtectsMessagesFromMeCompletelyPerfect: "Exclude protects messages from me completely. Perfect for OOC notes or instructions that must stay word-for-word.",
+          furtherDownYouCanPickChaptersTo: "Further down you can pick chapters to bind into an arc, and arcs to press into a volume. Volumes are the strongest compression. If you need more, you probably don''t.",
+          whenIsExcludeTheRightToolInstead: "When is Exclude the right tool, instead of Delete?",
+          whenAMessageMustStayInThe: "When a message must stay in the prompt word-for-word and never be summarized",
+          whenYouWantAMessageGoneFrom: "When you want a message gone from the chat",
+          whenAChapterCameOutBadly: "When a chapter came out badly",
+          whenYouWishToDeceiveYourEnemy: "When you wish to deceive your enemy, and therefore, must deceive yourself \uD83D\uDC09",
+          excludeKeepsTheMessageFromCompressionDelete: "Exclude keeps the message from compression. Delete removes it from the chat.",
+          continuityAndRepair: "Continuity and repair",
+          oneMoreIPromiseTapAdvanced: "ONE MORE I PROMISE. Tap Advanced.",
+          theContinuityDesk: "The continuity desk.",
+          continuityLetsANewChatInheritAn: "Continuity lets a new chat inherit an old chat''s memories. Rebase copies another chat''s chapters and arcs in as a frozen prologue, marked [Root], injected before your first message.",
+          rebuildFromDeletesThisChatSOwn: `"Rebuild from"  deletes this chat''s own memories first, then starts over on top of the inherited ones. Detach removes inherited memories again. And if you branch a chat, the new branch inherits this.`,
+          maintenanceFixesThingsWhenTheShelfAnd: "Maintenance fixes things when the shelf and the chat disagree. Resync visibility unhides any message whose chapter no longer exists and re-hides the rest properly. Rebuild books wipes my work and re-summarizes the whole chat. Wipe books just wipes.",
+          someRepairsIHandleMyselfDeleteOne: "Some repairs I handle myself. Delete one of my entries in the Lorebook drawer and I notice, unhide its messages, and toast you about it. If a chat''s lorebook link ever breaks, I try and re-link it. So don''t fuck with me >:)",
+          youStartASequelChatItsShelf: "You start a sequel chat. Its shelf is empty, and you pick the old chat as a source. Rebase or Rebuild?",
+          rebaseDuh: "Rebase, duh?",
+          rebuildItIsAlwaysTheSaferOption: "Rebuild, it is always the safer option",
+          neitherCopyTheEntriesOverByHand: "Neither, copy the entries over by hand like force of nature",
+          detachFirstThenRebuild: "Detach first, then Rebuild",
+          rebaseIsForFreshChatsRebuildIs: "Rebase is for fresh chats. Rebuild is for chats that already have their own memories that need replacing.",
+          tuningThePress: "Tuning the press",
+          okThisIsActuallyTheLastPart: "Ok this is ACTUALLY the last part. Tap the Tuning tab.",
+          myDials: "My dials.",
+          everythingIDoIsControlledByA: "Everything I do is controlled by a profile, and the active profile applies to all of your chats at once. The Extension checkbox is my master switch, off means I do nothing anywhere.",
+          rightBelowSitsMyWritingDeskWhich: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex''s own connection and samplers, that''s my second course.",
+          nextRoomTapSettings: "Next room. Tap Settings.",
+          thePressRoom: "The press room.",
+          thisIsThatWindowThingITold: "This is that window thing I told you about earlier! Change it here.",
+          arcsCanBuildAutomaticallyAfterEnoughChapters: "Arcs can build automatically after enough chapters pile up, just like how chapters build after enough messages pile up.",
+          andThisIsTheAutomationSettingI: "And this is the automation setting I talked about earlier too! Codex has its own, but do my second, shorter course for that one.",
+          contextIsJustHowManyPreviousChapters: "Context is just how many previous chapters I read each time for, well, context. Some other boring stuff...",
+          windowTokens18: "Window \xB7 tokens \xB7 18",
+          youSwitchTheWindowUnitFromMessages: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
+          chaptersOfAbout18MessagesSameAs: "Chapters of about 18 messages, same as before",
+          idk: "Idk",
+          youAskedMeToConvert18Messages: "You asked me to convert 18 messages into tokens",
+          chaptersWillAutomaticallyFileAfterOnly18: "Chapters will automatically file after only ~18 tokens of story, about one sentence each. Uh oh. ",
+          theUnitChangesWhatTheNumberMeans: "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands",
+          lag10Messages: "Lag \xB7 10 messages",
+          youLowerTheLagFrom65Down: "You lower the lag from 65 down to 10. What changes?",
+          iStartSummarizingMuchCloserToThe: "I start summarizing much closer to the present, only your 10 newest messages stay untouched",
+          chaptersGetBigger: "Chapters get bigger",
+          nothingUntilTheWindowAlsoChanges: "Nothing until the window also changes",
+          iGoBackAndReSummarizeOld: "I go back and re-summarize old chapters",
+          aSmallLagSavesMoreSpaceBut: "A small lag saves more space but summarizes your recent scenes sooner. Keep it just big enough for quality writing without hallucination.",
+          window40TargetPercent4: "Window \xB7 40 \xB7 Target percent \xB7 4",
+          youSetTheWindowTo40And: "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
+          chaptersBecomeSmallerAndTheyCover40: "Chapters become smaller, and they cover 40 messages each.",
+          chaptersBecomeSmallerAndMoreFrequent: "Chapters become smaller and more frequent",
+          theSameTheRatioOnlyAffectsArcs: "The same, the ratio only affects arcs",
+          unchangedUntilTheLagChangesToo: "Unchanged until the lag changes too",
+          theWindowIsWhatGoesInThe: "The window is what goes in, the ratio is what comes out. 4% is wayy to aggresive compression, but it''s up to you in the end!",
+          andTheLastPartOfTheSettings: "And the last part of the settings, tap Prompts.",
+          myInstructions: "My instructions.",
+          thePromptsPaneHoldsMyInstructionsFour: "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token.",
+          memoriaCouldnTFileTheChapterThe: "Memoria couldn''t file the chapter: The model didn''t return valid JSON",
+          everyOneOfMyChaptersFailsLike: "Every one of my chapters fails like this, even after retries. The most likely fix?",
+          giveMeAStrongerModelOrA: "Give me a stronger model or a different connection",
+          raiseTheLag: "Raise the lag",
+          turnOffMessageHiding: "Turn off message hiding",
+          lowerTheRetryCount: "Lower the retry count",
+          retriesCannotFixAModelThatKeeps: "Retries cannot fix a model that keeps writing broken JSON. Also check that custom prompts or regex scripts are not mangling my output.",
+          finalFuckingLee: "Final Fucking Lee",
+          practiceIsOverThisIsYourReal: "Practice is over. This is your REAL ui.",
+          ifYourChatAlreadyHasEnoughStory: "If your chat already has enough story, press File chapter for real and watch me work. If not, skip this, I''ll start on my own once it does.",
+          aRealChapterFiledByYourOwn: "A real chapter, filed by your own hand!",
+          myAutomationSwitchLivesInTuningTap: "My automation switch lives in Tuning. Tap the Tuning tab, then Settings.",
+          thereSTheSwitch: "There''s the switch.",
+          turnRunAutomationOnAndILl: "Turn Run automation on, and I''ll handle the filing myself after every message from now on.",
+          automationIsOnILlTakeIt: "Automation is on. I''ll take it from here!",
+          wellDoneMousepadHasLetMeKnow: "Well done! Mousepad has let me know, that they want to tell me to tell you that they are very proud of you for getting through this \uD83C\uDFC6. Sign and take your diploma! The shorter Codex course is waiting whenever you''re curious :)"
+        }
+      },
+      contentCodex: {
+        courseCodex: {
+          theArchivistSCodex: "The Archivist''s Codex",
+          whyAStoryBible: "Why a story bible",
+          summaryChaptersAreAGoodOutlineBut: "Summary chapters are a good outline. But if you compress a story enough you''ll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
+          beholdTheKnowledgeCodexLetSWalk: "BEHOLD the Knowledge Codex \uD83D\uDE0E. Let''s walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
+          thereItIs: "There it is.",
+          eightRecordsMakeTheCodexCharactersLocations: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all \uD83D\uDCAA. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning \u2192 Settings \u2192 Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
+          yourCharacterCardSaysEliasHasA: "Your character card says Elias has a scar. It never comes up in the story, and the codex never records it. Is that a bug?",
+          noTheCodexOnlyRecordsWhatThe: "No. The codex only records what the story itself mentions",
+          yesTheCodexShouldCopyEverythingFrom: "Yes, the codex should copy everything from the card",
+          theCardHasToBeImportedInto: "The card has to be imported into the codex first",
+          theCodexOnlyTracksCharactersYouAdd: "The codex only tracks characters you add by hand",
+          iReadYourLoreAsReferenceFor: "I read your lore as reference for names and spellings, but copying it in would be duplicating information.",
+          readingTheCodex: "Reading the codex",
+          theLineUpTopIsMyLedger: "The line up top is my ledger. It tells you whether a codex exists, how many new messages I haven''t read yet, and when I last ran.",
+          theseAreTheEverydayActionsUpdateNow: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
+          everyTileIsOneRecordItsCount: "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
+          dashedMeansNotInjectedButStillUpdated: "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.\uD83D\uDDB1\uFE0F\uD83D\uDDB1\uFE0F\uD83D\uDDB1\uFE0F\uD83D\uDDB1\uFE0F",
+          youFrozeRelations40MessagesAgoAnd: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
+          itSMarkedAsNeedingACatch: "It''s marked as needing a catch-up. A refresh does that from the summaries and recent messages",
+          theGapFillsInAutomaticallyOnThe: "The gap fills in automatically on the next normal update",
+          nothingCanRecoverTheMissedEventsExcept: "Nothing can recover the missed events except a full rebuild",
+          tidyItTidyingReReadsTheMissed: "Tidy it, tidying re-reads the missed messages",
+          myReadingPositionIsAlreadyPastThose: "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records.",
+          rebuildCodexAndWipeCodexBothErase: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
+          wipeHelpsLumiAgentWipeHerAss: "Wipe helps LumiAgent wipe her ass.",
+          rebuildKeepsYourEntriesAndOnlyRewrites: "Rebuild keeps your entries and only rewrites the stale ones",
+          wipeAlsoDeletesYourChaptersAndArcs: "Wipe also deletes your chapters and arcs",
+          rebuildKeepsYourTileSettingsAndRemakes: "Rebuild keeps your tile settings and remakes the codex from scratch, whereas wipe destroys it all.",
+          bothEraseTheRecordsAndMyReading: "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive.",
+          theRecordsHandsOn: "The records, hands on",
+          tapEntitiesAndBehold: "Tap Entities and behold...",
+          thePeoplePlacesAndThings: "The people, places, and things! \uD83C\uDF0E",
+          everyChipIsAnEntityClickOne: 'Every "chip" is an entity. Click one to open its sheet. Poke around as much as you like.',
+          iAddAndUpdateAllOfThese: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it''s a good way to learn the interface now. Try it: click the + character chip, type a name, Mousepad maybe, then press Save on the sheet.",
+          savedYourEditsAreCanonNowI: "Saved. Your edits are canon now, I read them as truth and build on them.",
+          charElias: "char:elias",
+          theStoryHasMovedOnEliasIsn: `The story has moved on, Elias isn''t hiding anymore, but his sheet still says "hiding in the tannery loft". What''s happening?`,
+          theAgentHasnTReadThatFar: "The agent hasn''t read that far yet. It catches up on its own.",
+          theCodexIsBrokenDeleteTheExtension: "The codex is broken, delete the extension",
+          sheetsNeverChangeOnceWritten: "Sheets never change once written",
+          youHaveToDeleteEliasAndRe: "You have to delete Elias and re-add him",
+          theCodexUpdatesOnAScheduleSo: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
+          charCaptain: "char:captain",
+          considerTheCaptainLetSSayThat: "Consider the Captain. Let''s say that his character card describes him well. This means I don''t need him in the codex as well. See here how it says locked after 1 click? That''s bad! I won''t write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
+          greatHeIsNoLongerUpdatedOr: "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!",
+          letSExploreTheWorldWideWeb: "Let''s explore the world wide web. Tap Relations.",
+          thisIsTheListView: "This is the list view.",
+          iCreateTheseAndKeepTheseUpdated: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let''s try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
+          recorded: "Recorded!",
+          youJustAddedARelationByHand: "You just added a relation by hand. Will my agent overwrite or delete your work on its next pass?",
+          noYourEditsBecomePartOfThe: "No. Your edits become part of the record, the agent builds on them and only rewrites what the story contradicts",
+          yesTheAgentRewritesEverythingFromScratch: "Yes, the agent rewrites everything from scratch each pass",
+          yesUnlessYouFreezeTheRelationsTile: "Yes, unless you freeze the Relations tile first",
+          handEditsOnlySurviveWhileTheRelations: "Hand edits only survive while the relations table is off",
+          theAgentAlwaysStartsFromTheCurrent: "The agent always starts from the current records, so your corrections are canon it preserves. Freezing is only for stopping updates entirely.",
+          tapGraph: "Tap Graph.",
+          thereSYourWebARealStory: "There''s your web. A real story will look much more complex.",
+          thisIsTheWebForThisSmall: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
+          theAgentAndItsDials: "The agent and its dials",
+          lastStopMyRulesOpenTheTuning: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
+          myDials: "My dials.",
+          myCodexSettingsLiveHereByDefault: "My codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
+          codexLag65: "Codex lag \xB7 65",
+          youRaiseTheCodexLagFrom6: "You raise the codex lag from 6 up to 65, same as the chapter lag. What changes?",
+          theBibleAlwaysRuns65MessagesBehind: "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
+          nothingTheLagOnlyAffectsChapters: "Nothing, the lag only affects chapters",
+          theCodexGetsCheaperWithNoDownside: "The codex gets cheaper with no downside",
+          theAgentRunsMoreOften: "The agent runs more often",
+          chaptersActAsReplacementsOfOldMessages: "Chapters act as replacements of old messages, where the codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
+          twoMoreThingsRelationsTableOffMoves: "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
+          oneMoreThingEditAnyRecordWhenever: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was codex-recorded, my next run notices, rewinds, and corrects the codex.",
+          memoriaCouldnTUpdateTheCodexThe: "Memoria couldn''t update the codex: The codex agent narrated instead of calling tools, check that the connection supports tool calls",
+          everyCodexRunFailsWithThisWhat: "Every codex run fails with this. What is the most likely cause?",
+          theCodexModelCannotMakeToolCalls: "The codex model cannot make tool calls, pick one that can under Codex connection",
+          theChatIsTooLong: "The chat is too long",
+          aCodexFileIsCorrupted: "A codex file is corrupted",
+          theRelationsTableIsOff: "The Relations table is off",
+          withUseToolCallsOnTheAgent: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
+          withExtraContextModeOnAChapter: "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn''t in the prompt. Is something wrong?",
+          noItSAChapterWrittenEarly: "No. It''s a chapter written early to feed the codex, but isn''t used before summary lag!",
+          pleaseReadThisOneCarefullyOrMousepad: "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD",
+          yesItSCorruptedDeleteItAnd: "Yes, it''s corrupted, delete it and resync",
+          itSADraftWaitingForYour: "It''s a draft waiting for your approval",
+          ghostsGiveTheCodexContextEarlyAnd: "Ghosts give the codex context early, and are eventually turned into real summaries later down the line. ",
+          openingCeremony: "Opening ceremony",
+          practiceIsOverThisIsYourReal: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Settings, then its Codex side.",
+          alreadyThereGood: "Already there. Good.",
+          flipEnableCodexOnTheDefaultSettings: "Flip Enable Codex on. The default settings below suit most chats.",
+          enabledFromNowOnIKeepYour: "Enabled! From now on I keep your story bible current after every message.",
+          homeHasAnUpdateCodexButtonNow: "Home has an Update codex button now. Let''s go find it. Tap Home.",
+          pressItAndILlReadThis: "Press it and I''ll read this chat right away, or skip and I''ll do it later!",
+          readingWatchTheBusyRowOnHome: "Reading! Watch the busy row on Home if you want to see me think.",
+          thatSAllGoForthAndMake: "That''s all, go forth and make some awesome stories!\u2728"
+        }
+      },
+      diagrams: {
+        diagramRot: {
+          theContextWindow: "the context window"
+        },
+        caption: {
+          newTurnsPushInTheOldestGet: "new turns push in, the oldest get clipped out",
+          thePlotSurvivesTheStructuredFactsThin: "the plot survives, the structured facts thin out"
+        },
+        diagramFold: {
+          yourChatHistory: "your chat history"
+        },
+        states: {
+          oldMessagesPileUp: "old messages pile up\u2026",
+          ch1: "CH 1",
+          theOldestFoldIntoAChapterIn: "\u2026the oldest fold into a chapter, in place\u2026",
+          ch2: "CH 2",
+          thenTheNextWindowFolds: "\u2026then the next window folds\u2026",
+          arc1: "ARC 1",
+          andChaptersBindIntoASingleArc: "\u2026and chapters bind into a single arc."
+        },
+        diagramUnfold: {
+          theShelf: "the shelf"
+        },
+        filed: {
+          ch3: "CH 3",
+          aChapterCoversMessages3754They: "a chapter covers messages 37-54, they ride hidden"
+        },
+        deleted: {
+          deleteItAndTheMessagesComeRight: "delete it and the messages come right back"
+        },
+        fadeChips: {
+          eliasMaraLovesHerHidesIt: "Elias \u2192 Mara: loves her, hides it",
+          captainWronglyBelievesBandits: "captain wrongly believes: bandits",
+          day12SheSawTheFall: "day 12: she saw the fall",
+          openThreadTheReceipt: "open thread: the receipt"
+        },
+        diagramFade: {
+          oneSummaryCompressedAgainAndAgain: "one summary, compressed again and again",
+          arc: "arc",
+          volume: "volume",
+          withACodex: "with a codex",
+          theCodexTracksThemExplicitlyOutsideThe: "the codex tracks them explicitly, outside the summaries"
+        },
+        tier: {
+          chapter: "chapter"
+        },
+        reset: {
+          chapter: "chapter",
+          thePlotSurvivesTheStructuredFactsThin: "the plot survives, the structured facts thin out"
+        }
+      },
+      diploma: {
+        gradeRemark: {
+          notAPageOutOfPlaceMy: "Not a page out of place. My favorite reader, nyaa.",
+          nearlyFlawlessFilingTheShelfApproves: "Nearly flawless filing. The shelf approves.",
+          aSolidApprenticeshipTheStacksWillTeach: "A solid apprenticeship. The stacks will teach the rest.",
+          theLibraryForgivesRetakeASectionWhenever: "The library forgives. Retake a section whenever you like."
+        },
+        renderRegister: {
+          signTheRegister: "Sign the register",
+          theNameGoesOnYourDiploma: "The name goes on your diploma."
+        },
+        input: {
+          reader: "Reader"
+        },
+        sign: {
+          sign: "Sign",
+          reader: "Reader"
+        },
+        renderDiploma: {
+          lumibooksAcademy: "LUMIBOOKS ACADEMY",
+          certifiesThat: "certifies that",
+          hasReadTheStacksAndUnderstoodThem: "has read the stacks and understood them",
+          ofGoldStamps: "{gold} of {total} gold stamps \xB7 {toLocaleDateString}",
+          saveAsImage: "Save as image",
+          prefersReducedMotionReduce: "(prefers-reduced-motion: reduce)"
+        },
+        makeConfetti: {
+          value: "\u25C6"
+        },
+        downloadDiploma: {
+          lUMIBOO: "L U M I B O O K S   A C A D E M Y",
+          certifiesThat: "certifies that",
+          hasReadTheStacksAndUnderstoodThem: "has read the stacks and understood them",
+          ofGoldStamps: "{gold} of {total} gold stamps \xB7 {toLocaleDateString}",
+          memoriaLibrarian: "\u2014 Memoria, Librarian"
+        }
+      },
+      engine: {
+        buildStage: {
+          exam: "{title} \xB7 Exam",
+          value: "\u2715",
+          leaveTheExamAnUnfinishedExamIs: "Leave the exam, an unfinished exam is not saved",
+          leaveAnytimeYourDiplomaAndPreviousGrade: "Leave anytime, your diploma and previous grade stand",
+          leaveTheLessonProgressIsSaved: "Leave the lesson, progress is saved",
+          leaveTheLesson: "Leave the lesson",
+          collapseTheDialogue: "Collapse the dialogue"
+        },
+        renderRail: {
+          questionOf: "Question {examIdx1} of {length}"
+        },
+        table: {
+          ix: "IX",
+          iv: "IV"
+        },
+        makeSandboxSend: {
+          memoriaSavedJson: "Memoria saved {file}.json"
+        },
+        runDoScript: {
+          memoriaIsFilingAChapter1s: "Memoria is filing a chapter (1s)",
+          memoriaOpensAFreshPageForYou: "Memoria opens a fresh page for you, nya",
+          memoriaSlidTheChapterOntoYourShelf: "Memoria slid the chapter onto your shelf, nyaa~",
+          memoriaSavedJson: "Memoria saved {file}.json"
+        },
+        renderDemoFor: {
+          noChatIsOpenRightNowSkip: "No chat is open right now, skip this step."
+        },
+        renderCover: {
+          value: "\u25C6 \u25C7 \u25C6"
+        },
+        positionSpotlight: {
+          value: "\u25C6 {chip}"
+        },
+        renderStep: {
+          signTheRegister: "Sign the register"
+        },
+        renderSheet: {
+          rightWhereWeNeedToBe: "Right where we need to be.",
+          back: "Back",
+          skip: "Skip",
+          yourMove: "your move\u2026",
+          next: "Next",
+          working: "working\u2026"
+        },
+        renderQuiz: {
+          alreadyStampedGoldFromTheExamOr: "Already stamped gold, from the exam or an earlier pass.",
+          answeredOnAnEarlierPass: "Answered on an earlier pass.",
+          back: "Back",
+          next: "Next",
+          filed: "Filed! \u25C6",
+          notQuite: "Not quite.",
+          continue: "Continue",
+          skipMarkForRevisit: "Skip, mark for revisit",
+          holdToPeekAtThePane: "Hold to peek at the pane"
+        },
+        finishExam: {
+          ofThePassedTopicsStayStampedWhile: "{correct} of {length}, the passed topics stay stamped while we walk the rest"
+        },
+        renderStepExamPass: {
+          signTheRegister: "Sign the register"
+        },
+        data: {
+          reader: "Reader"
+        },
+        renderDiplomaPhase: {
+          enterTheArchive: "Enter the Archive",
+          openTheCodex: "Open the Codex",
+          close: "Close",
+          yourDiplomaAsFiledInTheAcademy: "Your diploma, as filed in the Academy.",
+          signedStampedAndShelvedCongratulationsNyaa: "Signed, stamped, and shelved. Congratulations, nyaa."
+        }
+      },
+      fixture: {
+        lines: {
+          theRainHadNotLetUpSince: "The rain had not let up since the duke''s carriage was found empty on the north road.",
+          eliasPressedTheSilverLocketIntoHis: "Elias pressed the silver locket into his palm until the clasp bit skin.",
+          youWereThereMaraSaidQuietlyNot: '"You were there," Mara said quietly, not looking up from her stitching.',
+          theCaptainSMenWentDoorTo: "The captain''s men went door to door along Wren Street before dawn.",
+          iKeepMyVoiceLevelAndAsk: "I keep my voice level and ask what the pawnbroker wanted for his silence.",
+          ashfordManorStoodDarkExceptForA: "Ashford Manor stood dark except for a single lamp in the study window.",
+          banditsTheCaptainRepeatedWritingItDown: '"Bandits," the captain repeated, writing it down like he believed it.',
+          maraFoldedTheReceiptIntoTheHem: "Mara folded the receipt into the hem of her sleeve and said nothing.",
+          theBellsRangForTheDukeAt: "The bells rang for the duke at noon, and half the city wore borrowed black.",
+          eliasSleptInTheLoftAboveThe: "Elias slept in the loft above the tannery and dreamed of the study door.",
+          ifTheyFindTheLocketTheyFind: '"If they find the locket, they find you," she whispered on the bridge.',
+          theFerrymanSScarCaughtTheLight: "The ferryman''s scar caught the light when he took my coin."
+        },
+        makeMeta: {
+          msgs: "{title} (msgs {first1}-{last1})"
+        },
+        tag: {
+          vol: "Vol",
+          arc: "Arc"
+        },
+        comment: {
+          msgs: "#{n} - {title} (msgs {first1}-{last1})",
+          msgs2: "{tag} #{n} - {title} (msgs {first1}-{last1})"
+        },
+        ch: {
+          theDukeFalls: "The Duke Falls",
+          "1stSummaryChapterContaining18PriorTurns": `1st Summary Chapter Containing 18 Prior Turns
+
+Day 3. The Duke of Ashford is found dead in his study. Elias, the duke''s valet, flees through the servant stair carrying the silver locket. Mara sees him cross the yard with blood on his cuff and says nothing. The city watch seals the manor by nightfall.`,
+          neatlyFiledOneNefariousNightOnThe: "Neatly filed, one nefarious night on the shelf.",
+          aSeamstressSSilence: "A Seamstress''s Silence",
+          "2ndSummaryChapterContaining18PriorTurns": `2nd Summary Chapter Containing 18 Prior Turns
+
+Day 5. The captain interviews the manor staff. Mara claims she saw bandits on the north road and is dismissed. Elias hides in the tannery loft and pays the pawnbroker to hold the locket. Mara keeps the pawnbroker''s receipt sewn into her sleeve.`,
+          secretsStitchedIntoASleeveSoTidy: "Secrets stitched into a sleeve, so tidy nya.",
+          thePawnbrokerSReceipt: "The Pawnbroker''s Receipt",
+          "3rdSummaryChapterContaining18PriorTurns": `3rd Summary Chapter Containing 18 Prior Turns
+
+Day 8. The pawnbroker raises his price for silence. Elias and Mara meet on the bridge and argue about running. The captain announces the bandit theory publicly at the duke''s funeral while quietly reopening the staff interviews.`,
+          priceyPromisesPressedBetweenThePages: "Pricey promises pressed between the pages.",
+          theCaptainAsksQuestions: "The Captain Asks Questions",
+          "4thSummaryChapterContaining18PriorTurns": `4th Summary Chapter Containing 18 Prior Turns
+
+Day 11. The captain searches the tannery district on a tip. Elias escapes over the rooftops but drops a glove with the manor''s crest. Mara burns her bloodied stitching and tells the captain she is leaving the city to mourn.`,
+          curiousCaptainsCollectSuchClumsyClues: "Curious captains collect such clumsy clues.",
+          locketAtTheBridge: "Locket at the Bridge",
+          "5thSummaryChapterContaining18PriorTurns": `5th Summary Chapter Containing 18 Prior Turns
+
+Day 14. The pawnbroker sells the locket''s description to the captain. Elias buys it back with the last of his wages minutes before the watch arrives. On the bridge, Mara tells Elias she saw everything on day 3, and that she has kept the receipt as leverage of her own.`,
+          bridgesBearTheBestAndBoldestBargains: "Bridges bear the best and boldest bargains.",
+          rooftopConfessions: "Rooftop Confessions",
+          "6thSummaryChapterContaining18PriorTurns": `6th Summary Chapter Containing 18 Prior Turns
+
+Day 16. Elias admits the killing was not planned: the duke caught him returning the locket Mara''s mother once pawned. The pair agree to frame the ferryman, then abandon the plan when Mara recognizes his scar.`,
+          ghostlyGossipGlidesInBeforeTheGlue: "Ghostly gossip glides in before the glue dries."
+        },
+        arc1: {
+          theMurderAtAshfordManor: "The Murder at Ashford Manor",
+          "1stSummaryArcContaining3PriorChapters": `1st Summary ARC Containing 3 Prior Chapters and 54 Prior Turns
+
+Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses silence over safety. The captain publicly blames bandits while privately doubting the staff. The pawnbroker becomes the hinge every secret turns on.`,
+          anArcOfAlibisBoundAndBeautifully: "An arc of alibis, bound and beautifully shelved."
+        },
+        files: {
+          elias: "Elias",
+          theDukeSFormerValetFugitive: "the duke''s former valet, fugitive",
+          hidingInTheTanneryLoft: "hiding in the tannery loft",
+          quickOverRooftops: "quick over rooftops",
+          keepTheLocket: "keep the locket",
+          keepMaraOutOfIt: "keep Mara out of it",
+          killedTheDukeOnDay3: "killed the duke on day 3",
+          mara: "Mara",
+          seamstressAtAshfordManor: "seamstress at Ashford Manor",
+          publiclyMourningPrivatelyBargaining: "publicly mourning, privately bargaining",
+          leverageOverElias: "leverage over Elias",
+          leaveTheCity: "leave the city",
+          theCaptain: "The Captain",
+          leadsTheCityWatch: "leads the city watch",
+          publiclyBacksTheBanditTheory: "publicly backs the bandit theory",
+          reopenTheStaffInterviewsQuietly: "reopen the staff interviews quietly",
+          ashfordManor: "Ashford Manor",
+          theDukeSSeatSealedByThe: "the duke''s seat, sealed by the watch, dark except the study lamp",
+          theBridge: "The Bridge",
+          whereEliasAndMaraTradeTruths: "where Elias and Mara trade truths",
+          theSilverLocket: "The Silver Locket",
+          backInEliasSCoat: "back in Elias''s coat",
+          tiesEliasToTheStudyOnDay: "ties Elias to the study on day 3",
+          trustsHerWithHisLifeNotHis: "trusts her with his life, not his reasons",
+          day3SheSawHimFlee: "day 3: she saw him flee",
+          day14SheRevealedSheKeptThe: "day 14: she revealed she kept the receipt",
+          carriesItEverywhereBoughtItBackTwice: "carries it everywhere, bought it back twice",
+          doubtsHerBanditStoryLacksProof: "doubts her bandit story, lacks proof",
+          silenceAboutTheMurderUneasySinceThe: "silence about the murder, uneasy since the bridge",
+          day3: "day 3",
+          theDukeOfAshfordIsKilledIn: "The Duke of Ashford is killed in his study",
+          eliasFleesWithTheLocket: "Elias flees with the locket",
+          day5: "day 5",
+          maraTellsTheCaptainSheSawBandits: "Mara tells the captain she saw bandits",
+          day8: "day 8",
+          thePawnbrokerRaisesHisPriceForSilence: "The pawnbroker raises his price for silence",
+          eliasRunsOutOfMoney: "Elias runs out of money",
+          day11: "day 11",
+          eliasEscapesTheTannerySearchDropsA: "Elias escapes the tannery search, drops a crested glove",
+          day14: "day 14",
+          maraRevealsSheKeptThePawnbrokerS: "Mara reveals she kept the pawnbroker''s receipt",
+          theDukeSMurder: "The duke''s murder",
+          theCaptainSBanditTheoryIsPublic: "The captain''s bandit theory is public cover while he reworks the staff interviews.",
+          aCrestedGloveIsInTheWatch: "a crested glove is in the watch''s evidence box",
+          thePawnbrokerKeptAReceipt: "the pawnbroker kept a receipt",
+          leavingTheCity: "Leaving the city",
+          maraWantsOutBeforeTheInterviewsResume: "Mara wants out before the interviews resume, Elias will not leave the locket.",
+          unexplainedScarOnTheFerrymanSHand: "unexplained scar on the ferryman''s hand",
+          theCityWatch: "The City Watch",
+          answersToTheMagistrateNotTheCrown: "answers to the magistrate, not the crown",
+          funeralCustomBarsArrestsDuringMourningBells: "funeral custom bars arrests during mourning bells",
+          mourningCustoms: "Mourning customs",
+          halfBlackWornForAWeekBy: "half-black worn for a week by anyone the deceased employed",
+          eliasKilledTheDuke: "Elias killed the duke",
+          banditsDidIt: "bandits did it",
+          maraKeepsThePawnbrokerSReceiptSewn: "Mara keeps the pawnbroker''s receipt sewn in her sleeve",
+          herLeverageIfEliasRunsAlone: "her leverage if Elias runs alone",
+          human: "human",
+          careful: "careful",
+          sentimental: "sentimental",
+          observant: "observant",
+          steady: "steady",
+          estate: "estate",
+          landmark: "landmark",
+          heirloom: "heirloom",
+          bond: "bond",
+          owns: "owns",
+          suspects: "suspects",
+          pact: "pact"
+        },
+        profile: {
+          default: "Default"
+        },
+        buildFixture: {
+          theAshfordCase: "The Ashford Case",
+          elias: "Elias",
+          lumiBooksTheAshfordCase: "LumiBooks - The Ashford Case",
+          storyteller: "Storyteller",
+          memoriaIsWritingAChapter13kt: "Memoria is writing a chapter (~1.3kt written, ~0.8kt thought, 24s)",
+          noTokenWithin60sTheProviderMay: "No token within 60s, the provider may be slow or unreachable",
+          theAshfordCaseVol1: "The Ashford Case, Vol. 1"
+        },
+        fixtureBusyFiling: {
+          memoriaIsFilingAChapter2s: "Memoria is filing a chapter (2s)"
+        }
+      },
+      seal: {
+        memoriaSprite: {
+          memoria: "Memoria"
+        },
+        runeButton: {
+          value: "\u25C6 \u25C7 \u25C6 \u25C7 \u25C6 \u25C7 \u25C6 \u25C7"
+        },
+        renderSealPanel: {
+          lessonsFromMemoria: "Lessons from Memoria",
+          welcomeTutorial: "Welcome Tutorial",
+          hiUserIMTeachingATutorial: "Hi user! I''m teaching a tutorial on LumiBooks, you''ll have to attend (\u02F6\u1D54 \u1D55 \u1D54\u02F6)",
+          resumeTheLesson: "Resume the Lesson",
+          takeLessonFromMemoria: "Take Lesson from Memoria",
+          sitTheExam: "Sit the Exam",
+          tenQuestionsFromTheCourse9Of: "Ten questions from the course. 9 of 10 graduates you.",
+          skipForNow: "Skip for now",
+          progressSavedAtSection: "Progress saved at section {sec}."
+        },
+        renderGrumpySkip: {
+          hmphFine: "Hmph. Fine.",
+          skipIfYouMustButYouHad: "Skip if you must. But you had better not go asking my creator for help before taking my course (\xAC`\u2038\xB4\xAC) A reminder will wait for you on Home.",
+          fineTeachMe: "Fine, Teach Me",
+          skipAnyway: "Skip anyway"
+        },
+        updateSealBusy: {
+          abort: "Abort",
+          lastAttemptFailed: "Last {kind} attempt failed",
+          retry: "Retry"
+        },
+        previewTiles: {
+          characters: "Characters",
+          "240Tokens": "~240 tokens",
+          locations: "Locations",
+          "90Tokens": "~90 tokens",
+          things: "Things",
+          "50Tokens": "~50 tokens",
+          relations: "Relations",
+          "170Tokens": "~170 tokens",
+          timeline: "Timeline",
+          "160Tokens": "~160 tokens",
+          threads: "Threads",
+          "120Tokens": "~120 tokens",
+          lore: "Lore",
+          "110Tokens": "~110 tokens",
+          secrets: "Secrets"
+        },
+        renderCodexTabLock: {
+          example: "example",
+          theKnowledgeCodex: "The Knowledge Codex",
+          aStoryBibleAnAgentKeepsFor: "A story bible an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
+        },
+        renderCodexPaneLock: {
+          sealedUntilTheLesson: "Sealed until the lesson",
+          theCodexSettingsUnlockWhenYouFinish: "The codex settings unlock when you finish The Archivist''s Codex. The final step is flipping this very pane on."
+        },
+        codexSealCard: {
+          takeALessonFromMemoria: "Take a Lesson from Memoria",
+          skipForNow: "Skip for now"
+        },
+        renderCodexGrumpySkip: {
+          hmphFine: "Hmph. Fine.",
+          skipIfYouMustTheCodexUnlocks: "Skip if you must (\xAC`\u2038\xB4\xAC) The codex unlocks, but the agent stays off until you enable it in Tuning. A reminder will wait for you on Home.",
+          fineTeachMe: "Fine, Teach Me",
+          skipAnyway: "Skip anyway"
+        }
+      }
+    },
+    modals: {
+      booksWarning: {
+        thisChatHasNoFiledChaptersYet: "No filed chapters. Fast modes would read raw messages. Use Home > File all first.",
+        theUnfiledTailOfThisChatIs: "Many messages remain unfiled. The final pass will still read them raw. Use Home > File all first."
+      },
+      requestCodexUpdate: {
+        messageAreWaitingAboutPassesAtThe: "{codexBacklog0} message{codexBacklog02, plural, one {} other {s}} waiting (~{codexBacklogPasses} passes). Choose a catch-up mode."
+      },
+      requestCodexRebuild: {
+        rebuildTheCodex: "Rebuild the codex",
+        memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
+      },
+      requestCodexTidy: {
+        tidyCodexToATargetSize: "Tidy Codex to a target size",
+        currentSelectedContentTokensFrozenFilesAre: "Selected: {choice, select, yes {~} other {}}{toLocaleString} tokens. Excludes frozen files; keeps locked content.",
+        targetUnit: "Target unit",
+        percentageToKeep: "Percentage to keep",
+        tokens: "Tokens",
+        memoriaAims10BelowYourLimitChecks: "Targets 10% below your limit, with up to six model calls including repairs. Percentages set how much to keep: 50% targets 45%. Undo restores the original Codex. Locks or model output may prevent reaching the limit.",
+        theTokenizerIsUnavailableForThisModel: " Tokenizer unavailable; sizes are estimates.",
+        cancel: "Cancel"
+      },
+      start: {
+        startTidy: "Start tidy"
+      },
+      refresh: {
+        keepThisPercentage: "Keep this percentage",
+        maximumTokens: "Maximum tokens",
+        chooseATargetBelowTheCurrentSize: "Choose a target below the current size.",
+        yourLimitTokensModelTargetWithMargin: "Limit: {toLocaleString} tokens. Model target: {toLocaleString2} tokens.",
+        enterAValidTarget: "Enter a valid target."
+      },
+      showCodexCatchupModal: {
+        theCodexIsFarBehind: "Codex backlog",
+        value: "\xD7",
+        close: "Close",
+        automationIsOnSoFastAndUltra: "With automation on, fast modes update chapters and arcs first.",
+        fastAndUltraFastNeedTheCodex: "Fast modes need a Codex context at least as large as the story model''s.",
+        value2: "\u26A0 {booksWarning}",
+        slow: "Slow",
+        notRecommendedReplaysEveryRawMessageWindow: "Reads raw messages in windows. Can take hours.",
+        fast: "Fast",
+        replayTheFiledSummariesThenOneRaw: "Reads filed summaries, then remaining raw messages",
+        ultraFast: "Ultra fast",
+        oneSinglePassOverTheFiledSummaries: "Reads filed summaries and remaining raw messages in a pass"
+      },
+      paragraphs: {
+        ultraFastReadsTheStorySCurrent: "Reads summaries and remaining raw messages together. Fastest, with the least detail.",
+        fastReplaysYourFiledChapterSummariesPass: "Reads chapter summaries in batches, then remaining raw messages. Faster than slow mode.",
+        slowReplaysEveryRawMessageWindowBy: "Reads raw messages in windows. Most detailed; long chats can take hours.",
+        theCodexAgentAskedYourModelTo: "The model returned text instead of tool calls. The model or provider may not support them.",
+        memoriaCanSwitchTheCodexToJson: "JSON mode uses text replies and doesn''t need tool support. Replies are validated, but can be less reliable than tool calls.",
+        youCanChangeThisAnytimeUnderTuning: "Change Use tool calls in Tuning > Connection > Codex, or choose a connection that supports tools."
+      },
+      showCodexToolsHintModal: {
+        toolCallsArenTGettingThrough: "No tool calls returned",
+        value: "\xD7",
+        close: "Close",
+        donTShowThisAgain: "Don''t show this again",
+        keepToolCalls: "Keep tool calls",
+        switchToJsonMode: "Switch to JSON mode"
+      },
+      openEditModal: {
+        label: "Label",
+        content: "Content",
+        cancel: "Cancel",
+        save: "Save"
+      },
+      labelInput: {
+        label: "Label"
+      },
+      r: {
+        delete: "Delete",
+        cancel: "Cancel"
+      },
+      showDryRunModal: {
+        dryRun: "Dry run: {choice, select, yes {Arc} other {{choice2, select, yes {Volume} other {{choice3, select, yes {Codex} other {Chapter}}}}}}",
+        value: "\xD7",
+        closeDryRun: "Close dry run",
+        diagnostics: "Diagnostics",
+        copyJson: "Copy JSON",
+        copied: "Copied",
+        copyFailed: "Copy failed"
+      },
+      promptForString: {
+        cancel: "Cancel",
+        ok: "OK"
+      }
+    },
+    promptBreakdown: {
+      timer: {
+        promptBreakdownTimedOutTryRefreshingThe: "Prompt breakdown timed out. Try refreshing the panel."
+      },
+      clearPromptRequests: {
+        promptPanelClosed: "Prompt panel closed."
+      }
+    },
+    summaryTransfer: {
+      draw: {
+        summaryTransferInProgress: "Summary transfer in progress\u2026",
+        continueSummaryImportExport: "Continue summary import/export",
+        summaryImportExport: "Summary import / export",
+        attemptMatching: "Attempt Matching",
+        letMeSpecify: "Let me specify",
+        upUntilWhichMessageShouldTheseSummaries: "Which message should coverage end at?",
+        thisChatHasMessagesCountFrom1: "This chat has {messageCount0} messages. Use 0 to import as inherited memories. Otherwise, summaries merge into an entry covering messages 1\u2013N, keeping their text.",
+        importSummaries: "Import summaries",
+        dismiss: "Dismiss",
+        cancelImport: "Cancel import",
+        hide: "Hide"
+      },
+      choose: {
+        processingSummaryImport: "Processing summary import\u2026"
+      }
+    },
+    tabMeta: {
+      appTabs: {
+        home: "Home",
+        books: "Books",
+        codex: "Codex",
+        tuning: "Tuning",
+        info: "Info"
+      }
+    },
+    tabs: {
+      aboutTab: {
+        hero: {
+          memoria: "Memoria"
+        },
+        renderAboutTab: {
+          memoriaTheLumiBooksLibrarian: "Memoria, the LumiBooks librarian",
+          nyandereCatgirlInAMaidUniformBlack: "Nyandere catgirl in a maid uniform. Black hair, blue eyes. Summarizes chats into chapters and arcs.",
+          builtOnLumiverseSpindleWithPromptsAnd: "Built on Lumiverse Spindle. Prompts and UX inspired by SillyTavern Memory Books."
+        },
+        ack: {
+          acknowledgements: "Acknowledgements"
+        },
+        sec: {
+          memoriaSAcademy: "Memoria''s Academy",
+          privateDiagnostics: "Private diagnostics"
+        },
+        renderAcademy: {
+          bothCoursesLiveHereForRetakesPer: "Both courses live here for retakes, per-section revisits, and diplomas."
+        },
+        courseCard: {
+          completedAttempt: "Completed{choice, select, yes { by {signedName}} other {}}, {attempts} attempt{attempts, plural, one {} other {s}}.",
+          inProgressSection: "In progress, section {section1}.",
+          lockedBehindNothingButYourTimeThis: "Locked behind nothing but your time. This one turns the codex on.",
+          theMandatoryPrimer: "The mandatory primer.",
+          viewDiploma: "View diploma",
+          retakeCourse: "Retake course",
+          leaveAnytimeTheCourseStaysCompletedOn: "Leave anytime, the course stays completed on your previous grade until you finish a new run",
+          resume: "Resume",
+          start: "Start",
+          sitTheExam: "Sit the Exam",
+          value: "{i1}. {title}{choice, select, yes { \u25C7} other { \u25C6}}",
+          hasSilverOrSkippedStampsRetakeTo: "Has silver or skipped stamps, retake to gild it",
+          allGold: "All gold"
+        },
+        renderDiagnostics: {
+          turnOffLocalLogsThisIsNot: "Turn off local logs. This isn''t recommended",
+          tracksUiFailuresNavigationRequestsFilingCoverage: "Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors.",
+          exportDiagnostics: "Export diagnostics",
+          clearDiagnostics: "Clear diagnostics"
+        }
+      },
+      booksTab: {
+        subtabs: {
+          shelf: "Shelf",
+          compose: "Compose",
+          advanced: "Advanced"
+        },
+        draw: {
+          openAChatToBrowseMemoriaS: "Open a chat to view summaries"
+        },
+        sec: {
+          theShelf: "The Shelf",
+          pickMessagesForAChapter: "Pick messages for a chapter",
+          bindChaptersIntoAnArc: "Bind chapters into an arc",
+          pressArcsIntoAVolume: "Press arcs into a volume",
+          maintenance: "Maintenance",
+          bind: "Bind {tierNamesTier1}",
+          summaryExportAndImport: "Summary export and import"
+        },
+        renderShelf: {
+          emptyShelfForNowMemoriaWillStart: "No summaries yet. Automation starts when window and lag are met."
+        },
+        search: {
+          searchTitlesAndSummaries: "Search titles and summaries..."
+        },
+        groups: {
+          volumes: "Volumes",
+          arcs: "Arcs",
+          chapters: "Chapters"
+        },
+        buildGroups: {
+          of: "{title} ({length} of {length2})",
+          noMatch: "No match"
+        },
+        toggle: {
+          showRecentOnly: "Show recent only",
+          showAllShown: "Show all {length} ({length2} shown)"
+        },
+        renderEntryRow: {
+          ghost: "GHOST",
+          t: "{range} \xB7 {contentTokens}t"
+        },
+        tokenStr: {
+          tokens: "{formatTokens}\u2192{contentTokens} tokens",
+          tokens2: "{contentTokens} tokens"
+        },
+        renderEntryDetail: {
+          ghostNotYetInjected: "ghost, not yet injected",
+          memoria: "Memoria: {shortComment}",
+          edit: "Edit",
+          edit2: "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}",
+          editThisEntrySLabelAndContent: "Edit label and content",
+          regenerate: "Regenerate",
+          resummarizeTheSameSources: "Resummarize the same sources",
+          release: "Release",
+          stripTheLumiBooksMarkerSoTheEntry: "Convert to a regular lorebook entry",
+          delete: "Delete"
+        },
+        ok: {
+          regenerate: "Regenerate?",
+          memoriaWillResummarizeTheSameSourcesAnd: "Resummarizes the same sources and replaces this entry on success.",
+          releaseToLorebook: "Release to lorebook?",
+          memoriaWillHandThisEntryToYour: "Converts this to a regular lorebook entry with an [orphaned] prefix. LumiBooks stops managing it. {freed}",
+          delete: "Delete?",
+          memoriaWillDropThisGhostChapterShe: "Deletes this ghost chapter. Its messages will be summarized again on the next pass.",
+          higherTierMemoriesKeepCoveringTheseSources: "Higher-tier memories keep covering these sources.",
+          memoriaWillLetThoseMessagesBackInto: "Its messages return to the prompt.",
+          itsChaptersReviveAndKeepCoveringThose: "Its chapters reactivate and keep covering these messages.",
+          itsSourceSummariesReviveAndKeepCovering: "Its source summaries reactivate and keep covering these messages.",
+          rebuildTheShelf: "Rebuild the shelf?",
+          memoriaWillDeleteEveryChapterArcAnd: "Deletes this chat''s summaries and re-summarizes from the start. Can''t be undone.",
+          wipeTheShelf: "Wipe the shelf?",
+          memoriaWillDeleteEveryChapterArcAnd2: "Deletes this chat''s summaries and returns messages to the prompt. Can''t be undone."
+        },
+        freed: {
+          higherTierMemoriesKeepCoveringTheseSources: "Higher-tier memories keep covering these sources.",
+          itsMessagesReturnToThePromptUnless: "Its messages return to the prompt unless a higher tier still covers them.",
+          itsChaptersReviveAndKeepCoveringThose: "Its chapters reactivate and keep covering these messages.",
+          itsSourceSummariesReviveAndKeepCovering: "Its source summaries reactivate and keep covering these messages."
+        },
+        renderChapterPicker: {
+          pickUncompressedMessagesAndFileThemInto: "Select messages to summarize. \u2713 marks messages already filed.",
+          shiftClickOrLongPressSelectsA: "Shift-click or long-press selects a range",
+          pickUncompressed: "Pick uncompressed",
+          clear: "Clear"
+        },
+        filterSel: {
+          uncompressedOnly: "Uncompressed only",
+          allMessages: "All messages",
+          alreadyFiled: "Already filed"
+        },
+        query: {
+          search: "Search..."
+        },
+        compressBtn: {
+          compress: "Compress"
+        },
+        excludeBtn: {
+          exclude: "Exclude",
+          toggleExclusionForTheSelectedMessagesExcluded: "Toggles compression for selected messages. Excluded messages stay in context and split summary windows."
+        },
+        syncControls: {
+          selectedTokensBefore: "{size} selected (~{formatTokens} tokens before)"
+        },
+        buildRows: {
+          noMessagesMatch: "No messages match"
+        },
+        more: {
+          showOlder: "Show older ({older})"
+        },
+        buildMessageRow: {
+          shiftClickOrLongPressOnTouch: "Shift+click (or long-press on touch) to select a range",
+          value: "#{indexInChat1}",
+          alreadyFiledIntoAChapterArcOr: "Already filed into a chapter, arc, or volume",
+          value2: "\u2713",
+          excludedNeverHiddenReplacedOrSummarized: "Excluded - never hidden, replaced, or summarized",
+          value3: "\u2298",
+          hiddenInChat: "Hidden in chat",
+          empty: "(empty)"
+        },
+        renderArcPicker: {
+          memoriaHasNotFiledAnyChaptersYet: "No chapters yet",
+          value: "{slice}{range} - {tokenStr}",
+          bindSelected: "Bind selected",
+          selectAllActive: "Select all active",
+          clear: "Clear"
+        },
+        updateArcCounts: {
+          selectedTokensBefore: "{size} selected (~{formatTokens} tokens before)"
+        },
+        range: {
+          msgs: " (msgs {firstMsgIdx1}-{lastMsgIdx1})"
+        },
+        renderVolumePicker: {
+          memoriaHasNoUnboundArcsToPress: "No unbound arcs",
+          aVolumeReplacesItsSourceArcsIn: "Volumes replace their source arcs in the prompt. Set automation thresholds and lag per tier in Tuning.",
+          value: "{slice}{range} - {tokenStr}",
+          pressSelected: "Press selected",
+          selectAllActive: "Select all active",
+          clear: "Clear"
+        },
+        updateCounts: {
+          selectedTokensBefore: "{size} selected (~{formatTokens} tokens before)"
+        },
+        renderContinuity: {
+          t: "[{tag}] {slice} ({contentTokens}t)"
+        },
+        originName: {
+          anImportedLorebook: "an imported lorebook"
+        },
+        wrap: {
+          noOtherChatHasMemoriesToInherit: "No chats with summaries to inherit",
+          inheritedFromMemor: "Inherited from {originName}: {rootEntryCount} memor{rootEntryCount, plural, one {y} other {ies}}.",
+          detachRoot: "Detach root",
+          removeTheInheritedRootMemoriesFromThis: "Remove the inherited root memories from this chat",
+          detachInheritedMemories: "Detach inherited memories?",
+          memoriaWillRemoveTheInheritedMemoriesFrom: "Removes inherited memories. Keeps this chat''s chapters and arcs.",
+          thisChatAlreadyHasItsOwnMemories: "This chat has summaries. Rebuilding replaces them, then re-summarizes with the chosen root.",
+          seedThisChatWithAnotherChatS: "Inherit another chat''s summaries. They inject before the greeting until bound into newer summaries.",
+          sourceChatToInheritMemoriesFrom: "Source chat to inherit memories from",
+          pickASourceChat: "Pick a source chat...",
+          rebuildFrom: "Rebuild from...",
+          replacesThisChatSMemoriesWithThe: "Replace summaries using the chosen root",
+          rebuildFromRoot: "Rebuild from root?",
+          memoriaWillDeleteThisChatSExisting: "Deletes this chat''s chapters and arcs, adds the chosen root, then re-summarizes. Can''t be undone.",
+          rebase: "Rebase",
+          seedThisChatWithTheChosenChat: "Inherit the selected chat''s summaries"
+        },
+        renderMaintenance: {
+          repairToolsForWhenTheShelfAnd: "Repair message visibility after changes such as editing lorebook entries.",
+          reHideCovered: "Re-hide covered",
+          reApplyTheExcludeFromContextFlag: "Exclude covered messages from context",
+          resyncVisibility: "Resync visibility",
+          unhideMessagesWhoseChapterOrArcNo: "Match message visibility to summary coverage",
+          rebuildBooks: "Rebuild books",
+          wipeTheShelfAndReSummarizeThis: "Clear summaries and re-summarize from the start",
+          wipeBooks: "Wipe books",
+          deleteEveryLumiBooksEntryForThisChat: "Delete this chat''s LumiBooks summaries"
+        },
+        renderHigherPickers: {
+          bindSelected: "Bind selected",
+          bindReadyBatches: "Bind ready batches",
+          activeSourceEntriesReadyBatchesUseThis: "{length} active source entries. Ready batches use this tier''s threshold and lag from Tuning."
+        },
+        renderSummaryTransfer: {
+          exportTheActiveShelfWithRawMessage: "Export summaries with message hashes. Imports match messages or ask for a coverage endpoint. Older lorebooks import as inherited memories. No model call; summary text is preserved.",
+          exportSummaries: "Export summaries",
+          importSummaries: "Import summaries",
+          readingSummaryFile: "Reading summary file\u2026",
+          couldNotReadThatLorebookJsonFile: "Couldn''t read the lorebook JSON file"
+        },
+        entryFallback: "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}} {id}"
+      },
+      codexTab: {
+        deliverCodexFileState: {
+          couldnTSaveThisCategorySSetting: "Couldn''t save this category''s setting: {error}"
+        },
+        subtabs: {
+          overview: "Overview",
+          entities: "Entities",
+          relations: "Relations",
+          timeline: "Timeline",
+          threads: "Threads",
+          lore: "Lore",
+          secrets: "Secrets",
+          manage: "Manage"
+        },
+        entityGroups: {
+          characters: "Characters",
+          locations: "Locations",
+          things: "Things"
+        },
+        staleDraftAbort: {
+          memoriaRewroteThatRecordWhileYouWere: "Record changed during editing. Reapply your edit to the new version."
+        },
+        empty: {
+          knowledgeCodex: "Knowledge Codex"
+        },
+        renderCodexTab: {
+          openAChatToConsultTheCodex: "Open a chat to view the Codex",
+          memoriaIsFetchingTheCodexFiles: "Loading Codex\u2026"
+        },
+        sec: {
+          knowledgeCodex: "Knowledge Codex",
+          storyBible: "Story Bible",
+          entities: "Entities",
+          relations: "Relations",
+          timeline: "Timeline",
+          threads: "Threads"
+        },
+        search: {
+          searchThisSection: "Search this section..."
+        },
+        bibleTiles: {
+          characters: "Characters",
+          locations: "Locations",
+          things: "Things",
+          relations: "Relations",
+          timeline: "Timeline",
+          threads: "Threads",
+          lore: "Lore",
+          secrets: "Secrets"
+        },
+        bits: {
+          memoriaWillDeleteEveryRecordInFor: "Deletes the records in {label} for this chat."
+        },
+        purgeMessage: {
+          referencesToThemInOtherRecordsBecome: "References to them in other records become plain text.",
+          theResolvedThreadArchiveClearsToo: "Also clears the resolved thread archive.",
+          thisCannotBeUndone: "Can''t be undone."
+        },
+        tileStateLabel: {
+          injectedUpdated: "injected \xB7 updated",
+          notInjectedStillUpdated: "not injected \xB7 still updated",
+          frozenNoUpdates: "frozen \xB7 no updates"
+        },
+        renderOverview: {
+          codexOnFile: "codex on file",
+          noCodexYet: "no codex yet",
+          messageUnindexed: "{codexBacklog} message{codexBacklog, plural, one {} other {s}} unindexed",
+          updated: "updated {codexLastRunAt}",
+          theCodexAgentIsOffForThis: "Codex is off. Enable it in Tuning > Settings > Codex.",
+          memoriaIsWorkingOnTheCodexWatch: "Codex task in progress. View progress in Home.",
+          unreadableOnDiskRebuildCodexRegeneratesThem: "Can''t read: {join}. Use Rebuild codex to regenerate.",
+          noCodexYet2: "No codex yet.",
+          clearStaleTags: "Clear stale tags",
+          acceptTheCurrentRecordsAsUpTo: "Marks records as up to date without changing text or indexing. No model call. Frozen records can become stale again after missed updates.",
+          recordMissedUpdatesWhileFrozen: "{length} record{length, plural, one {} other {s}} missed updates while frozen.",
+          catchUp1Pass: "Catch up (1 pass)",
+          onePassRebuildsJustTheReEnabled: "Rebuilds re-enabled records from summaries and recent messages",
+          rebuildInstead: "Rebuild instead",
+          wipeEverythingAndRegenerateFromTheStart: "Clear Codex and regenerate from the start",
+          clickARecordCardToCycleIt: "Click a card to cycle: injected \u2192 not injected \u2192 frozen. Records remain editable.",
+          shorterAndSimplerChatsOftenRunBetter: "Fewer categories may suit simpler chats.",
+          updateNow: "Update now",
+          consumeEverythingUpToTheNewestMessage: "Update through the newest message, ignoring window and lag. Offers fast modes for large backlogs.",
+          cancel: "Cancel",
+          abortTheCodexTaskInFlight: "Cancel the Codex task",
+          tidyUp: "Tidy up",
+          chooseATargetSizeThenCompactUp: "Shorten records to a target size, using up to six model calls",
+          undo: "Undo {codexUndoReasonUpdate}",
+          undo2: "Undo",
+          rollBackToTheSnapshotTakenBefore: "Restore the snapshot before the last Codex change",
+          nothingToUndoYetMemoriaSnapshotsThe: "No snapshot to restore"
+        },
+        ok: {
+          rebuildTheCodex: "Rebuild the codex?",
+          memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
+          undoTheLastCodexChange: "Undo the last codex change?",
+          memoriaWillRollTheCodexBackTo: "Restores the snapshot before {codexUndoReasonUpdate} {codexUndoAt}. Later changes are lost.",
+          importACodexFile: "Import a codex file?",
+          memoriaWillReplaceEveryCodexFileIn: "Replaces this chat''s Codex with the imported files. Can''t be undone.",
+          wipeTheCodex: "Wipe the codex?",
+          memoriaWillEraseEveryCodexRecordFor: "Clears this chat''s Codex. The next update starts fresh. Can''t be undone.",
+          rebuildThisRecord: "Rebuild this record?",
+          memoriaWillRegenerateEveryRecordInFrom: "Regenerates {label} from the story in a pass. Replaces content on success; keeps locked entries.",
+          purgeThisRecord: "Purge this record?",
+          deleteEntity: "Delete entity?",
+          memoriaWillRemoveFromTheCodexReferences: 'Deletes "{str}". References to it become plain text.',
+          delete: "Delete?"
+        },
+        renderManage: {
+          noOtherChatHasACodexTo: "No chats with a Codex to copy",
+          carriedOverFromMemoriaIndexesThisChat: "Copied from {codexRootOriginName}. Indexing starts from this chat''s beginning.",
+          detachCodex: "Detach codex",
+          eraseTheCarriedOverCodexFromThis: "Erase the carried-over codex from this chat",
+          detachTheCarriedOverCodex: "Detach the carried-over codex?",
+          codexRecordsMergeAsMemoriaWorksSo: "Copied records have merged with this chat''s Codex. Detaching clears it; the next update starts fresh. Can''t be undone.",
+          continuingAnEarlierChatCarryItsStory: "Copy a Codex to continue an earlier chat.",
+          sourceChatToCarryTheCodexFrom: "Source chat to carry the codex from",
+          pickASourceChat: "Pick a source chat...",
+          carryCodexOver: "Carry codex over",
+          copyAnotherChatSCodexIntoThis: "Copy another chat''s codex into this one",
+          carryTheCodexOver: "Carry the codex over?",
+          memoriaWillCopyTheChosenChatS: "Copies the selected chat''s Codex. Indexing starts from this chat''s beginning.",
+          exportWritesEveryCodexFileAndIts: "Export saves Codex files and injection settings as JSON. Import replaces them.",
+          export: "Export",
+          downloadEveryCodexFilePlusItsInject: "Download Codex files and injection settings as JSON",
+          import: "Import",
+          replaceThisChatSCodexFromAn: "Replace this chat''s codex from an exported file",
+          rebuildReReadsTheWholeChatFrom: "Rebuild clears and rereads the chat. Wipe leaves the Codex empty until the next update.",
+          rebuildCodex: "Rebuild codex",
+          wipeAndRegenerateTheWholeStoryBible: "Clear Codex and regenerate from the start",
+          wipeCodex: "Wipe codex"
+        },
+        files: {
+          codexFiles: "Codex files"
+        },
+        danger: {
+          startOver: "Start over"
+        },
+        restoreBackup: {
+          memoriaCouldnTReadThatBackupFile: "Couldn''t read the backup file"
+        },
+        renderBibleTile: {
+          clickToCycle: "{tileStateLabelSt}{choice, select, yes { \xB7 missed updates while frozen} other {}}{choice2, select, yes { \xB7 waiting for the catch-up pass} other {}} - click to cycle",
+          tokens: "{choice, select, yes {~} other {}}{formatTokens} tokens",
+          stale: " \xB7 stale",
+          needsCatchUp: " \xB7 needs catch-up",
+          clickToCycle2: "{tileStateLabelSt} - click to cycle"
+        },
+        tidyBtn: {
+          cancel: "Cancel",
+          tidy: "Tidy",
+          abortTheCodexTaskInFlight: "Cancel the Codex task",
+          chooseATargetSizeForThisRecord: "Choose a target size for this record"
+        },
+        rebuildBtn: {
+          rebuild: "Rebuild",
+          regenerateJustThisCategoryFromTheWhole: "Regenerate this category from the story in a pass"
+        },
+        purgeBtn: {
+          purge: "Purge",
+          deleteEveryRecordInThisCategoryAt: "Delete this category''s records"
+        },
+        sheetStateTitle: {
+          memoriaMaintainsThisSheetClickToLock: "Updated automatically. Click to freeze.",
+          frozenAndStillInjectedClickToHold: "Frozen and injected. Click to exclude from the prompt.",
+          frozenAndHeldOutOfThePrompt: "Frozen from the prompt. Click to resume updates."
+        },
+        sheetStateLabel: {
+          state: "{locked, select, yes {\uD83D\uDD12} other {\uD83D\uDD13}} {injected, select, yes {injected} other {not injected}} \xB7 {locked, select, yes {frozen} other {updated}}"
+        },
+        renderEntities: {
+          clickANameToOpenItsSheet: "Click a name to edit. Changes are validated, saved, and used in future updates.",
+          of: "{title} \xB7 {length} of {length2}",
+          value: "+ {singular, select, character {character} location {location} thing {thing} other {{singular}}}",
+          noEntitiesRecordedYetAddOneOr: "No entities yet. Add an entity or run a Codex update."
+        },
+        input: {
+          name: "Name...",
+          true: "true",
+          false: "false"
+        },
+        renderAddForm: {
+          create: "Create",
+          cancel: "Cancel"
+        },
+        renderEntityCard: {
+          notInjected: "not injected",
+          locked: "locked",
+          editSheet: "Edit sheet",
+          delete: "Delete"
+        },
+        addKv: {
+          lockedFieldMemoriaCanNeverChangeIt: "Locked from model edits"
+        },
+        renderEntityForm: {
+          newEntity: "New entity",
+          cancel: "Cancel"
+        },
+        sync: {
+          locked: "\uD83D\uDD12 locked",
+          lockedMemoriaReadsALockMarkerInstead: "Locked from model edits. Its value is hidden from the model. Click to unlock.",
+          lockThisFieldSoOnlyYouCan: "Lock from model edits"
+        },
+        nameField: {
+          name: "Name"
+        },
+        w: {
+          commaSeparated: "{f} (comma separated)"
+        },
+        label: {
+          onePerLine: "{key} (one per line)"
+        },
+        saveBtn: {
+          saving: "Saving...",
+          save: "Save",
+          theEntityNeedsAName: "The entity needs a name"
+        },
+        renderRecordForm: {
+          saving: "Saving...",
+          save: "Save",
+          cancel: "Cancel"
+        },
+        recordItemActions: {
+          edit: "Edit",
+          delete: "Delete"
+        },
+        saveRelationDraft: {
+          theGroupNeedsAtLeastTwoMembers: "The group needs at least two members, a kind, and a state",
+          theRelationNeedsFromToAKind: "The relation needs From, To, a kind, and a state"
+        },
+        specs: {
+          type: "Type",
+          pairAB: "pair (a \u2192 b)",
+          group: "group",
+          membersCommaSeparatedRefs: "Members (comma separated refs)",
+          charEliasCharWren: "char:elias, char:wren",
+          fromA: "From (a)",
+          charElias: "char:elias",
+          toB: "To (b)",
+          charWren: "char:wren",
+          kind: "Kind",
+          bondOwnsAtRival: "bond, owns, at, rival...",
+          state: "State",
+          lovesHerHidesIt: "loves her, hides it",
+          historyOnePerLine: "History (one per line)",
+          day12SheSawHimKill: "day 12: she saw him kill"
+        },
+        form: {
+          editRelation: "Edit relation",
+          newRelation: "New relation"
+        },
+        renderRelations: {
+          list: "List",
+          graph: "Graph",
+          relation: "+ Relation",
+          noRelationsRecordedYetAddOneOr: "No relations yet. Add a relation or run a Codex update.",
+          theRelationsTableIsOffForThis: "Relations table is off. Relationships are stored as entity ties.",
+          memoriaWillRemoveThisRelationFromThe: "Deletes this relation.",
+          noRelationMatchesTheSearch: "No relation matches the search"
+        },
+        arrowSpan: {
+          value: "\u2192"
+        },
+        renderRelationGraph: {
+          noRelationMatchesTheSearch: "No relation matches the search",
+          noRelationsToChartYet: "No relations to chart yet",
+          group: " group",
+          value: "{name} ({id})",
+          zoomOut: "Zoom out",
+          zoomIn: "Zoom in",
+          fit: "Fit",
+          frameTheWholeWeb: "Fit graph",
+          tapAnEdgeForTheStoryTap: "Tap a connection for details or a diamond for its sheet. Drag diamonds to rearrange; drag the background to pan. Pinch or scroll to zoom."
+        },
+        entries: {
+          character: "character",
+          location: "location",
+          thing: "thing"
+        },
+        saveEventDraft: {
+          theEventNeedsAWhenAndWhat: "Enter when the event happened and what happened"
+        },
+        eventSpecs: {
+          when: "When",
+          day12: "day 12",
+          event: "Event",
+          maraSeesEliasKillTheDuke: "Mara sees Elias kill the duke",
+          participantsCommaSeparatedRefs: "Participants (comma separated refs)",
+          where: "Where",
+          locAshfordManor: "loc:ashford_manor",
+          causes: "Causes",
+          sheFleesTheCity: "she flees the city"
+        },
+        renderTimeline: {
+          event: "+ Event",
+          newEvent: "New event",
+          noEventsRecordedYet: "No events recorded yet",
+          noEventMatchesTheSearch: "No event matches the search",
+          editEvent: "Edit event",
+          clickForEditAndDelete: "Edit or delete",
+          showRecentOnly: "Show recent only",
+          showEarlier: "Show earlier ({lengthTimelineRecent})"
+        },
+        actions: {
+          memoriaWillRemoveThisEventFromThe: "Deletes this event.",
+          memoriaWillRemoveThisTopicAndIts: "Deletes this topic and its facts.",
+          memoriaWillRemoveThisSecretFromThe: "Deletes this secret."
+        },
+        threadSpecs: {
+          name: "Name",
+          theStolenCrown: "The stolen crown",
+          status: "Status",
+          open: "open",
+          stalled: "stalled",
+          resolved: "resolved",
+          abandoned: "abandoned",
+          summary: "Summary",
+          latestDevelopment: "Latest development",
+          plantedDetailsOnePerLine: "Planted details (one per line)"
+        },
+        saveThreadDraft: {
+          theThreadNeedsANameAndA: "The thread needs a name and a summary"
+        },
+        renderThreads: {
+          thread: "+ Thread",
+          editSeeds: "Edit seeds",
+          newThread: "New thread",
+          seedsOnePerLine: "Seeds (one per line)",
+          noOpenStorylinesTrackedYet: "No open threads",
+          resolvedThreadsStayHereAsYourArchive: "Resolved threads are archived. They aren''t included in prompts or sent to the agent.",
+          editThread: "Edit thread",
+          latest: "Latest: {latest}",
+          planted: "\u25C6 planted: {p}",
+          memoriaWillRemoveThisThreadFromThe: "Deletes this thread.",
+          noThreadMatchesTheSearch: "No thread matches the search",
+          seeds: "Seeds ({length})"
+        },
+        saveWorldDraft: {
+          theTopicNeedsANameAndAt: "Enter a topic name and a fact"
+        },
+        saveKnowledgeDraft: {
+          theSecretNeedsItsFact: "Enter the secret''s fact"
+        },
+        worldSpecs: {
+          topic: "Topic",
+          magic: "Magic",
+          factsOnePerLine: "Facts (one per line)",
+          bloodMagicCostsMemories: "blood magic costs memories",
+          keywordsCommaSeparatedRetrievalTags: "Keywords (comma separated, retrieval tags)",
+          ritualMemoriesBloodMagic: "ritual, memories, blood magic"
+        },
+        knowledgeSpecs: {
+          fact: "Fact",
+          eliasKilledTheDuke: "Elias killed the duke",
+          knownByCommaSeparatedRefs: "Known by (comma separated refs)",
+          hiddenFromCommaSeparatedRefs: "Hidden from (comma separated refs)",
+          falseBeliefsOnePerLineWhoBelief: 'False beliefs (one per line, "who => belief")',
+          charCaptainBanditsDidIt: "char:captain => bandits did it",
+          note: "Note",
+          keywordsCommaSeparatedRetrievalTags: "Keywords (comma separated, retrieval tags)",
+          murderDaggerDuke: "murder, dagger, duke"
+        },
+        world: {
+          worldRules: "World rules"
+        },
+        renderLore: {
+          topic: "+ Topic",
+          newTopic: "New topic",
+          noWorldLoreRecordedYet: "No world lore recorded yet",
+          noTopicMatchesTheSearch: "No topic matches the search",
+          editTopic: "Edit topic",
+          clickForEditAndDelete: "Edit or delete",
+          keywords: "keywords: {join}"
+        },
+        secrets: {
+          whoKnowsWhat: "Who knows what"
+        },
+        renderSecrets: {
+          secret: "+ Secret",
+          newSecret: "New secret",
+          noSecretsOrAsymmetricKnowledgeTrackedYet: "No secrets recorded",
+          noSecretMatchesTheSearch: "No secret matches the search",
+          editSecret: "Edit secret",
+          clickForEditAndDelete: "Edit or delete",
+          knows: "knows: {nameOf}",
+          hidden: "hidden: {nameOf}",
+          wronglyBelieves: "{nameOf} wrongly believes: {str}",
+          keywords: "keywords: {join}"
+        },
+        entityFields: {
+          kind: "kind",
+          role: "role",
+          significance: "significance",
+          appearance: "appearance",
+          description: "description",
+          notes: "notes",
+          aliases: "aliases",
+          traits: "traits",
+          goals: "goals",
+          ties: "ties",
+          keywords: "keywords"
+        },
+        threadStatus: "{status, select, open {open} stalled {stalled} resolved {resolved} abandoned {abandoned} other {{status}}}"
+      },
+      homeTab: {
+        buildStreamPanel: {
+          liveFromMemoriaSDesk: "Live output",
+          value: "\u2715",
+          closeTheLiveView: "Close the live view",
+          waitingForTheFirstTokensFromThe: "Waiting for model output\u2026"
+        },
+        lessonReminder: {
+          takeALesson: "Take a Lesson"
+        },
+        renderHomeTab: {
+          myLessonIsStillWaitingForYou: "My lesson is still waiting for you",
+          theCodexLessonIsStillWaitingFor: "The codex lesson is still waiting for you",
+          openAChatAndMemoriaWillSet: "Open a chat to use LumiBooks"
+        },
+        empty: {
+          overview: "Overview",
+          noBookYet: "No book yet"
+        },
+        hostGroups: {
+          promptBlocks: "Prompt blocks",
+          chatHistory: "Chat history",
+          longTermMemory: "Long-term memory",
+          worldInfo: "World info",
+          sidecar: "Sidecar",
+          extensions: "Extensions",
+          system: "System"
+        },
+        groups: {
+          promptBlocks: "Prompt blocks",
+          chatHistory: "Chat history",
+          worldInfo: "World info",
+          extensions: "Extensions"
+        },
+        renderLessonPromptPanel: {
+          tokens: "{label} \xB7 {tokens} tokens",
+          promptVsContextWindow: "Prompt vs context window",
+          value: "{formatTokens} / {formatTokens2} ({round}%)",
+          simulatedExampleTheLivePanelReadsYour: "Simulated example, the live panel reads your host''s real prompt."
+        },
+        sec: {
+          thePrompt: "The Prompt",
+          overview: "Overview",
+          pendingPreviews: "Pending previews ({length})",
+          actions: "Actions"
+        },
+        simulate: {
+          simulate: "Simulate",
+          assembleTheNextPromptThroughTheHost: "Preview the next prompt without generating"
+        },
+        drawPromptContent: {
+          readingTheLastFire: "Loading last prompt\u2026",
+          memoriaIsAskingTheHostForThe: "Loading prompt breakdown\u2026",
+          couldnTReadTheHostPrompt: "Couldn''t read the host prompt",
+          noPromptDataYet: "No prompt data yet",
+          tokens: "{label} \xB7 {tokens} tokens",
+          freeSpaceTokens: "Free space \xB7 {formatTokens} tokens",
+          promptVsContextWindow: "Prompt vs context window",
+          promptTotal: "Prompt total",
+          tokens2: "{totalTokens} tokens",
+          contextNearlyFull: "context nearly full",
+          value: "{tokens} \xB7 {pct}%",
+          freeSpace: "Free space",
+          value2: "{formatTokens} \xB7 {pct}%"
+        },
+        retry: {
+          retry: "Retry"
+        },
+        srcLabel: {
+          lastFire: "last prompt",
+          simulatedNextFire: "next prompt preview"
+        },
+        spineLabel: {
+          knowledgeCodex: "Knowledge Codex",
+          inAVolume: "in a volume",
+          inASeries: "in a series",
+          inASaga: "in a saga",
+          inALibrary: "in a library",
+          inAUniverse: "in a universe",
+          inAnArc: "in an arc",
+          inAChapter: "in a chapter",
+          stagedAsGhost: "staged as ghost"
+        },
+        where: {
+          msgs: "msgs {from1}\u2013{to1} \xB7 "
+        },
+        renderSpine: {
+          tokens: "{where}{kind} \xB7 ~{tokens} tokens{choice, select, yes { (click to open)} other {}}"
+        },
+        renderBreakdown: {
+          knowledgeCodexConstantPart: "Knowledge Codex (constant part)",
+          volumesAndHigher: "Volumes and higher ({length})",
+          arcs: "Arcs ({length})",
+          chapters: "Chapters ({length})",
+          uncompressedTailMsgs: "Uncompressed tail ({tailCount} msgs)",
+          excludedMsgs: "Excluded ({excludedCount} msgs)",
+          codexCountsIncludeEnabledConstantLorebookEntries: "Counts enabled constant Codex entries. Keyword and vector matches can add tokens. Lumiverse budgets and prompt settings affect final inclusion.",
+          storyContextInThePrompt: "Story context in the prompt"
+        },
+        renderOverview: {
+          chat: "Chat",
+          character: "Character",
+          filed: "Filed",
+          ofMsgs: "{coveredMessages} of {totalMessages} msgs",
+          shareOfThisChatSMessagesAlready: "Chat messages covered by summaries",
+          tail: "Tail",
+          msgsUncompressed: "{uncoveredMessages} msgs uncompressed",
+          recentMessagesStillInThePromptAt: "Messages still in context, waiting for summary window and lag",
+          codex: "Codex",
+          messagesTheStoryBibleHasNotRead: "Messages not yet indexed by the Codex",
+          offEnableInTuning: "off, enable in Tuning",
+          memoriaHasNoConnectionToWriteWith: "No connection available. Add a connection in Lumiverse.",
+          pickAConnectionInTheTuningTab: "Select a connection in Tuning."
+        },
+        shelfTile: {
+          shelf: "Shelf",
+          volArcChap: "vol \xB7 arc \xB7 chap",
+          uncompressedSummariesHoverForExistingHigherTiers: "Active summaries. Hover for higher tiers."
+        },
+        locked: {
+          codex: "Codex",
+          takeALesson: "take a lesson",
+          theKnowledgeCodexUnlocksAfterMemoriaS: "The Knowledge Codex unlocks after Memoria''s codex lesson"
+        },
+        subText: {
+          msgsUnindexedManualOnly: "msgs unindexed, manual only",
+          msgsUnindexed: "msgs unindexed",
+          updated: "updated {codexLastRunAt}",
+          noCodexYet: "no codex yet"
+        },
+        watchBtn: {
+          hide: "Hide",
+          watch: "Watch",
+          seeMemoriaSRawOutputStreamIn: "View model output"
+        },
+        abortBtn: {
+          abort: "Abort",
+          cancelTheInFlightGeneration: "Cancel generation"
+        },
+        renderFailure: {
+          lastArcAttemptFailed: "Last arc attempt failed",
+          lastAttemptFailed: "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}} attempt failed",
+          lastChapterAttemptFailed: "Last chapter attempt failed",
+          triedX: "{message} (tried {retriedTimes}x)",
+          retry: "Retry"
+        },
+        titleField: {
+          title: "Title"
+        },
+        contentField: {
+          content: "Content"
+        },
+        renderPreviewCard: {
+          memoria: "Memoria: {shortComment}",
+          tokens: "{tokenCountOutput} tokens",
+          save: "Save",
+          discard: "Discard"
+        },
+        renderActions: {
+          lagReady: "lag ready",
+          lagBuilding: "lag building",
+          windowReady: "window ready",
+          windowBuilding: "window building",
+          chapterReady: "{backlogChapters} chapter{backlogChapters, plural, one {} other {s}} ready",
+          arcReady: "{backlogArcs} arc{backlogArcs, plural, one {} other {s}} ready",
+          fileChapter: "File chapter",
+          compressTheOldestUncoveredMessagesIntoA: "Summarize the oldest uncovered messages, even if the window isn''t full",
+          fileAll: "File all ({backlogChapters})",
+          drainTheChapterBacklogKeepsFilingChapters: "File chapters until window or lag limits are reached",
+          bindArc: "Bind arc",
+          rollTheOldestUnsupersededChaptersIntoA: "Combine the oldest active chapters into an arc",
+          bindAll: "Bind all ({backlogArcs})",
+          drainTheArcBacklogKeepsBindingArcs: "Bind arcs until threshold or lag limits are reached",
+          updateCodex: "Update codex",
+          consumeEverythingUpToTheNewestMessage: "Update through the newest message, ignoring window and lag. Offers fast modes for large backlogs.",
+          actionsUnlockWhenMemoriaFinishesHerCurrent: "Wait for the current task to finish",
+          theExtensionIsOffFlipItOn: "Extension is off. Enable it in Tuning.",
+          memoriaWillCreateThisChatSWorld: "The lorebook is created when the first chapter is filed",
+          worldBookWhereChaptersAndArcsAre: "This chat''s summary lorebook"
+        },
+        lockedBtn: {
+          codexTakeALesson: "\uD83D\uDD12 Codex \xB7 take a lesson",
+          theCodexUnlocksAfterMemoriaSCodex: "The codex unlocks after Memoria''s codex lesson"
+        },
+        tag: {
+          bookReady: "Book ready"
+        },
+        streamStatus: "{running, select, yes {streaming} other {finished}}",
+        higherCount: "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}"
+      },
+      profileTab: {
+        profileDefaults: {
+          defaults: "Defaults"
+        },
+        sec: {
+          knowledgeCodex: "Knowledge Codex",
+          codexConnection: "Codex connection",
+          reset: "Reset",
+          profile: "Profile",
+          summarySettings: "Summary settings",
+          summaryConnection: "Summary Connection",
+          summarySamplers: "Summary samplers",
+          codexSamplers: "Codex samplers",
+          regex: "Regex",
+          context: "Context",
+          behavior: "Behavior"
+        },
+        renderCodexSettings: {
+          enableCodex: "Enable Codex",
+          window: "Window",
+          lag: "Lag",
+          unit: "{kind} unit",
+          messages: "Messages",
+          messageTokens: "Message tokens",
+          tokensBreakpoint: "Tokens breakpoint",
+          runsWhenEitherTheWindowOrThis: "Runs when either the window or this token count is reached.",
+          loreLimit: "Lore limit",
+          ofMaxContext: "% of max context",
+          tokenCap: "token cap",
+          loreTokens0NoLimit: "Lore tokens (0 = no limit)",
+          loreOfMaxContext: "Lore % of max context",
+          yourActivatedLorebookEntriesRideEveryCodex: "Includes activated lorebook entries as read-only reference. Defaults to 25% of Codex max input. Entries that exceed the budget are skipped in activation order and flagged for the agent. A token cap of 0 removes the limit.",
+          codexRecall: "Codex recall",
+          theActiveProfileSetsRecallForEnabled: "The active profile sets recall across chats. Timeline and threads stay included when enabled. Other records can use constant, keyword, or vector recall.",
+          codexPlacement: "Codex placement",
+          lorebookBefore: "Lorebook (before)",
+          atHistoryDepth: "At history depth",
+          afterChatHistory: "After chat history",
+          depthFromNewestTurn: "Depth from newest turn",
+          summariesReplaceTheirSourceHistoryInPlace: "Summaries replace their source messages. Codex uses lorebook entries: Before follows your preset''s Lorebook Before block; depth 0 follows history. Codex updates can break the prompt cache even with constant recall. Larger windows reduce update frequency; placement after history preserves the earlier prefix.",
+          relationsTable: "Relations table",
+          tracksConnectionsBetweenEntitiesAsOneShared: "Stores relationships in a shared table with reference checks. When off, stores them as entity ties.",
+          thoroughMode: "Thorough mode",
+          spendsOneExtraVerificationRoundPerUpdate: "Adds a verification round to check stale information and shorten records.",
+          extraContextMode: "Extra context mode",
+          summarizesChaptersEarlyAtTheCodexLag: "Creates ghost chapters early at the Codex lag. They provide summary context, then become filed chapters at the chapter lag without another model call.",
+          chaptersProvided: "Chapters provided",
+          howManyRecentChapterSummariesExtraContext: "Recent chapters included as context in extra context mode.",
+          theCodexAgentSConnectionAndSamplers: "Codex connection and samplers are in Connection > Codex."
+        },
+        updating: {
+          codexUpdating: "Codex Updating"
+        },
+        connOpts: {
+          sameAsSummaryConnection: "Same as Summary Connection",
+          value: "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (default)} other {}}"
+        },
+        renderCodexConnection: {
+          useToolCalls: "Use tool calls",
+          offByDefaultTheAgentWritesOne: "Off uses JSON replies. Enable if your connection supports tool calls.",
+          updateDelivery: "Update delivery",
+          allRecordsAtOnce: "All records at once",
+          oneRecordAtATime: "One record at a time",
+          memoriaAlwaysMakesSureEveryRecordIs: "Batched updates cost less. Use record-by-record delivery if long replies get cut off. Both require the model to write or skip the active records."
+        },
+        renderResetSettings: {
+          resetsThisProfileSSettingsToTheir: "Resets this profile''s settings to their defaults."
+        },
+        idle: {
+          resetProfileToDefaults: "Reset profile to defaults"
+        },
+        confirm: {
+          clickAgainToConfirm: "Confirm?"
+        },
+        renderProfilePicker: {
+          new: "New",
+          delete: "Delete",
+          enabled: "Enabled",
+          masterSwitchWhenOffMemoriaDoesNothing: "Enable LumiBooks for this account."
+        },
+        name: {
+          newProfileName: "New profile name"
+        },
+        nameField: {
+          profileName: "Profile name"
+        },
+        enableWrap: {
+          extension: "Extension"
+        },
+        renderSummarySettings: {
+          windowLagAndCompressionSettingsForEach: "Window, lag, and compression per tier.",
+          runAutomation: "Enable Automation",
+          windowUnit: "Window unit",
+          messages: "Messages",
+          messageTokens: "Message tokens",
+          window: "Window",
+          lagUnit: "Lag unit",
+          lag: "Lag",
+          chapterEntries: "Chapter entries",
+          summaryTokens: "Summary tokens",
+          manualOnly: "Manual only",
+          entries: "{tierNamesTier2} entries"
+        },
+        card: {
+          chapterFiling: "Chapter Filing",
+          binding: "{name} Binding"
+        },
+        appendAutomationControls: {
+          automate: "Automate?"
+        },
+        change: {
+          targetUnit: "{prefix}TargetUnit",
+          targetPercent: "{prefix}TargetPercent",
+          targetTokens: "{prefix}TargetTokens"
+        },
+        appendCompressionTarget: {
+          compressionTarget: "Compression target",
+          percentOfInput: "Percent of input",
+          fixedTokens: "Fixed tokens",
+          targetTokens: "Target tokens",
+          targetPercent: "Target percent"
+        },
+        opts: {
+          defaultConnection: "Default connection",
+          noConnectionsAvailable: "No connections available",
+          value: "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (default)} other {}}"
+        },
+        renderConnection: {
+          memoriaWritesWith: "Connection: {name}"
+        },
+        renderSamplers: {
+          usedWhenMemoriaWritesChaptersArcsAnd: "Used for summaries. Empty fields use the defaults shown as placeholders. Temperature, max output, and max input are sent; top_p, top_k, and penalties are sent when set.",
+          maxInputTokens: "Max input tokens",
+          maxOutputTokens: "Max output tokens",
+          temperature: "Temperature",
+          topP: "Top P",
+          topK: "Top K",
+          freqPenalty: "Freq penalty",
+          presPenalty: "Pres penalty"
+        },
+        options: {
+          books: "Books",
+          codex: "Codex"
+        },
+        renderCodexSamplers: {
+          samplersForTheCodexAgentOnlySeparate: "Codex samplers, separate from summaries. Empty fields use Codex defaults.",
+          maxInputTokens: "Max input tokens",
+          maxOutputTokens: "Max output tokens",
+          temperature: "Temperature",
+          topP: "Top P",
+          topK: "Top K",
+          freqPenalty: "Freq penalty",
+          presPenalty: "Pres penalty"
+        },
+        renderRegex: {
+          noRegexScriptsFoundInLumiverse: "No regex scripts found in Lumiverse",
+          outgoingRunsOnThePromptBeforeMemoria: "Outgoing regex runs on prompts; incoming runs on model output."
+        },
+        outgoing: {
+          outgoing: "Outgoing"
+        },
+        incoming: {
+          incoming: "Incoming"
+        },
+        f: {
+          chapterContext: "Chapter context"
+        },
+        renderContext: {
+          howManyRecentChaptersToFeedMemoria: "Recent chapters included as context.",
+          triesPerAttemptAfterTheLastTry: "Tries per attempt. After failure, the same messages retry next turn.",
+          howLongMemoriaWaitsForTheFirst: "Wait time for the first streamed token."
+        },
+        retry: {
+          retries: "Retries"
+        },
+        ttft: {
+          firstTokenTimeoutSeconds: "First-token timeout (seconds)"
+        },
+        renderBehavior: {
+          hideMessagesOnceFiled: "Hide messages once filed",
+          greysOutCoveredMessagesInTheChat: "Greys out covered messages in chat. Summary coverage applies either way.",
+          previewBeforeSaving: "Preview before saving",
+          memoriaStagesNewChaptersAndArcsIn: "Review chapters and arcs in Home > Pending previews before saving."
+        }
+      },
+      promptsTab: {
+        categorySubtabs: {
+          chapter: "Chapter",
+          arc: "Arc",
+          volume: "Volume",
+          codex: "Codex"
+        },
+        groupHelp: {
+          oneBlockPerCodexFile: "One block per codex file.",
+          howTheAgentIsToldToDeliver: "Edit delivery instructions. Selected by the Use tool calls setting.",
+          theTaskTextForEachKindOf: "Task instructions by run type.",
+          warningsPrependedOnlyWhenTheirSituationApplies: "Notes included when applicable."
+        },
+        sec: {
+          codexPromptTemplates: "Codex prompt templates",
+          memoriaOverrides: "Memoria overrides",
+          arcPrompt: "Arc prompt",
+          volumePrompt: "Volume prompt",
+          codexDirectives: "Codex directives",
+          chapterPrompt: "Chapter prompt",
+          importStmbPresets: "Import STMB presets",
+          info: "Info"
+        },
+        draw: {
+          everyOtherBlockOfTheCodexAgent: 'Additional Codex prompt blocks, saved in the "{displayName}" preset. Switching presets changes the prompt set. Read How To before editing.',
+          otherBlocksOfTheCodexAgentS: "Additional Codex prompt blocks for this preset.",
+          templateCustomizedInThisPreset: "{overridden} template{overridden, plural, one {} other {s}} customized in this preset."
+        },
+        renderTemplateRow: {
+          customized: "customized",
+          hostMacrosLikeUserAlsoWorkThey: "Supports host macros such as '{{user}}', resolved when sent.",
+          builtInPresetDuplicateItAboveTo: "Built-in preset, duplicate it above to edit this template."
+        },
+        howBtn: {
+          hideHowTo: "Hide How To",
+          howTo: "How To"
+        },
+        resetBtn: {
+          resetToDefault: "Reset to default",
+          clickAgainToConfirm: "Confirm?"
+        },
+        renderMemoriaOverrides: {
+          personaIsTheSystemPromptHeaderShort: "Persona sets the system-prompt header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
+          memoriaPersona: "Memoria persona",
+          memoriaShortCommentRules: "Memoria short-comment rules"
+        },
+        buildOverrideBlock: {
+          resetToDefault: "Reset to default",
+          clickAgainToConfirm: "Confirm?"
+        },
+        restoreIdle: {
+          resetToDefault: "Reset to default"
+        },
+        renderCategory: {
+          theMissionBlockAtTheTopOf: "Instructions at the start of the Codex system prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
+          newBlankPrompt: "New blank prompt",
+          duplicateToNew: "Duplicate to new",
+          duplicateToEdit: "Duplicate to edit",
+          dryRun: "Dry run",
+          assembleTheNextCodexRunSComplete: "Preview resolved system and user prompts. No model call.",
+          assembleThisPresetSPromptWithAll: "Preview this preset''s resolved prompt. No model call.",
+          delete: "Delete",
+          promptBuiltInDuplicateToEdit: "Prompt (built-in, duplicate to edit)"
+        },
+        opts: {
+          builtIn: "Built-in: {displayName}",
+          custom: "Custom: {displayName}"
+        },
+        name: {
+          nameForNewPrompt: "Name for new {category} prompt",
+          untitled: "Untitled",
+          nameForDuplicate: "Name for duplicate"
+        },
+        sourceName: {
+          untitled: "Untitled"
+        },
+        ok: {
+          deletePrompt: "Delete prompt?",
+          thisRemovesTheCustomPromptAndFalls: "Deletes this custom prompt and selects the built-in default.",
+          deletePreset: "Delete preset?"
+        },
+        nameField: {
+          displayName: "Display name"
+        },
+        textField: {
+          prompt: "Prompt"
+        },
+        renderImport: {
+          uploadASillyTavernMemoryBooksExportMemoria: "Import a SillyTavern Memory Books export as editable presets.",
+          importChapterPresets: "Import chapter presets",
+          importArcPresets: "Import arc presets",
+          delete: "Delete",
+          noCustomPresetsYet: "No custom presets yet"
+        },
+        importFile: {
+          memoriaCanTReadThisFile: "Couldn''t read the file",
+          memoriaCouldnTParseThePresetJson: "Invalid preset JSON"
+        },
+        showImportFailure: {
+          importFailed: "Import failed",
+          ok: "OK"
+        },
+        lines: {
+          duplicateAnyBuiltInOrCreateNew: "Duplicate a built-in preset or create a custom preset to edit.",
+          promptsMustAskTheModelForStrict: "Prompts must ask the model for strict JSON (examples below).",
+          targetTokensExpandsToTheActiveCompression: "'{{target_tokens}}' expands to the active compression target.",
+          memoriaShortCommentRulesExpandsToThis: "'{{memoria_short_comment_rules}}' expands to this turn''s nyandere short-comment rules.",
+          promptsAreMacroEvaluated: "Prompts are macro-evaluated."
+        },
+        groups: {
+          fileSchemas: "File schemas",
+          writeProtocol: "Write protocol",
+          passInstructions: "Pass instructions",
+          runNotes: "Run notes"
+        }
+      },
+      tuningTab: {
+        subtabs: {
+          connection: "Connection",
+          settings: "Settings",
+          prompts: "Prompts"
+        },
+        renderTuningTab: {
+          profile: "Profile",
+          extensionOff: "\xB7 extension off",
+          switchOrManageProfilesInTheConnection: "Switch or manage profiles in the Connection pane"
+        },
+        options: {
+          books: "Books",
+          codex: "Codex"
+        },
+        sec: {
+          everywhere: "Everywhere"
+        },
+        renderGlobalSettings: {
+          theseApplyToEveryChatAndProfile: "Account settings for chats and profiles.",
+          automationToasts: "Automation toasts",
+          whenOffMemoriaSBackgroundRunsStay: "Show notifications for automatic tasks. Errors and manual actions still notify.",
+          summaryRecall: "Summary recall",
+          appliesToExistingAndFutureChapterAnd: "Applies to existing and future summaries across chats. Summary coverage stays unchanged. Keyword and vector modes include matching summaries; vector recall falls back to keywords if no recent text is visible.",
+          lorebookNamesFollowChatNames: "Lorebook names follow chat names",
+          turnOffToRenameYourBooksAnd: "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync."
+        }
+      }
+    },
+    common: {
+      messageCount: "{count} msgs",
+      compactRole: "{role, select, user {USER} assistant {ASSI} system {SYST} tool {TOOL} other {{fallback}}}",
+      role: "{role, select, user {user} assistant {assistant} system {system} tool {tool} other {{role}}}",
+      compactTokens: "{tokens}t",
+      compactTokenChange: "{before}t\u2192{after}t"
+    }
+  },
+  guides: {
+    codex: {
+      markdown: `# The Knowledge Codex
+
+Models lose facts, muddle timelines, and drift out of character as the context grows and overflows. Researchers have measured these failure modes in long-run roleplay: fact loss, timeline confusion, and persona drift ([ARPM, 2026](https://arxiv.org/pdf/2605.14802), [PCL](https://arxiv.org/html/2503.17662v1), [CloneMem](https://arxiv.org/pdf/2601.07023)).
+
+LumiBooks already fights this partially with compression. Memoria files your chat into chapters, binds chapters into arcs, and presses arcs into volumes.
+
+In short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.
+
+This is what knowledge codex solves.
+
+## What it is
+
+The Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
+
+- **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).
+- **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.
+- **Timeline.** A dated record of major events. Timeline confusion is one of the most common failure modes, and a maintained timeline is the classic defense ([ARPM](https://arxiv.org/pdf/2605.14802), [narrative dimensions](https://arxiv.org/pdf/2604.10786), [event relation extraction](https://arxiv.org/pdf/2106.08629)).
+- **Threads.** Open/stalled storylines, and the details planted for later payoff. Explicit thread and outline state is what keeps plots coherent over thousands of words ([DOC](https://arxiv.org/pdf/2212.10077), [Writing Path](https://arxiv.org/html/2404.13919v1), [plot structure management](https://www.sciencedirect.com/science/article/pii/S1875952123000459)).
+- **World.** The rules of your setting (Magic systems, factions, geography, lore, facts true of the world itself). Important for narrative depth ([KG-guided storytelling](https://arxiv.org/html/2505.24803v2), [KG + literary theory](https://arxiv.org/pdf/2508.03137), [hierarchical story KGs](https://arxiv.org/html/2506.10008v1)).
+- **Knowledge and secrets.** Who knows what. Models improve greatly when memory is limited to what each character actually witnessed, and belief tracking is where LLMs are shit ([perspective-bounded memory](https://arxiv.org/pdf/2606.25632), [MREval](https://aclanthology.org/2026.findings-acl.1175/), [ToMATO, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/32143), [EnigmaToM](https://arxiv.org/pdf/2503.03340)).
+
+## Why these records?
+
+These are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
+
+Some things other trackers keep were left out on purpose:
+
+- **Numeric affection and trust meters.** Some research shows relationships benefit more from trajectories vs scores ([Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph)). A number like affection 62 is pseudo-precision an LLM can interpret in arbitrary ways. "Loves her, hides it, betrayed on day 12" carries far more information. We track this as relationships.
+- **Per-turn scene state.** Who is standing where, current weather, momentary moods, etc. The uncompressed tail of your chat already shows the present scene, so tracking it twice is not needed and would need to be updated every turn.
+- **Possession ledgers, personality drift logs, faction standing matrices.** Each extra table multiplies the agent''s upkeep and adds a place for old data to accumulate and relationships to track. Significant objects already live as Things, lasting character change belongs on the sheet itself, and pivotal shifts go in the timeline as events.
+- **Verbatim dialogue.** Potentially in the future, could track dialogues. idk.
+
+## How it works
+
+Every so often, on a schedule you control, LB hands a slice of your story to a lightweight agent along with the current records and some context of the past. The agent then does three things:
+
+1. **Update.** Rewrite every section the story has outdated.
+2. **Sweep.** Verify nothing stale survived.
+3. **Compress.** Strip bloat and prose, duplicate info, verbosity.
+
+You can edit the records yourself in the new and beautiful glass UI.
+
+## How it reaches the prompt
+
+The codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named \`LumiBooks Codex [Do Not Edit] - <chat>\`, and the host''s native lorebook activation decides what enters the prompt:
+
+- **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning \u2192 Settings \u2192 Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a \`keywords\` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse''s lorebook search.
+- **Timeline and threads** are constant entries as keyword matching doesn''t make as much sense here.
+
+Vector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.
+
+Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning \u2192 Settings \u2192 Books \u2192 Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
+
+The mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.
+
+## For extension developers
+
+LumiBooks publishes the codex to Spindle''s shared RPC pool. Read it from any extension backend:
+
+\`\`\`ts
+// Full snapshot: all 8 files as parsed JSON, plus per-file states.
+const snap = await spindle.rpcPool.read(\`lumi_books.codex.$'{'chatId'}'\`);
+// snap: '{' chatId, userId, files: '{' characters, locations, things, relations,
+//         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'
+
+// The whole codex rendered as one text block. Note LumiBooks itself no longer
+// injects this block: records reach the prompt as lorebook entries (see
+// "How it reaches the prompt"), so this is a convenience view for consumers.
+const text = await spindle.rpcPool.read(\`lumi_books.codex.$'{'chatId'}'.rendered\`);
+
+// Change signal: the most recent codex mutation across all chats.
+const evt = await spindle.rpcPool.read("lumi_books.codex_updated");
+// evt: '{' chatId, userId, changedFiles, reason: "run"|"tidy"|"edit"|"states"|"wipe", updatedAt '}'
+\`\`\`
+
+Notes:
+
+- Endpoints appear after the first codex activity of a session. \`read\` rejects before that, so wrap it in a try/catch.
+- A wiped codex publishes \`null\` at both chat endpoints.
+- \`fileStates\` marks files the user switched off (\`noInject\`) or froze (\`frozen\`). The \`rendered\` text already excludes them. If you consume \`files\` directly, respect these flags.
+- \`lumi_books.latest_chapter\`, \`lumi_books.latest_arc\`, and \`lumi_books.latest_volume\` carry the summary events and were already published.
+`
+    }
+  },
+  promptBreakdown: {
+    assembledTranscript: "Assembled transcript"
+  }
+};
+
+// src/i18n/index.ts
+var DEFAULT_LOCALE = "en";
+function lookup(catalog, key) {
+  let value = catalog;
+  for (const part of key.split(".")) {
+    if (!value || typeof value === "string" || !Object.hasOwn(value, part))
+      return;
+    value = value[part];
+  }
+  return typeof value === "string" ? value : undefined;
+}
+function createTranslator(locale = DEFAULT_LOCALE, catalogs = {}) {
+  let language;
+  try {
+    language = Intl.getCanonicalLocales(locale)[0] ?? DEFAULT_LOCALE;
+  } catch {
+    language = DEFAULT_LOCALE;
+  }
+  const chain = [...new Set([language, language.split("-")[0], DEFAULT_LOCALE])];
+  const cache = new Map;
+  return (key, values = {}) => {
+    for (const candidate of chain) {
+      const message = lookup(candidate === DEFAULT_LOCALE ? en_default : catalogs[candidate], key);
+      if (message === undefined || message === "")
+        continue;
+      const cacheKey = `${candidate}:${key}`;
+      try {
+        let formatter = cache.get(cacheKey);
+        if (!formatter) {
+          formatter = new IntlMessageFormat(message, candidate, undefined, { ignoreTag: true });
+          if (cache.size >= 512)
+            cache.delete(cache.keys().next().value);
+          cache.set(cacheKey, formatter);
+        }
+        return String(formatter.format(values));
+      } catch (error) {
+        if (candidate === DEFAULT_LOCALE)
+          throw error;
+      }
+    }
+    throw new Error(`Missing English message: ${key}`);
+  };
+}
+var t = createTranslator();
+
 // src/prompts/codex/directives.txt
 var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story bible of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
 
@@ -350,241 +6190,241 @@ var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do no
 
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;
-var SCHEMA_HOWTO_TAIL = "The JSON shape shown here must match what the validator accepts. You can reword the guidance freely. If you change the shape itself, the agent's writes will be rejected until it matches the validator again.";
+var SCHEMA_HOWTO_TAIL = t("prompts.codex.registry.schemaHowtoTail");
 var CODEX_TEMPLATES = [
   {
     key: "schema_entities_table",
-    label: "Entity sheets (relations table on)",
+    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOn"),
     group: "File schemas",
-    howTo: `Describes characters.json, locations.json, and things.json when the relations table is enabled. Relationship info is directed to relations.json. ${SCHEMA_HOWTO_TAIL}`,
-    vars: [{ token: "{{ENTITY_FILES}}", meaning: "the entity files active this run, e.g. characters.json / locations.json" }],
+    howTo: t("prompts.codex.registry.codexTemplates.describesCharactersJsonLocationsJsonAndThings", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRunE") }],
     defaultText: entities_table_default
   },
   {
     key: "schema_entities_inline",
-    label: "Entity sheets (relations table off)",
+    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOff"),
     group: "File schemas",
-    howTo: `Describes the entity files when the relations table is disabled. Relationships live as "ties" notes on each sheet instead. ${SCHEMA_HOWTO_TAIL}`,
-    vars: [{ token: "{{ENTITY_FILES}}", meaning: "the entity files active this run" }],
+    howTo: t("prompts.codex.registry.codexTemplates.describesTheEntityFilesWhenTheRelations", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRun") }],
     defaultText: entities_inline_default
   },
   {
     key: "schema_relations",
-    label: "Relations table",
+    label: t("prompts.codex.registry.codexTemplates.relationsTable"),
     group: "File schemas",
-    howTo: `Describes relations.json and the coverage rules that push the agent to record the story's full web. Only sent when the relations table is enabled and not frozen. ${SCHEMA_HOWTO_TAIL}`,
+    howTo: t("prompts.codex.registry.codexTemplates.describesRelationsJsonAndTheCoverageRules", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
     vars: [],
     defaultText: relations_default
   },
   {
     key: "schema_timeline",
-    label: "Timeline",
+    label: t("prompts.codex.registry.codexTemplates.timeline"),
     group: "File schemas",
-    howTo: `Describes timeline.json, including the append-only rule the app also enforces on normal runs. ${SCHEMA_HOWTO_TAIL}`,
+    howTo: t("prompts.codex.registry.codexTemplates.describesTimelineJsonIncludingTheAppendOnly", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
     vars: [],
     defaultText: timeline_default
   },
   {
     key: "schema_threads",
-    label: "Threads",
+    label: t("prompts.codex.registry.codexTemplates.threads"),
     group: "File schemas",
-    howTo: `Describes threads.json. Resolved threads are archived by the app and hidden from the agent, and this text tells it not to re-add them. ${SCHEMA_HOWTO_TAIL}`,
+    howTo: t("prompts.codex.registry.codexTemplates.describesThreadsJsonResolvedThreadsAreArchived", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
     vars: [],
     defaultText: threads_default
   },
   {
     key: "schema_world",
-    label: "World rules",
+    label: t("prompts.codex.registry.codexTemplates.worldRules"),
     group: "File schemas",
-    howTo: `Describes world.json. ${SCHEMA_HOWTO_TAIL}`,
+    howTo: t("prompts.codex.registry.codexTemplates.describesWorldJson", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
     vars: [],
     defaultText: world_default
   },
   {
     key: "schema_knowledge",
-    label: "Secrets",
+    label: t("prompts.codex.registry.codexTemplates.secrets"),
     group: "File schemas",
-    howTo: `Describes knowledge.json. The validator rejects items without knownBy, hiddenFrom, or falseBeliefs, and this text explains that rule to the agent. ${SCHEMA_HOWTO_TAIL}`,
+    howTo: t("prompts.codex.registry.codexTemplates.describesKnowledgeJsonTheValidatorRejectsItems", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
     vars: [],
     defaultText: knowledge_default
   },
   {
     key: "schema_keywords",
-    label: "Retrieval keywords",
+    label: t("prompts.codex.registry.codexTemplates.retrievalKeywords"),
     group: "File schemas",
-    howTo: "The rules for the keywords lists on entity sheets, world entries, and knowledge items. Weak keywords make records unreachable, since each record only enters the story prompt when a keyword matches recent messages. Too many does the opposite damage: the record matches everything and is always in the prompt. Memoria enforces a hard limit of 12 keywords of at most two words each and discards the rest, so keep this text in step with that.",
+    howTo: t("prompts.codex.registry.codexTemplates.theRulesForTheKeywordsListsOn"),
     vars: [],
     defaultText: keywords_default
   },
   {
     key: "protocol_patch_rules",
-    label: "Patch rules (set / drop / content)",
+    label: t("prompts.codex.registry.codexTemplates.patchRulesSetDropContent"),
     group: "Write protocol",
-    howTo: "The shared explanation of set, drop, seeds, and content, embedded into both protocol blocks below. The app really does merge patches this way, so keep the described behavior accurate or the agent will send writes that do the wrong thing.",
+    howTo: t("prompts.codex.registry.codexTemplates.theSharedExplanationOfSetDropSeeds"),
     vars: [],
     defaultText: patch_rules_default
   },
   {
     key: "protocol_tools",
-    label: "Protocol (tool calls)",
+    label: t("prompts.codex.registry.codexTemplates.protocolToolCalls"),
     group: "Write protocol",
-    howTo: "Sent when the profile uses tool calls and Update delivery is all records at once. It names the codex_write, codex_skip and codex_done tools the app registers, so those names must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more. It also defines the <think> scratchpad convention for models without native reasoning.",
-    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
     defaultText: tools_default
   },
   {
     key: "protocol_tools_sequential",
-    label: "Protocol (tool calls, one file at a time)",
+    label: t("prompts.codex.registry.codexTemplates.protocolToolCallsOneFileAtA"),
     group: "Write protocol",
-    howTo: "Sent when the profile uses tool calls and Update delivery is one record at a time. Same tools and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
-    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls2"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
     defaultText: tools_sequential_default
   },
   {
     key: "protocol_json",
-    label: "Protocol (JSON mode)",
+    label: t("prompts.codex.registry.codexTemplates.protocolJsonMode"),
     group: "Write protocol",
-    howTo: 'Sent when the profile writes strict JSON and Update delivery is all records at once. The reply is parsed for a "writes" array, a "skip" list and a "done" flag, so that shape must stay. Memoria refuses an update until every record is written or skipped, so keep that rule or the agent will not understand why it keeps being asked for more.',
-    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
     defaultText: json_default
   },
   {
     key: "protocol_json_sequential",
-    label: "Protocol (JSON mode, one file at a time)",
+    label: t("prompts.codex.registry.codexTemplates.protocolJsonModeOneFileAtA"),
     group: "Write protocol",
-    howTo: "Sent when the profile writes strict JSON and Update delivery is one record at a time. Same shape and same coverage rule as the batched version, but it asks for a single record per reply, which keeps each answer small enough that a long update cannot be cut off partway and lost.",
-    vars: [{ token: "{{PATCH_RULES}}", meaning: "the patch rules template above" }],
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson2"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
     defaultText: json_sequential_default
   },
   {
     key: "pass_update",
-    label: "Task closing block",
+    label: t("prompts.codex.registry.codexTemplates.taskClosingBlock"),
     group: "Pass instructions",
-    howTo: "The closing block of every normal update and catch-up message. It sits after the long story text on purpose, regrounding the agent in the three passes and the scratchpad right before it answers.",
+    howTo: t("prompts.codex.registry.codexTemplates.theClosingBlockOfEveryNormalUpdate"),
     vars: [],
     defaultText: update_default
   },
   {
     key: "pass_verify",
-    label: "Verification nudge",
+    label: t("prompts.codex.registry.codexTemplates.verificationNudge"),
     group: "Pass instructions",
-    howTo: "Sent as an extra round after a clean update when Thorough mode is on. A short transport-specific closing is appended by the app.",
+    howTo: t("prompts.codex.registry.codexTemplates.sentAsAnExtraRoundAfterA"),
     vars: [],
     defaultText: verify_default
   },
   {
     key: "pass_tidy",
-    label: "Tidy pass",
+    label: t("prompts.codex.registry.codexTemplates.tidyPass"),
     group: "Pass instructions",
-    howTo: "The instruction block for Tidy up. The app appends the target file list, the locked entity note, the current codex, and the closing line.",
+    howTo: t("prompts.codex.registry.codexTemplates.theInstructionBlockForTidyUpThe"),
     vars: [],
     defaultText: tidy_default
   },
   {
     key: "pass_refresh",
-    label: "Refresh pass",
+    label: t("prompts.codex.registry.codexTemplates.refreshPass"),
     group: "Pass instructions",
-    howTo: "Sent when re-enabled records catch up after being frozen. The targets must come back as complete file rewrites, and this text says so.",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenReEnabledRecordsCatchUp"),
     vars: [
-      { token: "{{TARGET_FILES}}", meaning: "the files being refreshed" },
-      { token: "{{IT_THEY}}", meaning: '"it" or "they" to match the target count' },
-      { token: "{{LAG_PHRASE}}", meaning: '"it lags" or "they lag" to match the target count' },
-      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged, e.g. filed summaries plus raw turns" }
+      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRefreshed") },
+      { token: "{{IT_THEY}}", meaning: t("prompts.codex.registry.codexTemplates.itOrTheyToMatchTheTarget") },
+      { token: "{{LAG_PHRASE}}", meaning: t("prompts.codex.registry.codexTemplates.itLagsOrTheyLagToMatch") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArrangedE") }
     ],
     defaultText: refresh_default
   },
   {
     key: "pass_rebuild",
-    label: "Rebuild pass",
+    label: t("prompts.codex.registry.codexTemplates.rebuildPass"),
     group: "Pass instructions",
-    howTo: "Sent when a category's Rebuild button regenerates that file from the whole story. The target shows as empty (locked rows excepted) and must come back as a complete rewrite. The file on disk is only replaced when the pass succeeds, and the cursor does not move.",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenACategorySRebuildButton"),
     vars: [
-      { token: "{{TARGET_FILES}}", meaning: "the files being rebuilt" },
-      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }
+      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRebuilt") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
     ],
     defaultText: rebuild_default
   },
   {
     key: "pass_reconcile",
-    label: "Reconcile sweep",
+    label: t("prompts.codex.registry.codexTemplates.reconcileSweep"),
     group: "Pass instructions",
-    howTo: "Sent when messages were deleted behind the codex and nothing new is left to read. The agent checks every claim against the surviving story.",
-    vars: [{ token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }],
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenMessagesWereDeletedBehindThe"),
+    vars: [{ token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }],
     defaultText: reconcile_default
   },
   {
     key: "pass_catchup_fast",
-    label: "Fast catch-up",
+    label: t("prompts.codex.registry.codexTemplates.fastCatchUp"),
     group: "Pass instructions",
-    howTo: "The preamble for each fast catch-up batch, which replays filed chapter summaries instead of raw turns.",
-    vars: [{ token: "{{CHUNK_LABEL}}", meaning: "the message range this batch covers" }],
+    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForEachFastCatchUp"),
+    vars: [{ token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeThisBatchCovers") }],
     defaultText: catchup_fast_default
   },
   {
     key: "pass_catchup_ultra",
-    label: "Ultra catch-up",
+    label: t("prompts.codex.registry.codexTemplates.ultraCatchUp"),
     group: "Pass instructions",
-    howTo: "The preamble for the single-pass ultra catch-up over every filed summary plus the raw tail.",
+    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForTheSinglePassUltra"),
     vars: [
-      { token: "{{CHUNK_LABEL}}", meaning: "the message range covered" },
-      { token: "{{STORY_SHAPE}}", meaning: "how the story input is arranged" }
+      { token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeCovered") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
     ],
     defaultText: catchup_ultra_default
   },
   {
     key: "note_partial_story",
-    label: "Partial view guard",
+    label: t("prompts.codex.registry.codexTemplates.partialViewGuard"),
     group: "Run notes",
-    howTo: "Prepended to every normal update. The agent only sees a window of the story, and this is the guard that keeps it from rewriting or deleting records the visible turns simply do not mention.",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedToEveryNormalUpdateTheAgent"),
     vars: [],
     defaultText: partial_story_default
   },
   {
     key: "note_reconcile",
-    label: "Reconcile warning",
+    label: t("prompts.codex.registry.codexTemplates.reconcileWarning"),
     group: "Run notes",
-    howTo: "Prepended when edits or deletions were detected behind the codex cursor, so the agent treats existing records as suspect.",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEditsOrDeletionsWereDetected"),
     vars: [],
     defaultText: reconcile_default2
   },
   {
     key: "note_migrate_table",
-    label: "Migration to relations table",
+    label: t("prompts.codex.registry.codexTemplates.migrationToRelationsTable"),
     group: "Run notes",
-    howTo: "Prepended on the first run after the relations table is switched on. The app verifies the migration actually happened, so keep the instruction intact.",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe"),
     vars: [],
     defaultText: migrate_table_default
   },
   {
     key: "note_migrate_inline",
-    label: "Migration to inline ties",
+    label: t("prompts.codex.registry.codexTemplates.migrationToInlineTies"),
     group: "Run notes",
-    howTo: "Prepended on the first run after the relations table is switched off.",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe2"),
     vars: [],
     defaultText: migrate_inline_default
   },
   {
     key: "note_repair",
-    label: "Repair warning",
+    label: t("prompts.codex.registry.codexTemplates.repairWarning"),
     group: "Run notes",
-    howTo: "Prepended when files on disk were unreadable and are shown empty.",
-    vars: [{ token: "{{FILES}}", meaning: "the unreadable files" }],
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenFilesOnDiskWereUnreadable"),
+    vars: [{ token: "{{FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theUnreadableFiles") }],
     defaultText: repair_default
   },
   {
     key: "note_locked",
-    label: "Locked entities",
+    label: t("prompts.codex.registry.codexTemplates.lockedEntities"),
     group: "Run notes",
-    howTo: "Prepended when entities are locked. The app also reverts any write that touches a locked entity.",
-    vars: [{ token: "{{IDS}}", meaning: "the locked entity ids" }],
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEntitiesAreLockedTheApp"),
+    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theLockedEntityIds") }],
     defaultText: locked_default
   },
   {
     key: "note_locked_fields",
-    label: "Locked fields",
+    label: t("prompts.codex.registry.codexTemplates.lockedFields"),
     group: "Run notes",
-    howTo: 'Prepended when individual fields are locked on an entity. Those fields show "Locked, do not edit" to the agent instead of their contents, and the app restores the real values on every write.',
-    vars: [{ token: "{{IDS}}", meaning: "the entities carrying locked fields" }],
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
+    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
     defaultText: locked_fields_default
   }
 ];
@@ -627,7 +6467,8 @@ var STORAGE_VERSION = 7;
 var SETTINGS_PATH = "settings.json";
 var CHAT_STATE_DIR = "chats";
 var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
-var TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
+var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
+var TIER_NAMES = [t("shared.tierNames.chapter"), t("shared.tierNames.arc"), t("shared.tierNames.volume"), t("shared.tierNames.series"), t("shared.tierNames.saga"), t("shared.tierNames.library"), t("shared.tierNames.universe")];
 var HIGHER_TIERS = [3, 4, 5, 6, 7];
 function defaultHigherTiers() {
   return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
@@ -660,9 +6501,9 @@ function normalizeHigherTiers(raw) {
   return out;
 }
 function tierHeader(tier, number, sources, turns) {
-  const sourceName = TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
+  const sourceName = MODEL_TIER_NAMES[tier - 2]?.toLowerCase() ?? "message";
   const sourceLabel = sources === 1 || sourceName === "series" ? sourceName : sourceName === "library" ? "libraries" : `${sourceName}s`;
-  return `${TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
+  return `${MODEL_TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
 }
 var DEFAULT_SAMPLERS = {
   temperature: null,
@@ -758,7 +6599,7 @@ function makeDefaultProfile(id, name) {
 var DEFAULT_SETTINGS = {
   version: STORAGE_VERSION,
   enabled: true,
-  profiles: [makeDefaultProfile("default", "Default")],
+  profiles: [makeDefaultProfile("default", t("shared.defaultSettings.default"))],
   activeProfileId: "default",
   customPresets: [],
   debugLog: false,
@@ -778,7 +6619,7 @@ function normalizeSettings(raw) {
   const profilesRaw = Array.isArray(v.profiles) ? v.profiles : fallback.profiles;
   const profiles = profilesRaw.map((p) => normalizeProfile(p)).filter((p) => !!p);
   if (profiles.length === 0)
-    profiles.push(makeDefaultProfile("default", "Default"));
+    profiles.push(makeDefaultProfile("default", t("shared.normalizeSettings.default")));
   const activeProfileId = typeof v.activeProfileId === "string" && profiles.some((p) => p.id === v.activeProfileId) ? v.activeProfileId : profiles[0].id;
   const customPresets = Array.isArray(v.customPresets) ? v.customPresets.map(normalizeCustomPreset).filter((p) => !!p) : [];
   return {
@@ -802,7 +6643,7 @@ function normalizeProfile(raw) {
   const id = typeof v.id === "string" && v.id.trim() ? v.id : null;
   if (!id)
     return null;
-  const base = makeDefaultProfile(id, typeof v.name === "string" && v.name.trim() ? v.name : "Untitled");
+  const base = makeDefaultProfile(id, typeof v.name === "string" && v.name.trim() ? v.name : t("shared.base.untitled"));
   return {
     ...base,
     lagUnit: v.lagUnit === "tokens" ? "tokens" : "messages",
@@ -996,7 +6837,7 @@ function bookNameFor(chatName, chatId) {
 function codexBookNameFor(chatName, chatId) {
   const cleanName = (chatName ?? "").trim();
   const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
-  return `${WORLD_BOOK_NAME_PREFIX} Codex [Do Not Edit] - ${suffix}`;
+  return t("shared.codexBookNameFor.codexDoNotEdit", { worldBookNamePrefix: WORLD_BOOK_NAME_PREFIX, suffix });
 }
 var LESSONS_PATH = "lessons.json";
 function emptyLessonCourse() {
@@ -1025,6 +6866,12 @@ function unlockedLessons() {
 function codexLessonGated(lessons) {
   return lessons.codex.status !== "done" && !lessons.codexSealSkipped;
 }
+var LESSON_GRADE_LABEL = {
+  gilded: t("shared.lessonGradeLabel.gilded"),
+  silver: t("shared.lessonGradeLabel.silver"),
+  bronze: t("shared.lessonGradeLabel.bronze"),
+  apprentice: t("shared.lessonGradeLabel.apprentice")
+};
 function normalizeLessonAnswers(raw) {
   const out = {};
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
@@ -1114,7 +6961,7 @@ async function ensureUserFolders(userId) {
   ]);
 }
 function debug(userId, ...parts) {
-  spindle.log.info(`[lmb:${userId.slice(0, 6)}] ${parts.map(stringifyPart).join(" ")}`);
+  spindle.log.info(t("backend.runtime.debug.lmb", { slice: userId.slice(0, 6), join: parts.map(stringifyPart).join(" ") }));
 }
 function info(message) {
   spindle.log.info(`[lmb] ${message}`);
@@ -1191,7 +7038,7 @@ function migrateSettings(userId, raw, fromVersion) {
             const key = `codex_migrated_${typeof next.id === "string" ? next.id : migratedPresets.length}`;
             migratedPresets.push({
               key,
-              displayName: `${typeof next.name === "string" && next.name.trim() ? next.name : "Profile"} directives`,
+              displayName: t("backend.storage.flipped.directives", { hasName: typeof next.name === "string" && next.name.trim() ? "yes" : "no", name: typeof next.name === "string" ? next.name : "" }),
               prompt: legacy,
               category: "codex",
               createdAt: Date.now()
@@ -1386,7 +7233,7 @@ async function doEnsureBookForChat(chatId, userId) {
   }
   const chat = await spindle.chats.get(chatId, userId);
   if (!chat)
-    throw new Error(`Chat ${chatId} not found for user`);
+    throw new Error(t("backend.worldBook.doEnsureBookForChat.chatNotFoundForUser", { chatId }));
   const claim = chat.metadata && typeof chat.metadata === "object" ? chat.metadata["lumibooks_book_id"] : undefined;
   const recovery = await recoverBookForChat(chatId, userId);
   if (recovery) {
@@ -1399,17 +7246,17 @@ async function doEnsureBookForChat(chatId, userId) {
       await bindBookToChat(chatId, existing.id, userId);
       setBookCache(cacheKey(userId, chatId), { bookId: existing.id, expiresAt: Date.now() + BOOK_INDEX_CACHE_TTL_MS });
       error(`book recovery: re-linked book ${existing.id} for chat ${chatId.slice(0, 8)} ` + `(${recovery.count} LumiBooks entries; normal lookup MISSED it; chat claim=${typeof claim === "string" ? claim : "none"}; ` + `${recovery.candidates} candidate book(s); userId=${userId.slice(0, 6)})`);
-      bookAnomalyCb?.(userId, "warn", recovery.candidates > 1 ? `Memoria re-linked this chat's notebook but found ${recovery.candidates} candidates, you may have duplicate notebooks` : "Memoria re-linked this chat's notebook after its link was lost");
+      bookAnomalyCb?.(userId, "warn", recovery.candidates > 1 ? t("backend.worldBook.doEnsureBookForChat.memoriaReLinkedThisChatSNotebook", { candidates: recovery.candidates }) : t("backend.worldBook.doEnsureBookForChat.memoriaReLinkedThisChatSNotebook2"));
       return existing;
     }
   }
   if (typeof claim === "string" && claim.trim()) {
     error(`book mismatch: chat ${chatId.slice(0, 8)} claims book ${claim} but it could not be resolved OR recovered; ` + `creating a NEW book. userId=${userId.slice(0, 6)}`);
-    bookAnomalyCb?.(userId, "error", "Memoria couldn't find this chat's old notebook and started a new one, older chapters may live in a separate notebook");
+    bookAnomalyCb?.(userId, "error", t("backend.worldBook.doEnsureBookForChat.memoriaCouldnTFindThisChatS"));
   }
   const book = await spindle.world_books.create({
     name: bookNameFor(chat.name, chatId),
-    description: "Memoria's shelf for this chat. Chapters and arcs live here.",
+    description: t("backend.worldBook.book.memoriaSShelfForThisChatChapters"),
     metadata: {
       lumibooks_chat_id: chatId,
       lumibooks_created_at: Date.now()
@@ -1467,7 +7314,7 @@ function bindBookToChat(chatId, bookId, userId) {
   return withChatMetaLock(userId, chatId, async () => {
     const chat = await spindle.chats.get(chatId, userId);
     if (!chat)
-      throw new Error("The chat is no longer available; its summary shelf could not be attached.");
+      throw new Error(t("backend.worldBook.bindBookToChat.theChatIsNoLongerAvailableIts"));
     const metadata = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : {};
     const existing = Array.isArray(metadata["chat_world_book_ids"]) ? metadata["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
     const alreadyBound = existing.includes(bookId);
@@ -1739,7 +7586,7 @@ function bindCodexBookToChat(chatId, bookId, userId) {
   return withChatMetaLock(userId, chatId, async () => {
     const chat = await spindle.chats.get(chatId, userId);
     if (!chat)
-      throw new Error("The chat is no longer available; its Codex book could not be attached.");
+      throw new Error(t("backend.worldBook.bindCodexBookToChat.theChatIsNoLongerAvailableIts"));
     const metadata = chat.metadata && typeof chat.metadata === "object" ? chat.metadata : {};
     const md = metadata;
     const existing = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
@@ -1779,10 +7626,10 @@ async function doEnsureCodexBookForChat(chatId, userId) {
   }
   const chat = await spindle.chats.get(chatId, userId);
   if (!chat)
-    throw new Error(`Chat ${chatId} not found for user`);
+    throw new Error(t("backend.worldBook.doEnsureCodexBookForChat.chatNotFoundForUser", { chatId }));
   const book = await spindle.world_books.create({
     name: codexBookNameFor(chat.name, chatId),
-    description: "Managed by LumiBooks. This book mirrors the Knowledge Codex as retrievable entries and is rewritten on every codex update - edits made here WILL be overwritten. Edit records in the LumiBooks Codex tab instead.",
+    description: t("backend.worldBook.book.managedByLumiBooksThisBookMirrorsThe"),
     metadata: {
       [CODEX_BOOK_META_KEY]: chatId,
       lumibooks_created_at: Date.now()
@@ -2131,7 +7978,7 @@ async function setHidden(chatId, ids, hidden) {
     }
   }
   if (failures.length)
-    throw new AggregateError(failures, `Could not update visibility for ${failures.length} messages. Run Resync visibility again.`);
+    throw new AggregateError(failures, t("backend.coverage.setHidden.couldNotUpdateVisibilityForMessagesRun", { length: failures.length }));
 }
 function pickOrphanedHiddenIds(messages, coverage) {
   const out = [];
@@ -2199,7 +8046,7 @@ async function editSummaryEntry(chatId, entryId, patch, userId) {
   return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
     if (!entries.some((entry) => entry.raw.id === entryId))
-      throw new Error("This summary is no longer available to edit. Refresh Books.");
+      throw new Error(t("backend.shelfActions.editSummaryEntry.thisSummaryIsNoLongerAvailableTo"));
     await updateEntry(entryId, patch, userId);
     invalidateBookCache(userId, chatId);
   });
@@ -2219,7 +8066,7 @@ async function clearSummaryShelf(chatId, userId) {
     }
     invalidateBookCache(userId, chatId);
     if (failures.length)
-      throw new AggregateError(failures, `Removed ${removed} summaries, but ${failures.length} could not be deleted. Retry clearing the shelf before rebuilding.`);
+      throw new AggregateError(failures, t("backend.shelfActions.clearSummaryShelf.removedSummariesButCouldNotBeDeleted", { removed, length: failures.length }));
     return removed;
   });
 }
@@ -2230,7 +8077,7 @@ async function removeSummaryEntry(chatId, entryId, userId, release = false) {
     if (!entry)
       return null;
     if (release && entry.meta.ghost)
-      throw new Error("A ghost chapter must be shelved before it can be released.");
+      throw new Error(t("backend.shelfActions.removeSummaryEntry.aGhostChapterMustBeShelvedBefore"));
     const before = await buildCoverage(chatId, userId, entries);
     const parents = entries.filter((e) => e.meta.tier > entry.meta.tier && e.meta.sourceChapterEntryIds?.includes(entryId));
     try {
@@ -2283,7 +8130,7 @@ function normalizeBreakdown(raw, chatHistoryTokens = 0) {
     });
   }
   if (chatHistoryTokens > 0 && !clean.some((e) => e.type === "chat_history")) {
-    clean.unshift({ name: "Assembled transcript", type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
+    clean.unshift({ name: t("promptBreakdown.assembledTranscript"), type: "chat_history", tokens: chatHistoryTokens, synthetic: true });
   }
   const summed = clean.reduce((a, e) => a + e.tokens, 0);
   return {
@@ -2299,7 +8146,7 @@ function normalizeBreakdown(raw, chatHistoryTokens = 0) {
 async function loadPromptBreakdown(request, userId) {
   const generate = spindle.generate;
   if (typeof generate.getBreakdown !== "function") {
-    throw new Error("The Prompt panel requires a Lumiverse update with the Spindle prompt-breakdown API.");
+    throw new Error(t("backend.promptBreakdown.loadPromptBreakdown.thePromptPanelRequiresALumiverseUpdate"));
   }
   if (request.mode === "auto") {
     for (const messageId of request.messageIds.slice(-15).reverse()) {
@@ -2319,7 +8166,7 @@ async function loadPromptBreakdown(request, userId) {
     model: preview.model
   }, preview.chatHistoryTokens ?? 0);
   if (!d || d.entries.length === 0)
-    throw new Error("Dry run returned no breakdown.");
+    throw new Error(t("backend.promptBreakdown.loadPromptBreakdown.dryRunReturnedNoBreakdown"));
   return { d, source: "dry" };
 }
 
@@ -2495,7 +8342,7 @@ function keywordArray(ctx, v, path, reserved) {
     out.push(k);
   }
   if (dropped > 0) {
-    ctx.notes.push(`${path}: kept ${out.length} of ${raw.length}, dropped the rest as duplicates, over ${KEYWORD_MAX_WORDS} words, already matched by the record's own name, or past the ${KEYWORD_LIMIT} keyword limit`);
+    ctx.notes.push(t("backend.codex.schema.keywordArray.keptOfDroppedTheRestAsDuplicates", { path, length: out.length, length2: raw.length, keywordMaxWords: KEYWORD_MAX_WORDS, keywordLimit: KEYWORD_LIMIT }));
   }
   return out.length ? out : undefined;
 }
@@ -2505,31 +8352,31 @@ function fail(errors) {
 function str(ctx, v, path, required) {
   if (v === undefined || v === null || v === "") {
     if (required)
-      ctx.errors.push(`${path}: required non-empty string`);
+      ctx.errors.push(t("backend.codex.schema.str.requiredNonEmptyString", { path }));
     return;
   }
   if (typeof v !== "string") {
-    ctx.errors.push(`${path}: expected a string`);
+    ctx.errors.push(t("backend.codex.schema.str.expectedAString", { path }));
     return;
   }
-  const t = v.trim();
-  if (!t && required) {
-    ctx.errors.push(`${path}: required non-empty string`);
+  const t2 = v.trim();
+  if (!t2 && required) {
+    ctx.errors.push(t("backend.codex.schema.str.requiredNonEmptyString", { path }));
     return;
   }
-  return t || undefined;
+  return t2 || undefined;
 }
 function strArray(ctx, v, path) {
   if (v === undefined || v === null)
     return;
   if (!Array.isArray(v)) {
-    ctx.errors.push(`${path}: expected an array of strings`);
+    ctx.errors.push(t("backend.codex.schema.strArray.expectedAnArrayOfStrings", { path }));
     return;
   }
   const out = [];
   v.forEach((x, i) => {
     if (typeof x !== "string")
-      ctx.errors.push(`${path}[${i}]: expected a string`);
+      ctx.errors.push(t("backend.codex.schema.strArray.expectedAString", { path, i }));
     else if (x.trim())
       out.push(x.trim());
   });
@@ -2539,13 +8386,13 @@ function objArray(ctx, v, path) {
   if (v === undefined || v === null)
     return [];
   if (!Array.isArray(v)) {
-    ctx.errors.push(`${path}: expected an array`);
+    ctx.errors.push(t("backend.codex.schema.objArray.expectedAnArray", { path }));
     return [];
   }
   const out = [];
   v.forEach((x, i) => {
     if (!x || typeof x !== "object" || Array.isArray(x)) {
-      ctx.errors.push(`${path}[${i}]: expected an object`);
+      ctx.errors.push(t("backend.codex.schema.objArray.expectedAnObject", { path, i }));
     } else {
       out.push(x);
     }
@@ -2554,7 +8401,7 @@ function objArray(ctx, v, path) {
 }
 function asRecord(ctx, raw, path) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    ctx.errors.push(`${path}: expected a JSON object`);
+    ctx.errors.push(t("backend.codex.schema.asRecord.expectedAJsonObject", { path }));
     return null;
   }
   return raw;
@@ -2565,7 +8412,7 @@ function keepExtras(ctx, target, source, known, path, strict) {
     const lower = k.toLowerCase();
     if (known.some((f) => f === lower)) {
       if (k !== lower && strict && !CANONICAL_MIXED_CASE.has(k))
-        ctx.errors.push(`${path}.${k}: use lowercase "${lower}"`);
+        ctx.errors.push(t("backend.codex.schema.keepExtras.useLowercase", { path, k, lower }));
       continue;
     }
     if (k === "__proto__")
@@ -2582,7 +8429,7 @@ function keepExtras(ctx, target, source, known, path, strict) {
       if (arr.length)
         target[k] = arr;
     } else if (v !== null && v !== undefined && strict) {
-      ctx.errors.push(`${path}.${k}: extra fields must be primitive (string, number, boolean, or string[]), flatten this`);
+      ctx.errors.push(t("backend.codex.schema.keepExtras.extraFieldsMustBePrimitiveStringNumber", { path, k }));
     }
   }
 }
@@ -2610,7 +8457,7 @@ function ridOf(ctx, v, path) {
   if (v === undefined || v === null)
     return;
   if (typeof v !== "string" || !v.trim()) {
-    ctx.errors.push(`${path}.rid: expected a short string`);
+    ctx.errors.push(t("backend.codex.schema.ridOf.ridExpectedAShortString", { path }));
     return;
   }
   return v.trim().slice(0, 24);
@@ -2630,15 +8477,15 @@ function validateEntityFile(key, raw, opts) {
     if (!id || !name)
       continue;
     if (!ENTITY_REF_RE.test(id)) {
-      ctx.errors.push(`${path}.id: "${id}" must match ${ns}:<lowercase_snake_case>`);
+      ctx.errors.push(t("backend.codex.schema.validateEntityFile.idMustMatch", { path, id, ns }));
       continue;
     }
     if (!id.startsWith(`${ns}:`)) {
-      ctx.errors.push(`${path}.id: "${id}" belongs in another file, ids here must start with "${ns}:"`);
+      ctx.errors.push(t("backend.codex.schema.validateEntityFile.idBelongsInAnotherFileIdsHere", { path, id, ns }));
       continue;
     }
     if (seen.has(id)) {
-      ctx.errors.push(`${path}.id: duplicate id "${id}"`);
+      ctx.errors.push(t("backend.codex.schema.validateEntityFile.idDuplicateId", { path, id }));
       continue;
     }
     seen.add(id);
@@ -2663,7 +8510,7 @@ function validateEntityFile(key, raw, opts) {
         out.lockedFields = cleaned;
     }
     if (opts.strictExtras === true && e["status"] !== undefined && e["status"] !== null && e["status"] !== "") {
-      ctx.errors.push(`${path}.status: this field was removed - keep durable state in description, drop scene-of-the-moment state`);
+      ctx.errors.push(t("backend.codex.schema.validateEntityFile.statusThisFieldWasRemovedKeepDurable", { path }));
     }
     for (const f of ["traits", "goals"]) {
       const v = strArray(ctx, e[f], `${path}.${f}`);
@@ -2676,7 +8523,7 @@ function validateEntityFile(key, raw, opts) {
     const ties = strArray(ctx, e["ties"], `${path}.ties`);
     if (ties) {
       if (opts.relationsTable && !out.locked) {
-        ctx.errors.push(`${path}.ties: the relations table is enabled, move these into relations.json rows`);
+        ctx.errors.push(t("backend.codex.schema.validateEntityFile.tiesTheRelationsTableIsEnabledMove", { path }));
       } else {
         out.ties = ties;
       }
@@ -2695,7 +8542,7 @@ function validateRelationsFile(raw, opts) {
     return fail(ctx.errors);
   const rawLen = Array.isArray(root["relations"]) ? root["relations"].length : 0;
   if (!opts.relationsTable && rawLen > 0) {
-    return fail(["relations: the relations table is disabled for this profile, keep connections as ties on entity sheets instead"]);
+    return fail([t("backend.codex.schema.validateRelationsFile.relationsTheRelationsTableIsDisabledFor")]);
   }
   const rows = objArray(ctx, root["relations"], "relations");
   const relations = [];
@@ -2711,11 +8558,11 @@ function validateRelationsFile(raw, opts) {
       if (!a || !b || !kind || !state)
         continue;
       if (!isEntityRef(a))
-        ctx.errors.push(`${path}.a: "${a}" is not a valid entity ref`);
+        ctx.errors.push(t("backend.codex.schema.validateRelationsFile.aIsNotAValidEntityRef", { path, a }));
       if (!isEntityRef(b))
-        ctx.errors.push(`${path}.b: "${b}" is not a valid entity ref`);
+        ctx.errors.push(t("backend.codex.schema.validateRelationsFile.bIsNotAValidEntityRef", { path, b }));
       if (a === b)
-        ctx.errors.push(`${path}: a and b are the same entity`);
+        ctx.errors.push(t("backend.codex.schema.validateRelationsFile.aAndBAreTheSameEntity", { path }));
       const history = strArray(ctx, r["history"], `${path}.history`);
       relations.push({ type: "pair", ...rid ? { rid } : {}, a, b, kind, state, ...history ? { history } : {} });
     } else if (type === "group") {
@@ -2725,10 +8572,10 @@ function validateRelationsFile(raw, opts) {
       if (!kind || !state)
         continue;
       if (members.length < 2)
-        ctx.errors.push(`${path}.members: a group needs at least 2 distinct members`);
+        ctx.errors.push(t("backend.codex.schema.validateRelationsFile.membersAGroupNeedsAtLeast2", { path }));
       for (const m of members) {
         if (!isEntityRef(m))
-          ctx.errors.push(`${path}.members: "${m}" is not a valid entity ref`);
+          ctx.errors.push(t("backend.codex.schema.validateRelationsFile.membersIsNotAValidEntityRef", { path, m }));
       }
       let roles;
       const rawRoles = r["roles"];
@@ -2738,9 +8585,9 @@ function validateRelationsFile(raw, opts) {
           roles = {};
           for (const [k, v] of Object.entries(rec)) {
             if (!isEntityRef(k))
-              ctx.errors.push(`${path}.roles: key "${k}" is not a valid entity ref`);
+              ctx.errors.push(t("backend.codex.schema.validateRelationsFile.rolesKeyIsNotAValidEntity", { path, k }));
             else if (typeof v !== "string" || !v.trim())
-              ctx.errors.push(`${path}.roles["${k}"]: expected a string role`);
+              ctx.errors.push(t("backend.codex.schema.validateRelationsFile.rolesExpectedAStringRole", { path, k }));
             else
               roles[k] = v.trim();
           }
@@ -2759,7 +8606,7 @@ function validateRelationsFile(raw, opts) {
         ...history ? { history } : {}
       });
     } else {
-      ctx.errors.push(`${path}.type: expected "pair" or "group"`);
+      ctx.errors.push(t("backend.codex.schema.validateRelationsFile.typeExpectedPairOrGroup", { path }));
     }
   }
   if (ctx.errors.length)
@@ -2801,23 +8648,23 @@ function validateThreadsFile(raw) {
   if (!root)
     return fail(ctx.errors);
   const threads = [];
-  for (const [i, t] of objArray(ctx, root["threads"], "threads").entries()) {
+  for (const [i, t2] of objArray(ctx, root["threads"], "threads").entries()) {
     const path = `threads[${i}]`;
-    const name = str(ctx, t["name"], `${path}.name`, true);
-    const summary = str(ctx, t["summary"], `${path}.summary`, true);
-    const status = t["status"];
-    const rid = ridOf(ctx, t["rid"], path);
+    const name = str(ctx, t2["name"], `${path}.name`, true);
+    const summary = str(ctx, t2["summary"], `${path}.summary`, true);
+    const status = t2["status"];
+    const rid = ridOf(ctx, t2["rid"], path);
     if (!name || !summary)
       continue;
     if (status !== "open" && status !== "stalled" && status !== "resolved" && status !== "abandoned") {
-      ctx.errors.push(`${path}.status: expected open | stalled | resolved | abandoned`);
+      ctx.errors.push(t("backend.codex.schema.validateThreadsFile.statusExpectedOpenStalledResolvedAbandoned", { path }));
       continue;
     }
     const out = { ...rid ? { rid } : {}, name, status, summary };
-    const latest = str(ctx, t["latest"], `${path}.latest`, false);
+    const latest = str(ctx, t2["latest"], `${path}.latest`, false);
     if (latest)
       out.latest = latest;
-    const planted = strArray(ctx, t["planted"], `${path}.planted`);
+    const planted = strArray(ctx, t2["planted"], `${path}.planted`);
     if (planted)
       out.planted = planted;
     threads.push(out);
@@ -2841,7 +8688,7 @@ function validateWorldFile(raw) {
     if (!topic)
       continue;
     if (facts.length === 0) {
-      ctx.errors.push(`${path}.facts: at least one fact required, drop the topic if it has none`);
+      ctx.errors.push(t("backend.codex.schema.validateWorldFile.factsAtLeastOneFactRequiredDrop", { path }));
       continue;
     }
     const keywords = keywordArray(ctx, e["keywords"], `${path}.keywords`, [topic]);
@@ -2893,12 +8740,12 @@ function validateKnowledgeFile(raw) {
       const known = new Set(out.knownBy.map((s) => s.toLowerCase()));
       const both = out.hiddenFrom.filter((s) => known.has(s.toLowerCase()));
       if (both.length) {
-        ctx.errors.push(`${path}: ${both.join(", ")} appears in both knownBy and hiddenFrom. Write the SECRET ITSELF as "fact", then list who knows it and who it is hidden from - never write the ignorance as the fact`);
+        ctx.errors.push(t("backend.codex.schema.validateKnowledgeFile.appearsInBothKnownByAndHiddenFromWrite", { path, join: both.join(", ") }));
         continue;
       }
     }
     if (!out.knownBy && !out.hiddenFrom && !out.falseBeliefs) {
-      ctx.errors.push(`${path}: needs at least one of knownBy, hiddenFrom, falseBeliefs - facts everyone knows belong in world or timeline`);
+      ctx.errors.push(t("backend.codex.schema.validateKnowledgeFile.needsAtLeastOneOfKnownByHiddenFrom", { path }));
       continue;
     }
     const signature = JSON.stringify({
@@ -2913,7 +8760,7 @@ function validateKnowledgeFile(raw) {
     if (duplicate) {
       if (!duplicate.rid && out.rid)
         duplicate.rid = out.rid;
-      ctx.notes.push(`${path}: omitted duplicate knowledge item`);
+      ctx.notes.push(t("backend.codex.schema.validateKnowledgeFile.omittedDuplicateKnowledgeItem", { path }));
       continue;
     }
     seen.set(signature, out);
@@ -2979,7 +8826,7 @@ function collectDangling(bundle) {
   return out;
 }
 function formatDangling(d) {
-  return d.file === "relations" ? `${d.path}: "${d.ref}" is not defined in any entity file - add the entity, or drop or retarget the row (relations only take entity refs)` : `${d.path}: "${d.ref}" is not defined in any entity file - add the entity or use plain text`;
+  return d.file === "relations" ? t("backend.codex.schema.formatDangling.isNotDefinedInAnyEntityFile", { path: d.path, ref: d.ref }) : t("backend.codex.schema.formatDangling.isNotDefinedInAnyEntityFile2", { path: d.path, ref: d.ref });
 }
 function checkIntegrity(bundle) {
   return collectDangling(bundle).map(formatDangling);
@@ -3016,7 +8863,7 @@ function repairDanglingRefs(bundle, files) {
     const plain = ref.slice(ref.indexOf(":") + 1).replace(/_/g, " ").trim();
     if (!plain)
       return ref;
-    fixed.push(`${path}: "${ref}" was not a known entity, recorded as "${plain}"`);
+    fixed.push(t("backend.codex.schema.fix.wasNotAKnownEntityRecordedAs", { path, ref, plain }));
     return plain;
   };
   if (files.has("knowledge")) {
@@ -3150,7 +8997,7 @@ function msgSig(role, content) {
 async function loadCursor(chatId, userId) {
   const read = await readJsonFileRaw(cursorPath(chatId), userId);
   if (read.state === "unreadable") {
-    throw new Error(`The codex cursor is unreadable: ${read.error}`);
+    throw new Error(t("backend.codex.store.loadCursor.theCodexCursorIsUnreadable", { error: read.error }));
   }
   const raw = read.state === "ok" ? read.value : null;
   if (!raw || typeof raw !== "object")
@@ -3229,7 +9076,7 @@ async function loadCodex(chatId, userId, opts) {
     if (read.state === "absent")
       return;
     if (read.state === "unreadable") {
-      problems.push({ file: key, errors: [`unreadable on disk: ${read.error}`] });
+      problems.push({ file: key, errors: [t("backend.codex.store.loadCodex.unreadableOnDisk", { error: read.error })] });
       warn(`codex: ${key}.json for ${chatId.slice(0, 8)} is unreadable: ${read.error}`);
       return;
     }
@@ -3308,7 +9155,7 @@ async function copyCodexToEmptyChat(fromChatId, toChatId, userId, commitCursor) 
   for (const key of CODEX_FILE_KEYS) {
     const read = await readCodexFileRaw(fromChatId, key, userId);
     if (read.state === "unreadable")
-      throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+      throw new Error(t("backend.codex.store.copyCodexToEmptyChat.jsonIsUnreadableOnTheSourceChat", { key, error: read.error }));
     if (read.state === "ok")
       files.push({ key, value: read.value });
   }
@@ -3422,7 +9269,7 @@ async function readCodexFilesRaw(chatId, userId) {
     const read = await readCodexFileRaw(chatId, key, userId);
     if (read.state === "unreadable") {
       warn(`codex: read ${key}.json failed: ${read.error}`);
-      out[key] = `UNREADABLE ${key}.json - the file exists but cannot be parsed (${read.error}). Fix or delete it before saving.`;
+      out[key] = t("backend.codex.store.readCodexFilesRaw.unreadableJsonTheFileExistsButCannot", { key, error: read.error });
       return;
     }
     out[key] = JSON.stringify(read.state === "ok" ? read.value : emptyCodexFile(key), null, 2);
@@ -4397,19 +10244,19 @@ function withTargetDirective(template) {
   return fillPrompt(template, { TARGET_DIRECTIVE: target_directive_default });
 }
 var BUILTIN_CHAPTER_PRESETS = [
-  { key: "summary", displayName: "Summary", prompt: withTargetDirective(chapter_summary_default) },
-  { key: "summarize", displayName: "Summarize", prompt: withTargetDirective(chapter_summarize_default) },
-  { key: "synopsis", displayName: "Synopsis", prompt: withTargetDirective(chapter_synopsis_default) },
-  { key: "minimal", displayName: "Minimal", prompt: withTargetDirective(chapter_minimal_default) }
+  { key: "summary", displayName: t("backend.presets.builtinChapterPresets.summary"), prompt: withTargetDirective(chapter_summary_default) },
+  { key: "summarize", displayName: t("backend.presets.builtinChapterPresets.summarize"), prompt: withTargetDirective(chapter_summarize_default) },
+  { key: "synopsis", displayName: t("backend.presets.builtinChapterPresets.synopsis"), prompt: withTargetDirective(chapter_synopsis_default) },
+  { key: "minimal", displayName: t("backend.presets.builtinChapterPresets.minimal"), prompt: withTargetDirective(chapter_minimal_default) }
 ];
 var BUILTIN_ARC_PRESETS = [
-  { key: "arc_default", displayName: "Arc", prompt: withTargetDirective(arc_default_default) }
+  { key: "arc_default", displayName: t("backend.presets.builtinArcPresets.arc"), prompt: withTargetDirective(arc_default_default) }
 ];
 var BUILTIN_VOLUME_PRESETS = [
-  { key: "volume_default", displayName: "Volume", prompt: withTargetDirective(volume_default_default) }
+  { key: "volume_default", displayName: t("backend.presets.builtinVolumePresets.volume"), prompt: withTargetDirective(volume_default_default) }
 ];
 var BUILTIN_CODEX_PRESETS = [
-  { key: "codex_default", displayName: "Default", prompt: CODEX_DIRECTIVES_DEFAULT }
+  { key: "codex_default", displayName: t("backend.presets.builtinCodexPresets.default"), prompt: CODEX_DIRECTIVES_DEFAULT }
 ];
 function parseStmbPresetExport(raw, category) {
   const out = [];
@@ -4446,41 +10293,41 @@ var persona_default = "You are Memoria, a young nyandere catgirl librarian with 
 // src/backend/memoria.ts
 var DEFAULT_SHORT_COMMENT_RULES_TEMPLATE = short_comment_rules_default;
 var FIRE_PHRASES = [
-  "Memoria stirs the inkpot, nyaa~",
-  "Memoria is shelving this scene, hush a moment",
-  "Memoria flicks her tail and starts writing",
-  "Memoria opens a fresh page for you, nya",
-  "Memoria pads off to compress this in the stacks"
+  t("backend.memoria.firePhrases.memoriaStirsTheInkpotNyaa"),
+  t("backend.memoria.firePhrases.memoriaIsShelvingThisSceneHushA"),
+  t("backend.memoria.firePhrases.memoriaFlicksHerTailAndStartsWriting"),
+  t("backend.memoria.firePhrases.memoriaOpensAFreshPageForYou"),
+  t("backend.memoria.firePhrases.memoriaPadsOffToCompressThisIn")
 ];
 var RETRY_PHRASES = [
-  "Memoria tripped on a quill, trying again",
-  "Memoria's ink smudged, one more try nyaa",
-  "Memoria reshuffles the index cards, retrying"
+  t("backend.memoria.retryPhrases.memoriaTrippedOnAQuillTryingAgain"),
+  t("backend.memoria.retryPhrases.memoriaSInkSmudgedOneMoreTry"),
+  t("backend.memoria.retryPhrases.memoriaReshufflesTheIndexCardsRetrying")
 ];
 var SUCCESS_PHRASES = [
-  "Memoria slid the chapter onto your shelf, nyaa~",
-  "Memoria filed it neatly between the others",
-  "Memoria stamped the spine, all yours",
-  "Memoria purrs, the page is done",
-  "Memoria taps the chapter into place"
+  t("backend.memoria.successPhrases.memoriaSlidTheChapterOntoYourShelf"),
+  t("backend.memoria.successPhrases.memoriaFiledItNeatlyBetweenTheOthers"),
+  t("backend.memoria.successPhrases.memoriaStampedTheSpineAllYours"),
+  t("backend.memoria.successPhrases.memoriaPurrsThePageIsDone"),
+  t("backend.memoria.successPhrases.memoriaTapsTheChapterIntoPlace")
 ];
 var ARC_FIRE_PHRASES = [
-  "Memoria gathers the chapters for an arc, nya",
-  "Memoria is binding several chapters together"
+  t("backend.memoria.arcFirePhrases.memoriaGathersTheChaptersForAnArc"),
+  t("backend.memoria.arcFirePhrases.memoriaIsBindingSeveralChaptersTogether")
 ];
 var ARC_SUCCESS_PHRASES = [
-  "Memoria bound the arc and pressed it shut, nyaa~",
-  "Memoria stitched the spine of a new arc"
+  t("backend.memoria.arcSuccessPhrases.memoriaBoundTheArcAndPressedIt"),
+  t("backend.memoria.arcSuccessPhrases.memoriaStitchedTheSpineOfANew")
 ];
 var VOLUME_FIRE_PHRASES = [
-  "Memoria is pressing a whole volume together"
+  t("backend.memoria.volumeFirePhrases.memoriaIsPressingAWholeVolumeTogether")
 ];
 var VOLUME_SUCCESS_PHRASES = [
-  "Memoria embossed the spine of a new volume"
+  t("backend.memoria.volumeSuccessPhrases.memoriaEmbossedTheSpineOfANew")
 ];
 function pickPhrase(kind) {
   const pool = kind === "fire" ? FIRE_PHRASES : kind === "retry" ? RETRY_PHRASES : kind === "success" ? SUCCESS_PHRASES : kind === "arc_fire" ? ARC_FIRE_PHRASES : kind === "arc_success" ? ARC_SUCCESS_PHRASES : kind === "volume_fire" ? VOLUME_FIRE_PHRASES : VOLUME_SUCCESS_PHRASES;
-  return pool[Math.floor(Math.random() * pool.length)] ?? "Memoria nyaa";
+  return pool[Math.floor(Math.random() * pool.length)] ?? t("backend.memoria.pickPhrase.memoriaNyaa");
 }
 var MEMORIA_PERSONA_LINE = persona_default;
 
@@ -4517,7 +10364,7 @@ async function resolveConnection(profile, userId) {
     return null;
   const modelStr = typeof picked.model === "string" ? picked.model : "";
   if (!modelStr.trim()) {
-    throw new FatalSummarizerError(`Connection "${picked.name || picked.id}" has no model set, pick one in its settings`);
+    throw new FatalSummarizerError(t("backend.summarizer.resolveConnection.connectionHasNoModelSetPickOne", { id: picked.name || picked.id }));
   }
   return picked;
 }
@@ -4616,7 +10463,7 @@ function buildCodexSamplerParameters(profile) {
 
 class AbortedSummarizerError extends Error {
   constructor() {
-    super("Aborted by user");
+    super(t("backend.summarizer.messages.abortedByUser"));
     this.name = "AbortedSummarizerError";
   }
 }
@@ -4654,10 +10501,10 @@ async function consumeGenerationStream(makeStream, options) {
     if (externalAborted)
       throw new AbortedSummarizerError;
     if (ttftFired && options.firstTokenTimeoutMs !== null) {
-      throw new Error(`No token within ${Math.round(options.firstTokenTimeoutMs / 1000)}s, the provider may be slow or unreachable`);
+      throw new Error(t("backend.summarizer.assertRunning.noTokenWithinSTheProviderMay", { firstTokenTimeoutMs1000: Math.round(options.firstTokenTimeoutMs / 1000) }));
     }
     if (deadlineFired && options.overallDeadlineMs !== null) {
-      throw new Error(`The response did not finish within ${Math.round(options.overallDeadlineMs / 1000)}s`);
+      throw new Error(t("backend.summarizer.assertRunning.theResponseDidNotFinishWithinS", { overallDeadlineMs1000: Math.round(options.overallDeadlineMs / 1000) }));
     }
   };
   try {
@@ -4699,7 +10546,7 @@ async function consumeGenerationStream(makeStream, options) {
     if (options.salvagePartial && aggregated.trim()) {
       return { content: aggregated, toolCalls: [], usage };
     }
-    throw new Error("The stream ended before completing");
+    throw new Error(t("backend.summarizer.consumeGenerationStream.theStreamEndedBeforeCompleting"));
   } catch (err) {
     assertRunning();
     throw err;
@@ -4787,24 +10634,24 @@ async function resolveMacrosWithDiagnostics(text, chatId, userId, diagnostics) {
   try {
     const result = await spindle.macros.resolve(text, { chatId, userId, commit: false });
     for (const d of result.diagnostics) {
-      diagnostics.push({ message: `macro: ${d.message} (offset ${d.offset}, length ${d.length})` });
+      diagnostics.push({ message: t("backend.summarizer.resolveMacrosWithDiagnostics.macroOffsetLength", { message: d.message, offset: d.offset, length: d.length }) });
     }
     return result.text;
   } catch (err) {
-    diagnostics.push({ message: `macros.resolve failed: ${describeError(err)}` });
+    diagnostics.push({ message: t("backend.summarizer.resolveMacrosWithDiagnostics.macrosResolveFailed", { describeError: describeError(err) }) });
     return text;
   }
 }
 async function assembleChapterPrompt(profile, customPresets, chatId, messages, previousMemories, userId, opener) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.assembleChapterPrompt.noConnectionAvailableForMemoria"));
   const presetText = findPresetText(profile, customPresets, "chapter");
   if (!presetText)
-    throw new Error("Chapter preset missing");
+    throw new Error(t("backend.summarizer.assembleChapterPrompt.chapterPresetMissing"));
   const transcript = renderTranscript(messages, true);
   if (!transcript.trim())
-    throw new Error("Empty transcript");
+    throw new Error(t("backend.summarizer.assembleChapterPrompt.emptyTranscript"));
   const { targetTokens, targetPercent, inputTokens: transcriptTokens } = await resolveTargets(profile.chapterTargetUnit, profile.chapterTargetPercent, profile.chapterTargetTokens, transcript, conn.model, userId);
   const built = buildMessages({
     systemPromptTemplate: presetText,
@@ -4819,20 +10666,20 @@ async function assembleChapterPrompt(profile, customPresets, chatId, messages, p
   });
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Window: ${messages.length} message(s)` },
-    { message: `Transcript tokens (model tokenizer): ${transcriptTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.chapterTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.chapterTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Previous memories included: ${previousMemories.length}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.chapterPresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` }
+    { message: t("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: t("backend.summarizer.diagnostics.windowMessageS", { length: messages.length }) },
+    { message: t("backend.summarizer.diagnostics.transcriptTokensModelTokenizer", { transcriptTokens }) },
+    { message: t("backend.summarizer.diagnostics.targetTokens", { targetTokens, choice: profile.chapterTargetUnit === "tokens" ? "yes" : "no", chapterTargetUnitTokens: profile.chapterTargetUnit === "tokens" ? targetPercent : "", chapterTargetPercent: !(profile.chapterTargetUnit === "tokens") ? profile.chapterTargetPercent : "" }) },
+    { message: t("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: t("backend.summarizer.diagnostics.previousMemoriesIncluded", { length: previousMemories.length }) },
+    { message: t("backend.summarizer.diagnostics.opener", { opener }) },
+    { message: t("backend.summarizer.diagnostics.presetKey", { chapterPresetKey: profile.chapterPresetKey }) },
+    { message: t("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) }
   ];
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: t("backend.summarizer.assembleChapterPrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
   return {
     messages: [
@@ -4845,10 +10692,10 @@ async function assembleChapterPrompt(profile, customPresets, chatId, messages, p
 async function assembleArcPrompt(profile, customPresets, chatId, chapters, userId, opener) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.assembleArcPrompt.noConnectionAvailableForMemoria"));
   const presetText = findPresetText(profile, customPresets, "arc");
   if (!presetText)
-    throw new Error("Arc preset missing");
+    throw new Error(t("backend.summarizer.assembleArcPrompt.arcPresetMissing"));
   const body = chapters.map((c, idx) => `<<CHAPTER ${idx + 1}: ${c.raw.comment || c.meta.title || "untitled"}>>
 ${c.raw.content}`).join(`
 
@@ -4867,19 +10714,19 @@ ${c.raw.content}`).join(`
   });
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Source chapters: ${chapters.length}` },
-    { message: `Concatenated chapter body tokens (model tokenizer): ${bodyTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.arcTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.arcTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.arcPresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` }
+    { message: t("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: t("backend.summarizer.diagnostics.sourceChapters", { length: chapters.length }) },
+    { message: t("backend.summarizer.diagnostics.concatenatedChapterBodyTokensModelTokenizer", { bodyTokens }) },
+    { message: t("backend.summarizer.diagnostics.targetTokens2", { targetTokens, choice: profile.arcTargetUnit === "tokens" ? "yes" : "no", arcTargetUnitTokens: profile.arcTargetUnit === "tokens" ? targetPercent : "", arcTargetPercent: !(profile.arcTargetUnit === "tokens") ? profile.arcTargetPercent : "" }) },
+    { message: t("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: t("backend.summarizer.diagnostics.opener", { opener }) },
+    { message: t("backend.summarizer.diagnostics.presetKey2", { arcPresetKey: profile.arcPresetKey }) },
+    { message: t("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) }
   ];
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: t("backend.summarizer.assembleArcPrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
   return {
     messages: [
@@ -4892,7 +10739,7 @@ ${c.raw.content}`).join(`
 function higherTierPreset(text, tier) {
   return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
     const source = word.toLowerCase().startsWith("arc");
-    const name = TIER_NAMES[tier - (source ? 2 : 1)];
+    const name = MODEL_TIER_NAMES[tier - (source ? 2 : 1)];
     const plural = word.toLowerCase().endsWith("s");
     const replacement = name + (plural && name !== "Series" ? name === "Library" ? "" : "s" : "");
     const result = plural && name === "Library" ? "Libraries" : replacement;
@@ -4902,11 +10749,11 @@ function higherTierPreset(text, tier) {
 async function assembleVolumePrompt(profile, customPresets, chatId, arcs, userId, opener, tier = 3) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.assembleVolumePrompt.noConnectionAvailableForMemoria"));
   const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText)
-    throw new Error("Volume preset missing");
-  const body = arcs.map((a, idx) => `<<${TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
+    throw new Error(t("backend.summarizer.assembleVolumePrompt.volumePresetMissing"));
+  const body = arcs.map((a, idx) => `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
 ${a.raw.content}`).join(`
 
 `);
@@ -4916,7 +10763,7 @@ ${a.raw.content}`).join(`
     targetTokens,
     targetPercent,
     previousMemoriesBlock: "",
-    bodyHeading: `<<${TIER_NAMES[tier - 2].toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
+    bodyHeading: `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
     body,
     shortCommentRulesOverride: profile.shortCommentRulesOverride,
     personaOverride: profile.memoriaPersonaOverride,
@@ -4924,19 +10771,19 @@ ${a.raw.content}`).join(`
   });
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics = [
-    { message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` },
-    { message: `Source arcs: ${arcs.length}` },
-    { message: `Concatenated arc body tokens (model tokenizer): ${bodyTokens}` },
-    { message: `Target tokens: ${targetTokens} (${profile.volumeTargetUnit === "tokens" ? `fixed budget, ~${targetPercent}% of input` : profile.volumeTargetPercent + "% of input"})` },
-    { message: `Target words (shown to model): ${Math.max(1, Math.round(targetTokens / 1.4))}` },
-    { message: `Opener: ${opener}` },
-    { message: `Preset key: ${profile.volumePresetKey}` },
-    { message: `Sampler parameters being sent on the wire: ${JSON.stringify(samplerParams)}` }
+    { message: t("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
+    { message: t("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length }) },
+    { message: t("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens }) },
+    { message: t("backend.summarizer.diagnostics.targetTokens3", { targetTokens, choice: profile.volumeTargetUnit === "tokens" ? "yes" : "no", volumeTargetUnitTokens: profile.volumeTargetUnit === "tokens" ? targetPercent : "", volumeTargetPercent: !(profile.volumeTargetUnit === "tokens") ? profile.volumeTargetPercent : "" }) },
+    { message: t("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
+    { message: t("backend.summarizer.diagnostics.opener", { opener }) },
+    { message: t("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: profile.volumePresetKey }) },
+    { message: t("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) }
   ];
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   if (profile.regexOutgoingScriptIds.length > 0) {
-    diagnostics.push({ message: `Outgoing regex applied: ${profile.regexOutgoingScriptIds.length} script(s)` });
+    diagnostics.push({ message: t("backend.summarizer.assembleVolumePrompt.outgoingRegexAppliedScriptS", { length: profile.regexOutgoingScriptIds.length }) });
   }
   return {
     messages: [
@@ -4949,11 +10796,11 @@ ${a.raw.content}`).join(`
 async function summarizeVolume(profile, customPresets, chatId, arcs, userId, opener, streamOptions, tier = 3) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.summarizeVolume.noConnectionAvailableForMemoria"));
   const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
   if (!presetText)
-    throw new Error("Volume preset missing");
-  const body = arcs.map((a, idx) => `<<${TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
+    throw new Error(t("backend.summarizer.summarizeVolume.volumePresetMissing"));
+  const body = arcs.map((a, idx) => `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
 ${a.raw.content}`).join(`
 
 `);
@@ -4963,7 +10810,7 @@ ${a.raw.content}`).join(`
     targetTokens,
     targetPercent,
     previousMemoriesBlock: "",
-    bodyHeading: `<<${TIER_NAMES[tier - 2].toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
+    bodyHeading: `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} SUMMARIES TO CONSOLIDATE (target ~${targetTokens} tokens)>>`,
     body,
     shortCommentRulesOverride: profile.shortCommentRulesOverride,
     personaOverride: profile.memoriaPersonaOverride,
@@ -4990,11 +10837,11 @@ ${a.raw.content}`).join(`
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
-    throw new Error("Empty model output");
+    throw new Error(t("backend.summarizer.summarizeVolume.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
   const parsed = parseSummaryJson(processed);
   if (!parsed.content.trim())
-    throw new Error("The volume summary came back empty");
+    throw new Error(t("backend.summarizer.summarizeVolume.theVolumeSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -5012,13 +10859,13 @@ ${a.raw.content}`).join(`
 async function summarizeChapter(profile, customPresets, chatId, messages, previousMemories, userId, opener, streamOptions) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.summarizeChapter.noConnectionAvailableForMemoria"));
   const presetText = findPresetText(profile, customPresets, "chapter");
   if (!presetText)
-    throw new Error("Chapter preset missing");
+    throw new Error(t("backend.summarizer.summarizeChapter.chapterPresetMissing"));
   const transcript = renderTranscript(messages, true);
   if (!transcript.trim())
-    throw new Error("Empty transcript");
+    throw new Error(t("backend.summarizer.summarizeChapter.emptyTranscript"));
   const { targetTokens, targetPercent } = await resolveTargets(profile.chapterTargetUnit, profile.chapterTargetPercent, profile.chapterTargetTokens, transcript, conn.model, userId);
   const built = buildMessages({
     systemPromptTemplate: presetText,
@@ -5052,11 +10899,11 @@ async function summarizeChapter(profile, customPresets, chatId, messages, previo
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
-    throw new Error("Empty model output");
+    throw new Error(t("backend.summarizer.summarizeChapter.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
   const parsed = parseSummaryJson(processed);
   if (!parsed.content.trim())
-    throw new Error("The summary came back empty");
+    throw new Error(t("backend.summarizer.summarizeChapter.theSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -5074,10 +10921,10 @@ async function summarizeChapter(profile, customPresets, chatId, messages, previo
 async function summarizeArc(profile, customPresets, chatId, chapters, userId, opener, streamOptions) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for Memoria");
+    throw new FatalSummarizerError(t("backend.summarizer.summarizeArc.noConnectionAvailableForMemoria"));
   const presetText = findPresetText(profile, customPresets, "arc");
   if (!presetText)
-    throw new Error("Arc preset missing");
+    throw new Error(t("backend.summarizer.summarizeArc.arcPresetMissing"));
   const body = chapters.map((c, idx) => `<<CHAPTER ${idx + 1}: ${c.raw.comment || c.meta.title || "untitled"}>>
 ${c.raw.content}`).join(`
 
@@ -5115,11 +10962,11 @@ ${c.raw.content}`).join(`
   const result = await runStreamingGeneration(conn, llmMessages, profile, userId, streamOptions);
   const rawText = (result.content || "").trim();
   if (!rawText)
-    throw new Error("Empty model output");
+    throw new Error(t("backend.summarizer.summarizeArc.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
   const parsed = parseSummaryJson(processed);
   if (!parsed.content.trim())
-    throw new Error("The arc summary came back empty");
+    throw new Error(t("backend.summarizer.summarizeArc.theArcSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
     title: parsed.title,
@@ -5155,9 +11002,9 @@ function parseSummaryJson(raw) {
     return { title, opener, content: contentRaw, keywords, shortComment: sc };
   }
   if (sawParseableObject) {
-    throw new Error("The model's JSON had no content field");
+    throw new Error(t("backend.summarizer.parseSummaryJson.theModelSJsonHadNoContent"));
   }
-  throw new Error("The model didn't return valid JSON");
+  throw new Error(t("backend.summarizer.parseSummaryJson.theModelDidnTReturnValidJson"));
 }
 function parseLooseJsonObjects(raw) {
   const normalized = normalizeText(stripThinkBlocks(raw));
@@ -6038,7 +11885,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
   if (problems.length > 0) {
-    throw new Error(`codex sync skipped, unreadable or invalid file${problems.length === 1 ? "" : "s"}: ${problems.map((p) => `${p.file}.json`).join(", ")}`);
+    throw new Error(t("backend.codex.sync.doSync.codexSyncSkippedUnreadableOrInvalidFile", { length: problems.length, join: problems.map((p) => `${p.file}.json`).join(", ") }));
   }
   const relState = cursor.fileStates["relations"];
   const desired = renderCodexRecords(bundle, {
@@ -6124,7 +11971,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
     });
   }
   if (failedDeletes > 0) {
-    throw new Error(`${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"} could not be removed and may still inject`);
+    throw new Error(t("backend.codex.sync.doSync.outdatedCodexEntrCouldNotBeRemoved", { failedDeletes }));
   }
   recordDiagnostic(userId, {
     event: "codex",
@@ -6151,7 +11998,7 @@ async function doWipe(chatId, userId) {
     });
   }
   if (failed > 0) {
-    throw new Error(`failed to delete ${failed} codex entr${failed === 1 ? "y" : "ies"}, they may still inject`);
+    throw new Error(t("backend.codex.sync.doWipe.failedToDeleteCodexEntrTheyMay", { failed }));
   }
 }
 function codexEntryPlacement(profile, constant) {
@@ -6224,7 +12071,7 @@ function summaryRuns(entries, tier) {
 
 class SummaryTimelineError extends Error {
   constructor() {
-    super("Select consecutive summaries without crossing another summary tier");
+    super(t("backend.binding.messages.selectConsecutiveSummariesWithoutCrossingAnotherSummary"));
     this.name = "SummaryTimelineError";
   }
 }
@@ -6391,7 +12238,7 @@ async function loadFromDisk(userId) {
     exists = await spindle.userStorage.exists(LESSONS_PATH, userId);
   } catch (err) {
     error(`lessons: exists() failed, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    anomalyCb?.(userId, t("backend.lessons.loadFromDisk.memoriaCouldnTReadHerLessonRegister", { describeError: describeError(err) }));
     failOpenUsers.add(userId);
     return unlockedLessons();
   }
@@ -6409,7 +12256,7 @@ async function loadFromDisk(userId) {
     return normalizeLessons(JSON.parse(raw));
   } catch (err) {
     error(`lessons: file unreadable, unlocking as a precaution: ${describeError(err)}`);
-    anomalyCb?.(userId, `Memoria couldn't read her lesson register and unsealed the archive: ${describeError(err)}`);
+    anomalyCb?.(userId, t("backend.lessons.loadFromDisk.memoriaCouldnTReadHerLessonRegister", { describeError: describeError(err) }));
     failOpenUsers.add(userId);
     return unlockedLessons();
   }
@@ -6456,7 +12303,7 @@ async function mutateLessons(userId, fn) {
     if (failOpenUsers.has(userId)) {
       cache.set(userId, next);
       warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
-      anomalyCb?.(userId, "Memoria couldn't read her lesson register so this change is not saved to disk yet");
+      anomalyCb?.(userId, t("backend.lessons.mutateLessons.memoriaCouldnTReadHerLessonRegister"));
       return next;
     }
     await spindle.userStorage.setJson(LESSONS_PATH, next, { indent: 0, userId });
@@ -6560,7 +12407,7 @@ var failureByChat = new Map;
 var previewsByChat = new Map;
 var previewSources = new WeakMap;
 var replacementSources = new WeakMap;
-var changedSources = () => new Error("Summary sources changed. Discard this result and generate it again.");
+var changedSources = () => new Error(t("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd"));
 var messageSource = (m) => msgSig(m.role, m.content || "");
 var entrySource = (e) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 var replacementSource = (e) => msgSig("replacement", JSON.stringify([entrySource(e), e.raw.comment, e.raw.key]));
@@ -6648,10 +12495,10 @@ function registerPipelineCallbacks(c) {
     };
   }
   cb = {
-    onBusyChange: delivery("busy status", c.onBusyChange.bind(c)),
+    onBusyChange: delivery(t("backend.pipeline.registerPipelineCallbacks.busyStatus"), c.onBusyChange.bind(c)),
     onToast: delivery("toast", c.onToast.bind(c)),
     onStateChange: delivery("state", c.onStateChange.bind(c)),
-    onStreamText: delivery("stream viewer", c.onStreamText.bind(c))
+    onStreamText: delivery(t("backend.pipeline.registerPipelineCallbacks.streamViewer"), c.onStreamText.bind(c))
   };
 }
 function pushStreamText(userId, chatId, kind, snap) {
@@ -6730,27 +12577,27 @@ function formatElapsed(ms) {
   return `${m}m${rem.toString().padStart(2, "0")}s`;
 }
 var BUSY_PHRASES = {
-  chapter: { idle: "Memoria is filing a chapter", writing: "Memoria is writing a chapter" },
-  arc: { idle: "Memoria is binding an arc", writing: "Memoria is binding an arc" },
-  volume: { idle: "Memoria is pressing a volume", writing: "Memoria is pressing a volume" },
-  series: { idle: "Memoria is binding a series", writing: "Memoria is binding a series" },
-  saga: { idle: "Memoria is binding a saga", writing: "Memoria is binding a saga" },
-  library: { idle: "Memoria is binding a library", writing: "Memoria is binding a library" },
-  universe: { idle: "Memoria is binding a universe", writing: "Memoria is binding a universe" },
-  codex: { idle: "Memoria is updating the codex", writing: "Memoria is updating the codex" }
+  chapter: { idle: t("backend.pipeline.busyPhrases.memoriaIsFilingAChapter"), writing: t("backend.pipeline.busyPhrases.memoriaIsWritingAChapter") },
+  arc: { idle: t("backend.pipeline.busyPhrases.memoriaIsBindingAnArc"), writing: t("backend.pipeline.busyPhrases.memoriaIsBindingAnArc") },
+  volume: { idle: t("backend.pipeline.busyPhrases.memoriaIsPressingAVolume"), writing: t("backend.pipeline.busyPhrases.memoriaIsPressingAVolume") },
+  series: { idle: t("backend.pipeline.busyPhrases.memoriaIsBindingASeries"), writing: t("backend.pipeline.busyPhrases.memoriaIsBindingASeries") },
+  saga: { idle: t("backend.pipeline.busyPhrases.memoriaIsBindingASaga"), writing: t("backend.pipeline.busyPhrases.memoriaIsBindingASaga") },
+  library: { idle: t("backend.pipeline.busyPhrases.memoriaIsBindingALibrary"), writing: t("backend.pipeline.busyPhrases.memoriaIsBindingALibrary") },
+  universe: { idle: t("backend.pipeline.busyPhrases.memoriaIsBindingAUniverse"), writing: t("backend.pipeline.busyPhrases.memoriaIsBindingAUniverse") },
+  codex: { idle: t("backend.pipeline.busyPhrases.memoriaIsUpdatingTheCodex"), writing: t("backend.pipeline.busyPhrases.memoriaIsUpdatingTheCodex") }
 };
 function formatBusyLabel(state, elapsedMs) {
   const { idle, writing } = BUSY_PHRASES[state.kind];
   const tokens = approximateTokensFromChars(state.chars);
   const thinkTokens = approximateTokensFromChars(state.thinkingChars);
-  const t = formatElapsed(elapsedMs);
+  const t2 = formatElapsed(elapsedMs);
   if (tokens === 0 && thinkTokens === 0)
-    return `${idle} (${t})`;
+    return `${idle} (${t2})`;
   if (tokens === 0 && thinkTokens > 0)
-    return `Memoria is thinking (~${thinkTokens}t, ${t})`;
+    return t("backend.pipeline.formatBusyLabel.memoriaIsThinkingT", { thinkTokens, t: t2 });
   if (thinkTokens > 0)
-    return `${writing} (~${tokens}t written, ~${thinkTokens}t thought, ${t})`;
-  return `${writing} (~${tokens}t, ${t})`;
+    return t("backend.pipeline.formatBusyLabel.tWrittenTThought", { writing, tokens, thinkTokens, t: t2 });
+  return `${writing} (~${tokens}t, ${t2})`;
 }
 function ensureHeartbeat() {
   if (heartbeatTimer)
@@ -6787,8 +12634,7 @@ var STREAM_BUF_CAP = 200000;
 function capStreamPart(s) {
   if (s.length <= STREAM_BUF_CAP)
     return s;
-  return `[...earlier output trimmed...]
-${s.slice(-STREAM_BUF_CAP)}`;
+  return t("backend.pipeline.capStreamPart.earlierOutputTrimmed", { slice: s.slice(-STREAM_BUF_CAP) });
 }
 function appendStreamText(userId, chatId, kind, deltaKind, delta) {
   const key = busyKey(userId, chatId, kind);
@@ -6937,14 +12783,14 @@ function shortErrorText(err) {
   return cleaned.length > 160 ? `${cleaned.slice(0, 159)}\u2026` : cleaned;
 }
 function failToast(userId, kind, err) {
-  const noun = kind === "arc" ? "bind the arc" : kind === "volume" ? "press the volume" : "file the chapter";
-  cb?.onToast(userId, "error", `Memoria couldn't ${noun}: ${shortErrorText(err)}`);
+  const noun = kind === "arc" ? t("backend.pipeline.noun.bindTheArc") : kind === "volume" ? t("backend.pipeline.noun.pressTheVolume") : t("backend.pipeline.noun.fileTheChapter");
+  cb?.onToast(userId, "error", t("backend.pipeline.failToast.memoriaCouldnT", { noun, shortErrorText: shortErrorText(err) }));
 }
 function extraContextActive(profile) {
   return profile.codexEnabled && profile.codexExtraContext;
 }
 async function createChapterAuto(chatId, profile, settings, userId, automation = false, ghost = false, manual = false) {
-  if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
+  if (!setBusy(userId, chatId, "chapter", t("backend.pipeline.createChapterAuto.memoriaIsFilingAChapter")))
     return null;
   try {
     await requireForkShelf(chatId, userId);
@@ -6970,7 +12816,7 @@ async function createChapterAuto(chatId, profile, settings, userId, automation =
   }
 }
 async function createChapterFromRange(chatId, messageIds, profile, settings, userId, opts = {}) {
-  if (!setBusy(userId, chatId, "chapter", "Memoria is filing a chapter"))
+  if (!setBusy(userId, chatId, "chapter", t("backend.pipeline.createChapterFromRange.memoriaIsFilingAChapter")))
     return null;
   try {
     await requireForkShelf(chatId, userId);
@@ -7040,7 +12886,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
   });
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", t("backend.pipeline.runChapter.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -7079,7 +12925,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
       const live = await loadSettings(userId);
       const liveProfile = live.profiles.find((p) => p.id === live.activeProfileId);
       if (!liveProfile || !extraContextActive(liveProfile)) {
-        throw new Error("Extra context mode was turned off while this ghost was being written");
+        throw new Error(t("backend.pipeline.commitChapter.extraContextModeWasTurnedOffWhile"));
       }
     }
     const liveMessages = await spindle.chat.getMessages(chatId);
@@ -7101,7 +12947,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     if (validWindow.length === 0) {
       const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true]));
       const allGhost = window.every((m) => ghostById.get(freshCoverage.coveredBy.get(m.id) ?? "") === true);
-      throw new Error(allGhost ? "Those messages are already staged as a ghost chapter, it will file on its own" : "All messages in this window were just bound by another chapter");
+      throw new Error(allGhost ? t("backend.pipeline.commitChapter.thoseMessagesAreAlreadyStagedAsA") : t("backend.pipeline.commitChapter.allMessagesInThisWindowWereJust"));
     }
     if (validWindow.length < window.length) {
       recordDiagnostic(userId, { event: "commit", chatId, mode: "chapter", outcome: "pending", reason: "coverage_changed", numbers: { requested: window.length, selected: validWindow.length } });
@@ -7117,7 +12963,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
       freedTaken = ghost ? takeFreedGhostNumber(userId, chatId, new Set(window.map((m) => m.id))) : null;
       sceneNumber = freedTaken ?? await nextSceneNumber(chatId, 1, userId);
     }
-    const title = fromPreview ? result.title?.trim() || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}` : deriveTitle(result, firstIdx + 1, lastIdx + 1);
+    const title = fromPreview ? result.title?.trim() || t("backend.pipeline.title.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }) : deriveTitle(result, firstIdx + 1, lastIdx + 1);
     const msgIds = window.map((m) => m.id);
     const meta = {
       tier: 1,
@@ -7137,7 +12983,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
       rawOutput: result.rawOutput,
       ...ghost ? { ghost: true, msgSigs: window.map((m) => msgSig(m.role, m.content || "")) } : {}
     };
-    const baseComment = meta.title ?? `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`;
+    const baseComment = meta.title ?? t("backend.pipeline.baseComment.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
     const comment = `#${sceneNumber} - ${baseComment}`;
     const settings = await loadSettings(userId);
     const opener = buildChapterHeader(sceneNumber, msgIds.length);
@@ -7190,7 +13036,7 @@ async function listTimelineEntries(chatId, userId, fresh = false) {
   return withLiveMessageRanges(entries, messages);
 }
 async function createArcFromChapters(chatId, chapterEntryIds, profile, settings, userId, opts = {}) {
-  if (!setBusy(userId, chatId, "arc", "Memoria is binding an arc"))
+  if (!setBusy(userId, chatId, "arc", t("backend.pipeline.createArcFromChapters.memoriaIsBindingAnArc")))
     return null;
   try {
     const entries = await listTimelineEntries(chatId, userId, true);
@@ -7236,7 +13082,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
   });
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", t("backend.pipeline.runArc.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -7280,7 +13126,7 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === 1).map((e) => e.raw.id));
     const filtered = selected.filter((c) => stillActive.has(c.raw.id));
     if (filtered.length === 0) {
-      throw new Error("All source chapters were already bound by another arc or deleted");
+      throw new Error(t("backend.pipeline.commitArc.allSourceChaptersWereAlreadyBoundBy"));
     }
     if (filtered.length < selected.length) {
       throw changedSources();
@@ -7314,7 +13160,7 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
       else if (lastIdx < firstIdx)
         lastIdx = firstIdx;
     }
-    const arcTitle = isRootArc ? result.title?.trim() || "Inherited Arc" : deriveTitle(result, firstIdx + 1, lastIdx + 1);
+    const arcTitle = isRootArc ? result.title?.trim() || t("backend.pipeline.arcTitle.inheritedArc") : deriveTitle(result, firstIdx + 1, lastIdx + 1);
     const meta = {
       tier: 2,
       chatId,
@@ -7334,8 +13180,8 @@ async function commitArc(chatId, userId, selected, result, firstIdx, lastIdx, re
       rawOutput: result.rawOutput,
       ...isRootArc ? { isRoot: true, rootOrigin } : {}
     };
-    const baseComment = meta.title ?? `Arc - msgs ${firstIdx + 1}-${lastIdx + 1}`;
-    const comment = `${isRootArc ? "[Root] " : ""}Arc #${sceneNumber} - ${baseComment}`;
+    const baseComment = meta.title ?? t("backend.pipeline.baseComment.arcMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
+    const comment = t("backend.pipeline.comment.arc", { choice: isRootArc ? "yes" : "no", sceneNumber, baseComment });
     const arcOpener = buildArcHeader(sceneNumber, sourceChapterEntryIds.length, msgIds.length);
     const finalArcContent = `${arcOpener}
 
@@ -7351,7 +13197,7 @@ ${result.content}`;
       }
     }
     if (failedSupersedes.length > 0) {
-      cb?.onToast(userId, "warn", `The arc saved but ${failedSupersedes.length} chapter${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`, automation);
+      cb?.onToast(userId, "warn", t("backend.pipeline.commitArc.theArcSavedButChapterCouldnT", { length: failedSupersedes.length }), automation);
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: arcEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: arcEntry, meta }]) });
     invalidateBookCache(userId, chatId);
@@ -7374,7 +13220,7 @@ function createVolumeFromArcs(chatId, ids, profile, settings, userId, opts = {})
 }
 async function createHigherFromEntries(tier, chatId, arcEntryIds, profile, settings, userId, opts = {}) {
   const kind = TIER_KINDS[tier - 1];
-  if (!setBusy(userId, chatId, kind, `Memoria is binding a ${kind}`))
+  if (!setBusy(userId, chatId, kind, t("backend.pipeline.createHigherFromEntries.memoriaIsBindingA", { kind })))
     return null;
   try {
     const entries = await listTimelineEntries(chatId, userId, true);
@@ -7422,7 +13268,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
   });
   if (!outcome.ok) {
     if (outcome.err instanceof AbortedSummarizerError) {
-      cb?.onToast(userId, "info", "Memoria sets the pen down");
+      cb?.onToast(userId, "info", t("backend.pipeline.runVolume.memoriaSetsThePenDown"));
       cb?.onStateChange(userId, chatId);
       return null;
     }
@@ -7466,7 +13312,7 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
     const stillActive = new Set(freshCoverage.activeEntries.filter((e) => e.meta.tier === tier - 1).map((e) => e.raw.id));
     const filtered = selected.filter((a) => stillActive.has(a.raw.id));
     if (filtered.length === 0) {
-      throw new Error("All source arcs were already bound by another volume or deleted");
+      throw new Error(t("backend.pipeline.commitVolume.allSourceArcsWereAlreadyBoundBy"));
     }
     if (filtered.length < selected.length) {
       throw changedSources();
@@ -7500,7 +13346,7 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
       else if (lastIdx < firstIdx)
         lastIdx = firstIdx;
     }
-    const volumeTitle = isRootVolume ? result.title?.trim() || "Inherited Volume" : deriveTitle(result, firstIdx + 1, lastIdx + 1);
+    const volumeTitle = isRootVolume ? result.title?.trim() || t("backend.pipeline.volumeTitle.inheritedVolume") : deriveTitle(result, firstIdx + 1, lastIdx + 1);
     const meta = {
       tier,
       chatId,
@@ -7520,7 +13366,7 @@ async function commitVolume(chatId, userId, selected, result, firstIdx, lastIdx,
       rawOutput: result.rawOutput,
       ...isRootVolume ? { isRoot: true, rootOrigin } : {}
     };
-    const baseComment = meta.title ?? `Volume - msgs ${firstIdx + 1}-${lastIdx + 1}`;
+    const baseComment = meta.title ?? t("backend.pipeline.baseComment.volumeMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 });
     const comment = `${isRootVolume ? "[Root] " : ""}${TIER_NAMES[tier - 1]} #${sceneNumber} - ${baseComment}`;
     const volumeOpener = tierHeader(tier, sceneNumber, sourceArcEntryIds.length, msgIds.length);
     const finalVolumeContent = `${volumeOpener}
@@ -7537,7 +13383,7 @@ ${result.content}`;
       }
     }
     if (failedSupersedes.length > 0) {
-      cb?.onToast(userId, "warn", `The volume saved but ${failedSupersedes.length} arc${failedSupersedes.length === 1 ? "" : "s"} couldn't be marked superseded`);
+      cb?.onToast(userId, "warn", t("backend.pipeline.commitVolume.theVolumeSavedButArcCouldnT", { length: failedSupersedes.length }));
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: volumeEntry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: volumeEntry, meta }]) });
     invalidateBookCache(userId, chatId);
@@ -7675,12 +13521,12 @@ function drainGhostBacklog(chatId, profile, settings, userId, automation = false
 async function dryRunChapter(chatId, profile, settings, userId) {
   const messages = await spindle.chat.getMessages(chatId);
   if (!messages || messages.length === 0)
-    throw new Error("Chat has no messages");
+    throw new Error(t("backend.pipeline.dryRunChapter.chatHasNoMessages"));
   const entries = await listLmbEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
   const window = selectUncoveredChapterWindow(messages, coverage, profile, true);
   if (window.length === 0) {
-    throw new Error("No window available, lower the lag or window thresholds");
+    throw new Error(t("backend.pipeline.dryRunChapter.noWindowAvailableLowerTheLagOr"));
   }
   const previousMemories = selectPreviousChapters(coverage, messages, window, profile.previousMemoriesCount);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 1, userId);
@@ -7692,7 +13538,7 @@ async function dryRunArc(chatId, profile, settings, userId) {
   const coverage = await buildCoverage(chatId, userId, entries);
   const chapters = summaryRuns(coverage.activeEntries, 1)[0]?.entries ?? [];
   if (chapters.length === 0)
-    throw new Error("No chapters to bind yet");
+    throw new Error(t("backend.pipeline.dryRunArc.noChaptersToBindYet"));
   const totalTurns = chapters.reduce((acc, c) => acc + c.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 2, userId);
   const opener = buildArcHeader(provisionalSceneNumber, chapters.length, totalTurns);
@@ -7703,7 +13549,7 @@ async function dryRunVolume(chatId, profile, settings, userId) {
   const coverage = await buildCoverage(chatId, userId, entries);
   const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
   if (arcs.length === 0)
-    throw new Error("No arcs to press yet");
+    throw new Error(t("backend.pipeline.dryRunVolume.noArcsToPressYet"));
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
   const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
   const opener = buildVolumeHeader(provisionalSceneNumber, arcs.length, totalTurns);
@@ -7823,7 +13669,7 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
         title: g.meta.title
       });
     }
-    cb?.onToast(userId, "success", `Memoria shelved ${promoted.length} ghost chapter${promoted.length === 1 ? "" : "s"}`, automation);
+    cb?.onToast(userId, "success", t("backend.pipeline.promoteGhostChapters.memoriaShelvedGhostChapter", { length: promoted.length }), automation);
     cb?.onStateChange(userId, chatId);
     return promoted.length;
   });
@@ -7893,19 +13739,19 @@ async function nextSceneNumber(chatId, tier, userId) {
 }
 function deriveTitle(result, firstMsg, lastMsg) {
   if (result.title && result.title.trim())
-    return `${result.title.trim()} (msgs ${firstMsg}-${lastMsg})`;
+    return t("backend.pipeline.deriveTitle.msgs", { trim: result.title.trim(), firstMsg, lastMsg });
   const firstLine = (result.content.split(/\n+/, 1)[0] || "").trim();
   const firstSentence = firstLine.split(/(?<=[.!?])\s/, 1)[0] || firstLine;
   const trimmed = firstSentence.slice(0, 60).trim();
   if (trimmed)
-    return `${trimmed}${trimmed.length === 60 ? "..." : ""} (msgs ${firstMsg}-${lastMsg})`;
-  return `Compressed - msgs ${firstMsg}-${lastMsg}`;
+    return t("backend.pipeline.deriveTitle.msgs2", { trimmed, choice: trimmed.length === 60 ? "yes" : "no", firstMsg, lastMsg });
+  return t("backend.pipeline.deriveTitle.compressedMsgs", { firstMsg, lastMsg });
 }
 function makePreview(kind, chatId, window, result, firstIdx, lastIdx, replacesEntryId) {
   const preview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    title: result.title || `Chapter - msgs ${firstIdx + 1}-${lastIdx + 1}`,
+    title: result.title || t("backend.pipeline.preview.chapterMsgs", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }),
     content: result.content,
     shortComment: result.shortComment,
     keywords: result.keywords ?? [],
@@ -7927,7 +13773,7 @@ function makeGroupPreview(kind, selected, result, firstIdx, lastIdx, replacesEnt
   const preview = {
     kind,
     draftId: `draft_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    title: result.title || `${TIER_NAMES[TIER_KINDS.indexOf(kind)]} - msgs ${firstIdx + 1}-${lastIdx + 1}`,
+    title: result.title || t("backend.pipeline.preview.msgs", { indexOf: TIER_NAMES[TIER_KINDS.indexOf(kind)], firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }),
     content: result.content,
     shortComment: result.shortComment,
     keywords: result.keywords ?? [],
@@ -8033,14 +13879,14 @@ async function inheritedMessageIds(ancestorId, forkId, userId) {
   const seen = new Set;
   while (currentId !== ancestorId) {
     if (seen.has(currentId) || seen.size >= MAX_ANCESTRY_HOPS)
-      throw new Error("Fork ancestry could not be resolved");
+      throw new Error(t("backend.fork.inheritedMessageIds.forkAncestryCouldNotBeResolved"));
     seen.add(currentId);
     const chat = await spindle.chats.get(currentId, userId);
     const metadata = chat?.metadata;
     const parentId = metadata?.["branched_from"];
     const branchAt = metadata?.["branch_at_message"];
     if (typeof parentId !== "string")
-      throw new Error("Fork ancestry is incomplete");
+      throw new Error(t("backend.fork.inheritedMessageIds.forkAncestryIsIncomplete"));
     const parentMessages = await spindle.chat.getMessages(parentId);
     const boundary = parentMessages.find((m) => m.id === branchAt)?.index_in_chat;
     if (boundary === undefined)
@@ -8115,7 +13961,7 @@ async function forkShelfPending(chatId, userId) {
 async function requireForkShelf(chatId, userId) {
   await ensureForkAdoption(chatId, userId);
   if (await forkShelfPending(chatId, userId))
-    throw new Error("Fork inheritance is still pending. Retry after the inherited shelf is restored.");
+    throw new Error(t("backend.fork.requireForkShelf.forkInheritanceIsStillPendingRetryAfter"));
 }
 async function forkCodexPending(chatId, userId) {
   if (checked.has(key(userId, chatId)))
@@ -8154,7 +14000,7 @@ async function doForkAdoption(forkChatId, userId) {
         } catch (err) {
           shelfSettled = false;
           warn(`fork shelf adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-          forkAnomalyCb?.(userId, `Memoria couldn't carry the shelf into this fork and will retry: ${shortErrorText(err)}`);
+          forkAnomalyCb?.(userId, t("backend.fork.doForkAdoption.memoriaCouldnTCarryTheShelfInto", { shortErrorText: shortErrorText(err) }));
         }
       } else {
         await markShelfAdopted(forkChatId, userId).catch(() => {});
@@ -8239,7 +14085,7 @@ async function adoptForkCodex(forkChatId, branchedFrom, userId) {
     return true;
   } catch (err) {
     warn(`fork codex adoption failed for ${forkChatId.slice(0, 8)}: ${describeError(err)}`);
-    forkAnomalyCb?.(userId, `Memoria couldn't carry the codex into this fork and will retry: ${shortErrorText(err)}`);
+    forkAnomalyCb?.(userId, t("backend.fork.adoptForkCodex.memoriaCouldnTCarryTheCodexInto", { shortErrorText: shortErrorText(err) }));
     return false;
   }
 }
@@ -8259,7 +14105,7 @@ async function markCodexAdopted(forkChatId, userId) {
   await withChatMetaLock(userId, forkChatId, async () => {
     const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
     if (!chat)
-      throw new Error("fork chat vanished while recording codex adoption");
+      throw new Error(t("backend.fork.markCodexAdopted.forkChatVanishedWhileRecordingCodexAdoption"));
     const md = chat.metadata && typeof chat.metadata === "object" ? { ...chat.metadata } : {};
     if (md[CODEX_ADOPTED_FLAG] === forkChatId)
       return;
@@ -8371,7 +14217,7 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
   };
   const newBook = await spindle.world_books.create({
     name: bookNameFor(forkChatName, forkChatId),
-    description: "Memoria's shelf for this chat. Chapters and arcs live here.",
+    description: t("backend.fork.newBook.memoriaSShelfForThisChatChapters"),
     metadata: {
       lumibooks_chat_id: forkChatId,
       lumibooks_created_at: Date.now(),
@@ -8450,15 +14296,15 @@ async function parseFingerprint(raw) {
     return null;
   const v = raw;
   if (!v || v.version !== 1 || v.algorithm !== "sha256-role-content-v1" || !Array.isArray(v.messages) || v.messages.length > 1e6 || !/^[a-f0-9]{64}$/.test(v.contentHash))
-    throw new Error("Invalid summary message fingerprint");
+    throw new Error(t("backend.summaryMatching.parseFingerprint.invalidSummaryMessageFingerprint"));
   let previous = -1;
   for (const m of v.messages) {
     if (!m || !Number.isSafeInteger(m.index) || m.index <= previous || !/^[a-f0-9]{64}$/.test(m.hash))
-      throw new Error("Invalid summary message fingerprint");
+      throw new Error(t("backend.summaryMatching.parseFingerprint.invalidSummaryMessageFingerprint"));
     previous = m.index;
   }
   if ((await makeFingerprint(v.messages)).contentHash !== v.contentHash)
-    throw new Error("The summary message fingerprint is damaged");
+    throw new Error(t("backend.summaryMatching.parseFingerprint.theSummaryMessageFingerprintIsDamaged"));
   return v;
 }
 function exactMessageMatch(source, hashes) {
@@ -8490,14 +14336,14 @@ var EXPORT_KEY = "lumibooks_summary";
 function summaryLorebook(entries, name, fingerprint, coverage) {
   return {
     name,
-    description: "LumiBooks summaries. Import through Books to restore message coverage or use as inherited roots.",
+    description: t("backend.summaryBackup.summaryLorebook.lumiBooksSummariesImportThroughBooksToRestore"),
     ...fingerprint ? { extensions: { [EXPORT_KEY]: fingerprint } } : {},
     entries: Object.fromEntries(entries.filter((e) => !e.meta.ghost).map((e, i) => [i, {
       uid: i,
       key: e.raw.key ?? [],
       keysecondary: [],
       content: e.raw.content,
-      comment: e.raw.comment || e.meta.title || `Summary ${i + 1}`,
+      comment: e.raw.comment || e.meta.title || t("backend.summaryBackup.summaryLorebook.summary", { i1: i + 1 }),
       constant: true,
       disable: false,
       position: 0,
@@ -8511,8 +14357,8 @@ async function exportSummaryLorebook(chatId, userId, progress) {
   const coverage = await buildCoverage(chatId, userId);
   const entries = coverage.activeEntries.slice().sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
   if (!entries.length)
-    throw new Error("There are no active summaries to export");
-  progress?.("Fetching raw chat messages\u2026");
+    throw new Error(t("backend.summaryBackup.exportSummaryLorebook.thereAreNoActiveSummariesToExport"));
+  progress?.(t("backend.summaryBackup.exportSummaryLorebook.fetchingRawChatMessages"));
   const messages = await spindle.chat.getMessages(chatId);
   const positions = new Map(messages.map((m, i) => [m.id, i]));
   const byEntry = new Map;
@@ -8530,45 +14376,45 @@ async function exportSummaryLorebook(chatId, userId, progress) {
   for (const [id, indices] of byEntry)
     byEntry.set(id, [...new Set(indices)].sort((a, b) => a - b));
   const indices = [...new Set([...byEntry.values()].flat())].sort((a, b) => a - b);
-  const hashes = await hashRawMessages(indices.map((i) => messages[i]), (done) => progress?.(`Hashing raw messages\u2026 ${done} / ${indices.length}`));
+  const hashes = await hashRawMessages(indices.map((i) => messages[i]), (done) => progress?.(t("backend.summaryBackup.hashes.hashingRawMessages", { done, length: indices.length })));
   const fingerprint = await makeFingerprint(indices.map((index, i) => ({ index, hash: hashes[i] })));
-  return summaryLorebook(entries, `LumiBooks summaries - ${chatId.slice(0, 8)}`, fingerprint, byEntry);
+  return summaryLorebook(entries, t("backend.summaryBackup.exportSummaryLorebook.lumiBooksSummaries", { slice: chatId.slice(0, 8) }), fingerprint, byEntry);
 }
 function parseSummaryLorebook(raw) {
   if (!raw || typeof raw !== "object")
-    throw new Error("Choose a lorebook JSON file with entries");
+    throw new Error(t("backend.summaryBackup.parseSummaryLorebook.chooseALorebookJsonFileWithEntries"));
   const entries = raw.entries;
   if (!entries || typeof entries !== "object")
-    throw new Error("The lorebook has no entries");
+    throw new Error(t("backend.summaryBackup.parseSummaryLorebook.theLorebookHasNoEntries"));
   const rows = Array.isArray(entries) ? entries : Object.values(entries);
   if (rows.length > 1e4)
-    throw new Error("The lorebook has more than 10,000 entries");
+    throw new Error(t("backend.summaryBackup.parseSummaryLorebook.theLorebookHasMoreThan10000"));
   const out = [];
   for (const row of rows) {
     if (!row || typeof row !== "object")
-      throw new Error("Invalid lorebook entry");
+      throw new Error(t("backend.summaryBackup.parseSummaryLorebook.invalidLorebookEntry"));
     const v = row;
     if (v.disable === true || v.disabled === true || v.enabled === false)
       continue;
     if (typeof v.content !== "string")
-      throw new Error("Every lorebook entry needs text content");
+      throw new Error(t("backend.summaryBackup.parseSummaryLorebook.everyLorebookEntryNeedsTextContent"));
     if (!v.content.trim())
       continue;
     const tier = v.extensions?.[EXPORT_KEY]?.tier;
     const messageIndices = v.extensions?.[EXPORT_KEY]?.messageIndices;
     if (messageIndices !== undefined && (!Array.isArray(messageIndices) || messageIndices.length > 1e6 || messageIndices.some((n) => !Number.isSafeInteger(n) || n < 0)))
-      throw new Error("Invalid summary coverage indices");
+      throw new Error(t("backend.summaryBackup.parseSummaryLorebook.invalidSummaryCoverageIndices"));
     const keys = v.key ?? v.keys;
     out.push({
       content: v.content,
-      comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : "Imported summary",
+      comment: typeof v.comment === "string" ? v.comment : typeof v.name === "string" ? v.name : t("backend.summaryBackup.parseSummaryLorebook.importedSummary"),
       keys: Array.isArray(keys) ? keys.filter((k) => typeof k === "string") : [],
       tier: Number.isInteger(tier) && tier >= 1 && tier <= 7 ? tier : 1,
       ...messageIndices !== undefined ? { messageIndices: [...new Set(messageIndices)].sort((a, b) => a - b) } : {}
     });
   }
   if (!out.length)
-    throw new Error("The lorebook has no enabled summaries");
+    throw new Error(t("backend.summaryBackup.parseSummaryLorebook.theLorebookHasNoEnabledSummaries"));
   return out;
 }
 async function readSummaryImport(raw) {
@@ -8578,7 +14424,7 @@ async function readSummaryImport(raw) {
     const indices = new Set(fingerprint.messages.map((m) => m.index));
     for (const row of rows) {
       if (!row.messageIndices || row.messageIndices.some((i) => !indices.has(i)))
-        throw new Error("The summary coverage does not match its fingerprint");
+        throw new Error(t("backend.summaryBackup.readSummaryImport.theSummaryCoverageDoesNotMatchIts"));
     }
     const used = new Set(rows.flatMap((r) => r.messageIndices));
     return { rows, fingerprint: await makeFingerprint(fingerprint.messages.filter((m) => used.has(m.index))) };
@@ -8593,13 +14439,13 @@ async function commitImportedSummaries(chatId, userId, rows, links) {
   if (links) {
     const messages = links.messages;
     if (links.indices.length !== rows.length || links.indices.some((indices) => indices.some((i) => !Number.isInteger(i) || !messages[i])))
-      throw new Error("Invalid destination coverage");
+      throw new Error(t("backend.summaryBackup.commitImportedSummaries.invalidDestinationCoverage"));
     const claimed = new Set;
     for (const indices of links.indices) {
       for (const index of new Set(indices)) {
         const id = messages[index].id;
         if (claimed.has(id))
-          throw new Error("This import contains overlapping summary coverage. Resolve the overlapping entries before importing.");
+          throw new Error(t("backend.summaryBackup.commitImportedSummaries.thisImportContainsOverlappingSummaryCoverageResolve"));
         claimed.add(id);
       }
     }
@@ -8611,9 +14457,9 @@ async function commitImportedSummaries(chatId, userId, rows, links) {
     for (const index of new Set(links.indices.flat())) {
       const source = links.messages[index], live = current.get(source.id);
       if (coverage.coveredBy.has(source.id))
-        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+        throw new Error(t("backend.summaryBackup.commitImportedSummaries.someOfTheseMessagesAlreadyHaveSummaries"));
       if (!live || live.role !== source.role || live.content !== source.content)
-        throw new Error("The chat changed while preparing the import. Choose the file again.");
+        throw new Error(t("backend.summaryBackup.commitImportedSummaries.theChatChangedWhilePreparingTheImport"));
     }
     links = { ...links, messages: links.messages.map((m) => current.get(m.id) ?? m) };
   }
@@ -8646,7 +14492,7 @@ async function commitImportedSummaries(chatId, userId, rows, links) {
   } catch (err) {
     const rollback = await Promise.allSettled(created.map((id) => deleteEntry(id, userId)));
     if (rollback.some((r) => r.status === "rejected"))
-      throw new Error("Import failed and some imported summaries could not be removed; inspect Books before retrying", { cause: err });
+      throw new Error(t("backend.summaryBackup.commitImportedSummaries.importFailedAndSomeImportedSummariesCould"), { cause: err });
     throw err;
   } finally {
     invalidateBookCache(userId, chatId);
@@ -8673,12 +14519,12 @@ async function runSummaryTransfer(userId, chatId, request) {
   let transfer = transfers.get(k);
   if (request.type === "resolve") {
     if (!transfer || transfer.status.id !== request.id)
-      throw new Error("This import is no longer available. Choose the file again.");
+      throw new Error(t("backend.summaryTransfer.runSummaryTransfer.thisImportIsNoLongerAvailableChoose"));
     if (transfer.running)
       return false;
     if (request.choice === "cancel") {
       transfers.delete(k);
-      send({ type: "summary_transfer_status", status: { ...transfer.status, stage: "cancelled", text: "Import cancelled" } }, userId);
+      send({ type: "summary_transfer_status", status: { ...transfer.status, stage: "cancelled", text: t("backend.summaryTransfer.runSummaryTransfer.importCancelled") } }, userId);
       return false;
     }
     if (!transfer.rows)
@@ -8688,7 +14534,7 @@ async function runSummaryTransfer(userId, chatId, request) {
       send({ type: "summary_transfer_status", status: transfer.status }, userId);
       return false;
     }
-    transfer = { status: { id: crypto.randomUUID(), chatId, stage: "working", text: "Reading summaries\u2026" }, running: false };
+    transfer = { status: { id: crypto.randomUUID(), chatId, stage: "working", text: t("backend.summaryTransfer.runSummaryTransfer.readingSummaries") }, running: false };
     if (transfers.size >= 200) {
       for (const [oldKey, old] of transfers) {
         if (!old.running && !old.rows)
@@ -8699,34 +14545,34 @@ async function runSummaryTransfer(userId, chatId, request) {
     }
     transfers.set(k, transfer);
   }
-  const t = transfer;
-  t.running = true;
+  const t2 = transfer;
+  t2.running = true;
   let lastProgress = 0;
   const progress = (text) => {
     if (Date.now() - lastProgress < 150)
       return;
     lastProgress = Date.now();
-    update(userId, t, "working", text);
+    update(userId, t2, "working", text);
   };
-  update(userId, t, "working", request.type === "export" ? "Preparing summary export\u2026" : "Reading raw chat messages\u2026");
+  update(userId, t2, "working", request.type === "export" ? t("backend.summaryTransfer.runSummaryTransfer.preparingSummaryExport") : t("backend.summaryTransfer.runSummaryTransfer.readingRawChatMessages"));
   try {
     if (request.type === "export") {
       const data = await exportSummaryLorebook(chatId, userId, progress);
       send({ type: "summary_export_data", chatId, filename: `lumibooks-summaries-${chatId.slice(0, 8)}.json`, content: JSON.stringify(data, null, 2) }, userId);
-      update(userId, t, "done", "Summary export ready");
+      update(userId, t2, "done", t("backend.summaryTransfer.runSummaryTransfer.summaryExportReady"));
       return false;
     }
     if (request.type === "import") {
       const parsed = await readSummaryImport(request.raw);
-      t.rows = parsed.rows;
-      t.fingerprint = parsed.fingerprint;
+      t2.rows = parsed.rows;
+      t2.fingerprint = parsed.fingerprint;
     }
-    const rows = t.rows;
+    const rows = t2.rows;
     const messages = await spindle.chat.getMessages(chatId);
-    const source = t.fingerprint;
-    t.status = { ...t.status, messageCount: messages.length, sourceCount: source?.messages.length ?? 0 };
-    const manual = (text = "Up until which message should these summaries cover?") => {
-      update(userId, t, "manual", text);
+    const source = t2.fingerprint;
+    t2.status = { ...t2.status, messageCount: messages.length, sourceCount: source?.messages.length ?? 0 };
+    const manual = (text) => {
+      update(userId, t2, "manual", text ?? t("backend.summaryTransfer.manual.upUntilWhichMessageShouldTheseSummaries"), { manualPromptOnly: text === undefined });
       return false;
     };
     if (request.type === "resolve" && request.choice === "specify")
@@ -8735,13 +14581,13 @@ async function runSummaryTransfer(userId, chatId, request) {
     let importedRows = rows;
     if (request.type === "resolve" && request.choice === "manual") {
       if (!Number.isSafeInteger(request.through) || request.through < 0 || request.through > messages.length)
-        return manual("Enter a whole message number from 0 to " + messages.length + ".");
+        return manual(t("backend.summaryTransfer.runSummaryTransfer.enterAWholeMessageNumberFrom0", { length: messages.length }));
       if (request.through > 0) {
         importedRows = [{
           content: rows.map((r) => r.content).join(`
 
 `),
-          comment: rows.length === 1 ? rows[0].comment : "Imported summaries",
+          comment: rows.length === 1 ? rows[0].comment : t("backend.summaryTransfer.runSummaryTransfer.importedSummaries"),
           keys: [...new Set(rows.flatMap((r) => r.keys))],
           tier: Math.max(...rows.map((r) => r.tier))
         }];
@@ -8752,7 +14598,7 @@ async function runSummaryTransfer(userId, chatId, request) {
         return manual();
       const relocate = request.type === "resolve" && request.choice === "match";
       const selected = relocate ? messages : source.messages.flatMap((m) => messages[m.index] ? [messages[m.index]] : []);
-      const computed = await hashRawMessages(selected, (done) => progress(`Comparing raw messages\u2026 ${done} / ${selected.length}`));
+      const computed = await hashRawMessages(selected, (done) => progress(t("backend.summaryTransfer.computed.comparingRawMessages", { done, length: selected.length })));
       const hashes = relocate ? computed : new Array(messages.length);
       if (!relocate && computed.length === source.messages.length)
         source.messages.forEach((m, i) => {
@@ -8761,8 +14607,8 @@ async function runSummaryTransfer(userId, chatId, request) {
       const matched = exactMessageMatch(source, hashes) ?? (relocate ? automaticMessageMatch(source, hashes) : null);
       if (!matched) {
         if (request.type === "resolve" && request.choice === "match")
-          return manual("Automatic matching was incomplete or ambiguous. Up until which message should these summaries cover?");
-        update(userId, t, "mismatch", "The content of this chat is different to the one encoded by the imported summary. Attempt automatic matching?");
+          return manual(t("backend.summaryTransfer.runSummaryTransfer.automaticMatchingWasIncompleteOrAmbiguousUp"));
+        update(userId, t2, "mismatch", t("backend.summaryTransfer.runSummaryTransfer.theContentOfThisChatIsDifferent"));
         return false;
       }
       const mapping = new Map(source.messages.map((m, i) => [m.index, matched[i]]));
@@ -8772,27 +14618,27 @@ async function runSummaryTransfer(userId, chatId, request) {
     if (linkedIds.size) {
       const coverage = await buildCoverage(chatId, userId);
       if ([...linkedIds].some((id) => coverage.coveredBy.has(id)))
-        throw new Error("Some of these messages already have summaries. Release those summaries in Books before importing this coverage.");
+        throw new Error(t("backend.summaryTransfer.runSummaryTransfer.someOfTheseMessagesAlreadyHaveSummaries"));
       const current = await spindle.chat.getMessages(chatId);
       for (const at of new Set(indices.flat())) {
         const before = messages[at], now = current[at];
         if (!now || now.id !== before.id || now.role !== before.role || now.content !== before.content) {
-          t.status.messageCount = current.length;
-          return manual("The chat changed while preparing the import. Up until which message should these summaries cover?");
+          t2.status.messageCount = current.length;
+          return manual(t("backend.summaryTransfer.runSummaryTransfer.theChatChangedWhilePreparingTheImport"));
         }
       }
     }
-    update(userId, t, "working", "Saving imported summaries\u2026");
+    update(userId, t2, "working", t("backend.summaryTransfer.runSummaryTransfer.savingImportedSummaries"));
     await saveImportedSummaries(chatId, userId, importedRows, { messages, indices });
-    t.rows = undefined;
-    t.fingerprint = undefined;
-    update(userId, t, "done", `Imported ${rows.length} summaries${linkedIds.size ? ` covering ${linkedIds.size} messages` : " as root memories"}`);
+    t2.rows = undefined;
+    t2.fingerprint = undefined;
+    update(userId, t2, "done", t("backend.summaryTransfer.runSummaryTransfer.importedSummaries2", { length: rows.length, choice: linkedIds.size ? "yes" : "no", size: linkedIds.size ? linkedIds.size : "" }));
     return true;
   } catch (err) {
-    update(userId, t, "error", describeError(err));
+    update(userId, t2, "error", describeError(err));
     return false;
   } finally {
-    t.running = false;
+    t2.running = false;
   }
 }
 
@@ -8837,7 +14683,7 @@ function orderEntries(coverage, msgIdToIdx) {
     const resolvedFirst = haveIdx ? firstIdx : typeof entry.meta.firstMsgIdx === "number" ? entry.meta.firstMsgIdx : 0;
     const resolvedLast = haveIdx ? lastIdx : typeof entry.meta.lastMsgIdx === "number" ? entry.meta.lastMsgIdx : resolvedFirst;
     const tierName = TIER_NAMES[entry.meta.tier - 1];
-    const label = entry.raw.comment || (haveIdx ? `${tierName} msgs ${firstIdx + 1}-${lastIdx + 1}` : tierName);
+    const label = entry.raw.comment || (haveIdx ? t("backend.injection.label.msgs", { tierName, firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }) : tierName);
     ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
   }
   ordered.sort((a, b) => a.firstIdx - b.firstIdx);
@@ -8909,13 +14755,13 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
       chatMessages = await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed while verifying an empty history, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
       return null;
     }
     const hasVisibleMessage = !!chatMessages?.some((m) => !(m.extra && m.extra.hidden));
     if (hasVisibleMessage) {
       error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. Possible causes: the host clipped history to fit max context, another ` + `extension reshaped the prompt first, or the active preset has no chat-history block. Skipping injection.`);
-      injectionAnomalyCb?.(userId, "Memoria couldn't find the chat history in this prompt and skipped injecting memories");
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTFindTheChatHistory"));
       return null;
     }
     chatSnapshot = chatMessages;
@@ -8948,7 +14794,7 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
       chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
       return null;
     }
     msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));
@@ -9032,11 +14878,11 @@ function formatEntryForInjection(entry) {
 // src/codex-tidy.ts
 function resolveTidyTarget(currentTokens, target) {
   if (!target || !["tokens", "percent"].includes(target.unit) || !Number.isFinite(target.value) || target.value <= 0 || target.unit === "percent" && target.value >= 100) {
-    throw new Error("Enter a positive token limit or a percentage between 0 and 100.");
+    throw new Error(t("codexTidy.resolveTidyTarget.enterAPositiveTokenLimitOrA"));
   }
   const limit = Math.floor(target.unit === "percent" ? currentTokens * target.value / 100 : target.value);
   if (limit < 1)
-    throw new Error("The target must be at least one token.");
+    throw new Error(t("codexTidy.resolveTidyTarget.theTargetMustBeAtLeastOne"));
   return { limit, modelTarget: Math.max(1, Math.floor(limit * 0.9)) };
 }
 
@@ -9047,7 +14893,7 @@ async function countCodexText(text, userId) {
   try {
     const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
     if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0)
-      throw new Error("Invalid token count");
+      throw new Error(t("backend.codex.tokens.countCodexText.invalidTokenCount"));
     return { tokens: result.total_tokens, approximate: result.approximate };
   } catch {
     return { tokens: approximateTokensFromChars(text.length), approximate: true };
@@ -9090,7 +14936,7 @@ class CodexValidationError extends Error {
 
 class CodexContextError extends Error {
   constructor(promptTokens, maxInputTokens) {
-    super(`The assembled codex prompt is ~${Math.round(promptTokens / 1000)}k tokens but the codex max input is ${Math.round(maxInputTokens / 1000)}k, so Memoria stopped instead of sending a request that would fail or be silently cut. ` + "Raise Max input tokens under Tuning > Connection > Codex, or in Tuning > Settings > Codex lower the window, Chapters provided, or the lore limit, or freeze records in Codex > Overview.");
+    super(t("backend.codex.agent.messages.theAssembledCodexPromptIsKTokens", { round: Math.round(promptTokens / 1000), round2: Math.round(maxInputTokens / 1000) }));
     this.name = "CodexContextError";
   }
 }
@@ -9165,7 +15011,7 @@ async function resolveCodexConnection(profile, userId) {
     if (picked) {
       const model = typeof picked.model === "string" ? picked.model : "";
       if (!model.trim()) {
-        throw new FatalSummarizerError(`Codex connection "${picked.name || picked.id}" has no model set, pick one in its settings`);
+        throw new FatalSummarizerError(t("backend.codex.agent.resolveCodexConnection.codexConnectionHasNoModelSetPick", { id: picked.name || picked.id }));
       }
       return picked;
     }
@@ -9173,7 +15019,7 @@ async function resolveCodexConnection(profile, userId) {
   }
   const conn = await resolveConnection(profile, userId);
   if (!conn)
-    throw new FatalSummarizerError("No connection available for the codex");
+    throw new FatalSummarizerError(t("backend.codex.agent.resolveCodexConnection.noConnectionAvailableForTheCodex"));
   return conn;
 }
 async function runQuietRound(conn, messages, profile, userId, tools, externalSignal, onProgress, onDelta, progressBase) {
@@ -9572,16 +15418,13 @@ async function runCodexAgentInner(opts) {
     }
     return saved;
   };
-  const keptSuffix = (saved) => saved.length ? ` Memoria kept the ${saved.length} record${saved.length === 1 ? "" : "s"} she finished and will try the rest next time.` : "";
+  const keptSuffix = (saved) => saved.length ? t("backend.codex.agent.keptSuffix.memoriaKeptTheRecordSheFinishedAnd", { length: saved.length }) : "";
   while (rounds < maxRounds) {
     if (opts.externalSignal.aborted)
       throw new AbortedSummarizerError;
     rounds++;
     if (rounds > 1)
-      opts.onDelta?.("text", `
-
-\u2550\u2550\u2550 round ${rounds} \u2550\u2550\u2550
-`);
+      opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.round", { rounds }));
     if (opts.callBudget) {
       opts.callBudget.remaining--;
       opts.callBudget.used++;
@@ -9599,42 +15442,37 @@ async function runCodexAgentInner(opts) {
           try {
             size = JSON.stringify(call.args["content"] ?? "").length;
           } catch {}
-          label = `full rewrite, ${(size / 1000).toFixed(1)}k chars`;
+          label = t("backend.codex.agent.runCodexAgentInner.fullRewriteKChars", { toFixed: (size / 1000).toFixed(1) });
         } else {
           const bits = [];
           const setN = Array.isArray(call.args["set"]) ? call.args["set"].length : 0;
           const dropN = Array.isArray(call.args["drop"]) ? call.args["drop"].length : 0;
           if (setN)
-            bits.push(`${setN} set`);
+            bits.push(t("backend.codex.agent.stream.set", { count: setN }));
           if (dropN)
-            bits.push(`${dropN} drop`);
+            bits.push(t("backend.codex.agent.stream.drop", { count: dropN }));
           if (call.args["seeds"] !== undefined)
-            bits.push("seeds");
-          label = bits.join(", ") || "empty";
+            bits.push(t("backend.codex.agent.stream.seeds"));
+          label = bits.join(", ") || t("backend.codex.agent.stream.empty");
         }
-        opts.onDelta?.("text", `
-\u27A4 codex_write ${f}.json (${label})`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.codexWriteJson", { f, label }));
       } else if (call.name === "codex_done") {
         const note = typeof call.args["note"] === "string" && call.args["note"].trim() ? ` \u2014 ${call.args["note"].trim()}` : "";
-        opts.onDelta?.("text", `
-\u2726 codex_done${note}`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.codexDone", { note }));
       } else if (call.name === "codex_skip") {
         const files = Array.isArray(call.args["files"]) ? call.args["files"].filter((f) => typeof f === "string") : [];
-        opts.onDelta?.("text", `
-\u25CB codex_skip ${files.length ? files.map((f) => `${f}.json`).join(", ") : "(no files)"}`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.codexSkip", { choice: files.length ? "yes" : "no", join: files.length ? files.map((f) => `${f}.json`).join(", ") : "" }));
       } else {
-        opts.onDelta?.("text", `
-\u2717 unknown tool ${call.name}`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.unknownTool", { name: call.name }));
       }
     }
     if (calls.length === 0) {
       if (rounds === 1 && !round.content.trim()) {
-        throw new Error("The codex agent returned an empty response");
+        throw new Error(t("backend.codex.agent.runCodexAgentInner.theCodexAgentReturnedAnEmptyResponse"));
       }
       if (!useTools && !jsonRetryUsed && rounds < maxRounds && round.content.trim()) {
         jsonRetryUsed = true;
-        opts.onDelta?.("text", `
-\u2717 no JSON object found in the reply, asking for a resend`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.noJsonObjectFoundInTheReply"));
         conv.push({ role: "assistant", content: round.content });
         conv.push({
           role: "user",
@@ -9644,13 +15482,13 @@ async function runCodexAgentInner(opts) {
       }
       if (unresolvedErrors) {
         const saved = await persistClean();
-        throw new CodexValidationError("Memoria couldn't finish the codex update because the model gave up instead of fixing a record she rejected." + keptSuffix(saved));
+        throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate", { keptSuffix: keptSuffix(saved) }));
       }
       if (changed.size === 0) {
         if (useTools) {
-          throw new ToolProtocolError("The codex agent narrated instead of calling tools, check that the connection supports tool calls");
+          throw new ToolProtocolError(t("backend.codex.agent.runCodexAgentInner.theCodexAgentNarratedInsteadOfCalling"));
         }
-        throw new Error("The codex agent replied without a parsable JSON update");
+        throw new Error(t("backend.codex.agent.runCodexAgentInner.theCodexAgentRepliedWithoutAParsable"));
       }
       if (remaining.size > 0) {
         if (remaining.size < lastNudgeRemaining)
@@ -9667,7 +15505,7 @@ async function runCodexAgentInner(opts) {
           continue;
         }
         const saved = await persistClean();
-        throw new CodexValidationError(`Memoria couldn't finish the codex update, the model stopped before writing ${[...remaining].join(", ")}.` + keptSuffix(saved));
+        throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate2", { join: [...remaining].join(", "), keptSuffix: keptSuffix(saved) }));
       }
       break;
     }
@@ -9760,8 +15598,7 @@ async function runCodexAgentInner(opts) {
         const original = opts.bundle[key].entities.find((e) => e.id === d.ref);
         if (original && !working[key].entities.some((e) => e.id === d.ref)) {
           working[key].entities.push(structuredClone(original));
-          opts.onDelta?.("text", `
-\u2933 Kept ${d.ref}: still referenced by unchanged ${d.file}.json`);
+          opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.keptStillReferencedByUnchangedJson", { ref: d.ref, file: d.file }));
         }
       }
     }
@@ -9775,8 +15612,7 @@ async function runCodexAgentInner(opts) {
         if (stubborn.length > 0) {
           const fixed = repairDanglingRefs(working, new Set(stubborn.map((d) => d.file).filter((file) => changed.has(file))));
           for (const r of fixed)
-            opts.onDelta?.("text", `
-\u2933 ${r}`);
+            opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.value", { r }));
           if (fixed.length > 0)
             dangling = newDangling(working, baselineDangling);
         }
@@ -9788,12 +15624,10 @@ async function runCodexAgentInner(opts) {
     const integrityErrors = dangling.map(formatDanglingRef);
     for (const o of outcomes) {
       if (o.errors.length)
-        opts.onDelta?.("text", `
-\u2717 rejected${o.file ? ` ${o.file}.json` : ""}: ${o.errors[0]}`);
+        opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.rejected", { choice: o.file ? "yes" : "no", file: o.file ? o.file : "", errors0: o.errors[0] }));
     }
     for (const e of integrityErrors)
-      opts.onDelta?.("text", `
-\u2717 integrity: ${e}`);
+      opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.integrity", { e }));
     const hadErrors = outcomes.some((o) => o.errors.length > 0) || integrityErrors.length > 0;
     unresolvedErrors = hadErrors || rejectedFiles.size > 0;
     const lockedNote = (o) => {
@@ -9873,30 +15707,29 @@ ${integrityErrors.join(`
     if (rounds >= maxRounds) {
       const left = outcomes.flatMap((o) => o.errors).concat(integrityErrors);
       const saved = await persistClean();
-      throw new CodexValidationError(`Memoria couldn't finish the codex update after ${rounds} tries. The model kept sending records she can't accept: ${left.slice(0, 3).join(", ")}.${keptSuffix(saved)}`);
+      throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate3", { rounds, join: left.slice(0, 3).join(", "), keptSuffix: keptSuffix(saved) }));
     }
   }
   if (rejectedFiles.size > 0) {
     const saved = await persistClean();
-    throw new CodexValidationError(`Memoria couldn't finish the codex update, these records were never corrected: ${[...rejectedFiles].join(", ")}.${keptSuffix(saved)}`);
+    throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate4", { join: [...rejectedFiles].join(", "), keptSuffix: keptSuffix(saved) }));
   }
   if (remaining.size > 0) {
     const saved = await persistClean();
-    throw new CodexValidationError(`Memoria couldn't finish the codex update, the model never wrote ${[...remaining].join(", ")}.${keptSuffix(saved)}`);
+    throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate5", { join: [...remaining].join(", "), keptSuffix: keptSuffix(saved) }));
   }
   const repaired = repairDanglingRefs(working, new Set(changed));
   for (const r of repaired)
-    opts.onDelta?.("text", `
-\u2933 ${r}`);
+    opts.onDelta?.("text", t("backend.codex.agent.runCodexAgentInner.value", { r }));
   const finalIntegrity = newDanglingErrors(working, baselineDangling);
   if (finalIntegrity.length) {
     const saved = await persistClean();
-    throw new CodexValidationError(`Memoria couldn't finish the codex update, some records point at people or places that don't exist: ${finalIntegrity.slice(0, 3).join(", ")}.${keptSuffix(saved)}`);
+    throw new CodexValidationError(t("backend.codex.agent.runCodexAgentInner.memoriaCouldnTFinishTheCodexUpdate6", { join: finalIntegrity.slice(0, 3).join(", "), keptSuffix: keptSuffix(saved) }));
   }
   if (opts.notes.migrateToTable) {
     const leftover = ["characters", "locations", "things"].filter((k) => working[k].entities.some((e) => e.locked !== true && Array.isArray(e.ties) && e.ties.length > 0));
     if (leftover.length) {
-      throw new Error(`Table migration left ties on ${leftover.map((k) => `${k}.json`).join(", ")}, the run will retry`);
+      throw new Error(t("backend.codex.agent.runCodexAgentInner.tableMigrationLeftTiesOnTheRun", { join: leftover.map((k) => `${k}.json`).join(", ") }));
     }
   }
   if (opts.notes.migrateToInline && opts.bundle.relations.relations.length > 0) {
@@ -9904,14 +15737,14 @@ ${integrityErrors.join(`
     const lockedIds = new Set(["characters", "locations", "things"].flatMap((k) => working[k].entities.filter((e) => e.locked === true).map((e) => e.id)));
     const foldable = opts.bundle.relations.relations.some((r) => (r.type === "pair" ? [r.a, r.b] : r.members).some((m) => !lockedIds.has(m)));
     if (!foldedTies && foldable) {
-      throw new Error("Inline migration produced no ties from the relations table, the run will retry");
+      throw new Error(t("backend.codex.agent.runCodexAgentInner.inlineMigrationProducedNoTiesFromThe"));
     }
   }
   for (const key of changed) {
     try {
       await saveCodexFile(chatId, key, working[key], userId);
     } catch (err) {
-      throw new Error(`Failed to save ${key}.json: ${describeError(err)}`);
+      throw new Error(t("backend.codex.agent.runCodexAgentInner.failedToSaveJson", { key, describeError: describeError(err) }));
     }
   }
   return {
@@ -9945,15 +15778,15 @@ async function buildCodexBackup(chatId, userId) {
 }
 function parseCodexBackup(raw, fallbackRelationsTable) {
   if (!raw || typeof raw !== "object")
-    return { error: "that file is not a codex backup" };
+    return { error: t("backend.codex.backup.parseCodexBackup.thatFileIsNotACodexBackup") };
   const v = raw;
   if (v.kind !== CODEX_BACKUP_KIND)
-    return { error: "that file is not a codex backup" };
+    return { error: t("backend.codex.backup.parseCodexBackup.thatFileIsNotACodexBackup") };
   if (typeof v.version !== "number" || v.version > CODEX_BACKUP_VERSION) {
-    return { error: `this backup was written by a newer LumiBooks (version ${String(v.version)})` };
+    return { error: t("backend.codex.backup.parseCodexBackup.thisBackupWasWrittenByANewer", { version: String(v.version) }) };
   }
   if (!v.files || typeof v.files !== "object")
-    return { error: "the backup has no codex files in it" };
+    return { error: t("backend.codex.backup.parseCodexBackup.theBackupHasNoCodexFilesIn") };
   const relationsTableMode = typeof v.relationsTableMode === "boolean" ? v.relationsTableMode : null;
   const relationsTable = relationsTableMode ?? fallbackRelationsTable;
   const values = [];
@@ -9965,15 +15798,15 @@ function parseCodexBackup(raw, fallbackRelationsTable) {
     try {
       parsed = JSON.parse(rawText);
     } catch {
-      return { error: `${key}.json in the backup is not valid JSON` };
+      return { error: t("backend.codex.backup.parseCodexBackup.jsonInTheBackupIsNotValid", { key }) };
     }
     const result = validateCodexFile(key, parsed, { relationsTable });
     if (!result.ok)
-      return { error: `${key}.json in the backup is invalid: ${result.errors[0]}` };
+      return { error: t("backend.codex.backup.parseCodexBackup.jsonInTheBackupIsInvalid", { key, errors0: result.errors[0] }) };
     values.push({ key, value: result.value });
   }
   if (values.length === 0)
-    return { error: "the backup has no codex files in it" };
+    return { error: t("backend.codex.backup.parseCodexBackup.theBackupHasNoCodexFilesIn") };
   const fileStates = {};
   const rawStates = v.fileStates && typeof v.fileStates === "object" ? v.fileStates : {};
   for (const [key, state] of Object.entries(rawStates)) {
@@ -10050,7 +15883,7 @@ function reportCodexFailure(userId, chatId, verb, err) {
     cb2?.onToast(userId, "error", err.message);
     return;
   }
-  cb2?.onToast(userId, "error", `Memoria couldn't ${verb} the codex: ${shortErrorText(err)}`);
+  cb2?.onToast(userId, "error", t("backend.codex.index.reportCodexFailure.memoriaCouldnTTheCodex", { verb, shortErrorText: shortErrorText(err) }));
   if (err instanceof ToolProtocolError)
     cb2?.onToolsHint?.(userId, chatId);
 }
@@ -10114,7 +15947,7 @@ async function syncEntriesGuarded(chatId, userId, relationsTableFallback) {
     await syncCodexEntries(chatId, userId, relationsTableFallback);
   } catch (err) {
     warn(`codex entry sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    cb2?.onToast(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+    cb2?.onToast(userId, "error", t("backend.codex.index.syncEntriesGuarded.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
   }
 }
 var entriesEnsured = new Set;
@@ -10133,7 +15966,7 @@ async function ensureCodexEntriesSynced(chatId, userId, profile) {
   } catch (err) {
     entriesEnsured.delete(key);
     warn(`codex entry ensure-sync failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
-    cb2?.onToast(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+    cb2?.onToast(userId, "error", t("backend.codex.index.ensureCodexEntriesSynced.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
   }
 }
 async function planRun(chatId, userId, lagUnit, lagValue) {
@@ -10308,30 +16141,30 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   if (plan.compressible.length > 0) {
     chunk = takeWindow(plan.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
     if (!windowReached(plan.compressible, profile)) {
-      diagnostics.push({ message: "The window has not filled yet, automation would wait. Update now would consume this chunk." });
+      diagnostics.push({ message: t("backend.codex.index.dryRunCodex.theWindowHasNotFilledYetAutomation") });
     }
   } else {
     const eager = await planRun(chatId, userId, profile.codexLagUnit, 0);
     if (eager.compressible.length > 0) {
       plan = eager;
       chunk = takeWindow(eager.compressible, profile.codexWindowUnit, profile.codexWindowValue, profile.codexTokenBreakpoint);
-      diagnostics.push({ message: "The lag reserve still holds these turns, automation would wait. Update now would consume them." });
+      diagnostics.push({ message: t("backend.codex.index.dryRunCodex.theLagReserveStillHoldsTheseTurns") });
     } else {
       const eligible = plan.messages.filter(nonEmpty);
       if (eligible.length === 0)
-        throw new Error("Chat has no messages");
+        throw new Error(t("backend.codex.index.dryRunCodex.chatHasNoMessages"));
       chunk = previewTail(eligible, profile);
-      diagnostics.push({ message: "The codex has read everything, so this preview reuses the newest turns. A real run would wait for new messages." });
+      diagnostics.push({ message: t("backend.codex.index.dryRunCodex.theCodexHasReadEverythingSoThis") });
     }
   }
   if (chunk.length === 0)
-    throw new Error("No consumable window, send a message and try again");
+    throw new Error(t("backend.codex.index.dryRunCodex.noConsumableWindowSendAMessageAnd"));
   const prevMode = plan.cursor.relationsTableMode;
   const diskMode = prevMode ?? profile.codexRelationsTable;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
   const frozenFiles = frozenCodexFiles(plan.cursor.fileStates);
   if (frozenFiles.size === CODEX_FILE_KEYS.length) {
-    throw new Error("Every codex record is frozen, unfreeze one to preview a run");
+    throw new Error(t("backend.codex.index.dryRunCodex.everyCodexRecordIsFrozenUnfreezeOne"));
   }
   const notes = {
     reconcile: plan.reconcile,
@@ -10343,32 +16176,32 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
   const firstIdx = posById.get(chunk[0].id) ?? 0;
   const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? firstIdx;
-  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const chunkLabel = t("backend.codex.index.chunkLabel.messagesOf", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1, length: plan.messages.length });
   const lore = await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile));
   const storySoFar = await storySoFarText(chatId, userId, profile, firstIdx, posById);
   const system = await resolveMacrosWithDiagnostics(buildCodexSystemPrompt(promptCtx), chatId, userId, diagnostics);
   const user = buildCodexUserMessage(promptCtx, bundle, plan.messages.slice(firstIdx, lastIdx + 1), chunkLabel, firstIdx, notes, lore, storySoFar);
   const preset = settings.customPresets.find((p) => p.category === "codex" && p.key === profile.codexPresetKey);
   const overrideCount = preset?.templates ? Object.keys(preset.templates).length : 0;
-  diagnostics.push({ message: `Connection: ${conn.name} (${conn.provider}/${conn.model})` });
-  diagnostics.push({ message: `Transport: ${promptCtx.useTools ? "tool calls" : "strict JSON"}` });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.connection", { name: conn.name, provider: conn.provider, model: conn.model }) });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.transport", { choice: promptCtx.useTools ? "yes" : "no" }) });
   diagnostics.push({
-    message: `Update delivery: ${promptCtx.sequential ? "one record per reply" : "all records in one reply"}` + `, and every record must be written or skipped before Memoria accepts the update (${[...promptCtx.activeFiles].length} to cover)`
+    message: t("backend.codex.index.dryRunCodex.updateDeliveryAndEveryRecordMustBe", { choice: promptCtx.sequential ? "yes" : "no", length: [...promptCtx.activeFiles].length })
   });
   diagnostics.push({
-    message: `Preset: ${preset ? `Custom: ${preset.displayName}` : "Built-in: Default"}${overrideCount ? ` (${overrideCount} template${overrideCount === 1 ? "" : "s"} customized)` : ""}`
+    message: t("backend.codex.index.dryRunCodex.preset", { choice: preset ? "yes" : "no", displayName: preset ? preset.displayName : "", choice2: overrideCount ? "yes" : "no", value: overrideCount ? overrideCount : "", value2: overrideCount ? overrideCount : 0 })
   });
   diagnostics.push({
-    message: `Relations mode: ${profile.codexRelationsTable ? "table" : "inline ties"}${notes.migrateToTable || notes.migrateToInline ? " (format changed, this run would migrate)" : ""}`
+    message: t("backend.codex.index.dryRunCodex.relationsMode", { choice: profile.codexRelationsTable ? "yes" : "no", choice2: notes.migrateToTable || notes.migrateToInline ? "yes" : "no" })
   });
-  diagnostics.push({ message: `Active files: ${[...promptCtx.activeFiles].join(", ")}` });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.activeFiles", { join: [...promptCtx.activeFiles].join(", ") }) });
   if (frozenFiles.size)
-    diagnostics.push({ message: `Frozen, omitted from the prompt entirely: ${[...frozenFiles].join(", ")}` });
-  diagnostics.push({ message: `Chunk: ${chunkLabel} (${chunk.length} message${chunk.length === 1 ? "" : "s"})` });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.frozenOmittedFromThePromptEntirely", { join: [...frozenFiles].join(", ") }) });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.chunkMessage", { chunkLabel, length: chunk.length }) });
   if (plan.reconcile)
-    diagnostics.push({ message: "Reconcile pending: the story was edited behind the codex, the reconcile note is included" });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.reconcilePendingTheStoryWasEditedBehind") });
   if (notes.loadProblems.length)
-    diagnostics.push({ message: `Unreadable files shown empty: ${notes.loadProblems.join(", ")}` });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.unreadableFilesShownEmpty", { join: notes.loadProblems.join(", ") }) });
   const lockedEntities = [];
   const fieldLocked = [];
   for (const key of ["characters", "locations", "things"]) {
@@ -10381,27 +16214,27 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   }
   if (lockedEntities.length || fieldLocked.length) {
     diagnostics.push({
-      message: `Locks: ${lockedEntities.length} locked entit${lockedEntities.length === 1 ? "y" : "ies"}, ${fieldLocked.length} with locked fields (masked in the prompt)`
+      message: t("backend.codex.index.dryRunCodex.locksLockedEntitWithLockedFieldsMasked", { length: lockedEntities.length, length2: fieldLocked.length })
     });
   }
   if (storySoFar)
-    diagnostics.push({ message: `Story-so-far context: ~${approximateTokensFromChars(storySoFar.length)} tokens` });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.storySoFarContextTokens", { length: approximateTokensFromChars(storySoFar.length) }) });
   if (lore)
-    diagnostics.push({ message: `Activated lore reference: ~${approximateTokensFromChars(lore.length)} tokens` });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.activatedLoreReferenceTokens", { length: approximateTokensFromChars(lore.length) }) });
   if (lore?.includes(LORE_OMITTED_MARKER)) {
     diagnostics.push({
-      message: `Activated lore exceeded the lore limit (${effectiveLoreLimitTokens(profile)} tokens): entries past the budget were skipped whole and the omission marker tells the agent more canon exists`
+      message: t("backend.codex.index.dryRunCodex.activatedLoreExceededTheLoreLimitTokens", { effectiveLoreLimitTokens: effectiveLoreLimitTokens(profile) })
     });
   }
-  diagnostics.push({ message: `Thorough mode: ${profile.codexThorough ? "on, one verification round follows a clean update" : "off"}` });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.thoroughMode", { choice: profile.codexThorough ? "yes" : "no" }) });
   diagnostics.push({
-    message: `Prompt size: ~${approximateTokensFromChars(system.length)} tokens system + ~${approximateTokensFromChars(user.length)} tokens user (codex max input ${codexMaxInputTokens(profile)})`
+    message: t("backend.codex.index.dryRunCodex.promptSizeTokensSystemTokensUserCodex", { length: approximateTokensFromChars(system.length), length2: approximateTokensFromChars(user.length), codexMaxInputTokens: codexMaxInputTokens(profile) })
   });
   const promptTokens = approximateTokensFromChars(system.length + user.length);
   if (promptTokens > codexMaxInputTokens(profile)) {
-    diagnostics.push({ message: `WOULD FAIL: ${new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message}` });
+    diagnostics.push({ message: t("backend.codex.index.dryRunCodex.wouldFail", { message: new CodexContextError(promptTokens, codexMaxInputTokens(profile)).message }) });
   }
-  diagnostics.push({ message: `Sampler parameters being sent on the wire: ${JSON.stringify(buildCodexSamplerParameters(profile))}` });
+  diagnostics.push({ message: t("backend.codex.index.dryRunCodex.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(buildCodexSamplerParameters(profile)) }) });
   return {
     messages: [
       { role: "system", content: system },
@@ -10426,13 +16259,13 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
   if (notes.migrateToTable || notes.migrateToInline) {
     const blocked = ["characters", "locations", "things", "relations"].filter((k) => frozenFiles.has(k));
     if (blocked.length) {
-      throw new Error(`The relations format changed - unfreeze ${blocked.map((k) => `${k}.json`).join(", ")} so Memoria can migrate`);
+      throw new Error(t("backend.codex.index.runChunk.theRelationsFormatChangedUnfreezeSoMemoria", { join: blocked.map((k) => `${k}.json`).join(", ") }));
     }
   }
   const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
   const firstIdx = posById.get(chunk[0].id) ?? -1;
   const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? -1;
-  const chunkLabel = `messages ${firstIdx + 1}-${lastIdx + 1} of ${plan.messages.length}`;
+  const chunkLabel = t("backend.codex.index.chunkLabel.messagesOf", { firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1, length: plan.messages.length });
   const lore = !buildUserText || wantLore ? await activatedLoreText(chatId, userId, effectiveLoreLimitTokens(profile)) : null;
   const storySoFar = buildUserText ? null : await storySoFarText(chatId, userId, profile, firstIdx, posById);
   appendStreamText(userId, chatId, "codex", "text", `${progress.chars > 0 ? `
@@ -10462,7 +16295,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     const lockedIds = new Set(["characters", "locations", "things"].flatMap((k) => bundle[k].entities.filter((e) => e.locked === true).map((e) => e.id)));
     const stuck = bundle.relations.relations.filter((r) => (r.type === "pair" ? [r.a, r.b] : r.members).every((m) => lockedIds.has(m))).length;
     if (stuck > 0) {
-      cb2?.onToast(userId, "warn", `${stuck} relation${stuck === 1 ? "" : "s"} between locked entries could not be folded onto their sheets and will be dropped`);
+      cb2?.onToast(userId, "warn", t("backend.codex.index.runChunk.relationBetweenLockedEntriesCouldNotBe", { stuck }));
     }
     await saveCodexFile(chatId, "relations", { relations: [] }, userId).catch((err) => warn(`codex: failed to clear relations.json after inline migration: ${describeError(err)}`));
   }
@@ -10501,12 +16334,12 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
   await publishCodexPool(chatId, userId, profile, result.changedFiles, "run");
   await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
   if (result.changedFiles.length > 0) {
-    cb2?.onToast(userId, "success", `Memoria updated the codex (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})`, automation);
+    cb2?.onToast(userId, "success", t("backend.codex.index.runChunk.memoriaUpdatedTheCodexFile", { length: result.changedFiles.length }), automation);
   }
   cb2?.onStateChange(userId, chatId);
 }
 async function drain(chatId, userId, profile, lagValue, requireWindow, automation) {
-  if (!setBusy(userId, chatId, "codex", "Memoria is updating the codex"))
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.drain.memoriaIsUpdatingTheCodex")))
     return null;
   const controller = new AbortController;
   registerAborter(userId, chatId, "codex", controller);
@@ -10550,11 +16383,11 @@ async function maybeRunCodex(chatId, profile, settings, userId) {
   if (profile.codexManualOnly)
     return;
   try {
-    await snapshotCodexForUndo(chatId, userId, "automatic update");
+    await snapshotCodexForUndo(chatId, userId, t("backend.codex.index.maybeRunCodex.automaticUpdate"));
     await drain(chatId, userId, profile, profile.codexLagValue, true, true);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb2?.onToast(userId, "info", "Memoria closes the codex for now");
+      cb2?.onToast(userId, "info", t("backend.codex.index.maybeRunCodex.memoriaClosesTheCodexForNow"));
       return;
     }
     warn(`codex auto run failed: ${describeError(err)}`);
@@ -10564,11 +16397,11 @@ async function maybeRunCodex(chatId, profile, settings, userId) {
 var CONTEXT_ERROR_RE = /context[ _](?:window|length|size|limit)|maximum context|prompt is too long|too many tokens|max(?:imum)? (?:input )?tokens|token limit|input is too (?:long|large)/i;
 async function runCodexNow(chatId, profile, userId, mode = "slow", settings = null) {
   if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === chatId)) {
-    cb2?.onToast(userId, "warn", "Memoria is already updating the codex");
+    cb2?.onToast(userId, "warn", t("backend.codex.index.runCodexNow.memoriaIsAlreadyUpdatingTheCodex"));
     return;
   }
   if (await forkCodexPending(chatId, userId).catch(() => false)) {
-    cb2?.onToast(userId, "info", "Memoria is still carrying the codex into this fork, try again in a moment");
+    cb2?.onToast(userId, "info", t("backend.codex.index.runCodexNow.memoriaIsStillCarryingTheCodexInto"));
     return;
   }
   await ensureCodexEntriesSynced(chatId, userId, profile);
@@ -10577,22 +16410,22 @@ async function runCodexNow(chatId, profile, userId, mode = "slow", settings = nu
     if (runs === 0) {
       const cursor = await loadCursor(chatId, userId).catch(() => null);
       if (cursor && CODEX_FILE_KEYS.every((k) => cursor.fileStates[k] === "frozen")) {
-        cb2?.onToast(userId, "info", "Every codex record is frozen, unfreeze one so Memoria can update it");
+        cb2?.onToast(userId, "info", t("backend.codex.index.runCodexNow.everyCodexRecordIsFrozenUnfreezeOne"));
         return;
       }
       const swept = await maybeReconcileSweep(chatId, profile, userId);
       if (!swept)
-        cb2?.onToast(userId, "info", "The codex is already caught up");
+        cb2?.onToast(userId, "info", t("backend.codex.index.runCodexNow.theCodexIsAlreadyCaughtUp"));
     }
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb2?.onToast(userId, "info", "Memoria closes the codex for now");
+      cb2?.onToast(userId, "info", t("backend.codex.index.runCodexNow.memoriaClosesTheCodexForNow"));
       return;
     }
     warn(`codex manual run failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "update", err);
     if (mode !== "slow" && !(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb2?.onToast(userId, "warn", "Fast catch-up needs the codex model's context to be at least the story model's, pick a larger context codex connection or use slow mode");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.runCodexNow.fastCatchUpNeedsTheCodexModel"));
     }
   }
 }
@@ -10717,8 +16550,8 @@ ${text}` });
   return { books, tailTranscript: tailText.trim() ? tailText : null };
 }
 async function catchupCodex(chatId, profile, settings, userId, mode) {
-  if (!setBusy(userId, chatId, "codex", `Memoria is catching up the codex (${mode === "ultra" ? "ultra fast" : "fast"})`)) {
-    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.catchupCodex.memoriaIsCatchingUpTheCodex", { choice: mode === "ultra" ? "yes" : "no" }))) {
+    cb2?.onToast(userId, "warn", t("backend.codex.index.catchupCodex.memoriaIsAlreadyWorkingOnTheCodex"));
     return null;
   }
   const controller = new AbortController;
@@ -10787,7 +16620,7 @@ async function maybeReconcileSweep(chatId, profile, userId) {
     return false;
   if (CODEX_FILE_KEYS.every((k) => plan.cursor.fileStates[k] === "frozen"))
     return false;
-  if (!setBusy(userId, chatId, "codex", "Memoria is reconciling the codex with the edited story"))
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.maybeReconcileSweep.memoriaIsReconcilingTheCodexWithThe")))
     return false;
   const controller = new AbortController;
   registerAborter(userId, chatId, "codex", controller);
@@ -10849,7 +16682,7 @@ async function maybeReconcileSweep(chatId, profile, userId) {
     });
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "run");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-    cb2?.onToast(userId, "success", result.changedFiles.length > 0 ? `Memoria reconciled the codex with the edited story (${result.changedFiles.length} file${result.changedFiles.length === 1 ? "" : "s"})` : "Memoria checked the codex against the edited story and everything still holds");
+    cb2?.onToast(userId, "success", result.changedFiles.length > 0 ? t("backend.codex.index.maybeReconcileSweep.memoriaReconciledTheCodexWithTheEdited", { length: result.changedFiles.length }) : t("backend.codex.index.maybeReconcileSweep.memoriaCheckedTheCodexAgainstTheEdited"));
     cb2?.onStateChange(userId, chatId);
     return true;
   } finally {
@@ -11018,8 +16851,8 @@ async function setCodexFileState(chatId, userId, file, state, relationsTableFall
   await syncEntriesGuarded(chatId, userId, relationsTableFallback);
 }
 async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = null) {
-  if (!setBusy(userId, chatId, "codex", "Memoria is clearing the codex for a rebuild")) {
-    cb2?.onToast(userId, "warn", "Memoria is already working on the codex, abort that first");
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.rebuildCodex.memoriaIsClearingTheCodexForA"))) {
+    cb2?.onToast(userId, "warn", t("backend.codex.index.rebuildCodex.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   try {
@@ -11043,7 +16876,7 @@ async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = n
       await saveCursor(chatId, fresh, userId);
     });
     if (cursorFault !== null) {
-      cb2?.onToast(userId, "error", `Memoria couldn't read the codex cursor, rebuild aborted: ${shortErrorText(cursorFault)}`);
+      cb2?.onToast(userId, "error", t("backend.codex.index.rebuildCodex.memoriaCouldnTReadTheCodexCursor", { shortErrorText: shortErrorText(cursorFault) }));
       return;
     }
     const failed = [];
@@ -11054,13 +16887,13 @@ async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = n
     }
     invalidateCodexInjectionCache(chatId);
     if (failed.length > 0) {
-      cb2?.onToast(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, run Rebuild again`);
+      cb2?.onToast(userId, "error", t("backend.codex.index.rebuildCodex.memoriaCouldnTClearCodexFileRun", { length: failed.length }));
       return;
     }
     publishCodexWiped(chatId, userId);
     await wipeCodexEntries(chatId, userId).catch((err) => {
       warn(`codex rebuild: entry wipe failed: ${describeError(err)}`);
-      cb2?.onToast(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+      cb2?.onToast(userId, "error", t("backend.codex.index.rebuildCodex.memoriaCouldnTClearTheCodexLorebook", { shortErrorText: shortErrorText(err) }));
     });
   } finally {
     clearBusy(userId, chatId, "codex");
@@ -11068,8 +16901,8 @@ async function rebuildCodex(chatId, profile, userId, mode = "slow", settings = n
   await runCodexNow(chatId, profile, userId, mode, settings);
 }
 async function runCodexTidy(chatId, profile, userId, only, target) {
-  if (!setBusy(userId, chatId, "codex", "Memoria is tidying the codex")) {
-    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.runCodexTidy.memoriaIsTidyingTheCodex"))) {
+    cb2?.onToast(userId, "warn", t("backend.codex.index.runCodexTidy.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController;
@@ -11079,7 +16912,7 @@ async function runCodexTidy(chatId, profile, userId, only, target) {
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb2?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate the codex before tidying");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.runCodexTidy.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -11088,7 +16921,7 @@ async function runCodexTidy(chatId, profile, userId, only, target) {
     const broken = new Set(problems.map((p) => p.file));
     const targets = [...new Set(only ?? CODEX_FILE_KEYS)].filter((k) => !frozenFiles.has(k) && !broken.has(k) && !fileIsEmpty(bundle, k));
     if (!targets.length) {
-      cb2?.onToast(userId, "info", "Nothing to tidy, those records are empty, frozen, or unreadable");
+      cb2?.onToast(userId, "info", t("backend.codex.index.runCodexTidy.nothingToTidyThoseRecordsAreEmpty"));
       return;
     }
     const measure = async () => {
@@ -11105,7 +16938,7 @@ async function runCodexTidy(chatId, profile, userId, only, target) {
     let current = await measure();
     const { limit, modelTarget } = resolveTidyTarget(current.tokens, target);
     if (current.tokens <= limit) {
-      cb2?.onToast(userId, "info", `The selected records already fit: ${current.tokens} tokens, limit ${limit}`);
+      cb2?.onToast(userId, "info", t("backend.codex.index.runCodexTidy.theSelectedRecordsAlreadyFitTokensLimit", { limit }));
       return;
     }
     await snapshotCodexForUndo(chatId, userId, "tidy");
@@ -11116,9 +16949,7 @@ async function runCodexTidy(chatId, profile, userId, only, target) {
     while (current.tokens > limit && callBudget.remaining > 0) {
       if (controller.signal.aborted)
         throw new AbortedSummarizerError;
-      appendStreamText(userId, chatId, "codex", "text", `
-Tidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${callBudget.remaining} calls left.
-`);
+      appendStreamText(userId, chatId, "codex", "text", t("backend.codex.index.runCodexTidy.tidyTokensLimitModelTargetCallsLeft", { tokens: current.tokens, limit, modelTarget, remaining: callBudget.remaining }));
       const result = await runCodexAgent({
         chatId,
         userId,
@@ -11142,8 +16973,14 @@ Tidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${c
         onDelta: (kind, delta) => appendStreamText(userId, chatId, "codex", kind, delta)
       });
       const reloaded = await loadCodex(chatId, userId, { relationsTable: diskMode });
-      if (reloaded.problems.some((p) => targets.includes(p.file)))
-        throw new Error("A codex file could not be read after tidying; stopped before retrying.");
+      const reloadProblems = reloaded.problems.filter((p) => targets.includes(p.file));
+      if (reloadProblems.length) {
+        const details = reloadProblems.map((p) => {
+          const reason = p.errors[0].replace(/\s+/g, " ").trim();
+          return `${p.file}.json: ${reason.length > 240 ? `${reason.slice(0, 239)}\u2026` : reason}`;
+        }).join("; ");
+        throw new CodexValidationError(t("backend.codex.index.runCodexTidy.aCodexFileCouldNotBeRead", { details }));
+      }
       bundle = reloaded.bundle;
       current = await measure();
       invalidateCodexInjectionCache(chatId);
@@ -11154,10 +16991,10 @@ Tidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${c
       cb2?.onStateChange(userId, chatId);
     }
     const size = `${current.approximate ? "~" : ""}${current.tokens}`;
-    cb2?.onToast(userId, current.tokens <= limit ? "success" : "warn", current.tokens <= limit ? `Codex tidied to ${size} tokens (limit ${limit}) in ${callBudget.used} model call${callBudget.used === 1 ? "" : "s"}` : `Stopped after ${callBudget.used} model calls: ${size} tokens, still above the ${limit}-token limit. Kept the completed edits; Undo restores the original.`);
+    cb2?.onToast(userId, current.tokens <= limit ? "success" : "warn", current.tokens <= limit ? t("backend.codex.index.runCodexTidy.codexTidiedToTokensLimitInModel", { size, limit, used: callBudget.used }) : t("backend.codex.index.runCodexTidy.stoppedAfterModelCallsTokensStillAbove", { used: callBudget.used, size, limit }));
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb2?.onToast(userId, "info", "Tidying stopped. Completed edits are kept; Undo restores the original.");
+      cb2?.onToast(userId, "info", t("backend.codex.index.runCodexTidy.tidyingStoppedCompletedEditsAreKeptUndo"));
       return;
     }
     warn(`codex tidy failed: ${describeError(err)}`);
@@ -11172,8 +17009,8 @@ Tidy: ${current.tokens} tokens; limit ${limit}; model target ${modelTarget}; ${c
   }
 }
 async function refreshCodexFiles(chatId, profile, userId) {
-  if (!setBusy(userId, chatId, "codex", "Memoria is catching up re-enabled records")) {
-    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.refreshCodexFiles.memoriaIsCatchingUpReEnabledRecords"))) {
+    cb2?.onToast(userId, "warn", t("backend.codex.index.refreshCodexFiles.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController;
@@ -11181,13 +17018,13 @@ async function refreshCodexFiles(chatId, profile, userId) {
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb2?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before catching records up");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.refreshCodexFiles.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = cursor.refreshPending.filter((f) => isCodexFileKey(f) && !frozen.has(f));
     if (targets.length === 0) {
-      cb2?.onToast(userId, "info", "No re-enabled records are waiting for a catch-up");
+      cb2?.onToast(userId, "info", t("backend.codex.index.refreshCodexFiles.noReEnabledRecordsAreWaitingFor"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -11230,17 +17067,17 @@ async function refreshCodexFiles(chatId, profile, userId) {
     });
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-    cb2?.onToast(userId, "success", `Memoria caught up ${targets.length} record${targets.length === 1 ? "" : "s"}`);
+    cb2?.onToast(userId, "success", t("backend.codex.index.refreshCodexFiles.memoriaCaughtUpRecord", { length: targets.length }));
     cb2?.onStateChange(userId, chatId);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb2?.onToast(userId, "info", "Memoria sets the catch-up aside");
+      cb2?.onToast(userId, "info", t("backend.codex.index.refreshCodexFiles.memoriaSetsTheCatchUpAside"));
       return;
     }
     warn(`codex refresh failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "refresh", err);
     if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb2?.onToast(userId, "warn", "The catch-up pass needs the codex model's context to be at least the story model's, pick a larger context codex connection or use Rebuild in slow mode");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.refreshCodexFiles.theCatchUpPassNeedsTheCodex"));
     }
   } finally {
     clearBusy(userId, chatId, "codex");
@@ -11264,8 +17101,8 @@ function blankTargets(bundle, targets) {
   return out;
 }
 async function rebuildCodexFiles(chatId, profile, userId, only) {
-  if (!setBusy(userId, chatId, "codex", "Memoria is rebuilding codex records")) {
-    cb2?.onToast(userId, "warn", "Memoria is already working on the codex");
+  if (!setBusy(userId, chatId, "codex", t("backend.codex.index.rebuildCodexFiles.memoriaIsRebuildingCodexRecords"))) {
+    cb2?.onToast(userId, "warn", t("backend.codex.index.rebuildCodexFiles.memoriaIsAlreadyWorkingOnTheCodex"));
     return;
   }
   const controller = new AbortController;
@@ -11273,13 +17110,13 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   try {
     const cursor = await loadCursor(chatId, userId);
     if (cursor.relationsTableMode !== null && cursor.relationsTableMode !== profile.codexRelationsTable) {
-      cb2?.onToast(userId, "warn", "The relations format changed, run Update now first so Memoria can migrate before rebuilding records");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.rebuildCodexFiles.theRelationsFormatChangedRunUpdateNow"));
       return;
     }
     const frozen = frozenCodexFiles(cursor.fileStates);
     const targets = only.filter((k) => !frozen.has(k));
     if (targets.length === 0) {
-      cb2?.onToast(userId, "info", "Those records are frozen, unfreeze them first");
+      cb2?.onToast(userId, "info", t("backend.codex.index.rebuildCodexFiles.thoseRecordsAreFrozenUnfreezeThemFirst"));
       return;
     }
     const diskMode = cursor.relationsTableMode ?? profile.codexRelationsTable;
@@ -11318,17 +17155,17 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
     invalidateCodexInjectionCache(chatId);
     await publishCodexPool(chatId, userId, profile, result.changedFiles, "refresh");
     await syncEntriesGuarded(chatId, userId, profile.codexRelationsTable);
-    cb2?.onToast(userId, "success", `Memoria rebuilt ${targets.length} record${targets.length === 1 ? "" : "s"} from the story`);
+    cb2?.onToast(userId, "success", t("backend.codex.index.rebuildCodexFiles.memoriaRebuiltRecordFromTheStory", { length: targets.length }));
     cb2?.onStateChange(userId, chatId);
   } catch (err) {
     if (err instanceof AbortedSummarizerError) {
-      cb2?.onToast(userId, "info", "Memoria sets the rebuild aside");
+      cb2?.onToast(userId, "info", t("backend.codex.index.rebuildCodexFiles.memoriaSetsTheRebuildAside"));
       return;
     }
     warn(`codex record rebuild failed: ${describeError(err)}`);
     reportCodexFailure(userId, chatId, "rebuild", err);
     if (!(err instanceof CodexContextError) && CONTEXT_ERROR_RE.test(describeError(err))) {
-      cb2?.onToast(userId, "warn", "The rebuild pass needs the codex model's context to be at least the story model's, pick a larger context codex connection");
+      cb2?.onToast(userId, "warn", t("backend.codex.index.rebuildCodexFiles.theRebuildPassNeedsTheCodexModel"));
     }
   } finally {
     clearBusy(userId, chatId, "codex");
@@ -11367,7 +17204,7 @@ async function retireEntries(entries, userId, chatId) {
   invalidateBookCache(userId, chatId);
   invalidateRootCandidates(userId);
   if (failures.length)
-    throw new AggregateError(failures, "Some old summaries could not be removed or disabled. Refresh Books before retrying.");
+    throw new AggregateError(failures, t("backend.rebase.retireEntries.someOldSummariesCouldNotBeRemoved"));
 }
 async function seedRoot(targetChatId, sourceChatId, sourceEntries, existingRoots, userId) {
   const book = await ensureBookForChat(targetChatId, userId);
@@ -11728,7 +17565,7 @@ async function doPushState(userId, chatId) {
     }
   } catch (err) {
     error(`pushState failed: ${describeError(err)}`);
-    send({ type: "state_error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
+    send({ type: "state_error", text: t("backend.index.doPushState.lumiBooksStateRefreshFailed", { describeError: describeError(err) }) }, userId);
   }
 }
 function pushState(userId, chatId) {
@@ -11925,7 +17762,7 @@ spindle.on("CHAT_SWITCHED", async (payload, hostUserId) => {
     rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
-  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", `Summary repair failed: ${describeError(err)}`));
+  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", t("backend.index.messages.summaryRepairFailed", { describeError: describeError(err) })));
   await pushState(userId, p?.chatId ?? null);
 });
 spindle.on("MESSAGE_DELETED", async (payload, hostUserId) => {
@@ -11990,7 +17827,7 @@ async function handleExternalEntryDeletion(userId, bookId, isBookDeletion) {
     const desiredHidden = profile ? profile.hideCoveredMessages : true;
     const { unhidden } = await resyncVisibility(chatId, userId, desiredHidden);
     if (unhidden > 0) {
-      await notify(userId, "info", `Memoria unhid ${unhidden} message${unhidden === 1 ? "" : "s"} after an external lorebook change`);
+      await notify(userId, "info", t("backend.index.handleExternalEntryDeletion.memoriaUnhidMessageAfterAnExternalLorebook", { unhidden }));
     }
   } catch (err) {
     warn(`external deletion resync failed: ${describeError(err)}`);
@@ -12037,7 +17874,7 @@ async function retryLastFailure(chatId, userId, profile, settings) {
     const ids = last.sourceEntryIds ?? await collectActiveChapterIds(chatId, userId);
     if (ids.length === 0) {
       clearLastFailure(userId, chatId);
-      const msg = "Memoria has no chapters left to retry the arc";
+      const msg = t("backend.index.msg.memoriaHasNoChaptersLeftToRetry");
       await notify(userId, "warn", msg);
       return;
     }
@@ -12047,7 +17884,7 @@ async function retryLastFailure(chatId, userId, profile, settings) {
   if (extraContextActive(profile)) {
     const made = await drainGhostBacklog(chatId, profile, settings, userId);
     if (made === 0) {
-      await notify(userId, "info", "Nothing to retry yet, Memoria will catch it after the next message");
+      await notify(userId, "info", t("backend.index.retryLastFailure.nothingToRetryYetMemoriaWillCatch"));
     }
   } else {
     await createChapterAuto(chatId, profile, settings, userId);
@@ -12058,10 +17895,10 @@ async function syncProfileSettings(userId) {
   try {
     const failures = await syncCodexProfiles(userId);
     if (failures.length)
-      await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync to ${failures.length} chat(s): ${failures.slice(0, 3).map((f) => f.chatId).join(", ")}. Other chats were synced. Reapply the settings after resolving the errors.`);
+      await notify(userId, "warn", t("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould", { length: failures.length, join: failures.slice(0, 3).map((f) => f.chatId).join(", ") }));
   } catch (err) {
     warn(`Codex profile sync failed: ${describeError(err)}`);
-    await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync: ${describeError(err)}`);
+    await notify(userId, "warn", t("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould2", { describeError: describeError(err) }));
   }
 }
 spindle.onFrontendMessage(async (raw, userId) => {
@@ -12088,7 +17925,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "diagnostics_clear":
         await clearDiagnostics(userId);
-        await notify(userId, "success", "Saved diagnostics cleared.");
+        await notify(userId, "success", t("backend.index.messages.savedDiagnosticsCleared"));
         break;
       case "ready":
       case "refresh":
@@ -12104,7 +17941,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if ("summaryActivationMode" in msg.patch) {
           const { failed } = await applySummaryActivation(userId);
           if (failed)
-            await notify(userId, "warn", `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`);
+            await notify(userId, "warn", t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }));
         }
         await pushState(userId, msg.chatId);
         break;
@@ -12112,7 +17949,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const incoming = msg.profile;
         const id = typeof incoming?.id === "string" && incoming.id.trim() ? incoming.id : null;
         if (!id) {
-          send({ type: "error", text: "Invalid profile payload." }, userId);
+          send({ type: "error", text: t("backend.index.messages.invalidProfilePayload") }, userId);
           break;
         }
         let prevHide = null;
@@ -12139,7 +17976,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         });
         if (missing) {
           warn(`save_profile dropped: no profile with id "${id}"`);
-          send({ type: "error", text: `Profile ${id} no longer exists.` }, userId);
+          send({ type: "error", text: t("backend.index.messages.profileNoLongerExists", { id }) }, userId);
           break;
         }
         if (prevHide !== null && nextHide !== null && prevHide !== nextHide && id === activeBefore && msg.chatId) {
@@ -12181,7 +18018,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await mutateSettings(userId, (cur) => {
           const id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
           const baseProfile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? cur.profiles[0];
-          const next = { ...baseProfile, id, name: (msg.name || "New profile").slice(0, 60) };
+          const next = { ...baseProfile, id, name: (msg.name || t("backend.index.next.newProfile")).slice(0, 60) };
           return { ...cur, profiles: [...cur.profiles, next], activeProfileId: id };
         });
         await pushState(userId, msg.chatId);
@@ -12199,7 +18036,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           return { ...cur, profiles, activeProfileId };
         });
         if (warned) {
-          await notify(userId, "warn", "Memoria keeps at least one profile");
+          await notify(userId, "warn", t("backend.index.messages.memoriaKeepsAtLeastOneProfile"));
         }
         await syncProfileSettings(userId);
         if (msg.chatId) {
@@ -12228,14 +18065,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         const chapterMessages = await spindle.chat.getMessages(msg.chatId);
         const chapterCoverage = await buildCoverage(msg.chatId, userId, undefined, extraContextActive(profile));
         const chapterStats = computeCoverageStats(chapterMessages, chapterCoverage, profile);
         if (!chapterStats.lagSatisfied || countCompressibleEligible(chapterMessages, chapterCoverage, profile) === 0) {
-          await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
+          await notify(userId, "info", t("backend.index.messages.yourStoryNeedsMoreMessagesForMe"));
           break;
         }
         await createChapterAuto(msg.chatId, profile, cur, userId, false, false, true);
@@ -12249,7 +18086,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         const rangeMessages = await spindle.chat.getMessages(msg.chatId);
@@ -12267,7 +18104,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         await drainChapterBacklog(msg.chatId, profile, cur, userId);
@@ -12281,7 +18118,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         const ids = await collectActiveChapterIds(msg.chatId, userId);
@@ -12295,7 +18132,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         await createArcFromChapters(msg.chatId, msg.chapterEntryIds, profile, cur, userId);
@@ -12308,7 +18145,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         await drainArcBacklog(msg.chatId, profile, cur, userId);
@@ -12337,7 +18174,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (getBusy(userId).some((b) => b.kind === "volume" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already pressing a volume");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyPressingAVolume"));
           break;
         }
         await createVolumeFromArcs(msg.chatId, msg.arcEntryIds, profile, cur, userId);
@@ -12359,14 +18196,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const release = msg.type === "release_entry";
         const entry = await removeSummaryEntry(msg.chatId, msg.entryId, userId, release);
         if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry");
+          await notify(userId, "warn", t("backend.index.messages.memoriaCanTFindThatEntry"));
           break;
         }
         if (entry.meta.ghost && typeof entry.meta.sceneNumber === "number") {
           recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
         }
         if (release)
-          await notify(userId, "success", "Memoria released the entry to your lorebook");
+          await notify(userId, "success", t("backend.index.messages.memoriaReleasedTheEntryToYourLorebook"));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -12378,21 +18215,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const entries = await listLmbEntries(msg.chatId, userId);
         const entry = entries.find((e) => e.raw.id === msg.entryId);
         if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry to regenerate");
+          await notify(userId, "warn", t("backend.index.messages.memoriaCanTFindThatEntryTo"));
           break;
         }
         const tier = entry.meta.tier;
         const busyKind = TIER_KINDS[tier - 1];
         if (getBusy(userId).some((b) => b.kind === busyKind && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", `Memoria is already busy with a ${busyKind}`);
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsAlreadyBusyWithA", { busyKind }));
           break;
         }
         if (entry.meta.isRoot && tier === 1) {
-          await notify(userId, "warn", "Memoria can't regenerate inherited chapters");
+          await notify(userId, "warn", t("backend.index.messages.memoriaCanTRegenerateInheritedChapters"));
           break;
         }
         if (entry.meta.ghost) {
-          await notify(userId, "warn", "Memoria can't regenerate a ghost chapter before it's shelved");
+          await notify(userId, "warn", t("backend.index.messages.memoriaCanTRegenerateAGhostChapter"));
           break;
         }
         const isArc = tier === 2;
@@ -12400,15 +18237,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const msgIds = entry.meta.msgIds.slice();
         const sourceIds = Array.isArray(entry.meta.sourceChapterEntryIds) ? entry.meta.sourceChapterEntryIds.slice() : [];
         if (isVolume && sourceIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no arc sources to regenerate this volume from");
+          await notify(userId, "warn", t("backend.index.messages.memoriaHasNoArcSourcesToRegenerate"));
           break;
         }
         if (isArc && sourceIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no chapter sources to regenerate this arc from");
+          await notify(userId, "warn", t("backend.index.messages.memoriaHasNoChapterSourcesToRegenerate"));
           break;
         }
         if (!isArc && !isVolume && msgIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no messages to regenerate this chapter from");
+          await notify(userId, "warn", t("backend.index.messages.memoriaHasNoMessagesToRegenerateThis"));
           break;
         }
         if (!isArc && !isVolume) {
@@ -12418,8 +18255,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (blockingIds.length > 0) {
             const blockerEntryId = otherCoverage.coveredBy.get(blockingIds[0]);
             const blocker = otherEntries.find((e) => e.raw.id === blockerEntryId);
-            const blockerLabel = blocker?.meta.tier === 3 ? "a volume" : blocker?.meta.tier === 2 ? "an arc" : "another entry";
-            await notify(userId, "warn", `These messages are bound into ${blockerLabel}, release or delete it first`);
+            const blockerLabel = blocker?.meta.tier === 3 ? t("backend.index.blockerLabel.aVolume") : blocker?.meta.tier === 2 ? t("backend.index.blockerLabel.anArc") : t("backend.index.blockerLabel.anotherEntry");
+            await notify(userId, "warn", t("backend.index.messages.theseMessagesAreBoundIntoReleaseOr", { blockerLabel }));
             break;
           }
         }
@@ -12457,7 +18294,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_chapter failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", t("backend.index.messages.dryRunFailed", { text }));
         }
         break;
       }
@@ -12472,7 +18309,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_arc failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", t("backend.index.messages.dryRunFailed", { text }));
         }
         break;
       }
@@ -12487,7 +18324,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_volume failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", t("backend.index.messages.dryRunFailed", { text }));
         }
         break;
       }
@@ -12502,14 +18339,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_codex failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", t("backend.index.messages.dryRunFailed", { text }));
         }
         break;
       }
       case "abort_busy": {
         const aborted = abortBusy(userId, msg.chatId, msg.kind);
         if (!aborted) {
-          await notify(userId, "warn", "Memoria is not in the middle of anything to abort");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsNotInTheMiddleOf"));
         }
         break;
       }
@@ -12520,7 +18357,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "set_summary_activation": {
         await patchSettings(userId, { summaryActivationMode: msg.mode });
         const { updated, failed } = await applySummaryActivation(userId);
-        await notify(userId, failed ? "warn" : "info", failed ? `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.` : `Summary recall saved; ${updated} entries updated.`);
+        await notify(userId, failed ? "warn" : "info", failed ? t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }) : t("backend.index.messages.summaryRecallSavedEntriesUpdated", { updated }));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -12530,7 +18367,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const desiredHidden = profile ? profile.hideCoveredMessages : true;
         const { unhidden, hidden } = await resyncVisibility(msg.chatId, userId, desiredHidden);
         const total = unhidden + hidden;
-        const text = total === 0 ? "Memoria's shelf is already aligned, nya" : `Memoria resynced ${total} message${total === 1 ? "" : "s"} (${hidden} hidden, ${unhidden} unhidden)`;
+        const text = total === 0 ? t("backend.index.text.memoriaSShelfIsAlreadyAlignedNya") : t("backend.index.text.memoriaResyncedMessageHiddenUnhidden", { total, hidden, unhidden });
         await notify(userId, "info", text);
         await pushState(userId, msg.chatId);
         break;
@@ -12546,10 +18383,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: "Wait for the current task to finish before importing summaries" } }, userId);
+          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: t("backend.index.messages.waitForTheCurrentTaskToFinish") } }, userId);
           break;
         }
-        if (!setBusy(userId, msg.chatId, "chapter", "Importing summaries"))
+        if (!setBusy(userId, msg.chatId, "chapter", t("backend.index.messages.importingSummaries")))
           break;
         try {
           const imported = await runSummaryTransfer(userId, msg.chatId, msg.type === "summary_import" ? { type: "import", raw: msg.raw } : { type: "resolve", id: msg.id, choice: msg.choice, through: msg.through });
@@ -12573,7 +18410,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "import_preset": {
         const parsed = parseStmbPresetExport(msg.raw, msg.category);
         if (parsed.length === 0) {
-          await notify(userId, "warn", "Memoria found no usable presets in that file");
+          await notify(userId, "warn", t("backend.index.messages.memoriaFoundNoUsablePresetsInThat"));
           break;
         }
         await mutateSettings(userId, (cur) => {
@@ -12588,14 +18425,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
           return { ...cur, customPresets: merged };
         });
-        await notify(userId, "success", `Memoria imported ${parsed.length} preset${parsed.length === 1 ? "" : "s"}`);
+        await notify(userId, "success", t("backend.index.messages.memoriaImportedPreset", { length: parsed.length }));
         await pushState(userId, msg.chatId);
         break;
       }
       case "save_custom_preset": {
         const next = normalizeCustomPreset(msg.preset);
         if (!next) {
-          send({ type: "error", text: "Invalid preset payload." }, userId);
+          send({ type: "error", text: t("backend.index.messages.invalidPresetPayload") }, userId);
           break;
         }
         await mutateSettings(userId, (cur) => {
@@ -12659,15 +18496,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "rebase_root": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const result = await rebaseRoot(msg.chatId, msg.sourceChatId, userId);
         if (!result.ok) {
-          const text = result.reason === "has_own" ? "This chat already has memories, use Rebuild instead" : result.reason === "empty_source" ? "That chat has no memories to inherit" : result.reason === "busy" ? "Memoria is already rebasing this chat" : "Memoria can't rebase a chat onto itself";
+          const text = result.reason === "has_own" ? t("backend.index.text.thisChatAlreadyHasMemoriesUseRebuild") : result.reason === "empty_source" ? t("backend.index.text.thatChatHasNoMemoriesToInherit") : result.reason === "busy" ? t("backend.index.text.memoriaIsAlreadyRebasingThisChat") : t("backend.index.text.memoriaCanTRebaseAChatOnto");
           await notify(userId, "warn", text);
         } else {
-          await notify(userId, "success", `Memoria seeded ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} before the greeting`);
+          await notify(userId, "success", t("backend.index.messages.memoriaSeededInheritedMemorBeforeTheGreeting", { count: result.count }));
           await resumeSummaryBinding(msg.chatId, userId);
         }
         await pushState(userId, msg.chatId);
@@ -12675,17 +18512,17 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "rebuild_root": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const result = await rebuildRoot(msg.chatId, msg.sourceChatId, userId);
         if (!result.ok) {
-          const text = result.reason === "empty_source" ? "That chat has no memories to inherit" : result.reason === "busy" ? "Memoria is already rebuilding this chat" : "Memoria can't rebuild a chat onto itself";
+          const text = result.reason === "empty_source" ? t("backend.index.text.thatChatHasNoMemoriesToInherit") : result.reason === "busy" ? t("backend.index.text.memoriaIsAlreadyRebuildingThisChat") : t("backend.index.text.memoriaCanTRebuildAChatOnto");
           await notify(userId, "warn", text);
           await pushState(userId, msg.chatId);
           break;
         }
-        await notify(userId, "success", `Memoria rebuilt onto ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await notify(userId, "success", t("backend.index.messages.memoriaRebuiltOntoInheritedMemorAndIs", { count: result.count }));
         await pushState(userId, msg.chatId);
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
@@ -12739,13 +18576,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
           }
         }
-        await notify(userId, "info", msg.excluded ? `Memoria will leave ${ids.length} message${ids.length === 1 ? "" : "s"} untouched` : `Memoria will compress ${ids.length} message${ids.length === 1 ? "" : "s"} again`);
+        await notify(userId, "info", msg.excluded ? t("backend.index.messages.memoriaWillLeaveMessageUntouched", { length: ids.length }) : t("backend.index.messages.memoriaWillCompressMessageAgain", { length: ids.length }));
         await pushState(userId, msg.chatId);
         break;
       }
       case "codex_update_now": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -12753,7 +18590,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", t("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "update");
@@ -12762,10 +18599,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
       case "codex_clear_stale": {
-        if (!setBusy(userId, msg.chatId, "codex", "Accepting current codex records"))
+        if (!setBusy(userId, msg.chatId, "codex", t("backend.index.messages.acceptingCurrentCodexRecords")))
           break;
         try {
-          await snapshotCodexForUndo(msg.chatId, userId, "clear stale tags");
+          await snapshotCodexForUndo(msg.chatId, userId, t("backend.index.messages.clearStaleTags"));
           await clearCodexStaleFlags(msg.chatId, userId);
         } finally {
           clearBusy(userId, msg.chatId, "codex");
@@ -12791,7 +18628,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_restore": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, restore again when she finishes");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexRestoreAgain"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -12800,7 +18637,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const cursor = await loadCursor(msg.chatId, userId);
         const parsedBackup = parseCodexBackup(msg.raw, cursor.relationsTableMode ?? profileMode);
         if ("error" in parsedBackup) {
-          await notify(userId, "error", `Memoria couldn't restore that backup: ${parsedBackup.error}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTRestoreThatBackup", { error: parsedBackup.error }));
           break;
         }
         await applyCodexBackup(msg.chatId, userId, parsedBackup);
@@ -12812,9 +18649,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, parsedBackup.relationsTableMode ?? profileMode);
         } catch (err) {
           warn(`codex_restore entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
+        await notify(userId, "success", t("backend.index.messages.memoriaRestoredCodexFile", { length: restoredFiles.length }));
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -12822,7 +18659,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_adopt": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         const outcome = await adoptCodexFrom(msg.sourceChatId, msg.chatId, userId).catch((err) => {
@@ -12830,11 +18667,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
           return err instanceof Error ? err : new Error(String(err));
         });
         if (outcome instanceof Error) {
-          await notify(userId, "error", `Memoria couldn't carry that codex over: ${shortErrorText(outcome)}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTCarryThatCodexOver", { shortErrorText: shortErrorText(outcome) }));
           break;
         }
         if (outcome !== "ok") {
-          const text = outcome === "has_own" ? "This chat already has a codex, wipe it first" : outcome === "no_source" ? "That chat has no codex to carry over" : "Memoria can't carry a codex onto itself";
+          const text = outcome === "has_own" ? t("backend.index.text.thisChatAlreadyHasACodexWipe") : outcome === "no_source" ? t("backend.index.text.thatChatHasNoCodexToCarry") : t("backend.index.text.memoriaCanTCarryACodexOnto");
           await notify(userId, "warn", text);
           break;
         }
@@ -12847,9 +18684,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, adoptProfile?.codexRelationsTable);
         } catch (err) {
           warn(`codex_adopt entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", "Memoria carried the codex over, she will index this chat from message one");
+        await notify(userId, "success", t("backend.index.messages.memoriaCarriedTheCodexOverSheWill"));
         const adopted = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: adopted, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -12857,12 +18694,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_undo": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         const snap = await readCodexUndo(msg.chatId, userId);
         if (!snap) {
-          await notify(userId, "warn", "Memoria has no codex snapshot to undo to");
+          await notify(userId, "warn", t("backend.index.messages.memoriaHasNoCodexSnapshotToUndo"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -12870,7 +18707,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profileMode = profile ? profile.codexRelationsTable : true;
         const parsedSnap = parseCodexBackup(snap, profileMode);
         if ("error" in parsedSnap) {
-          await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTUndo", { error: parsedSnap.error }));
           break;
         }
         await applyCodexBackup(msg.chatId, userId, parsedSnap, snap.cursor);
@@ -12883,9 +18720,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, parsedSnap.relationsTableMode ?? profileMode);
         } catch (err) {
           warn(`codex_undo entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", "Memoria rolled the codex back");
+        await notify(userId, "success", t("backend.index.messages.memoriaRolledTheCodexBack"));
         const undoneRaw = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: undoneRaw, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -12893,11 +18730,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_write_file": {
         if (!isCodexFileKey(msg.file)) {
-          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          send({ type: "error", text: t("backend.index.messages.unknownCodexFile", { file: msg.file }) }, userId);
           break;
         }
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, save again when she finishes");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexSaveAgain"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -12909,13 +18746,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         try {
           parsed = JSON.parse(msg.content);
         } catch (err) {
-          await notify(userId, "error", `That is not valid JSON: ${describeError(err)}`);
+          await notify(userId, "error", t("backend.index.messages.thatIsNotValidJson", { describeError: describeError(err) }));
           break;
         }
         const result = validateCodexFile(msg.file, parsed, { relationsTable });
         if (!result.ok) {
-          const extra = result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : "";
-          await notify(userId, "error", `Validation failed: ${result.errors[0]}${extra}`);
+          const extra = result.errors.length > 1 ? t("backend.index.extra.more", { length1: result.errors.length - 1 }) : "";
+          await notify(userId, "error", t("backend.index.messages.validationFailed", { errors0: result.errors[0], extra }));
           break;
         }
         await saveCodexFile(msg.chatId, msg.file, result.value, userId);
@@ -12933,18 +18770,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, relationsTable);
         } catch (err) {
           warn(`codex_write_file entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", t("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
         const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
         if (problems.length > 0) {
           const names = problems.map((p) => `${p.file}.json`).join(", ");
-          await notify(userId, "warn", `Saved, but ${names} could not be read so cross-file checks were skipped`);
+          await notify(userId, "warn", t("backend.index.messages.savedButCouldNotBeReadSo", { names }));
         } else {
           const dangling = checkIntegrity(bundle);
           if (dangling.length > 0) {
-            await notify(userId, "warn", `Saved with ${dangling.length} dangling reference${dangling.length === 1 ? "" : "s"} to fix in the other files`);
+            await notify(userId, "warn", t("backend.index.messages.savedWithDanglingReferenceToFixIn", { length: dangling.length }));
           } else {
-            await notify(userId, "success", `Memoria saved ${msg.file}.json`);
+            await notify(userId, "success", t("backend.index.messages.memoriaSavedJson", { file: msg.file }));
           }
         }
         const files = await readCodexFilesRaw(msg.chatId, userId);
@@ -12953,8 +18790,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
       case "codex_reset": {
-        if (!setBusy(userId, msg.chatId, "codex", "Memoria is clearing the codex")) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+        if (!setBusy(userId, msg.chatId, "codex", t("backend.index.messages.memoriaIsClearingTheCodex"))) {
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         try {
@@ -12962,7 +18799,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           const failed = await deleteCodex(msg.chatId, userId);
           invalidateCodexInjectionCache(msg.chatId);
           if (failed.length > 0) {
-            await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
+            await notify(userId, "error", t("backend.index.messages.memoriaCouldnTClearCodexFileTry", { length: failed.length }));
           } else {
             publishCodexWiped(msg.chatId, userId);
             let entriesCleared = true;
@@ -12971,10 +18808,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
             } catch (err) {
               entriesCleared = false;
               warn(`codex_reset entry wipe failed: ${describeError(err)}`);
-              await notify(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+              await notify(userId, "error", t("backend.index.messages.memoriaCouldnTClearTheCodexLorebook", { shortErrorText: shortErrorText(err) }));
             }
             if (entriesCleared) {
-              await notify(userId, "info", "Memoria cleared the codex for this chat");
+              await notify(userId, "info", t("backend.index.messages.memoriaClearedTheCodexForThisChat"));
             }
           }
         } finally {
@@ -12987,7 +18824,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_rebuild": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -12995,11 +18832,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", t("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "rebuild");
@@ -13011,7 +18848,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_tidy": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -13019,7 +18856,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", t("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
@@ -13029,7 +18866,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_rebuild_files": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -13037,13 +18874,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", t("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
         if (files.length === 0)
           break;
-        await snapshotCodexForUndo(msg.chatId, userId, "rebuild files");
+        await snapshotCodexForUndo(msg.chatId, userId, t("backend.index.messages.rebuildFiles"));
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
@@ -13052,7 +18889,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_refresh": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", t("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -13060,7 +18897,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", t("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "catch-up");
@@ -13072,7 +18909,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "codex_set_file_state": {
         if (!isCodexFileKey(msg.file)) {
-          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          send({ type: "error", text: t("backend.index.messages.unknownCodexFile", { file: msg.file }) }, userId);
           break;
         }
         let profile = null;
@@ -13094,17 +18931,17 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "wipe_books": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const removed = await wipeBooksEntries(msg.chatId, userId);
-        await notify(userId, removed > 0 ? "success" : "info", removed > 0 ? `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} from the shelf` : "The shelf is already empty");
+        await notify(userId, removed > 0 ? "success" : "info", removed > 0 ? t("backend.index.messages.memoriaClearedEntrFromTheShelf", { removed }) : t("backend.index.messages.theShelfIsAlreadyEmpty"));
         await pushState(userId, msg.chatId);
         break;
       }
       case "rebuild_books": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", t("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -13112,7 +18949,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         const removed = await wipeBooksEntries(msg.chatId, userId);
-        await notify(userId, "info", `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await notify(userId, "info", t("backend.index.messages.memoriaClearedEntrAndIsReSummarizing", { removed }));
         await pushState(userId, msg.chatId);
         await drainChapterBacklog(msg.chatId, profile, cur, userId).catch((err) => warn(`rebuild books re-summarize failed: ${describeError(err)}`));
         await maybeRunArcCheck(msg.chatId, profile, cur, userId).catch(() => {});
@@ -13122,7 +18959,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "detach_root": {
         const removed = await detachRoot(msg.chatId, userId);
-        const text = removed === 0 ? "This chat has no inherited memories to detach" : `Memoria detached ${removed} inherited memor${removed === 1 ? "y" : "ies"}`;
+        const text = removed === 0 ? t("backend.index.text.thisChatHasNoInheritedMemoriesTo") : t("backend.index.text.memoriaDetachedInheritedMemor", { removed });
         await notify(userId, "info", text);
         await pushState(userId, msg.chatId);
         break;

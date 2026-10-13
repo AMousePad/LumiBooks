@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { LessonCourseDef } from "./lesson-types";
 import { setCodexExpandedEntity, setCodexRelationsView, setCodexSubtab } from "../tabs/codex-tab";
 import { setSettingsView, setTuningSubtab } from "../tabs/tuning-tab";
@@ -7,16 +8,16 @@ import { setSettingsView, setTuningSubtab } from "../tabs/tuning-tab";
  * answers questions about things the UI can't teach by being clicked. */
 export const COURSE_CODEX: LessonCourseDef = {
   key: "codex",
-  title: "The Archivist's Codex",
+  title: tr("ui.lessons.contentCodex.courseCodex.theArchivistSCodex"),
   sections: [
     {
       id: "s1",
-      title: "Why a story bible",
+      title: tr("ui.lessons.contentCodex.courseCodex.whyAStoryBible"),
       steps: [
         {
           kind: "say",
           diagram: "fade",
-          text: "Summary chapters are a good outline. But if you compress a story enough you'll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
+          text: tr("ui.lessons.contentCodex.courseCodex.summaryChaptersAreAGoodOutlineBut"),
         },
         {
           kind: "nav",
@@ -25,8 +26,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           path: ["tab.codex"],
           arrive: "codex.tiles",
-          text: "BEHOLD the Knowledge Codex 😎. Let's walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
-          done: "There it is.",
+          text: tr("ui.lessons.contentCodex.courseCodex.beholdTheKnowledgeCodexLetSWalk"),
+          done: tr("ui.lessons.contentCodex.courseCodex.thereItIs"),
         },
         {
           kind: "say",
@@ -35,7 +36,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
+          text: tr("ui.lessons.contentCodex.courseCodex.eightRecordsMakeTheCodexCharactersLocations"),
         },
         {
           kind: "quiz",
@@ -46,20 +47,20 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tiles",
-          text: "Your character card says Elias has a scar. It never comes up in the story, and the codex never records it. Is that a bug?",
+          text: tr("ui.lessons.contentCodex.courseCodex.yourCharacterCardSaysEliasHasA"),
           options: [
-            { text: "No. The codex only records what the story itself mentions", correct: true },
-            { text: "Yes, the codex should copy everything from the card" },
-            { text: "The card has to be imported into the codex first" },
-            { text: "The codex only tracks characters you add by hand" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.noTheCodexOnlyRecordsWhatThe"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.yesTheCodexShouldCopyEverythingFrom") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theCardHasToBeImportedInto") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theCodexOnlyTracksCharactersYouAdd") },
           ],
-          why: "I read your lore as reference for names and spellings, but copying it in would be duplicating information.",
+          why: tr("ui.lessons.contentCodex.courseCodex.iReadYourLoreAsReferenceFor"),
         },
       ],
     },
     {
       id: "s2",
-      title: "Reading the codex",
+      title: tr("ui.lessons.contentCodex.courseCodex.readingTheCodex"),
       steps: [
         {
           kind: "say",
@@ -68,7 +69,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.status",
-          text: "The line up top is my ledger. It tells you whether a codex exists, how many new messages I haven't read yet, and when I last ran.",
+          text: tr("ui.lessons.contentCodex.courseCodex.theLineUpTopIsMyLedger"),
         },
         {
           kind: "say",
@@ -77,7 +78,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.actions",
-          text: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
+          text: tr("ui.lessons.contentCodex.courseCodex.theseAreTheEverydayActionsUpdateNow"),
         },
         {
           kind: "do",
@@ -87,8 +88,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
           expect: "codex_set_file_state",
-          text: "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
-          done: "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.🖱️🖱️🖱️🖱️",
+          text: tr("ui.lessons.contentCodex.courseCodex.everyTileIsOneRecordItsCount"),
+          done: tr("ui.lessons.contentCodex.courseCodex.dashedMeansNotInjectedButStillUpdated"),
         },
         {
           kind: "quiz",
@@ -99,14 +100,14 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex-stale" },
           prep: () => setCodexSubtab("overview"),
           anchor: "codex.tile.relations",
-          text: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
+          text: tr("ui.lessons.contentCodex.courseCodex.youFrozeRelations40MessagesAgoAnd"),
           options: [
-            { text: "It's marked as needing a catch-up. A refresh does that from the summaries and recent messages", correct: true },
-            { text: "The gap fills in automatically on the next normal update" },
-            { text: "Nothing can recover the missed events except a full rebuild" },
-            { text: "Tidy it, tidying re-reads the missed messages" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.itSMarkedAsNeedingACatch"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theGapFillsInAutomaticallyOnThe") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.nothingCanRecoverTheMissedEventsExcept") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.tidyItTidyingReReadsTheMissed") },
           ],
-          why: "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records.",
+          why: tr("ui.lessons.contentCodex.courseCodex.myReadingPositionIsAlreadyPastThose"),
         },
         {
           kind: "quiz",
@@ -117,20 +118,20 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("manage"),
           anchor: "codex.manage.startover",
-          text: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
+          text: tr("ui.lessons.contentCodex.courseCodex.rebuildCodexAndWipeCodexBothErase"),
           options: [
-            { text: "Wipe helps LumiAgent wipe her ass." },
-            { text: "Rebuild keeps your entries and only rewrites the stale ones" },
-            { text: "Wipe also deletes your chapters and arcs" },
-            { text: "Rebuild keeps your tile settings and remakes the codex from scratch, whereas wipe destroys it all.", correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.wipeHelpsLumiAgentWipeHerAss") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.rebuildKeepsYourEntriesAndOnlyRewrites") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.wipeAlsoDeletesYourChaptersAndArcs") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.rebuildKeepsYourTileSettingsAndRemakes"), correct: true },
           ],
-          why: "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive.",
+          why: tr("ui.lessons.contentCodex.courseCodex.bothEraseTheRecordsAndMyReading"),
         },
       ],
     },
     {
       id: "s3",
-      title: "The records, hands on",
+      title: tr("ui.lessons.contentCodex.courseCodex.theRecordsHandsOn"),
       steps: [
         {
           kind: "nav",
@@ -139,8 +140,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexSubtab("overview"),
           path: ["subtab.entities"],
           arrive: "codex.entities",
-          text: "Tap Entities and behold...",
-          done: "The people, places, and things! 🌎",
+          text: tr("ui.lessons.contentCodex.courseCodex.tapEntitiesAndBehold"),
+          done: tr("ui.lessons.contentCodex.courseCodex.thePeoplePlacesAndThings"),
         },
         {
           kind: "say",
@@ -149,7 +150,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setCodexSubtab("entities"),
           anchor: "codex.entities",
-          text: "Every \"chip\" is an entity. Click one to open its sheet. Poke around as much as you like.",
+          text: tr("ui.lessons.contentCodex.courseCodex.everyChipIsAnEntityClickOne"),
         },
         {
           kind: "do",
@@ -160,8 +161,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.entities.add",
           path: ["codex.entities.add", "codex.entities.addform", "codex.entities.editor"],
           expect: "codex_write_file",
-          text: "I add and update all of these myself as the story goes, you never have to! But you can, if I ever write something strange, and it's a good way to learn the interface now. Try it: click the + character chip, type a name, Mousepad maybe, then press Save on the sheet.",
-          done: "Saved. Your edits are canon now, I read them as truth and build on them.",
+          text: tr("ui.lessons.contentCodex.courseCodex.iAddAndUpdateAllOfThese"),
+          done: tr("ui.lessons.contentCodex.courseCodex.savedYourEditsAreCanonNowI"),
           doneAnchor: "codex.entities.card",
         },
         {
@@ -173,17 +174,17 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => {
             setCodexSubtab("entities");
-            setCodexExpandedEntity("char:elias");
+            setCodexExpandedEntity(tr("ui.lessons.contentCodex.courseCodex.charElias"));
           },
           anchor: "codex.entities",
-          text: "The story has moved on, Elias isn't hiding anymore, but his sheet still says \"hiding in the tannery loft\". What's happening?",
+          text: tr("ui.lessons.contentCodex.courseCodex.theStoryHasMovedOnEliasIsn"),
           options: [
-            { text: "The agent hasn't read that far yet. It catches up on its own.", correct: true },
-            { text: "The codex is broken, delete the extension" },
-            { text: "Sheets never change once written" },
-            { text: "You have to delete Elias and re-add him" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theAgentHasnTReadThatFar"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theCodexIsBrokenDeleteTheExtension") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.sheetsNeverChangeOnceWritten") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.youHaveToDeleteEliasAndRe") },
           ],
-          why: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
+          why: tr("ui.lessons.contentCodex.courseCodex.theCodexUpdatesOnAScheduleSo"),
         },
         {
           kind: "do",
@@ -192,13 +193,13 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => {
             setCodexSubtab("entities");
-            setCodexExpandedEntity("char:captain");
+            setCodexExpandedEntity(tr("ui.lessons.contentCodex.courseCodex.charCaptain"));
           },
           anchor: "codex.entities.lock",
           hintAnchor: "codex.entities.statepill",
           expect: "codex_write_file",
-          text: "Consider the Captain. Let's say that his character card describes him well. This means I don't need him in the codex as well. See here how it says locked after 1 click? That's bad! I won't write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
-          done: "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!"
+          text: tr("ui.lessons.contentCodex.courseCodex.considerTheCaptainLetSSayThat"),
+          done: tr("ui.lessons.contentCodex.courseCodex.greatHeIsNoLongerUpdatedOr")
         },
         {
           kind: "nav",
@@ -207,8 +208,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setCodexRelationsView("list"),
           path: ["subtab.relations"],
           arrive: "codex.rel.view",
-          text: "Let's explore the world wide web. Tap Relations.",
-          done: "This is the list view.",
+          text: tr("ui.lessons.contentCodex.courseCodex.letSExploreTheWorldWideWeb"),
+          done: tr("ui.lessons.contentCodex.courseCodex.thisIsTheListView"),
         },
         {
           kind: "do",
@@ -222,8 +223,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "codex.rel.add",
           path: ["codex.rel.add", "codex.rel.form"],
           expect: "codex_write_file",
-          text: "I create these and keep these updated on my own too, but again, we can edit them manually too. Let's try it so you can see the fields. Press + Relation, connect your new character to someone. The From and To boxes suggest ids as you type. Give it a kind, like owes, and a short state, then Save.",
-          done: "Recorded!",
+          text: tr("ui.lessons.contentCodex.courseCodex.iCreateTheseAndKeepTheseUpdated"),
+          done: tr("ui.lessons.contentCodex.courseCodex.recorded"),
           doneAnchor: "codex.rel.view",
         },
         {
@@ -238,14 +239,14 @@ export const COURSE_CODEX: LessonCourseDef = {
             setCodexRelationsView("list");
           },
           anchor: "codex.rel.view",
-          text: "You just added a relation by hand. Will my agent overwrite or delete your work on its next pass?",
+          text: tr("ui.lessons.contentCodex.courseCodex.youJustAddedARelationByHand"),
           options: [
-            { text: "No. Your edits become part of the record, the agent builds on them and only rewrites what the story contradicts", correct: true },
-            { text: "Yes, the agent rewrites everything from scratch each pass" },
-            { text: "Yes, unless you freeze the Relations tile first" },
-            { text: "Hand edits only survive while the relations table is off" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.noYourEditsBecomePartOfThe"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.yesTheAgentRewritesEverythingFromScratch") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.yesUnlessYouFreezeTheRelationsTile") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.handEditsOnlySurviveWhileTheRelations") },
           ],
-          why: "The agent always starts from the current records, so your corrections are canon it preserves. Freezing is only for stopping updates entirely.",
+          why: tr("ui.lessons.contentCodex.courseCodex.theAgentAlwaysStartsFromTheCurrent"),
         },
         {
           kind: "nav",
@@ -257,8 +258,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           },
           path: ["codex.rel.graphbtn"],
           arrive: "codex.rel.graph",
-          text: "Tap Graph.",
-          done: "There's your web. A real story will look much more complex.",
+          text: tr("ui.lessons.contentCodex.courseCodex.tapGraph"),
+          done: tr("ui.lessons.contentCodex.courseCodex.thereSYourWebARealStory"),
         },
         {
           kind: "say",
@@ -270,13 +271,13 @@ export const COURSE_CODEX: LessonCourseDef = {
             setCodexRelationsView("graph");
           },
           anchor: "codex.rel.graph",
-          text: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity's sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
+          text: tr("ui.lessons.contentCodex.courseCodex.thisIsTheWebForThisSmall"),
         },
       ],
     },
     {
       id: "s4",
-      title: "The agent and its dials",
+      title: tr("ui.lessons.contentCodex.courseCodex.theAgentAndItsDials"),
       steps: [
         {
           kind: "nav",
@@ -287,8 +288,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           },
           path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
-          done: "My dials.",
+          text: tr("ui.lessons.contentCodex.courseCodex.lastStopMyRulesOpenTheTuning"),
+          done: tr("ui.lessons.contentCodex.courseCodex.myDials"),
         },
         {
           kind: "say",
@@ -297,7 +298,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          text: "My codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
+          text: tr("ui.lessons.contentCodex.courseCodex.myCodexSettingsLiveHereByDefault"),
         },
         {
           kind: "quiz",
@@ -313,15 +314,15 @@ export const COURSE_CODEX: LessonCourseDef = {
           },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.lag",
-          chip: "Codex lag · 65",
-          text: "You raise the codex lag from 6 up to 65, same as the chapter lag. What changes?",
+          chip: tr("ui.lessons.contentCodex.courseCodex.codexLag65"),
+          text: tr("ui.lessons.contentCodex.courseCodex.youRaiseTheCodexLagFrom6"),
           options: [
-            { text: "The bible always runs ~65 messages behind, which may be too far behind for what you want!", correct: true },
-            { text: "Nothing, the lag only affects chapters" },
-            { text: "The codex gets cheaper with no downside" },
-            { text: "The agent runs more often" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theBibleAlwaysRuns65MessagesBehind"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.nothingTheLagOnlyAffectsChapters") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theCodexGetsCheaperWithNoDownside") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theAgentRunsMoreOften") },
           ],
-          why: "Chapters act as replacements of old messages, where the codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
+          why: tr("ui.lessons.contentCodex.courseCodex.chaptersActAsReplacementsOfOldMessages"),
         },
         {
           kind: "say",
@@ -330,7 +331,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.relations",
-          text: "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
+          text: tr("ui.lessons.contentCodex.courseCodex.twoMoreThingsRelationsTableOffMoves"),
         },
         {
           kind: "say",
@@ -338,41 +339,41 @@ export const COURSE_CODEX: LessonCourseDef = {
           subtab: "codex",
           fixture: { variant: "codex" },
           prep: () => setTuningSubtab("codex"),
-          text: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was codex-recorded, my next run notices, rewinds, and corrects the codex.",
+          text: tr("ui.lessons.contentCodex.courseCodex.oneMoreThingEditAnyRecordWhenever"),
         },
         {
           kind: "quiz",
           id: "c14",
           scored: true,
-          exhibit: "Memoria couldn't update the codex: The codex agent narrated instead of calling tools, check that the connection supports tool calls",
+          exhibit: tr("ui.lessons.contentCodex.courseCodex.memoriaCouldnTUpdateTheCodexThe"),
           exhibitTone: "error",
-          text: "Every codex run fails with this. What is the most likely cause?",
+          text: tr("ui.lessons.contentCodex.courseCodex.everyCodexRunFailsWithThisWhat"),
           options: [
-            { text: "The codex model cannot make tool calls, pick one that can under Codex connection", correct: true },
-            { text: "The chat is too long" },
-            { text: "A codex file is corrupted" },
-            { text: "The Relations table is off" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theCodexModelCannotMakeToolCalls"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theChatIsTooLong") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.aCodexFileIsCorrupted") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.theRelationsTableIsOff") },
           ],
-          why: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
+          why: tr("ui.lessons.contentCodex.courseCodex.withUseToolCallsOnTheAgent"),
         },
         {
           kind: "quiz",
           id: "c13",
           scored: true,
-          text: "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn't in the prompt. Is something wrong?",
+          text: tr("ui.lessons.contentCodex.courseCodex.withExtraContextModeOnAChapter"),
           options: [
-            { text: "No. It's a chapter written early to feed the codex, but isn't used before summary lag!", correct: true },
-            { text: "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD" },
-            { text: "Yes, it's corrupted, delete it and resync" },
-            { text: "It's a draft waiting for your approval" },
+            { text: tr("ui.lessons.contentCodex.courseCodex.noItSAChapterWrittenEarly"), correct: true },
+            { text: tr("ui.lessons.contentCodex.courseCodex.pleaseReadThisOneCarefullyOrMousepad") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.yesItSCorruptedDeleteItAnd") },
+            { text: tr("ui.lessons.contentCodex.courseCodex.itSADraftWaitingForYour") },
           ],
-          why: "Ghosts give the codex context early, and are eventually turned into real summaries later down the line. ",
+          why: tr("ui.lessons.contentCodex.courseCodex.ghostsGiveTheCodexContextEarlyAnd"),
         },
       ],
     },
     {
       id: "finale",
-      title: "Opening ceremony",
+      title: tr("ui.lessons.contentCodex.courseCodex.openingCeremony"),
       steps: [
         {
           kind: "nav",
@@ -385,8 +386,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           },
           path: ["tab.tuning", "subtab.settings", "tuning.settings.codex"],
           arrive: "tuning.codex.enabled",
-          text: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Settings, then its Codex side.",
-          done: "Already there. Good.",
+          text: tr("ui.lessons.contentCodex.courseCodex.practiceIsOverThisIsYourReal"),
+          done: tr("ui.lessons.contentCodex.courseCodex.alreadyThereGood"),
         },
         {
           kind: "do",
@@ -397,8 +398,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           prep: () => setTuningSubtab("codex"),
           anchor: "tuning.codex.enabled",
           expect: "save_profile",
-          text: "Flip Enable Codex on. The default settings below suit most chats.",
-          done: "Enabled! From now on I keep your story bible current after every message.",
+          text: tr("ui.lessons.contentCodex.courseCodex.flipEnableCodexOnTheDefaultSettings"),
+          done: tr("ui.lessons.contentCodex.courseCodex.enabledFromNowOnIKeepYour"),
         },
         {
           kind: "nav",
@@ -406,8 +407,8 @@ export const COURSE_CODEX: LessonCourseDef = {
           optional: true,
           path: ["tab.home"],
           arrive: "home.actions.updatecodex",
-          text: "Home has an Update codex button now. Let's go find it. Tap Home.",
-          done: "There it is.",
+          text: tr("ui.lessons.contentCodex.courseCodex.homeHasAnUpdateCodexButtonNow"),
+          done: tr("ui.lessons.contentCodex.courseCodex.thereItIs"),
         },
         {
           kind: "do",
@@ -416,12 +417,12 @@ export const COURSE_CODEX: LessonCourseDef = {
           anchor: "home.actions.updatecodex",
           expect: "codex_update_now",
           optional: true,
-          text: "Press it and I'll read this chat right away, or skip and I'll do it later!",
-          done: "Reading! Watch the busy row on Home if you want to see me think.",
+          text: tr("ui.lessons.contentCodex.courseCodex.pressItAndILlReadThis"),
+          done: tr("ui.lessons.contentCodex.courseCodex.readingWatchTheBusyRowOnHome"),
         },
         {
           kind: "say",
-          text: "That's all, go forth and make some awesome stories!✨",
+          text: tr("ui.lessons.contentCodex.courseCodex.thatSAllGoForthAndMake"),
         },
       ],
     },

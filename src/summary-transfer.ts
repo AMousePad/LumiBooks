@@ -5,6 +5,8 @@ export interface SummaryTransferStatus {
   text: string;
   messageCount?: number;
   sourceCount?: number;
+  /** The manual-entry label already contains the prompt; omit duplicate text. */
+  manualPromptOnly?: boolean;
 }
 
 export type SummaryImportChoice = "match" | "specify" | "manual" | "cancel";

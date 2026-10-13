@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { CODEX_FILE_KEYS } from "../shared";
 import { resolveTidyTarget, type CodexTidyTarget } from "../codex-tidy";
 import { TIER_NAMES, TIER_KINDS, type SummaryKind } from "../shared";
@@ -15,9 +16,9 @@ function codexCatchupWarnings(state: FrontendState): { booksWarning: string | nu
   const autoBooks = state.activeProfile.autoCreate && !state.activeProfile.showMemoryPreviews;
   const bigTailNoAuto = state.coverage.approxUncoveredTokens > 150000 && !autoBooks;
   const booksWarning = !hasBooks
-    ? "This chat has no filed chapters yet, so fast and ultra fast would read the raw story anyway. File chapters first (Home, File all) to get the real speedup."
+    ? tr("ui.modals.booksWarning.thisChatHasNoFiledChaptersYet")
     : bigTailNoAuto
-      ? "The unfiled tail of this chat is very large and will not be filed first, so the final raw pass stays huge. File chapters first (Home, File all) for the full speedup."
+      ? tr("ui.modals.booksWarning.theUnfiledTailOfThisChatIs")
       : null;
   return { booksWarning, autoBooks };
 }
@@ -34,7 +35,7 @@ export function requestCodexUpdate(
   }
   const { booksWarning, autoBooks } = codexCatchupWarnings(state);
   showCodexCatchupModal({
-    lead: `${state.codexBacklog ?? 0} message${(state.codexBacklog ?? 0) === 1 ? "" : "s"} are waiting, about ${state.codexBacklogPasses} passes at the current window. Pick how Memoria catches up.`,
+    lead: tr("ui.modals.requestCodexUpdate.messageAreWaitingAboutPassesAtThe", { codexBacklog0: state.codexBacklog ?? 0, codexBacklog02: (state.codexBacklog ?? 0), codexBacklogPasses: state.codexBacklogPasses }),
     booksWarning,
     autoBooks,
     onPick: (mode) => send({ type: "codex_update_now", chatId, mode }),
@@ -54,8 +55,8 @@ export function requestCodexRebuild(
     : Math.max(1, Math.ceil(state.messages.reduce((a, m) => a + m.approxTokens, 0) / Math.max(1000, prof.codexWindowValue)));
   const { booksWarning, autoBooks } = codexCatchupWarnings(state);
   showCodexCatchupModal({
-    title: "Rebuild the codex",
-    lead: `Memoria will erase the story bible and re-read all ${total} messages, about ${passes} slow passes. Pick how she rebuilds.`,
+    title: tr("ui.modals.requestCodexRebuild.rebuildTheCodex"),
+    lead: tr("ui.modals.requestCodexRebuild.memoriaWillEraseTheStoryBibleAnd", { total: total, passes: passes }),
     booksWarning,
     autoBooks,
     onPick: (mode) => send({ type: "codex_rebuild", chatId, mode }),
@@ -86,7 +87,7 @@ export function requestCodexTidy(
   modal.style.width = "min(540px, 100%)";
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
-  modal.setAttribute("aria-label", "Tidy Codex to a target size");
+  modal.setAttribute("aria-label", tr("ui.modals.requestCodexTidy.tidyCodexToATargetSize"));
   const previousFocus = document.activeElement as HTMLElement | null;
   const close = (): void => {
     document.removeEventListener("keydown", onKey);
@@ -108,17 +109,17 @@ export function requestCodexTidy(
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = "Tidy Codex to a target size";
+  title.textContent = tr("ui.modals.requestCodexTidy.tidyCodexToATargetSize");
   header.append(title);
   const body = document.createElement("div");
   body.className = "lmb-preview-modal__body";
   const lead = document.createElement("p");
-  lead.textContent = `Current selected content: ${state.codexTokensApproximate ? "~" : ""}${current.toLocaleString()} tokens. Frozen files are excluded; locked content is preserved.`;
+  lead.textContent = tr("ui.modals.requestCodexTidy.currentSelectedContentTokensFrozenFilesAre", { choice: (state.codexTokensApproximate) ? "yes" : "no", toLocaleString: current.toLocaleString() });
   const unitLabel = document.createElement("label");
-  unitLabel.textContent = "Target unit";
+  unitLabel.textContent = tr("ui.modals.requestCodexTidy.targetUnit");
   const unit = document.createElement("select");
   unit.className = "lmb-input";
-  for (const [value, text] of [["percent", "Percentage to keep"], ["tokens", "Tokens"]]) {
+  for (const [value, text] of [["percent", tr("ui.modals.requestCodexTidy.percentageToKeep")], ["tokens", tr("ui.modals.requestCodexTidy.tokens")]]) {
     const option = document.createElement("option");
     option.value = value!; option.textContent = text!; unit.append(option);
   }
@@ -134,10 +135,10 @@ export function requestCodexTidy(
   preview.setAttribute("aria-live", "polite");
   const help = document.createElement("p");
   help.className = "lmb-help";
-  help.textContent = "Memoria aims 10% below your limit, checks the saved text, and tries again if it is still too large, up to six model calls total (including repairs). Percentage means the size to keep: 50% asks the model for 45%. Undo restores the entire original Codex. Locked content or the model may prevent reaching the limit.";
-  if (state.codexTokensApproximate) help.textContent += " The tokenizer is unavailable for this model, so these sizes are estimates.";
+  help.textContent = tr("ui.modals.requestCodexTidy.memoriaAims10BelowYourLimitChecks");
+  if (state.codexTokensApproximate) help.textContent += tr("ui.modals.requestCodexTidy.theTokenizerIsUnavailableForThisModel");
   const readTarget = (): CodexTidyTarget => ({ unit: unit.value as CodexTidyTarget["unit"], value: Number(value.value) });
-  const start = makeButton("Start tidy", () => {
+  const start = makeButton(tr("ui.modals.start.startTidy"), () => {
     try {
       resolveTidyTarget(current, readTarget());
       const target = readTarget();
@@ -147,17 +148,17 @@ export function requestCodexTidy(
   }, { primary: true });
   const refresh = (): void => {
     const percent = unit.value === "percent";
-    valueText.textContent = percent ? "Keep this percentage" : "Maximum tokens";
+    valueText.textContent = percent ? tr("ui.modals.refresh.keepThisPercentage") : tr("ui.modals.refresh.maximumTokens");
     value.min = percent ? "0.01" : "1";
     value.step = percent ? "0.01" : "1";
     value.max = percent ? "99.99" : String(Math.max(1, current - 1));
     try {
       const { limit, modelTarget } = resolveTidyTarget(current, readTarget());
       start.disabled = current === 0 || limit >= current;
-      preview.textContent = limit >= current ? "Choose a target below the current size." : `Your limit: ${limit.toLocaleString()} tokens. Model target with margin: ${modelTarget.toLocaleString()} tokens.`;
+      preview.textContent = limit >= current ? tr("ui.modals.refresh.chooseATargetBelowTheCurrentSize") : tr("ui.modals.refresh.yourLimitTokensModelTargetWithMargin", { toLocaleString: limit.toLocaleString(), toLocaleString2: modelTarget.toLocaleString() });
     } catch (err) {
       start.disabled = true;
-      preview.textContent = err instanceof Error ? err.message : "Enter a valid target.";
+      preview.textContent = err instanceof Error ? err.message : tr("ui.modals.refresh.enterAValidTarget");
     }
   };
   unit.addEventListener("change", () => {
@@ -169,7 +170,7 @@ export function requestCodexTidy(
   body.append(lead, unitLabel, valueLabel, preview, help);
   const footer = document.createElement("div");
   footer.className = "lmb-preview-modal__footer";
-  footer.append(makeButton("Cancel", close), start);
+  footer.append(makeButton(tr("ui.modals.requestCodexTidy.cancel"), close), start);
   modal.append(header, body, footer);
   overlay.append(modal);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
@@ -208,12 +209,12 @@ export function showCodexCatchupModal(opts: {
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = opts.title ?? "The codex is far behind";
+  title.textContent = opts.title ?? tr("ui.modals.showCodexCatchupModal.theCodexIsFarBehind");
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.textContent = tr("ui.modals.showCodexCatchupModal.value");
+  closeBtn.setAttribute("aria-label", tr("ui.modals.showCodexCatchupModal.close"));
   closeBtn.addEventListener("click", close);
   header.append(title, closeBtn);
   modal.appendChild(header);
@@ -222,14 +223,14 @@ export function showCodexCatchupModal(opts: {
   body.className = "lmb-preview-modal__body";
   const paragraphs: string[] = [
     opts.lead,
-    "Ultra fast reads the story's current context in one single pass: every filed summary plus the raw newest messages. The fastest, with the least detail.",
-    "Fast replays your filed chapter summaries pass by pass and reads raw messages only for the final stretch. Around 15x faster than slow while keeping most of the detail.",
-    "Slow replays every raw message window by window. The most thorough, and on a long chat it can take hours.",
+    tr("ui.modals.paragraphs.ultraFastReadsTheStorySCurrent"),
+    tr("ui.modals.paragraphs.fastReplaysYourFiledChapterSummariesPass"),
+    tr("ui.modals.paragraphs.slowReplaysEveryRawMessageWindowBy"),
   ];
   if (opts.autoBooks) {
-    paragraphs.push("Automation is on, so fast and ultra fast first bring this chat's chapters and arcs fully up to date.");
+    paragraphs.push(tr("ui.modals.showCodexCatchupModal.automationIsOnSoFastAndUltra"));
   }
-  paragraphs.push("Fast and ultra fast need the codex connection's context window to be at least as large as your story model's.");
+  paragraphs.push(tr("ui.modals.showCodexCatchupModal.fastAndUltraFastNeedTheCodex"));
   for (const text of paragraphs) {
     const p = document.createElement("div");
     p.className = "lmb-help";
@@ -242,7 +243,7 @@ export function showCodexCatchupModal(opts: {
     w.className = "lmb-help";
     w.style.fontSize = "14px";
     w.style.fontWeight = "600";
-    w.textContent = `⚠ ${opts.booksWarning}`;
+    w.textContent = tr("ui.modals.showCodexCatchupModal.value2", { booksWarning: opts.booksWarning });
     body.appendChild(w);
   }
   modal.appendChild(body);
@@ -254,9 +255,9 @@ export function showCodexCatchupModal(opts: {
   const footer = document.createElement("div");
   footer.className = "lmb-preview-modal__footer";
   footer.append(
-    makeButton("Slow", pick("slow"), { danger: true, title: "Not recommended. Replays every raw message window by window and can take hours." }),
-    makeButton("Fast", pick("fast"), { title: "Replay the filed summaries, then one raw pass for the tail" }),
-    makeButton("Ultra fast", pick("ultra"), { primary: true, title: "One single pass over the filed summaries plus the raw tail" }),
+    makeButton(tr("ui.modals.showCodexCatchupModal.slow"), pick("slow"), { danger: true, title: tr("ui.modals.showCodexCatchupModal.notRecommendedReplaysEveryRawMessageWindow") }),
+    makeButton(tr("ui.modals.showCodexCatchupModal.fast"), pick("fast"), { title: tr("ui.modals.showCodexCatchupModal.replayTheFiledSummariesThenOneRaw") }),
+    makeButton(tr("ui.modals.showCodexCatchupModal.ultraFast"), pick("ultra"), { primary: true, title: tr("ui.modals.showCodexCatchupModal.oneSinglePassOverTheFiledSummaries") }),
   );
   modal.appendChild(footer);
 
@@ -301,12 +302,12 @@ export function showCodexToolsHintModal(
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = "Tool calls aren't getting through";
+  title.textContent = tr("ui.modals.showCodexToolsHintModal.toolCallsArenTGettingThrough");
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.textContent = tr("ui.modals.showCodexToolsHintModal.value");
+  closeBtn.setAttribute("aria-label", tr("ui.modals.showCodexToolsHintModal.close"));
   closeBtn.addEventListener("click", close);
   header.append(title, closeBtn);
   modal.appendChild(header);
@@ -314,9 +315,9 @@ export function showCodexToolsHintModal(
   const body = document.createElement("div");
   body.className = "lmb-preview-modal__body";
   const paragraphs = [
-    "The codex agent asked your model to write its records through tool calls, and the reply came back as plain text instead. That is almost always the provider: some routes strip tool support or fail to pass the calls back, and retrying cannot fix it.",
-    "Memoria can switch the codex to JSON mode instead. The model writes one plain JSON reply that gets parsed and validated exactly like tool calls. It works on tool-less routes, though it is a little less reliable than real tool calls.",
-    "You can change this anytime under Tuning → Connection → Codex → Use tool calls, or pick a tool-capable model under Codex connection.",
+    tr("ui.modals.paragraphs.theCodexAgentAskedYourModelTo"),
+    tr("ui.modals.paragraphs.memoriaCanSwitchTheCodexToJson"),
+    tr("ui.modals.paragraphs.youCanChangeThisAnytimeUnderTuning"),
   ];
   for (const text of paragraphs) {
     const p = document.createElement("div");
@@ -334,7 +335,7 @@ export function showCodexToolsHintModal(
   });
   const cbLabel = document.createElement("span");
   cbLabel.className = "lmb-check-hint";
-  cbLabel.textContent = "Don't show this again";
+  cbLabel.textContent = tr("ui.modals.showCodexToolsHintModal.donTShowThisAgain");
   dontShow.append(cb, cbLabel);
   body.appendChild(dontShow);
   modal.appendChild(body);
@@ -342,8 +343,8 @@ export function showCodexToolsHintModal(
   const footer = document.createElement("div");
   footer.className = "lmb-preview-modal__footer";
   footer.append(
-    makeButton("Keep tool calls", close, { small: true }),
-    makeButton("Switch to JSON mode", () => {
+    makeButton(tr("ui.modals.showCodexToolsHintModal.keepToolCalls"), close, { small: true }),
+    makeButton(tr("ui.modals.showCodexToolsHintModal.switchToJsonMode"), () => {
       send({ type: "save_profile", profile: { id: profileId, codexUseTools: false } });
       close();
     }, { small: true, primary: true }),
@@ -377,8 +378,8 @@ export function openEditModal(
   labelWrap.className = "lmb-field";
   const lbl = document.createElement("div");
   lbl.className = "lmb-field-label";
-  lbl.textContent = "Label";
-  const labelInput = textInput({ value: fields.comment, placeholder: "Label" });
+  lbl.textContent = tr("ui.modals.openEditModal.label");
+  const labelInput = textInput({ value: fields.comment, placeholder: tr("ui.modals.labelInput.label") });
   labelWrap.append(lbl, labelInput);
   form.appendChild(labelWrap);
 
@@ -386,7 +387,7 @@ export function openEditModal(
   contentWrap.className = "lmb-field";
   const cLbl = document.createElement("div");
   cLbl.className = "lmb-field-label";
-  cLbl.textContent = "Content";
+  cLbl.textContent = tr("ui.modals.openEditModal.content");
   const contentInput = textArea({ value: fields.content, rows: 16 });
   contentWrap.append(cLbl, contentInput);
   form.appendChild(contentWrap);
@@ -394,8 +395,8 @@ export function openEditModal(
   const actions = document.createElement("div");
   actions.className = "lmb-modal-actions";
   actions.append(
-    makeButton("Cancel", () => handle.dismiss()),
-    makeButton("Save", () => {
+    makeButton(tr("ui.modals.openEditModal.cancel"), () => handle.dismiss()),
+    makeButton(tr("ui.modals.openEditModal.save"), () => {
       onSave({ comment: labelInput.value, content: contentInput.value });
       handle.dismiss();
     }, { primary: true }),
@@ -413,8 +414,8 @@ export async function confirmDelete(
       title,
       message,
       variant: "danger",
-      confirmLabel: "Delete",
-      cancelLabel: "Cancel",
+      confirmLabel: tr("ui.modals.r.delete"),
+      cancelLabel: tr("ui.modals.r.cancel"),
     });
     return !!r.confirmed;
   } catch {
@@ -445,13 +446,13 @@ export function showDryRunModal(
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = `Dry run: ${kind === "arc" ? "Arc" : kind === "volume" ? "Volume" : kind === "codex" ? "Codex" : "Chapter"}`;
+  title.textContent = tr("ui.modals.showDryRunModal.dryRun", { choice: (kind === "arc") ? "yes" : "no", choice2: ((!(kind === "arc")) && (kind === "volume")) ? "yes" : "no", choice3: (((!(kind === "arc")) && !(kind === "volume")) && (kind === "codex")) ? "yes" : "no" });
   header.appendChild(title);
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "lmb-preview-modal__close";
-  closeBtn.textContent = "×";
-  closeBtn.setAttribute("aria-label", "Close dry run");
+  closeBtn.textContent = tr("ui.modals.showDryRunModal.value");
+  closeBtn.setAttribute("aria-label", tr("ui.modals.showDryRunModal.closeDryRun"));
   closeBtn.addEventListener("click", close);
   header.appendChild(closeBtn);
   modal.appendChild(header);
@@ -463,7 +464,7 @@ export function showDryRunModal(
     const diag = document.createElement("div");
     diag.className = "lmb-preview-modal__diagnostics";
     const diagTitle = document.createElement("h4");
-    diagTitle.textContent = "Diagnostics";
+    diagTitle.textContent = tr("ui.modals.showDryRunModal.diagnostics");
     diag.appendChild(diagTitle);
     const ul = document.createElement("ul");
     for (const d of diagnostics) {
@@ -480,7 +481,7 @@ export function showDryRunModal(
     msgCard.className = "lmb-preview-msg";
     const roleLabel = document.createElement("div");
     roleLabel.className = "lmb-preview-msg__role";
-    roleLabel.textContent = m.role;
+    roleLabel.textContent = tr("ui.common.role", { role: m.role });
     const contentPre = document.createElement("pre");
     contentPre.className = "lmb-preview-msg__content";
     contentPre.textContent = m.content;
@@ -496,15 +497,15 @@ export function showDryRunModal(
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "lmb-btn small";
-  copyBtn.textContent = "Copy JSON";
+  copyBtn.textContent = tr("ui.modals.showDryRunModal.copyJson");
   copyBtn.addEventListener("click", async () => {
     const json = JSON.stringify({ kind, messages, diagnostics }, null, 2);
     try {
       await navigator.clipboard.writeText(json);
-      copyBtn.textContent = "Copied";
-      setTimeout(() => (copyBtn.textContent = "Copy JSON"), 1500);
+      copyBtn.textContent = tr("ui.modals.showDryRunModal.copied");
+      setTimeout(() => (copyBtn.textContent = tr("ui.modals.showDryRunModal.copyJson")), 1500);
     } catch {
-      copyBtn.textContent = "Copy failed";
+      copyBtn.textContent = tr("ui.modals.showDryRunModal.copyFailed");
     }
   });
   footer.appendChild(copyBtn);
@@ -538,8 +539,8 @@ export function promptForString(
     const actions = document.createElement("div");
     actions.className = "lmb-modal-actions";
     actions.append(
-      makeButton("Cancel", () => { settle(null); handle.dismiss(); }),
-      makeButton("OK", () => {
+      makeButton(tr("ui.modals.promptForString.cancel"), () => { settle(null); handle.dismiss(); }),
+      makeButton(tr("ui.modals.promptForString.ok"), () => {
         const v = input.value.trim();
         settle(v || null);
         handle.dismiss();

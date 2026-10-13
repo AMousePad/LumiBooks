@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import { makeButton, section, select, textNode } from "./components";
 import { confirmDelete } from "./modals";
@@ -56,7 +57,7 @@ export function renderContinuitySection(
   ctx: SpindleFrontendContext,
   spec: ContinuitySpec,
 ): HTMLElement {
-  const sec = section("Continuity (root)");
+  const sec = section(tr("ui.continuity.sec.continuityRoot"));
 
   if (!spec.inherited && !spec.picker) {
     sec.body.appendChild(textNode(spec.emptyText, "lmb-empty"));

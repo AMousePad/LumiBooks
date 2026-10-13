@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { recordDiagnostic, diagnosticEntries } from "./diagnostics";
 import { TIER_NAMES } from "../shared";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
@@ -74,7 +75,7 @@ function orderEntries(coverage: CoverageMap, msgIdToIdx: Map<string, number>): O
     const tierName = TIER_NAMES[entry.meta.tier - 1];
     const label =
       entry.raw.comment ||
-      (haveIdx ? `${tierName} msgs ${firstIdx + 1}-${lastIdx + 1}` : tierName);
+      (haveIdx ? tr("backend.injection.label.msgs", { tierName: tierName, firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }) : tierName);
     ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
   }
   ordered.sort((a, b) => a.firstIdx - b.firstIdx);
@@ -173,7 +174,7 @@ export async function buildInjection(
       chatMessages = await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed while verifying an empty history, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      injectionAnomalyCb?.(userId, tr("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
       return null;
     }
     const hasVisibleMessage = !!chatMessages?.some(
@@ -187,7 +188,7 @@ export async function buildInjection(
       );
       injectionAnomalyCb?.(
         userId,
-        "Memoria couldn't find the chat history in this prompt and skipped injecting memories",
+        tr("backend.injection.buildInjection.memoriaCouldnTFindTheChatHistory"),
       );
       return null;
     }
@@ -235,7 +236,7 @@ export async function buildInjection(
       chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
     } catch (err) {
       error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, "Memoria couldn't read the chat and skipped injecting memories this turn");
+      injectionAnomalyCb?.(userId, tr("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
       return null;
     }
     msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));

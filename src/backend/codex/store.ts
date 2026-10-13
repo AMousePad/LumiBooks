@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { CodexBundle, CodexFileKey, CodexFileValue, ValidateOptions } from "./schema";
@@ -127,7 +128,7 @@ export function msgSig(role: string, content: string): string {
 export async function loadCursor(chatId: string, userId: string): Promise<CodexCursor> {
   const read = await readJsonFileRaw(cursorPath(chatId), userId);
   if (read.state === "unreadable") {
-    throw new Error(`The codex cursor is unreadable: ${read.error}`);
+    throw new Error(tr("backend.codex.store.loadCursor.theCodexCursorIsUnreadable", { error: read.error }));
   }
   const raw = read.state === "ok" ? (read.value as Partial<CodexCursor> | null) : null;
   if (!raw || typeof raw !== "object") return emptyCursor();
@@ -238,7 +239,7 @@ export async function loadCodex(chatId: string, userId: string, opts: ValidateOp
       const read = await readCodexFileRaw(chatId, key, userId);
       if (read.state === "absent") return;
       if (read.state === "unreadable") {
-        problems.push({ file: key, errors: [`unreadable on disk: ${read.error}`] });
+        problems.push({ file: key, errors: [tr("backend.codex.store.loadCodex.unreadableOnDisk", { error: read.error })] });
         warn(`codex: ${key}.json for ${chatId.slice(0, 8)} is unreadable: ${read.error}`);
         return;
       }
@@ -338,7 +339,7 @@ async function copyCodexToEmptyChat(
   const files: Array<{ key: CodexFileKey; value: unknown }> = [];
   for (const key of CODEX_FILE_KEYS) {
     const read = await readCodexFileRaw(fromChatId, key, userId);
-    if (read.state === "unreadable") throw new Error(`${key}.json is unreadable on the source chat: ${read.error}`);
+    if (read.state === "unreadable") throw new Error(tr("backend.codex.store.copyCodexToEmptyChat.jsonIsUnreadableOnTheSourceChat", { key: key, error: read.error }));
     if (read.state === "ok") files.push({ key, value: read.value });
   }
   if (!files.length) return false;
@@ -477,7 +478,7 @@ export async function readCodexFilesRaw(chatId: string, userId: string): Promise
       const read = await readCodexFileRaw(chatId, key, userId);
       if (read.state === "unreadable") {
         warn(`codex: read ${key}.json failed: ${read.error}`);
-        out[key] = `UNREADABLE ${key}.json - the file exists but cannot be parsed (${read.error}). Fix or delete it before saving.`;
+        out[key] = tr("backend.codex.store.readCodexFilesRaw.unreadableJsonTheFileExistsButCannot", { key: key, error: read.error });
         return;
       }
       out[key] = JSON.stringify(read.state === "ok" ? read.value : emptyCodexFile(key), null, 2);

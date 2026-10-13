@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { buildCoverage, unhideCoveredMessages } from "./coverage";
 import { deleteEntry, invalidateBookCache, listLmbEntries, patchEntryMeta, releaseEntry, updateEntry, type LMBEntry } from "./world-book";
 import { withCommitMutex } from "./summary-commit";
@@ -6,7 +7,7 @@ import { describeError, warn } from "./runtime";
 export async function editSummaryEntry(chatId: string, entryId: string, patch: Parameters<typeof updateEntry>[1], userId: string): Promise<void> {
   return withCommitMutex(userId, chatId, async () => {
     const entries = await listLmbEntries(chatId, userId, true);
-    if (!entries.some((entry) => entry.raw.id === entryId)) throw new Error("This summary is no longer available to edit. Refresh Books.");
+    if (!entries.some((entry) => entry.raw.id === entryId)) throw new Error(tr("backend.shelfActions.editSummaryEntry.thisSummaryIsNoLongerAvailableTo"));
     await updateEntry(entryId, patch, userId);
     invalidateBookCache(userId, chatId);
   });
@@ -22,7 +23,7 @@ export async function clearSummaryShelf(chatId: string, userId: string): Promise
       catch (err) { failures.push(err); }
     }
     invalidateBookCache(userId, chatId);
-    if (failures.length) throw new AggregateError(failures, `Removed ${removed} summaries, but ${failures.length} could not be deleted. Retry clearing the shelf before rebuilding.`);
+    if (failures.length) throw new AggregateError(failures, tr("backend.shelfActions.clearSummaryShelf.removedSummariesButCouldNotBeDeleted", { removed: removed, length: failures.length }));
     return removed;
   });
 }
@@ -32,7 +33,7 @@ export async function removeSummaryEntry(chatId: string, entryId: string, userId
     const entries = await listLmbEntries(chatId, userId, true);
     const entry = entries.find((e) => e.raw.id === entryId);
     if (!entry) return null;
-    if (release && entry.meta.ghost) throw new Error("A ghost chapter must be shelved before it can be released.");
+    if (release && entry.meta.ghost) throw new Error(tr("backend.shelfActions.removeSummaryEntry.aGhostChapterMustBeShelvedBefore"));
     const before = await buildCoverage(chatId, userId, entries);
     const parents = entries.filter((e) => e.meta.tier > entry.meta.tier && e.meta.sourceChapterEntryIds?.includes(entryId));
     try {

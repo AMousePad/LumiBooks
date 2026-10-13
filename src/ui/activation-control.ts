@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import type { ActivationMode } from "../activation";
 import { textNode } from "./components";
 
@@ -13,7 +14,7 @@ export function activationControl(label: string, value: ActivationMode, onChange
   const row = document.createElement("div");
   row.className = "lmb-activation-options";
   const name = `lmb-activation-${++nextGroup}`;
-  for (const [mode, title] of [["always", "Always"], ["keywords", "Keywords"], ["vector", "Vector + keywords"]] as const) {
+  for (const [mode, title] of [["always", tr("ui.activationControl.activationControl.always")], ["keywords", tr("ui.activationControl.activationControl.keywords")], ["vector", tr("ui.activationControl.activationControl.vectorKeywords")]] as const) {
     const option = document.createElement("label");
     const input = document.createElement("input");
     input.type = "radio";
@@ -29,5 +30,5 @@ export function activationControl(label: string, value: ActivationMode, onChange
 }
 
 export function vectorSetupHint(): HTMLElement {
-  return textNode("Vector recall needs a tested embedding connection and lorebook vectorization enabled in Lumiverse. Indexing runs in the background. Until ready, or if retrieval fails, only keyword matches activate. Embeddings use the provider configured in Lumiverse.", "lmb-field-hint");
+  return textNode(tr("ui.activationControl.vectorSetupHint.vectorRecallNeedsATestedEmbeddingConnection"), "lmb-field-hint");
 }

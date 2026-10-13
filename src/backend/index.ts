@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 import { clearSummaryShelf, editSummaryEntry, removeSummaryEntry } from "./shelf-actions";
 import { loadPromptBreakdown } from "./prompt-breakdown";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
@@ -153,7 +154,7 @@ async function doPushState(userId: string, chatId?: string | null): Promise<void
     }
   } catch (err) {
     error(`pushState failed: ${describeError(err)}`);
-    send({ type: "state_error", text: `LumiBooks state refresh failed: ${describeError(err)}` }, userId);
+    send({ type: "state_error", text: tr("backend.index.doPushState.lumiBooksStateRefreshFailed", { describeError: describeError(err) }) }, userId);
   }
 }
 
@@ -367,7 +368,7 @@ spindle.on("CHAT_SWITCHED", async (payload: unknown, hostUserId?: string) => {
   if (p?.chatId) rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
-  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", `Summary repair failed: ${describeError(err)}`));
+  await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", tr("backend.index.messages.summaryRepairFailed", { describeError: describeError(err) })));
   await pushState(userId, p?.chatId ?? null);
 });
 
@@ -428,7 +429,7 @@ async function handleExternalEntryDeletion(userId: string, bookId: string, isBoo
     const desiredHidden = profile ? profile.hideCoveredMessages : true;
     const { unhidden } = await resyncVisibility(chatId, userId, desiredHidden);
     if (unhidden > 0) {
-      await notify(userId, "info", `Memoria unhid ${unhidden} message${unhidden === 1 ? "" : "s"} after an external lorebook change`);
+      await notify(userId, "info", tr("backend.index.handleExternalEntryDeletion.memoriaUnhidMessageAfterAnExternalLorebook", { unhidden: unhidden }));
     }
   } catch (err) {
     warn(`external deletion resync failed: ${describeError(err)}`);
@@ -495,7 +496,7 @@ export async function retryLastFailure(
     const ids = last.sourceEntryIds ?? await collectActiveChapterIds(chatId, userId);
     if (ids.length === 0) {
       clearLastFailure(userId, chatId);
-      const msg = "Memoria has no chapters left to retry the arc";
+      const msg = tr("backend.index.msg.memoriaHasNoChaptersLeftToRetry");
       await notify(userId, "warn", msg);
       return;
     }
@@ -507,7 +508,7 @@ export async function retryLastFailure(
     // real-chapter path would gate on the injection lag and silently no-op.
     const made = await drainGhostBacklog(chatId, profile, settings, userId);
     if (made === 0) {
-      await notify(userId, "info", "Nothing to retry yet, Memoria will catch it after the next message");
+      await notify(userId, "info", tr("backend.index.retryLastFailure.nothingToRetryYetMemoriaWillCatch"));
     }
   } else {
     await createChapterAuto(chatId, profile, settings, userId);
@@ -520,10 +521,10 @@ async function syncProfileSettings(userId: string): Promise<void> {
   try {
     const failures = await syncCodexProfiles(userId);
     if (failures.length) await notify(userId, "warn",
-      `Profile saved, but Codex injection settings could not sync to ${failures.length} chat(s): ${failures.slice(0, 3).map((f) => f.chatId).join(", ")}. Other chats were synced. Reapply the settings after resolving the errors.`);
+      tr("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould", { length: failures.length, join: failures.slice(0, 3).map((f) => f.chatId).join(", ") }));
   } catch (err) {
     warn(`Codex profile sync failed: ${describeError(err)}`);
-    await notify(userId, "warn", `Profile saved, but Codex injection settings could not sync: ${describeError(err)}`);
+    await notify(userId, "warn", tr("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould2", { describeError: describeError(err) }));
   }
 }
 
@@ -551,7 +552,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "diagnostics_clear":
         await clearDiagnostics(userId);
-        await notify(userId, "success", "Saved diagnostics cleared.");
+        await notify(userId, "success", tr("backend.index.messages.savedDiagnosticsCleared"));
         break;
       case "ready":
       case "refresh":
@@ -566,7 +567,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if ("profiles" in msg.patch || "activeProfileId" in msg.patch) await syncProfileSettings(userId);
         if ("summaryActivationMode" in msg.patch) {
           const { failed } = await applySummaryActivation(userId);
-          if (failed) await notify(userId, "warn", `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`);
+          if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));
         }
         await pushState(userId, msg.chatId);
         break;
@@ -575,7 +576,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const incoming = msg.profile;
         const id = typeof incoming?.id === "string" && incoming.id.trim() ? incoming.id : null;
         if (!id) {
-          send({ type: "error", text: "Invalid profile payload." }, userId);
+          send({ type: "error", text: tr("backend.index.messages.invalidProfilePayload") }, userId);
           break;
         }
         let prevHide: boolean | null = null;
@@ -601,7 +602,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         });
         if (missing) {
           warn(`save_profile dropped: no profile with id "${id}"`);
-          send({ type: "error", text: `Profile ${id} no longer exists.` }, userId);
+          send({ type: "error", text: tr("backend.index.messages.profileNoLongerExists", { id: id }) }, userId);
           break;
         }
         if (
@@ -652,7 +653,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await mutateSettings(userId, (cur) => {
           const id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
           const baseProfile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? cur.profiles[0]!;
-          const next = { ...baseProfile, id, name: (msg.name || "New profile").slice(0, 60) };
+          const next = { ...baseProfile, id, name: (msg.name || tr("backend.index.next.newProfile")).slice(0, 60) };
           return { ...cur, profiles: [...cur.profiles, next], activeProfileId: id };
         });
         await pushState(userId, msg.chatId);
@@ -671,7 +672,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           return { ...cur, profiles, activeProfileId };
         });
         if (warned) {
-          await notify(userId, "warn", "Memoria keeps at least one profile");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaKeepsAtLeastOneProfile"));
         }
         // Deleting the active profile falls back to another one, which may
         // lack effective extra mode: same ghost cleanup as set_active_profile.
@@ -704,7 +705,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!rawProfile) break;
         const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         const chapterMessages = await spindle.chat.getMessages(msg.chatId);
@@ -715,7 +716,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         // A hand-pressed button files whatever sits behind the lag. Only the
         // lag reserve blocks it: the window is an automation cadence.
         if (!chapterStats.lagSatisfied || countCompressibleEligible(chapterMessages, chapterCoverage, profile) === 0) {
-          await notify(userId, "info", "Your story needs more messages for me to generate a new entry~");
+          await notify(userId, "info", tr("backend.index.messages.yourStoryNeedsMoreMessagesForMe"));
           break;
         }
         await createChapterAuto(msg.chatId, profile, cur, userId, false, false, true);
@@ -729,7 +730,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         const rangeMessages = await spindle.chat.getMessages(msg.chatId);
@@ -747,7 +748,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "chapter" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already filing a chapter");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyFilingAChapter"));
           break;
         }
         await drainChapterBacklog(msg.chatId, profile, cur, userId);
@@ -761,7 +762,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         const ids = await collectActiveChapterIds(msg.chatId, userId);
@@ -775,7 +776,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         await createArcFromChapters(msg.chatId, msg.chapterEntryIds, profile, cur, userId);
@@ -788,7 +789,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "arc" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already binding an arc");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyBindingAnArc"));
           break;
         }
         await drainArcBacklog(msg.chatId, profile, cur, userId);
@@ -814,7 +815,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (getBusy(userId).some((b) => b.kind === "volume" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is already pressing a volume");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyPressingAVolume"));
           break;
         }
         await createVolumeFromArcs(msg.chatId, msg.arcEntryIds, profile, cur, userId);
@@ -837,13 +838,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const release = msg.type === "release_entry";
         const entry = await removeSummaryEntry(msg.chatId, msg.entryId, userId, release);
         if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaCanTFindThatEntry"));
           break;
         }
         if (entry.meta.ghost && typeof entry.meta.sceneNumber === "number") {
           recordFreedGhostNumber(userId, msg.chatId, entry.meta.msgIds, entry.meta.sceneNumber);
         }
-        if (release) await notify(userId, "success", "Memoria released the entry to your lorebook");
+        if (release) await notify(userId, "success", tr("backend.index.messages.memoriaReleasedTheEntryToYourLorebook"));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -855,21 +856,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const entries = await listLmbEntries(msg.chatId, userId);
         const entry = entries.find((e) => e.raw.id === msg.entryId);
         if (!entry) {
-          await notify(userId, "warn", "Memoria can't find that entry to regenerate");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaCanTFindThatEntryTo"));
           break;
         }
         const tier = entry.meta.tier;
         const busyKind = TIER_KINDS[tier - 1]!;
         if (getBusy(userId).some((b) => b.kind === busyKind && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", `Memoria is already busy with a ${busyKind}`);
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsAlreadyBusyWithA", { busyKind: busyKind }));
           break;
         }
         if (entry.meta.isRoot && tier === 1) {
-          await notify(userId, "warn", "Memoria can't regenerate inherited chapters");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaCanTRegenerateInheritedChapters"));
           break;
         }
         if (entry.meta.ghost) {
-          await notify(userId, "warn", "Memoria can't regenerate a ghost chapter before it's shelved");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaCanTRegenerateAGhostChapter"));
           break;
         }
         const isArc = tier === 2;
@@ -879,15 +880,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
           ? entry.meta.sourceChapterEntryIds.slice()
           : [];
         if (isVolume && sourceIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no arc sources to regenerate this volume from");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaHasNoArcSourcesToRegenerate"));
           break;
         }
         if (isArc && sourceIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no chapter sources to regenerate this arc from");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaHasNoChapterSourcesToRegenerate"));
           break;
         }
         if (!isArc && !isVolume && msgIds.length === 0) {
-          await notify(userId, "warn", "Memoria has no messages to regenerate this chapter from");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaHasNoMessagesToRegenerateThis"));
           break;
         }
         if (!isArc && !isVolume) {
@@ -897,8 +898,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (blockingIds.length > 0) {
             const blockerEntryId = otherCoverage.coveredBy.get(blockingIds[0]!);
             const blocker = otherEntries.find((e) => e.raw.id === blockerEntryId);
-            const blockerLabel = blocker?.meta.tier === 3 ? "a volume" : blocker?.meta.tier === 2 ? "an arc" : "another entry";
-            await notify(userId, "warn", `These messages are bound into ${blockerLabel}, release or delete it first`);
+            const blockerLabel = blocker?.meta.tier === 3 ? tr("backend.index.blockerLabel.aVolume") : blocker?.meta.tier === 2 ? tr("backend.index.blockerLabel.anArc") : tr("backend.index.blockerLabel.anotherEntry");
+            await notify(userId, "warn", tr("backend.index.messages.theseMessagesAreBoundIntoReleaseOr", { blockerLabel: blockerLabel }));
             break;
           }
         }
@@ -938,7 +939,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_chapter failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", tr("backend.index.messages.dryRunFailed", { text: text }));
         }
         break;
       }
@@ -953,7 +954,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_arc failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", tr("backend.index.messages.dryRunFailed", { text: text }));
         }
         break;
       }
@@ -968,7 +969,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_volume failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", tr("backend.index.messages.dryRunFailed", { text: text }));
         }
         break;
       }
@@ -983,7 +984,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_codex failed: ${text}`);
-          await notify(userId, "error", `Dry run failed: ${text}`);
+          await notify(userId, "error", tr("backend.index.messages.dryRunFailed", { text: text }));
         }
         break;
       }
@@ -991,7 +992,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "abort_busy": {
         const aborted = abortBusy(userId, msg.chatId, msg.kind);
         if (!aborted) {
-          await notify(userId, "warn", "Memoria is not in the middle of anything to abort");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsNotInTheMiddleOf"));
         }
         break;
       }
@@ -1005,8 +1006,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await patchSettings(userId, { summaryActivationMode: msg.mode });
         const { updated, failed } = await applySummaryActivation(userId);
         await notify(userId, failed ? "warn" : "info", failed
-          ? `Recall setting saved; ${failed} entry or book updates failed. Reapply it to retry.`
-          : `Summary recall saved; ${updated} entries updated.`);
+          ? tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed })
+          : tr("backend.index.messages.summaryRecallSavedEntriesUpdated", { updated: updated }));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1018,8 +1019,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const { unhidden, hidden } = await resyncVisibility(msg.chatId, userId, desiredHidden);
         const total = unhidden + hidden;
         const text = total === 0
-          ? "Memoria's shelf is already aligned, nya"
-          : `Memoria resynced ${total} message${total === 1 ? "" : "s"} (${hidden} hidden, ${unhidden} unhidden)`;
+          ? tr("backend.index.text.memoriaSShelfIsAlreadyAlignedNya")
+          : tr("backend.index.text.memoriaResyncedMessageHiddenUnhidden", { total: total, hidden: hidden, unhidden: unhidden });
         await notify(userId, "info", text);
         await pushState(userId, msg.chatId);
         break;
@@ -1036,9 +1037,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           break;
         }
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: "Wait for the current task to finish before importing summaries" } }, userId); break;
+          send({ type: "summary_transfer_status", status: { id: msg.type === "summary_import_resolve" ? msg.id : "busy", chatId: msg.chatId, stage: "error", text: tr("backend.index.messages.waitForTheCurrentTaskToFinish") } }, userId); break;
         }
-        if (!setBusy(userId, msg.chatId, "chapter", "Importing summaries")) break;
+        if (!setBusy(userId, msg.chatId, "chapter", tr("backend.index.messages.importingSummaries"))) break;
         try {
           const imported = await runSummaryTransfer(userId, msg.chatId, msg.type === "summary_import"
             ? { type: "import", raw: msg.raw }
@@ -1062,7 +1063,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "import_preset": {
         const parsed = parseStmbPresetExport(msg.raw, msg.category);
         if (parsed.length === 0) {
-          await notify(userId, "warn", "Memoria found no usable presets in that file");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaFoundNoUsablePresetsInThat"));
           break;
         }
         await mutateSettings(userId, (cur) => {
@@ -1075,7 +1076,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
           return { ...cur, customPresets: merged };
         });
-        await notify(userId, "success", `Memoria imported ${parsed.length} preset${parsed.length === 1 ? "" : "s"}`);
+        await notify(userId, "success", tr("backend.index.messages.memoriaImportedPreset", { length: parsed.length }));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1083,7 +1084,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "save_custom_preset": {
         const next = normalizeCustomPreset(msg.preset);
         if (!next) {
-          send({ type: "error", text: "Invalid preset payload." }, userId);
+          send({ type: "error", text: tr("backend.index.messages.invalidPresetPayload") }, userId);
           break;
         }
         await mutateSettings(userId, (cur) => {
@@ -1147,21 +1148,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "rebase_root": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const result = await rebaseRoot(msg.chatId, msg.sourceChatId, userId);
         if (!result.ok) {
           const text = result.reason === "has_own"
-            ? "This chat already has memories, use Rebuild instead"
+            ? tr("backend.index.text.thisChatAlreadyHasMemoriesUseRebuild")
             : result.reason === "empty_source"
-              ? "That chat has no memories to inherit"
+              ? tr("backend.index.text.thatChatHasNoMemoriesToInherit")
               : result.reason === "busy"
-                ? "Memoria is already rebasing this chat"
-                : "Memoria can't rebase a chat onto itself";
+                ? tr("backend.index.text.memoriaIsAlreadyRebasingThisChat")
+                : tr("backend.index.text.memoriaCanTRebaseAChatOnto");
           await notify(userId, "warn", text);
         } else {
-          await notify(userId, "success", `Memoria seeded ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} before the greeting`);
+          await notify(userId, "success", tr("backend.index.messages.memoriaSeededInheritedMemorBeforeTheGreeting", { count: result.count }));
           await resumeSummaryBinding(msg.chatId, userId);
         }
         await pushState(userId, msg.chatId);
@@ -1170,21 +1171,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "rebuild_root": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const result = await rebuildRoot(msg.chatId, msg.sourceChatId, userId);
         if (!result.ok) {
           const text = result.reason === "empty_source"
-            ? "That chat has no memories to inherit"
+            ? tr("backend.index.text.thatChatHasNoMemoriesToInherit")
             : result.reason === "busy"
-              ? "Memoria is already rebuilding this chat"
-              : "Memoria can't rebuild a chat onto itself";
+              ? tr("backend.index.text.memoriaIsAlreadyRebuildingThisChat")
+              : tr("backend.index.text.memoriaCanTRebuildAChatOnto");
           await notify(userId, "warn", text);
           await pushState(userId, msg.chatId);
           break;
         }
-        await notify(userId, "success", `Memoria rebuilt onto ${result.count} inherited memor${result.count === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await notify(userId, "success", tr("backend.index.messages.memoriaRebuiltOntoInheritedMemorAndIs", { count: result.count }));
         await pushState(userId, msg.chatId);
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
@@ -1237,22 +1238,22 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         await notify(userId, "info", msg.excluded
-          ? `Memoria will leave ${ids.length} message${ids.length === 1 ? "" : "s"} untouched`
-          : `Memoria will compress ${ids.length} message${ids.length === 1 ? "" : "s"} again`);
+          ? tr("backend.index.messages.memoriaWillLeaveMessageUntouched", { length: ids.length })
+          : tr("backend.index.messages.memoriaWillCompressMessageAgain", { length: ids.length }));
         await pushState(userId, msg.chatId);
         break;
       }
 
       case "codex_update_now": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", tr("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "update");
@@ -1262,9 +1263,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_clear_stale": {
-        if (!setBusy(userId, msg.chatId, "codex", "Accepting current codex records")) break;
+        if (!setBusy(userId, msg.chatId, "codex", tr("backend.index.messages.acceptingCurrentCodexRecords"))) break;
         try {
-          await snapshotCodexForUndo(msg.chatId, userId, "clear stale tags");
+          await snapshotCodexForUndo(msg.chatId, userId, tr("backend.index.messages.clearStaleTags"));
           await clearCodexStaleFlags(msg.chatId, userId);
         } finally {
           clearBusy(userId, msg.chatId, "codex");
@@ -1293,7 +1294,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_restore": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, restore again when she finishes");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexRestoreAgain"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -1302,7 +1303,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const cursor = await loadCursor(msg.chatId, userId);
         const parsedBackup = parseCodexBackup(msg.raw, cursor.relationsTableMode ?? profileMode);
         if ("error" in parsedBackup) {
-          await notify(userId, "error", `Memoria couldn't restore that backup: ${parsedBackup.error}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTRestoreThatBackup", { error: parsedBackup.error }));
           break;
         }
         await applyCodexBackup(msg.chatId, userId, parsedBackup);
@@ -1313,9 +1314,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, parsedBackup.relationsTableMode ?? profileMode);
         } catch (err) {
           warn(`codex_restore entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", `Memoria restored ${restoredFiles.length} codex file${restoredFiles.length === 1 ? "" : "s"}`);
+        await notify(userId, "success", tr("backend.index.messages.memoriaRestoredCodexFile", { length: restoredFiles.length }));
         const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -1324,7 +1325,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_adopt": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         const outcome = await adoptCodexFrom(msg.sourceChatId, msg.chatId, userId).catch((err) => {
@@ -1332,15 +1333,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
           return err instanceof Error ? err : new Error(String(err));
         });
         if (outcome instanceof Error) {
-          await notify(userId, "error", `Memoria couldn't carry that codex over: ${shortErrorText(outcome)}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTCarryThatCodexOver", { shortErrorText: shortErrorText(outcome) }));
           break;
         }
         if (outcome !== "ok") {
           const text = outcome === "has_own"
-            ? "This chat already has a codex, wipe it first"
+            ? tr("backend.index.text.thisChatAlreadyHasACodexWipe")
             : outcome === "no_source"
-              ? "That chat has no codex to carry over"
-              : "Memoria can't carry a codex onto itself";
+              ? tr("backend.index.text.thatChatHasNoCodexToCarry")
+              : tr("backend.index.text.memoriaCanTCarryACodexOnto");
           await notify(userId, "warn", text);
           break;
         }
@@ -1352,9 +1353,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, adoptProfile?.codexRelationsTable);
         } catch (err) {
           warn(`codex_adopt entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", "Memoria carried the codex over, she will index this chat from message one");
+        await notify(userId, "success", tr("backend.index.messages.memoriaCarriedTheCodexOverSheWill"));
         const adopted = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: adopted, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -1363,12 +1364,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_undo": {
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         const snap = await readCodexUndo(msg.chatId, userId);
         if (!snap) {
-          await notify(userId, "warn", "Memoria has no codex snapshot to undo to");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaHasNoCodexSnapshotToUndo"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -1376,7 +1377,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profileMode = profile ? profile.codexRelationsTable : true;
         const parsedSnap = parseCodexBackup(snap, profileMode);
         if ("error" in parsedSnap) {
-          await notify(userId, "error", `Memoria couldn't undo: ${parsedSnap.error}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTUndo", { error: parsedSnap.error }));
           break;
         }
         await applyCodexBackup(msg.chatId, userId, parsedSnap, snap.cursor);
@@ -1389,9 +1390,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, parsedSnap.relationsTableMode ?? profileMode);
         } catch (err) {
           warn(`codex_undo entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
-        await notify(userId, "success", "Memoria rolled the codex back");
+        await notify(userId, "success", tr("backend.index.messages.memoriaRolledTheCodexBack"));
         const undoneRaw = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: undoneRaw, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
@@ -1400,11 +1401,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_write_file": {
         if (!isCodexFileKey(msg.file)) {
-          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          send({ type: "error", text: tr("backend.index.messages.unknownCodexFile", { file: msg.file }) }, userId);
           break;
         }
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, save again when she finishes");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexSaveAgain"));
           break;
         }
         const cur = await loadSettings(userId);
@@ -1419,13 +1420,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
         try {
           parsed = JSON.parse(msg.content);
         } catch (err) {
-          await notify(userId, "error", `That is not valid JSON: ${describeError(err)}`);
+          await notify(userId, "error", tr("backend.index.messages.thatIsNotValidJson", { describeError: describeError(err) }));
           break;
         }
         const result = validateCodexFile(msg.file, parsed, { relationsTable });
         if (!result.ok) {
-          const extra = result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : "";
-          await notify(userId, "error", `Validation failed: ${result.errors[0]}${extra}`);
+          const extra = result.errors.length > 1 ? tr("backend.index.extra.more", { length1: result.errors.length - 1 }) : "";
+          await notify(userId, "error", tr("backend.index.messages.validationFailed", { errors0: result.errors[0], extra: extra }));
           break;
         }
         await saveCodexFile(msg.chatId, msg.file, result.value, userId);
@@ -1444,7 +1445,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           await syncCodexEntries(msg.chatId, userId, relationsTable);
         } catch (err) {
           warn(`codex_write_file entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", `Memoria couldn't sync the codex to the lorebook: ${shortErrorText(err)}`);
+          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
         }
         const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
         if (problems.length > 0) {
@@ -1452,13 +1453,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
           // would blame references whose targets are fine on disk. Point at the
           // real culprit instead.
           const names = problems.map((p) => `${p.file}.json`).join(", ");
-          await notify(userId, "warn", `Saved, but ${names} could not be read so cross-file checks were skipped`);
+          await notify(userId, "warn", tr("backend.index.messages.savedButCouldNotBeReadSo", { names: names }));
         } else {
           const dangling = checkIntegrity(bundle);
           if (dangling.length > 0) {
-            await notify(userId, "warn", `Saved with ${dangling.length} dangling reference${dangling.length === 1 ? "" : "s"} to fix in the other files`);
+            await notify(userId, "warn", tr("backend.index.messages.savedWithDanglingReferenceToFixIn", { length: dangling.length }));
           } else {
-            await notify(userId, "success", `Memoria saved ${msg.file}.json`);
+            await notify(userId, "success", tr("backend.index.messages.memoriaSavedJson", { file: msg.file }));
           }
         }
         const files = await readCodexFilesRaw(msg.chatId, userId);
@@ -1468,8 +1469,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "codex_reset": {
-        if (!setBusy(userId, msg.chatId, "codex", "Memoria is clearing the codex")) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+        if (!setBusy(userId, msg.chatId, "codex", tr("backend.index.messages.memoriaIsClearingTheCodex"))) {
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         try {
@@ -1477,7 +1478,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           const failed = await deleteCodex(msg.chatId, userId);
           invalidateCodexInjectionCache(msg.chatId);
           if (failed.length > 0) {
-            await notify(userId, "error", `Memoria couldn't clear ${failed.length} codex file${failed.length === 1 ? "" : "s"}, try again`);
+            await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTClearCodexFileTry", { length: failed.length }));
           } else {
             publishCodexWiped(msg.chatId, userId);
             let entriesCleared = true;
@@ -1486,10 +1487,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
             } catch (err) {
               entriesCleared = false;
               warn(`codex_reset entry wipe failed: ${describeError(err)}`);
-              await notify(userId, "error", `Memoria couldn't clear the codex lorebook entries: ${shortErrorText(err)}`);
+              await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTClearTheCodexLorebook", { shortErrorText: shortErrorText(err) }));
             }
             if (entriesCleared) {
-              await notify(userId, "info", "Memoria cleared the codex for this chat");
+              await notify(userId, "info", tr("backend.index.messages.memoriaClearedTheCodexForThisChat"));
             }
           }
         } finally {
@@ -1505,18 +1506,18 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_rebuild": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", tr("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is updating the codex, abort that first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexAbortThat"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "rebuild");
@@ -1529,14 +1530,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_tidy": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", tr("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : undefined;
@@ -1547,19 +1548,19 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_rebuild_files": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", tr("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         const files = Array.isArray(msg.files) ? msg.files.filter(isCodexFileKey) : [];
         if (files.length === 0) break;
-        await snapshotCodexForUndo(msg.chatId, userId, "rebuild files");
+        await snapshotCodexForUndo(msg.chatId, userId, tr("backend.index.messages.rebuildFiles"));
         await rebuildCodexFiles(msg.chatId, profile, userId, files);
         const rebuiltFiles = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuiltFiles, revision: getCodexRevision(msg.chatId) }, userId);
@@ -1569,14 +1570,14 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_refresh": {
         if (codexGated(await ensureLessons(userId))) {
-          await notify(userId, "warn", "Memoria teaches the codex before she opens it, take her lesson first");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaTeachesTheCodexBeforeSheOpens"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         if (!profile.codexEnabled) {
-          await notify(userId, "warn", "Enable the codex in Tuning first");
+          await notify(userId, "warn", tr("backend.index.messages.enableTheCodexInTuningFirst"));
           break;
         }
         await snapshotCodexForUndo(msg.chatId, userId, "catch-up");
@@ -1589,7 +1590,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "codex_set_file_state": {
         if (!isCodexFileKey(msg.file)) {
-          send({ type: "error", text: `Unknown codex file "${msg.file}".` }, userId);
+          send({ type: "error", text: tr("backend.index.messages.unknownCodexFile", { file: msg.file }) }, userId);
           break;
         }
         let profile: ReturnType<typeof normalizeProfile> = null;
@@ -1609,28 +1610,28 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "wipe_books": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const removed = await wipeBooksEntries(msg.chatId, userId);
         await notify(userId, removed > 0 ? "success" : "info",
           removed > 0
-            ? `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} from the shelf`
-            : "The shelf is already empty");
+            ? tr("backend.index.messages.memoriaClearedEntrFromTheShelf", { removed: removed })
+            : tr("backend.index.messages.theShelfIsAlreadyEmpty"));
         await pushState(userId, msg.chatId);
         break;
       }
 
       case "rebuild_books": {
         if (getBusy(userId).some((b) => b.chatId === msg.chatId)) {
-          await notify(userId, "warn", "Memoria is busy, wait for her to finish");
+          await notify(userId, "warn", tr("backend.index.messages.memoriaIsBusyWaitForHerTo"));
           break;
         }
         const cur = await loadSettings(userId);
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         const removed = await wipeBooksEntries(msg.chatId, userId);
-        await notify(userId, "info", `Memoria cleared ${removed} entr${removed === 1 ? "y" : "ies"} and is re-summarizing this chat`);
+        await notify(userId, "info", tr("backend.index.messages.memoriaClearedEntrAndIsReSummarizing", { removed: removed }));
         await pushState(userId, msg.chatId);
         await drainChapterBacklog(msg.chatId, profile, cur, userId).catch((err) => warn(`rebuild books re-summarize failed: ${describeError(err)}`));
         await maybeRunArcCheck(msg.chatId, profile, cur, userId).catch(() => {});
@@ -1642,8 +1643,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "detach_root": {
         const removed = await detachRoot(msg.chatId, userId);
         const text = removed === 0
-          ? "This chat has no inherited memories to detach"
-          : `Memoria detached ${removed} inherited memor${removed === 1 ? "y" : "ies"}`;
+          ? tr("backend.index.text.thisChatHasNoInheritedMemoriesTo")
+          : tr("backend.index.text.memoriaDetachedInheritedMemor", { removed: removed });
         await notify(userId, "info", text);
         await pushState(userId, msg.chatId);
         break;

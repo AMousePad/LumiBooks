@@ -1,9 +1,10 @@
+import { t as tr } from "../../i18n";
 import { HIGHER_TIERS, TIER_NAMES, type HigherTierSettings } from "../../shared";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
 import { CODEX_SAMPLER_DEFAULTS, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
-const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", "Defaults");
+const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", tr("ui.tabs.profileTab.profileDefaults.defaults"));
 // Token-mode blank-field fallbacks for the codex cadence: the shared defaults
 // (6 / 20) are message counts and would be nonsense as token budgets.
 const CODEX_LAG_TOKENS_DEFAULT = 2000;
@@ -34,47 +35,48 @@ export function renderCodexSettings(
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
   void state;
-  const sec = section("Knowledge Codex");
+  const sec = section(tr("ui.tabs.profileTab.sec.knowledgeCodex"));
   sec.body.appendChild(lessonMark(checkbox({
-    checked: profile.codexEnabled, label: "Enable Codex",
+    checked: profile.codexEnabled, label: tr("ui.tabs.profileTab.renderCodexSettings.enableCodex"),
     onChange: (codexEnabled) => patch({ codexEnabled }),
   }), "tuning.codex.enabled"));
 
-  const updating = section("Codex Updating");
+  const updating = section(tr("ui.tabs.profileTab.updating.codexUpdating"));
   const lag = document.createElement("div");
-  for (const kind of ["Window", "Lag"] as const) {
-    const unit = kind === "Window" ? profile.codexWindowUnit : profile.codexLagUnit;
-    const value = kind === "Window" ? profile.codexWindowValue : profile.codexLagValue;
-    const fallback = kind === "Window"
+  for (const kind of ["window", "lag"] as const) {
+    const label = kind === "window" ? tr("ui.tabs.profileTab.renderCodexSettings.window") : tr("ui.tabs.profileTab.renderCodexSettings.lag");
+    const unit = kind === "window" ? profile.codexWindowUnit : profile.codexLagUnit;
+    const value = kind === "window" ? profile.codexWindowValue : profile.codexLagValue;
+    const fallback = kind === "window"
       ? unit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue
       : unit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue;
-    const group = kind === "Lag" ? lag : document.createElement("div");
+    const group = kind === "lag" ? lag : document.createElement("div");
     group.className = "lmb-collapsible-body";
-    if (kind === "Window") lessonMark(group, "tuning.codex.window");
+    if (kind === "window") lessonMark(group, "tuning.codex.window");
     else lessonMark(group, "tuning.codex.lag");
     group.append(
-      labelled(`${kind} unit`, select({ value: unit,
-        options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+      labelled(tr("ui.tabs.profileTab.renderCodexSettings.unit", { kind: label }), select({ value: unit,
+        options: [{ value: "messages", label: tr("ui.tabs.profileTab.renderCodexSettings.messages") }, { value: "tokens", label: tr("ui.tabs.profileTab.renderCodexSettings.messageTokens") }],
         onChange: (v) => {
           const next = v === "tokens" ? "tokens" : "messages";
-          patch(kind === "Window" ? { codexWindowUnit: next } : { codexLagUnit: next });
+          patch(kind === "window" ? { codexWindowUnit: next } : { codexLagUnit: next });
         },
       })),
-      labelled(kind, numberInput({ value, min: kind === "Window" ? 1 : 0,
-        max: unit === "tokens" ? 1000000 : 100000, step: unit === "tokens" ? kind === "Window" ? 100 : 50 : 1,
+      labelled(label, numberInput({ value, min: kind === "window" ? 1 : 0,
+        max: unit === "tokens" ? 1000000 : 100000, step: unit === "tokens" ? kind === "window" ? 100 : 50 : 1,
         defaultValue: fallback,
-        onBlur: (v) => patch(kind === "Window" ? { codexWindowValue: v ?? fallback } : { codexLagValue: v ?? fallback }),
+        onBlur: (v) => patch(kind === "window" ? { codexWindowValue: v ?? fallback } : { codexLagValue: v ?? fallback }),
       })),
     );
-    if (kind === "Window") updating.body.appendChild(group);
+    if (kind === "window") updating.body.appendChild(group);
   }
   if (profile.codexWindowUnit === "messages") {
-    updating.body.appendChild(lessonMark(labelled("Tokens breakpoint", numberInput({
+    updating.body.appendChild(lessonMark(labelled(tr("ui.tabs.profileTab.renderCodexSettings.tokensBreakpoint"), numberInput({
       value: profile.codexTokenBreakpoint, min: 1000, max: 1000000, step: 5000,
       defaultValue: PROFILE_DEFAULTS.codexTokenBreakpoint,
       onBlur: (v) => patch({ codexTokenBreakpoint: v ?? PROFILE_DEFAULTS.codexTokenBreakpoint }),
     })), "tuning.codex.breakpoint"));
-    updating.body.appendChild(textNode("Runs when either the window or this token count is reached.", "lmb-field-hint"));
+    updating.body.appendChild(textNode(tr("ui.tabs.profileTab.renderCodexSettings.runsWhenEitherTheWindowOrThis"), "lmb-field-hint"));
   }
   appendAutomationControls(updating.body, lag, !profile.codexManualOnly,
     (enabled) => patch({ codexManualOnly: !enabled }));
@@ -87,16 +89,16 @@ export function renderCodexSettings(
   const loreGrid = document.createElement("div");
   loreGrid.className = "lmb-grid-2";
   loreGrid.append(
-    labelled("Lore limit", select({
+    labelled(tr("ui.tabs.profileTab.renderCodexSettings.loreLimit"), select({
       value: profile.codexLoreLimitUnit,
       options: [
-        { value: "percent", label: "% of max context" },
-        { value: "tokens", label: "token cap" },
+        { value: "percent", label: tr("ui.tabs.profileTab.renderCodexSettings.ofMaxContext") },
+        { value: "tokens", label: tr("ui.tabs.profileTab.renderCodexSettings.tokenCap") },
       ],
       onChange: (v) => patch({ codexLoreLimitUnit: v === "tokens" ? "tokens" : "percent" }),
     })),
     labelled(
-      profile.codexLoreLimitUnit === "tokens" ? "Lore tokens (0 = no limit)" : "Lore % of max context",
+      profile.codexLoreLimitUnit === "tokens" ? tr("ui.tabs.profileTab.renderCodexSettings.loreTokens0NoLimit") : tr("ui.tabs.profileTab.renderCodexSettings.loreOfMaxContext"),
       numberInput({
         value: profile.codexLoreLimitUnit === "tokens" ? profile.codexLoreLimitTokens : profile.codexLoreLimitPercent,
         min: profile.codexLoreLimitUnit === "tokens" ? 0 : 1,
@@ -115,52 +117,52 @@ export function renderCodexSettings(
   const loreHint = document.createElement("div");
   loreHint.className = "lmb-field-hint";
   loreHint.textContent =
-    "Your activated lorebook entries ride every codex pass as read-only canon reference, budgeted at a quarter of the codex max input by default. Entries past the limit are skipped whole in activation order and the omission is marked for the agent. In token mode 0 removes the limit.";
+    tr("ui.tabs.profileTab.renderCodexSettings.yourActivatedLorebookEntriesRideEveryCodex");
   fields.appendChild(loreHint);
 
-  fields.appendChild(activationControl("Codex recall", profile.codexActivationMode,
+  fields.appendChild(activationControl(tr("ui.tabs.profileTab.renderCodexSettings.codexRecall"), profile.codexActivationMode,
     (codexActivationMode) => patch({ codexActivationMode })));
-  fields.appendChild(textNode("The active profile sets recall for enabled records across all chats. Timeline and threads always remain included. Other records can always activate, match keywords, or also match by meaning.", "lmb-field-hint"));
+  fields.appendChild(textNode(tr("ui.tabs.profileTab.renderCodexSettings.theActiveProfileSetsRecallForEnabled"), "lmb-field-hint"));
   if (profile.codexActivationMode === "vector") fields.appendChild(vectorSetupHint());
-  fields.appendChild(labelled("Codex placement", select({
+  fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
     value: profile.codexInjectionPosition,
-    options: [{ value: "lorebook", label: "Lorebook (before)" }, { value: "depth", label: "At history depth" }, { value: "after_history", label: "After chat history" }],
+    options: [{ value: "lorebook", label: tr("ui.tabs.profileTab.renderCodexSettings.lorebookBefore") }, { value: "depth", label: tr("ui.tabs.profileTab.renderCodexSettings.atHistoryDepth") }, { value: "after_history", label: tr("ui.tabs.profileTab.renderCodexSettings.afterChatHistory") }],
     onChange: (v) => patch({ codexInjectionPosition: v as LMBProfile["codexInjectionPosition"] }),
   })));
-  if (profile.codexInjectionPosition === "depth") fields.appendChild(labelled("Depth from newest turn", numberInput({
+  if (profile.codexInjectionPosition === "depth") fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.depthFromNewestTurn"), numberInput({
     value: profile.codexInjectionDepth, min: 0, max: 10000,
     onBlur: (v) => patch({ codexInjectionDepth: v ?? 4 }),
   })));
   const placementHint = document.createElement("div");
   placementHint.className = "lmb-help";
-  placementHint.textContent = "Summaries replace their source history in place. Codex records are normal lorebook entries: the default follows your preset's Lorebook Before block; depth 0 follows history. Constant activation does not freeze text: codex updates can still break the prompt cache. A larger update window changes it less often; placing it after history preserves the earlier prefix.";
+  placementHint.textContent = tr("ui.tabs.profileTab.renderCodexSettings.summariesReplaceTheirSourceHistoryInPlace");
   fields.appendChild(placementHint);
 
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
-    label: "Relations table",
-    hint: "Tracks connections between entities as one shared table with integrity checks. When off, relationships live as short notes on each entity sheet instead.",
+    label: tr("ui.tabs.profileTab.renderCodexSettings.relationsTable"),
+    hint: tr("ui.tabs.profileTab.renderCodexSettings.tracksConnectionsBetweenEntitiesAsOneShared"),
     onChange: (v) => patch({ codexRelationsTable: v }),
   }), "tuning.codex.relations"));
 
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexThorough,
-    label: "Thorough mode",
-    hint: "Spends one extra verification round per update to sweep for stale info and compress bloat.",
+    label: tr("ui.tabs.profileTab.renderCodexSettings.thoroughMode"),
+    hint: tr("ui.tabs.profileTab.renderCodexSettings.spendsOneExtraVerificationRoundPerUpdate"),
     onChange: (v) => patch({ codexThorough: v }),
   }), "tuning.codex.thorough"));
 
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexExtraContext,
-    label: "Extra context mode",
-    hint: "Summarizes chapters early at the codex lag as ghost chapters. Ghosts feed the agent story-so-far context and are promoted into real chapters once the chapter lag arrives, with no second summarization.",
+    label: tr("ui.tabs.profileTab.renderCodexSettings.extraContextMode"),
+    hint: tr("ui.tabs.profileTab.renderCodexSettings.summarizesChaptersEarlyAtTheCodexLag"),
     onChange: (v) => patch({ codexExtraContext: v }),
   }), "tuning.codex.extra"));
 
   const soFarFields = document.createElement("div");
   soFarFields.className = profile.codexExtraContext ? "" : "lmb-greyed";
   soFarFields.appendChild(
-    labelled("Chapters provided", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSettings.chaptersProvided"), numberInput({
       value: profile.codexStorySoFarCount,
       min: 0,
       max: 50,
@@ -170,13 +172,13 @@ export function renderCodexSettings(
   );
   const soFarHint = document.createElement("div");
   soFarHint.className = "lmb-field-hint";
-  soFarHint.textContent = "How many recent chapter summaries extra context mode hands the agent as story-so-far grounding.";
+  soFarHint.textContent = tr("ui.tabs.profileTab.renderCodexSettings.howManyRecentChapterSummariesExtraContext");
   soFarFields.appendChild(soFarHint);
   fields.appendChild(soFarFields);
 
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";
-  modelHint.textContent = "The codex agent's connection and samplers live on the Connection pane, behind the Codex toggle.";
+  modelHint.textContent = tr("ui.tabs.profileTab.renderCodexSettings.theCodexAgentSConnectionAndSamplers");
   fields.appendChild(modelHint);
 
   host.appendChild(sec.wrap);
@@ -190,12 +192,12 @@ export function renderCodexConnection(
   profile: LMBProfile,
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
-  const sec = section("Codex connection");
+  const sec = section(tr("ui.tabs.profileTab.sec.codexConnection"));
   const connOpts = [
-    { value: "", label: "Same as Summary Connection" },
+    { value: "", label: tr("ui.tabs.profileTab.connOpts.sameAsSummaryConnection") },
     ...state.connections.map((c) => ({
       value: c.id,
-      label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`,
+      label: tr("ui.tabs.profileTab.connOpts.value", { name: c.name, provider: c.provider, choice: (c.model) ? "yes" : "no", model: (c.model) ? (c.model) : "", choice2: (c.isDefault) ? "yes" : "no" }),
     })),
   ];
   sec.body.appendChild(
@@ -208,23 +210,23 @@ export function renderCodexConnection(
 
   sec.body.appendChild(lessonMark(checkbox({
     checked: profile.codexUseTools,
-    label: "Use tool calls",
-    hint: "Off by default: the agent writes one strict JSON reply, which every provider route can carry. Turn on for structured tool calls if your connection delivers them reliably.",
+    label: tr("ui.tabs.profileTab.renderCodexConnection.useToolCalls"),
+    hint: tr("ui.tabs.profileTab.renderCodexConnection.offByDefaultTheAgentWritesOne"),
     onChange: (v) => patch({ codexUseTools: v }),
   }), "tuning.codex.usetools"));
 
-  sec.body.appendChild(labelled("Update delivery", select({
+  sec.body.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexConnection.updateDelivery"), select({
     value: profile.codexWriteMode,
     options: [
-      { value: "batch", label: "All records at once" },
-      { value: "sequential", label: "One record at a time" },
+      { value: "batch", label: tr("ui.tabs.profileTab.renderCodexConnection.allRecordsAtOnce") },
+      { value: "sequential", label: tr("ui.tabs.profileTab.renderCodexConnection.oneRecordAtATime") },
     ],
     onChange: (v) => patch({ codexWriteMode: v === "sequential" ? "sequential" : "batch" }),
   })));
   const seqHelp = document.createElement("div");
   seqHelp.className = "lmb-help";
   seqHelp.textContent =
-    "Memoria always makes sure every record is dealt with before she accepts an update, so all at once is the cheaper choice and is fine for most models. Switch to one at a time if your model keeps getting cut off partway through a long answer.";
+    tr("ui.tabs.profileTab.renderCodexConnection.memoriaAlwaysMakesSureEveryRecordIs");
   sec.body.appendChild(seqHelp);
 
   host.appendChild(sec.wrap);
@@ -236,15 +238,15 @@ export function renderResetSettings(
   send: (msg: FrontendToBackend) => void,
 ): void {
   const profile = state.activeProfile;
-  const sec = section("Reset");
+  const sec = section(tr("ui.tabs.profileTab.sec.reset"));
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Resets this profile's settings to their defaults.";
+    tr("ui.tabs.profileTab.renderResetSettings.resetsThisProfileSSettingsToTheir");
   sec.body.appendChild(help);
 
-  const IDLE = "Reset profile to defaults";
-  const CONFIRM = "Click again to confirm";
+  const IDLE = tr("ui.tabs.profileTab.idle.resetProfileToDefaults");
+  const CONFIRM = tr("ui.tabs.profileTab.confirm.clickAgainToConfirm");
   let btn: HTMLButtonElement;
   let armed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -278,7 +280,7 @@ export function renderProfilePicker(
   ctx: SpindleFrontendContext,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Profile");
+  const sec = section(tr("ui.tabs.profileTab.sec.profile"));
   const row = document.createElement("div");
   row.className = "lmb-field-row";
   lessonMark(row, "tuning.profile.select");
@@ -294,19 +296,19 @@ export function renderProfilePicker(
   );
   row.appendChild(grow);
   row.append(
-    makeButton("New", async () => {
-      const name = await promptForString(ctx, "New profile name", "");
+    makeButton(tr("ui.tabs.profileTab.renderProfilePicker.new"), async () => {
+      const name = await promptForString(ctx, tr("ui.tabs.profileTab.name.newProfileName"), "");
       if (!name) return;
       send({ type: "create_profile", name, chatId: state.activeChatId });
     }, { small: true }),
-    makeButton("Delete", () => {
+    makeButton(tr("ui.tabs.profileTab.renderProfilePicker.delete"), () => {
       send({ type: "delete_profile", profileId: state.activeProfile.id, chatId: state.activeChatId });
     }, { small: true, danger: true, disabled: state.settings.profiles.length <= 1 }),
   );
   sec.body.appendChild(row);
 
   const profile = state.activeProfile;
-  const nameField = field("Profile name");
+  const nameField = field(tr("ui.tabs.profileTab.nameField.profileName"));
   nameField.body.appendChild(
     textInput({
       value: profile.name,
@@ -315,12 +317,12 @@ export function renderProfilePicker(
   );
   sec.body.appendChild(nameField.wrap);
 
-  const enableWrap = field("Extension");
+  const enableWrap = field(tr("ui.tabs.profileTab.enableWrap.extension"));
   enableWrap.body.appendChild(
     checkbox({
       checked: state.settings.enabled,
-      label: "Enabled",
-      hint: "Master switch. When off, Memoria does nothing on this account.",
+      label: tr("ui.tabs.profileTab.renderProfilePicker.enabled"),
+      hint: tr("ui.tabs.profileTab.renderProfilePicker.masterSwitchWhenOffMemoriaDoesNothing"),
       onChange: (v) => send({ type: "save_settings", patch: { enabled: v }, chatId: state.activeChatId }),
     }),
   );
@@ -331,17 +333,16 @@ export function renderProfilePicker(
 
 /** Each tier owns one card containing both its cadence and output target. */
 export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
-  const sec = section("Summary settings");
-  sec.body.appendChild(textNode("Window, lag, and compression settings for each tier.", "lmb-help"));
+  const sec = section(tr("ui.tabs.profileTab.sec.summarySettings"));
+  sec.body.appendChild(textNode(tr("ui.tabs.profileTab.renderSummarySettings.windowLagAndCompressionSettingsForEach"), "lmb-help"));
   sec.body.appendChild(lessonMark(checkbox({
-    checked: profile.autoCreate, label: "Run automation",
-    hint: "Master toggle for all tiers. Turn it off to run summaries manually.",
+    checked: profile.autoCreate, label: tr("ui.tabs.profileTab.renderSummarySettings.runAutomation"),
     onChange: (autoCreate) => patch({ autoCreate }),
   }), "tuning.auto"));
 
   for (const tier of [1, 2, ...HIGHER_TIERS] as const) {
     const name = TIER_NAMES[tier - 1]!;
-    const card = section(tier === 1 ? "Chapter Filing" : `${name} Binding`);
+    const card = section(tier === 1 ? tr("ui.tabs.profileTab.card.chapterFiling") : tr("ui.tabs.profileTab.card.binding", { name: name }));
     const lag = document.createElement("div");
     lag.className = "lmb-collapsible-body";
     if (tier === 1) {
@@ -350,11 +351,11 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
       window.className = "lmb-collapsible-body";
       lessonMark(window, "tuning.window");
       window.append(
-        labelled("Window unit", select({ value: profile.windowUnit,
-          options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.windowUnit"), select({ value: profile.windowUnit,
+          options: [{ value: "messages", label: tr("ui.tabs.profileTab.renderSummarySettings.messages") }, { value: "tokens", label: tr("ui.tabs.profileTab.renderSummarySettings.messageTokens") }],
           onChange: (v) => patch({ windowUnit: v === "tokens" ? "tokens" : "messages" }),
         })),
-        labelled("Window", numberInput({ value: profile.windowValue, min: 1,
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.window"), numberInput({ value: profile.windowValue, min: 1,
           max: profile.windowUnit === "tokens" ? 1000000 : 100000, step: profile.windowUnit === "tokens" ? 100 : 1,
           defaultValue: PROFILE_DEFAULTS.windowValue, onBlur: (v) => patch({ windowValue: v ?? PROFILE_DEFAULTS.windowValue }),
         })),
@@ -363,11 +364,11 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
       // Chapter lag has its own unit. Keep mixed-unit profiles editable
       // without converting or silently overwriting their settings.
       lag.append(
-        labelled("Lag unit", select({ value: profile.lagUnit,
-          options: [{ value: "messages", label: "Messages" }, { value: "tokens", label: "Message tokens" }],
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.lagUnit"), select({ value: profile.lagUnit,
+          options: [{ value: "messages", label: tr("ui.tabs.profileTab.renderSummarySettings.messages") }, { value: "tokens", label: tr("ui.tabs.profileTab.renderSummarySettings.messageTokens") }],
           onChange: (v) => patch({ lagUnit: v === "tokens" ? "tokens" : "messages" }),
         })),
-        lessonMark(labelled("Lag", numberInput({ value: profile.lagValue, min: 0,
+        lessonMark(labelled(tr("ui.tabs.profileTab.renderSummarySettings.lag"), numberInput({ value: profile.lagValue, min: 0,
           max: profile.lagUnit === "tokens" ? 1000000 : 100000, step: profile.lagUnit === "tokens" ? 50 : 1,
           defaultValue: PROFILE_DEFAULTS.lagValue, onBlur: (v) => patch({ lagValue: v ?? PROFILE_DEFAULTS.lagValue }),
         })), "tuning.lag"),
@@ -375,11 +376,11 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
     } else if (tier === 2) {
       lessonMark(card.wrap, "tuning.arc");
       card.body.append(
-        labelled("Window unit", select({ value: profile.arcTrigger,
-          options: [{ value: "chapters", label: "Chapter entries" }, { value: "tokens", label: "Summary tokens" }, { value: "manual", label: "Manual only" }],
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.windowUnit"), select({ value: profile.arcTrigger,
+          options: [{ value: "chapters", label: tr("ui.tabs.profileTab.renderSummarySettings.chapterEntries") }, { value: "tokens", label: tr("ui.tabs.profileTab.renderSummarySettings.summaryTokens") }, { value: "manual", label: tr("ui.tabs.profileTab.renderSummarySettings.manualOnly") }],
           onChange: (v) => patch({ arcTrigger: v === "tokens" || v === "manual" ? v : "chapters" }),
         })),
-        labelled("Window", numberInput({
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.window"), numberInput({
           value: profile.arcTrigger === "tokens" ? profile.arcAfterTokens : profile.arcAfterChapters,
           min: profile.arcTrigger === "tokens" ? 500 : 2, max: profile.arcTrigger === "tokens" ? 200000 : 100,
           step: profile.arcTrigger === "tokens" ? 500 : 1, disabled: profile.arcTrigger === "manual",
@@ -387,7 +388,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
           onBlur: (v) => { if (v !== null) patch(profile.arcTrigger === "tokens" ? { arcAfterTokens: v } : { arcAfterChapters: v }); },
         })),
       );
-      lag.appendChild(labelled("Lag", numberInput({
+      lag.appendChild(labelled(tr("ui.tabs.profileTab.renderSummarySettings.lag"), numberInput({
           value: profile.arcTrigger === "tokens" ? profile.arcLagTokens : profile.arcLagChapters,
           min: 0, max: profile.arcTrigger === "tokens" ? 200000 : 100, step: profile.arcTrigger === "tokens" ? 100 : 1,
           disabled: profile.arcTrigger === "manual",
@@ -398,16 +399,16 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
       const config = profile.higherTiers[tier];
       const change = (v: Partial<HigherTierSettings>) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
       card.body.append(
-        labelled("Window unit", select({ value: config.unit,
-          options: [{ value: "entries", label: `${TIER_NAMES[tier - 2]} entries` }, { value: "tokens", label: "Summary tokens" }],
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.windowUnit"), select({ value: config.unit,
+          options: [{ value: "entries", label: tr("ui.tabs.profileTab.renderSummarySettings.entries", { tierNamesTier2: TIER_NAMES[tier - 2] }) }, { value: "tokens", label: tr("ui.tabs.profileTab.renderSummarySettings.summaryTokens") }],
           onChange: (v) => change({ unit: v === "tokens" ? "tokens" : "entries", batch: v === "tokens" ? 8000 : 6, lag: v === "tokens" ? 2000 : 2 }),
         })),
-        labelled("Window", numberInput({ value: config.batch, min: config.unit === "tokens" ? 100 : 2,
+        labelled(tr("ui.tabs.profileTab.renderSummarySettings.window"), numberInput({ value: config.batch, min: config.unit === "tokens" ? 100 : 2,
           max: config.unit === "tokens" ? 1000000 : 100, step: config.unit === "tokens" ? 100 : 1,
           defaultValue: config.unit === "tokens" ? 8000 : 6, onBlur: (v) => change({ batch: v ?? config.batch }),
         })),
       );
-      lag.appendChild(labelled("Lag", numberInput({ value: config.lag, min: 0,
+      lag.appendChild(labelled(tr("ui.tabs.profileTab.renderSummarySettings.lag"), numberInput({ value: config.lag, min: 0,
           max: config.unit === "tokens" ? 1000000 : 100, step: config.unit === "tokens" ? 100 : 1,
           defaultValue: config.unit === "tokens" ? 2000 : 2, onBlur: (v) => change({ lag: v ?? config.lag }),
         })));
@@ -432,7 +433,7 @@ function appendAutomationControls(host: HTMLElement, lag: HTMLElement, enabled: 
     for (const { input, disabled } of controls) input.disabled = !enabled || disabled;
   };
   update(enabled);
-  host.append(checkbox({ checked: enabled, label: "Automate?", onChange: (enabled) => {
+  host.append(checkbox({ checked: enabled, label: tr("ui.tabs.profileTab.appendAutomationControls.automate"), onChange: (enabled) => {
     update(enabled);
     onChange(enabled);
   } }), lag);
@@ -448,18 +449,18 @@ function appendCompressionTarget(host: HTMLElement, profile: LMBProfile, tier: 1
       patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier as 4 | 5 | 6 | 7], ...v } } });
     } else {
       patch({
-        ...(v.targetUnit !== undefined ? { [`${prefix}TargetUnit`]: v.targetUnit } : {}),
-        ...(v.targetPercent !== undefined ? { [`${prefix}TargetPercent`]: v.targetPercent } : {}),
-        ...(v.targetTokens !== undefined ? { [`${prefix}TargetTokens`]: v.targetTokens } : {}),
+        ...(v.targetUnit !== undefined ? { [tr("ui.tabs.profileTab.change.targetUnit", { prefix: prefix })]: v.targetUnit } : {}),
+        ...(v.targetPercent !== undefined ? { [tr("ui.tabs.profileTab.change.targetPercent", { prefix: prefix })]: v.targetPercent } : {}),
+        ...(v.targetTokens !== undefined ? { [tr("ui.tabs.profileTab.change.targetTokens", { prefix: prefix })]: v.targetTokens } : {}),
       });
     }
   };
   host.append(
-    labelled("Compression target", select({ value: target.targetUnit,
-      options: [{ value: "percent", label: "Percent of input" }, { value: "tokens", label: "Fixed tokens" }],
+    labelled(tr("ui.tabs.profileTab.appendCompressionTarget.compressionTarget"), select({ value: target.targetUnit,
+      options: [{ value: "percent", label: tr("ui.tabs.profileTab.appendCompressionTarget.percentOfInput") }, { value: "tokens", label: tr("ui.tabs.profileTab.appendCompressionTarget.fixedTokens") }],
       onChange: (v) => change({ targetUnit: v === "tokens" ? "tokens" : "percent" }),
     })),
-    labelled(target.targetUnit === "tokens" ? "Target tokens" : "Target percent", numberInput({
+    labelled(target.targetUnit === "tokens" ? tr("ui.tabs.profileTab.appendCompressionTarget.targetTokens") : tr("ui.tabs.profileTab.appendCompressionTarget.targetPercent"), numberInput({
       value: target.targetUnit === "tokens" ? target.targetTokens : target.targetPercent,
       min: target.targetUnit === "tokens" ? 50 : tier === 1 ? 2 : 5,
       max: target.targetUnit === "tokens" ? 1000000 : tier === 1 ? 90 : 95, step: target.targetUnit === "tokens" ? 50 : 1,
@@ -476,13 +477,13 @@ export function renderConnection(
   profile: LMBProfile,
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
-  const sec = section("Summary Connection");
+  const sec = section(tr("ui.tabs.profileTab.sec.summaryConnection"));
   lessonMark(sec.wrap, "tuning.model.connection");
   const opts = [
-    { value: "", label: state.connections.length ? "Default connection" : "No connections available" },
+    { value: "", label: state.connections.length ? tr("ui.tabs.profileTab.opts.defaultConnection") : tr("ui.tabs.profileTab.opts.noConnectionsAvailable") },
     ...state.connections.map((c) => ({
       value: c.id,
-      label: `${c.name} - ${c.provider}${c.model ? "/" + c.model : ""}${c.isDefault ? " (default)" : ""}`,
+      label: tr("ui.tabs.profileTab.opts.value", { name: c.name, provider: c.provider, choice: (c.model) ? "yes" : "no", model: (c.model) ? (c.model) : "", choice2: (c.isDefault) ? "yes" : "no" }),
     })),
   ];
   sec.body.appendChild(
@@ -497,7 +498,7 @@ export function renderConnection(
     if (resolved) {
       const hint = document.createElement("div");
       hint.className = "lmb-field-hint";
-      hint.textContent = `Memoria writes with ${resolved.name}`;
+      hint.textContent = tr("ui.tabs.profileTab.renderConnection.memoriaWritesWith", { name: resolved.name });
       sec.body.appendChild(hint);
     }
   }
@@ -510,11 +511,11 @@ export function renderSamplers(
   profile: LMBProfile,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Summary samplers");
+  const sec = section(tr("ui.tabs.profileTab.sec.summarySamplers"));
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Used when Memoria writes chapters, arcs, and volumes. Empty fields use defaults tuned for summarization - placeholders show what will be sent. Temperature, max output, and max input are always sent on the wire; top_p / top_k / penalties are only sent when you set them.";
+    tr("ui.tabs.profileTab.renderSamplers.usedWhenMemoriaWritesChaptersArcsAnd");
   sec.body.appendChild(help);
 
   const saveSampler = (key: keyof SamplerSet) => (v: number | null) => {
@@ -525,12 +526,12 @@ export function renderSamplers(
   const grid = document.createElement("div");
   grid.className = "lmb-grid-2";
   grid.append(
-    labelled("Max input tokens", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.maxInputTokens"), numberInput({
       value: profile.samplers.max_input_tokens, min: 256, max: 4000000, step: 1024,
       placeholder: String(SAMPLER_DEFAULTS.max_input_tokens),
       onBlur: saveSampler("max_input_tokens"),
     })),
-    labelled("Max output tokens", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.maxOutputTokens"), numberInput({
       value: profile.samplers.max_tokens, min: 1, max: 1000000, step: 256,
       placeholder: String(SAMPLER_DEFAULTS.max_tokens),
       onBlur: saveSampler("max_tokens"),
@@ -541,27 +542,27 @@ export function renderSamplers(
   const sampleGrid = document.createElement("div");
   sampleGrid.className = "lmb-grid-3";
   sampleGrid.append(
-    labelled("Temperature", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.temperature"), numberInput({
       value: profile.samplers.temperature, min: 0, max: 2, step: 0.05,
       placeholder: String(SAMPLER_DEFAULTS.temperature),
       onBlur: saveSampler("temperature"),
     })),
-    labelled("Top P", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.topP"), numberInput({
       value: profile.samplers.top_p, min: 0, max: 1, step: 0.01,
       placeholder: String(SAMPLER_DEFAULTS.top_p),
       onBlur: saveSampler("top_p"),
     })),
-    labelled("Top K", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.topK"), numberInput({
       value: profile.samplers.top_k, min: 0, max: 1000, step: 1,
       placeholder: String(SAMPLER_DEFAULTS.top_k),
       onBlur: saveSampler("top_k"),
     })),
-    labelled("Freq penalty", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.freqPenalty"), numberInput({
       value: profile.samplers.frequency_penalty, min: -2, max: 2, step: 0.05,
       placeholder: String(SAMPLER_DEFAULTS.frequency_penalty),
       onBlur: saveSampler("frequency_penalty"),
     })),
-    labelled("Pres penalty", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderSamplers.presPenalty"), numberInput({
       value: profile.samplers.presence_penalty, min: -2, max: 2, step: 0.05,
       placeholder: String(SAMPLER_DEFAULTS.presence_penalty),
       onBlur: saveSampler("presence_penalty"),
@@ -595,8 +596,8 @@ export function renderSamplersSwitch(
   body.className = "lmb-pane";
 
   const options: { key: "main" | "codex"; label: string; btn?: HTMLButtonElement }[] = [
-    { key: "main", label: "Books" },
-    { key: "codex", label: "Codex" },
+    { key: "main", label: tr("ui.tabs.profileTab.options.books") },
+    { key: "codex", label: tr("ui.tabs.profileTab.options.codex") },
   ];
   const sync = (): void => {
     for (const o of options) o.btn?.classList.toggle("active", samplerView === o.key);
@@ -637,11 +638,11 @@ export function renderCodexSamplers(
   profile: LMBProfile,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const sec = section("Codex samplers");
+  const sec = section(tr("ui.tabs.profileTab.sec.codexSamplers"));
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Samplers for the codex agent only, separate from the summary samplers. Empty fields use codex defaults.";
+    tr("ui.tabs.profileTab.renderCodexSamplers.samplersForTheCodexAgentOnlySeparate");
   sec.body.appendChild(help);
 
   const saveSampler = (key: keyof SamplerSet) => (v: number | null) => {
@@ -652,12 +653,12 @@ export function renderCodexSamplers(
   const grid = document.createElement("div");
   grid.className = "lmb-grid-2";
   grid.append(
-    labelled("Max input tokens", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.maxInputTokens"), numberInput({
       value: profile.codexSamplers.max_input_tokens, min: 256, max: 4000000, step: 1024,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.max_input_tokens),
       onBlur: saveSampler("max_input_tokens"),
     })),
-    labelled("Max output tokens", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.maxOutputTokens"), numberInput({
       value: profile.codexSamplers.max_tokens, min: 1, max: 1000000, step: 256,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.max_tokens),
       onBlur: saveSampler("max_tokens"),
@@ -668,27 +669,27 @@ export function renderCodexSamplers(
   const sampleGrid = document.createElement("div");
   sampleGrid.className = "lmb-grid-3";
   sampleGrid.append(
-    labelled("Temperature", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.temperature"), numberInput({
       value: profile.codexSamplers.temperature, min: 0, max: 2, step: 0.05,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.temperature),
       onBlur: saveSampler("temperature"),
     })),
-    labelled("Top P", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.topP"), numberInput({
       value: profile.codexSamplers.top_p, min: 0, max: 1, step: 0.01,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.top_p),
       onBlur: saveSampler("top_p"),
     })),
-    labelled("Top K", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.topK"), numberInput({
       value: profile.codexSamplers.top_k, min: 0, max: 1000, step: 1,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.top_k),
       onBlur: saveSampler("top_k"),
     })),
-    labelled("Freq penalty", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.freqPenalty"), numberInput({
       value: profile.codexSamplers.frequency_penalty, min: -2, max: 2, step: 0.05,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.frequency_penalty),
       onBlur: saveSampler("frequency_penalty"),
     })),
-    labelled("Pres penalty", numberInput({
+    labelled(tr("ui.tabs.profileTab.renderCodexSamplers.presPenalty"), numberInput({
       value: profile.codexSamplers.presence_penalty, min: -2, max: 2, step: 0.05,
       placeholder: String(CODEX_SAMPLER_DEFAULTS.presence_penalty),
       onBlur: saveSampler("presence_penalty"),
@@ -704,19 +705,19 @@ export function renderRegex(
   profile: LMBProfile,
   patch: (p: Partial<LMBProfile>) => void,
 ): void {
-  const sec = section("Regex");
+  const sec = section(tr("ui.tabs.profileTab.sec.regex"));
   if (state.regexScripts.length === 0) {
-    sec.body.appendChild(textNode("No regex scripts found in Lumiverse", "lmb-empty"));
+    sec.body.appendChild(textNode(tr("ui.tabs.profileTab.renderRegex.noRegexScriptsFoundInLumiverse"), "lmb-empty"));
     host.appendChild(sec.wrap);
     return;
   }
   const help = document.createElement("div");
   help.className = "lmb-help";
   help.textContent =
-    "Outgoing runs on the prompt before Memoria reads it. Incoming runs on the result after Memoria writes.";
+    tr("ui.tabs.profileTab.renderRegex.outgoingRunsOnThePromptBeforeMemoria");
   sec.body.appendChild(help);
 
-  const outgoing = field("Outgoing");
+  const outgoing = field(tr("ui.tabs.profileTab.outgoing.outgoing"));
   outgoing.body.appendChild(
     multiSelect({
       options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
@@ -726,7 +727,7 @@ export function renderRegex(
   );
   sec.body.appendChild(outgoing.wrap);
 
-  const incoming = field("Incoming");
+  const incoming = field(tr("ui.tabs.profileTab.incoming.incoming"));
   incoming.body.appendChild(
     multiSelect({
       options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
@@ -740,9 +741,9 @@ export function renderRegex(
 }
 
 export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
-  const sec = section("Context");
+  const sec = section(tr("ui.tabs.profileTab.sec.context"));
   lessonMark(sec.wrap, "tuning.ctx");
-  const f = field("Chapter context");
+  const f = field(tr("ui.tabs.profileTab.f.chapterContext"));
   f.body.appendChild(
     numberInput({
       value: profile.previousMemoriesCount,
@@ -754,11 +755,11 @@ export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p:
   );
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
-  hint.textContent = "How many recent chapters to feed Memoria as continuity context.";
+  hint.textContent = tr("ui.tabs.profileTab.renderContext.howManyRecentChaptersToFeedMemoria");
   f.body.appendChild(hint);
   sec.body.appendChild(f.wrap);
 
-  const retry = field("Retries");
+  const retry = field(tr("ui.tabs.profileTab.retry.retries"));
   retry.body.appendChild(
     numberInput({
       value: profile.retryCount,
@@ -770,11 +771,11 @@ export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p:
   );
   const retryHint = document.createElement("div");
   retryHint.className = "lmb-field-hint";
-  retryHint.textContent = "Tries per attempt. After the last try, Memoria will pick the same messages again next turn.";
+  retryHint.textContent = tr("ui.tabs.profileTab.renderContext.triesPerAttemptAfterTheLastTry");
   retry.body.appendChild(retryHint);
   sec.body.appendChild(retry.wrap);
 
-  const ttft = field("First-token timeout (seconds)");
+  const ttft = field(tr("ui.tabs.profileTab.ttft.firstTokenTimeoutSeconds"));
   ttft.body.appendChild(
     numberInput({
       value: profile.ttftTimeoutSecs,
@@ -787,7 +788,7 @@ export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p:
   );
   const ttftHint = document.createElement("div");
   ttftHint.className = "lmb-field-hint";
-  ttftHint.textContent = "How long Memoria waits for the first streamed token before giving up. After the first token she lets the stream run.";
+  ttftHint.textContent = tr("ui.tabs.profileTab.renderContext.howLongMemoriaWaitsForTheFirst");
   ttft.body.appendChild(ttftHint);
   sec.body.appendChild(ttft.wrap);
 
@@ -795,17 +796,17 @@ export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p:
 }
 
 export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
-  const sec = section("Behavior");
+  const sec = section(tr("ui.tabs.profileTab.sec.behavior"));
   sec.body.appendChild(checkbox({
     checked: profile.hideCoveredMessages,
-    label: "Hide messages once filed",
-    hint: "Greys out covered messages in the chat. Enforcement runs in the interceptor either way.",
+    label: tr("ui.tabs.profileTab.renderBehavior.hideMessagesOnceFiled"),
+    hint: tr("ui.tabs.profileTab.renderBehavior.greysOutCoveredMessagesInTheChat"),
     onChange: (v) => patch({ hideCoveredMessages: v }),
   }));
   sec.body.appendChild(lessonMark(checkbox({
     checked: profile.showMemoryPreviews,
-    label: "Preview before saving",
-    hint: "Memoria stages new chapters and arcs in Home → Pending previews for your approval.",
+    label: tr("ui.tabs.profileTab.renderBehavior.previewBeforeSaving"),
+    hint: tr("ui.tabs.profileTab.renderBehavior.memoriaStagesNewChaptersAndArcsIn"),
     onChange: (v) => patch({ showMemoryPreviews: v }),
   }), "tuning.behavior.preview"));
   host.appendChild(sec.wrap);

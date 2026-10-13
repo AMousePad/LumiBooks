@@ -78,11 +78,40 @@ test("tidy retries using saved content, then stops at the user's limit with one 
   expect(getBusy(user)).toHaveLength(0);
 });
 
+for (const fault of ["read", "validation"] as const) test(`post-tidy ${fault} failure identifies the file and cause without another model call`, async () => {
+  const storage = (globalThis as any).spindle.userStorage;
+  const read = storage.read, setJson = storage.setJson;
+  const path = `codex/${chat}/world.json`;
+  let saved = false;
+  storage.setJson = async (p: string, value: unknown) => {
+    await setJson(p, value);
+    if (p === path) saved = true;
+  };
+  storage.read = async (p: string) => {
+    if (saved && p === path) {
+      if (fault === "read") throw new Error("EIO: storage read failed. Synthetic failure detail.");
+      return JSON.stringify({ entries: [{ topic: 42, facts: [] }] });
+    }
+    return read(p);
+  };
+  reply = () => ({ writes: [{ file: "world", content: world(600) }], done: true });
+  await runCodexTidy(chat, profile, user, ["world"], { unit: "tokens", value: 500 });
+  expect(calls).toBe(1);
+  const error = toasts.find(t => t.tone === "error")?.text;
+  expect(error).toContain("world.json:");
+  expect(error).toContain(fault === "read" ? "EIO: storage read failed. Synthetic failure detail." : "topic");
+  expect(error).toContain("Codex state issue after tidying");
+  expect(error).toContain("Undo restores");
+  expect(data.get(path)).toMatchObject(world(600));
+  expect(JSON.parse(data.get(`codex-undo/${chat}.json`).files.world)).toEqual(world(1000));
+  expect(getBusy(user)).toHaveLength(0);
+});
+
 test("six actual calls include JSON repairs, with no seventh call when still too big", async () => {
   reply = (call) => call === 1 ? "This is not JSON." : ({ writes: [{ file: "world", content: world(800) }], done: true });
   await runCodexTidy(chat, profile, user, ["world"], { unit: "percent", value: 50 });
   expect(calls).toBe(6);
-  expect(toasts.at(-1)?.text).toContain("still above");
+  expect(toasts.at(-1)?.text).toContain("above the limit");
   expect(data.get(`codex/${chat}/world.json`)).toMatchObject(world(800));
 });
 
@@ -119,7 +148,7 @@ test("cancel stops another compaction call and releases busy state", async () =>
   await runCodexTidy(chat, profile, user, ["world"], { unit: "tokens", value: 100 });
   expect(calls).toBe(1);
   expect(getBusy(user)).toHaveLength(0);
-  expect(toasts.some((t) => t.text.includes("Tidying stopped"))).toBe(true);
+  expect(toasts.some((t) => t.text.includes("Tidying cancelled"))).toBe(true);
 });
 
 
@@ -128,7 +157,7 @@ test("tool transport shares the same six-call ceiling across completed passes", 
   reply = () => ({ writes: [{ file: "world", content: world(800) }], done: true });
   await runCodexTidy(chat, profile, user, ["world"], { unit: "tokens", value: 100 });
   expect(calls).toBe(6);
-  expect(toasts.at(-1)?.text).toContain("still above");
+  expect(toasts.at(-1)?.text).toContain("above the limit");
 });
 
 test("locked entities survive a tidy even when the model tries to remove them", async () => {

@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import type { ArcView, ChapterView, CoverageStats, FrontendState, MessageStub } from "../../types";
 import type { LMBEntryMeta, LessonsState } from "../../shared";
 import {
@@ -16,18 +17,18 @@ const FIXTURE_CONN = "lesson_conn";
 /* --------------------------------------------------------- sample story */
 
 const LINES = [
-  "The rain had not let up since the duke's carriage was found empty on the north road.",
-  "Elias pressed the silver locket into his palm until the clasp bit skin.",
-  "\"You were there,\" Mara said quietly, not looking up from her stitching.",
-  "The captain's men went door to door along Wren Street before dawn.",
-  "I keep my voice level and ask what the pawnbroker wanted for his silence.",
-  "Ashford Manor stood dark except for a single lamp in the study window.",
-  "\"Bandits,\" the captain repeated, writing it down like he believed it.",
-  "Mara folded the receipt into the hem of her sleeve and said nothing.",
-  "The bells rang for the duke at noon, and half the city wore borrowed black.",
-  "Elias slept in the loft above the tannery and dreamed of the study door.",
-  "\"If they find the locket, they find you,\" she whispered on the bridge.",
-  "The ferryman's scar caught the light when he took my coin.",
+  tr("ui.lessons.fixture.lines.theRainHadNotLetUpSince"),
+  tr("ui.lessons.fixture.lines.eliasPressedTheSilverLocketIntoHis"),
+  tr("ui.lessons.fixture.lines.youWereThereMaraSaidQuietlyNot"),
+  tr("ui.lessons.fixture.lines.theCaptainSMenWentDoorTo"),
+  tr("ui.lessons.fixture.lines.iKeepMyVoiceLevelAndAsk"),
+  tr("ui.lessons.fixture.lines.ashfordManorStoodDarkExceptForA"),
+  tr("ui.lessons.fixture.lines.banditsTheCaptainRepeatedWritingItDown"),
+  tr("ui.lessons.fixture.lines.maraFoldedTheReceiptIntoTheHem"),
+  tr("ui.lessons.fixture.lines.theBellsRangForTheDukeAt"),
+  tr("ui.lessons.fixture.lines.eliasSleptInTheLoftAboveThe"),
+  tr("ui.lessons.fixture.lines.ifTheyFindTheLocketTheyFind"),
+  tr("ui.lessons.fixture.lines.theFerrymanSScarCaughtTheLight"),
 ];
 
 function makeMessages(total: number): MessageStub[] {
@@ -88,7 +89,7 @@ function makeMeta(e: EntrySpec): LMBEntryMeta {
     model: FIXTURE_MODEL,
     connectionId: FIXTURE_CONN,
     createdAt: Date.now() - (100 - e.n) * 3600_000,
-    title: `${e.title} (msgs ${e.first + 1}-${e.last + 1})`,
+    title: tr("ui.lessons.fixture.makeMeta.msgs", { title: e.title, first1: e.first + 1, last1: e.last + 1 }),
     shortComment: e.nyaa,
     presetKey: e.tier === 1 ? "summary" : e.tier === 2 ? "arc_default" : "volume_default",
     sceneNumber: e.n,
@@ -97,10 +98,10 @@ function makeMeta(e: EntrySpec): LMBEntryMeta {
 }
 
 function makeView(e: EntrySpec): ChapterView {
-  const tag = e.tier === 3 ? "Vol" : e.tier === 2 ? "Arc" : "";
+  const tag = e.tier === 3 ? tr("ui.lessons.fixture.tag.vol") : e.tier === 2 ? tr("ui.lessons.fixture.tag.arc") : "";
   const comment = e.tier === 1
-    ? `#${e.n} - ${e.title} (msgs ${e.first + 1}-${e.last + 1})`
-    : `${tag} #${e.n} - ${e.title} (msgs ${e.first + 1}-${e.last + 1})`;
+    ? tr("ui.lessons.fixture.comment.msgs", { n: e.n, title: e.title, first1: e.first + 1, last1: e.last + 1 })
+    : tr("ui.lessons.fixture.comment.msgs2", { tag: tag, n: e.n, title: e.title, first1: e.first + 1, last1: e.last + 1 });
   return {
     entryId: e.id,
     bookId: "book_lesson",
@@ -119,53 +120,53 @@ function makeView(e: EntrySpec): ChapterView {
 const CH: EntrySpec[] = [
   {
     id: "c1", tier: 1, n: 1, first: 0, last: 17,
-    title: "The Duke Falls",
-    body: "1st Summary Chapter Containing 18 Prior Turns\n\nDay 3. The Duke of Ashford is found dead in his study. Elias, the duke's valet, flees through the servant stair carrying the silver locket. Mara sees him cross the yard with blood on his cuff and says nothing. The city watch seals the manor by nightfall.",
-    nyaa: "Neatly filed, one nefarious night on the shelf.",
+    title: tr("ui.lessons.fixture.ch.theDukeFalls"),
+    body: tr("ui.lessons.fixture.ch.1stSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.neatlyFiledOneNefariousNightOnThe"),
     outTokens: 430, inTokens: 7100,
   },
   {
     id: "c2", tier: 1, n: 2, first: 18, last: 35,
-    title: "A Seamstress's Silence",
-    body: "2nd Summary Chapter Containing 18 Prior Turns\n\nDay 5. The captain interviews the manor staff. Mara claims she saw bandits on the north road and is dismissed. Elias hides in the tannery loft and pays the pawnbroker to hold the locket. Mara keeps the pawnbroker's receipt sewn into her sleeve.",
-    nyaa: "Secrets stitched into a sleeve, so tidy nya.",
+    title: tr("ui.lessons.fixture.ch.aSeamstressSSilence"),
+    body: tr("ui.lessons.fixture.ch.2ndSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.secretsStitchedIntoASleeveSoTidy"),
     outTokens: 445, inTokens: 7050,
   },
   {
     id: "c3", tier: 1, n: 3, first: 36, last: 53,
-    title: "The Pawnbroker's Receipt",
-    body: "3rd Summary Chapter Containing 18 Prior Turns\n\nDay 8. The pawnbroker raises his price for silence. Elias and Mara meet on the bridge and argue about running. The captain announces the bandit theory publicly at the duke's funeral while quietly reopening the staff interviews.",
-    nyaa: "Pricey promises pressed between the pages.",
+    title: tr("ui.lessons.fixture.ch.thePawnbrokerSReceipt"),
+    body: tr("ui.lessons.fixture.ch.3rdSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.priceyPromisesPressedBetweenThePages"),
     outTokens: 460, inTokens: 6900,
   },
   {
     id: "c4", tier: 1, n: 4, first: 54, last: 71,
-    title: "The Captain Asks Questions",
-    body: "4th Summary Chapter Containing 18 Prior Turns\n\nDay 11. The captain searches the tannery district on a tip. Elias escapes over the rooftops but drops a glove with the manor's crest. Mara burns her bloodied stitching and tells the captain she is leaving the city to mourn.",
-    nyaa: "Curious captains collect such clumsy clues.",
+    title: tr("ui.lessons.fixture.ch.theCaptainAsksQuestions"),
+    body: tr("ui.lessons.fixture.ch.4thSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.curiousCaptainsCollectSuchClumsyClues"),
     outTokens: 420, inTokens: 7200,
   },
   {
     id: "c5", tier: 1, n: 5, first: 72, last: 89,
-    title: "Locket at the Bridge",
-    body: "5th Summary Chapter Containing 18 Prior Turns\n\nDay 14. The pawnbroker sells the locket's description to the captain. Elias buys it back with the last of his wages minutes before the watch arrives. On the bridge, Mara tells Elias she saw everything on day 3, and that she has kept the receipt as leverage of her own.",
-    nyaa: "Bridges bear the best and boldest bargains.",
+    title: tr("ui.lessons.fixture.ch.locketAtTheBridge"),
+    body: tr("ui.lessons.fixture.ch.5thSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.bridgesBearTheBestAndBoldestBargains"),
     outTokens: 455, inTokens: 6850,
   },
   {
     id: "g1", tier: 1, n: 6, first: 90, last: 107, ghost: true,
-    title: "Rooftop Confessions",
-    body: "6th Summary Chapter Containing 18 Prior Turns\n\nDay 16. Elias admits the killing was not planned: the duke caught him returning the locket Mara's mother once pawned. The pair agree to frame the ferryman, then abandon the plan when Mara recognizes his scar.",
-    nyaa: "Ghostly gossip glides in before the glue dries.",
+    title: tr("ui.lessons.fixture.ch.rooftopConfessions"),
+    body: tr("ui.lessons.fixture.ch.6thSummaryChapterContaining18PriorTurns"),
+    nyaa: tr("ui.lessons.fixture.ch.ghostlyGossipGlidesInBeforeTheGlue"),
     outTokens: 440, inTokens: 7000,
   },
 ];
 
 const ARC1: EntrySpec = {
   id: "a1", tier: 2, n: 1, first: 0, last: 53,
-  title: "The Murder at Ashford Manor",
-  body: "1st Summary ARC Containing 3 Prior Chapters and 54 Prior Turns\n\nDays 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses silence over safety. The captain publicly blames bandits while privately doubting the staff. The pawnbroker becomes the hinge every secret turns on.",
-  nyaa: "An arc of alibis, bound and beautifully shelved.",
+  title: tr("ui.lessons.fixture.arc1.theMurderAtAshfordManor"),
+  body: tr("ui.lessons.fixture.arc1.1stSummaryArcContaining3PriorChapters"),
+  nyaa: tr("ui.lessons.fixture.arc1.anArcOfAlibisBoundAndBeautifully"),
   sources: ["c1", "c2", "c3"],
   outTokens: 820, inTokens: 1335,
 };
@@ -177,77 +178,77 @@ export function codexFixtureFiles(): Record<string, string> {
     characters: {
       entities: [
         {
-          id: "char:elias", name: "Elias", kind: "human", role: "the duke's former valet, fugitive",
-          description: "hiding in the tannery loft", traits: ["careful", "sentimental", "quick over rooftops"],
-          goals: ["keep the locket", "keep Mara out of it"],
-          significance: "killed the duke on day 3",
+          id: "char:elias", name: tr("ui.lessons.fixture.files.elias"), kind: tr("ui.lessons.fixture.files.human"), role: tr("ui.lessons.fixture.files.theDukeSFormerValetFugitive"),
+          description: tr("ui.lessons.fixture.files.hidingInTheTanneryLoft"), traits: [tr("ui.lessons.fixture.files.careful"), tr("ui.lessons.fixture.files.sentimental"), tr("ui.lessons.fixture.files.quickOverRooftops")],
+          goals: [tr("ui.lessons.fixture.files.keepTheLocket"), tr("ui.lessons.fixture.files.keepMaraOutOfIt")],
+          significance: tr("ui.lessons.fixture.files.killedTheDukeOnDay3"),
         },
         {
-          id: "char:mara", name: "Mara", kind: "human", role: "seamstress at Ashford Manor",
-          description: "publicly mourning, privately bargaining", traits: ["observant", "steady"],
-          goals: ["leverage over Elias", "leave the city"],
+          id: "char:mara", name: tr("ui.lessons.fixture.files.mara"), kind: tr("ui.lessons.fixture.files.human"), role: tr("ui.lessons.fixture.files.seamstressAtAshfordManor"),
+          description: tr("ui.lessons.fixture.files.publiclyMourningPrivatelyBargaining"), traits: [tr("ui.lessons.fixture.files.observant"), tr("ui.lessons.fixture.files.steady")],
+          goals: [tr("ui.lessons.fixture.files.leverageOverElias"), tr("ui.lessons.fixture.files.leaveTheCity")],
         },
         {
-          id: "char:captain", name: "The Captain", kind: "human", role: "leads the city watch",
-          description: "publicly backs the bandit theory", goals: ["reopen the staff interviews quietly"],
+          id: "char:captain", name: tr("ui.lessons.fixture.files.theCaptain"), kind: tr("ui.lessons.fixture.files.human"), role: tr("ui.lessons.fixture.files.leadsTheCityWatch"),
+          description: tr("ui.lessons.fixture.files.publiclyBacksTheBanditTheory"), goals: [tr("ui.lessons.fixture.files.reopenTheStaffInterviewsQuietly")],
           locked: true,
         },
       ],
     },
     locations: {
       entities: [
-        { id: "loc:ashford_manor", name: "Ashford Manor", kind: "estate", description: "the duke's seat, sealed by the watch, dark except the study lamp" },
-        { id: "loc:the_bridge", name: "The Bridge", kind: "landmark", significance: "where Elias and Mara trade truths" },
+        { id: "loc:ashford_manor", name: tr("ui.lessons.fixture.files.ashfordManor"), kind: tr("ui.lessons.fixture.files.estate"), description: tr("ui.lessons.fixture.files.theDukeSSeatSealedByThe") },
+        { id: "loc:the_bridge", name: tr("ui.lessons.fixture.files.theBridge"), kind: tr("ui.lessons.fixture.files.landmark"), significance: tr("ui.lessons.fixture.files.whereEliasAndMaraTradeTruths") },
       ],
     },
     things: {
       entities: [
-        { id: "thing:silver_locket", name: "The Silver Locket", kind: "heirloom", description: "back in Elias's coat", significance: "ties Elias to the study on day 3" },
+        { id: "thing:silver_locket", name: tr("ui.lessons.fixture.files.theSilverLocket"), kind: tr("ui.lessons.fixture.files.heirloom"), description: tr("ui.lessons.fixture.files.backInEliasSCoat"), significance: tr("ui.lessons.fixture.files.tiesEliasToTheStudyOnDay") },
       ],
     },
     relations: {
       relations: [
-        { type: "pair", a: "char:elias", b: "char:mara", kind: "bond", state: "trusts her with his life, not his reasons", history: ["day 3: she saw him flee", "day 14: she revealed she kept the receipt"] },
-        { type: "pair", a: "char:elias", b: "thing:silver_locket", kind: "owns", state: "carries it everywhere, bought it back twice" },
-        { type: "pair", a: "char:captain", b: "char:mara", kind: "suspects", state: "doubts her bandit story, lacks proof" },
-        { type: "group", kind: "pact", members: ["char:elias", "char:mara"], state: "silence about the murder, uneasy since the bridge" },
+        { type: "pair", a: "char:elias", b: "char:mara", kind: tr("ui.lessons.fixture.files.bond"), state: tr("ui.lessons.fixture.files.trustsHerWithHisLifeNotHis"), history: [tr("ui.lessons.fixture.files.day3SheSawHimFlee"), tr("ui.lessons.fixture.files.day14SheRevealedSheKeptThe")] },
+        { type: "pair", a: "char:elias", b: "thing:silver_locket", kind: tr("ui.lessons.fixture.files.owns"), state: tr("ui.lessons.fixture.files.carriesItEverywhereBoughtItBackTwice") },
+        { type: "pair", a: "char:captain", b: "char:mara", kind: tr("ui.lessons.fixture.files.suspects"), state: tr("ui.lessons.fixture.files.doubtsHerBanditStoryLacksProof") },
+        { type: "group", kind: tr("ui.lessons.fixture.files.pact"), members: ["char:elias", "char:mara"], state: tr("ui.lessons.fixture.files.silenceAboutTheMurderUneasySinceThe") },
       ],
     },
     timeline: {
       events: [
-        { when: "day 3", event: "The Duke of Ashford is killed in his study", participants: ["char:elias"], where: "loc:ashford_manor", causes: "Elias flees with the locket" },
-        { when: "day 5", event: "Mara tells the captain she saw bandits", participants: ["char:mara", "char:captain"] },
-        { when: "day 8", event: "The pawnbroker raises his price for silence", causes: "Elias runs out of money" },
-        { when: "day 11", event: "Elias escapes the tannery search, drops a crested glove", participants: ["char:elias", "char:captain"] },
-        { when: "day 14", event: "Mara reveals she kept the pawnbroker's receipt", participants: ["char:mara", "char:elias"], where: "loc:the_bridge" },
+        { when: tr("ui.lessons.fixture.files.day3"), event: tr("ui.lessons.fixture.files.theDukeOfAshfordIsKilledIn"), participants: ["char:elias"], where: "loc:ashford_manor", causes: tr("ui.lessons.fixture.files.eliasFleesWithTheLocket") },
+        { when: tr("ui.lessons.fixture.files.day5"), event: tr("ui.lessons.fixture.files.maraTellsTheCaptainSheSawBandits"), participants: ["char:mara", "char:captain"] },
+        { when: tr("ui.lessons.fixture.files.day8"), event: tr("ui.lessons.fixture.files.thePawnbrokerRaisesHisPriceForSilence"), causes: tr("ui.lessons.fixture.files.eliasRunsOutOfMoney") },
+        { when: tr("ui.lessons.fixture.files.day11"), event: tr("ui.lessons.fixture.files.eliasEscapesTheTannerySearchDropsA"), participants: ["char:elias", "char:captain"] },
+        { when: tr("ui.lessons.fixture.files.day14"), event: tr("ui.lessons.fixture.files.maraRevealsSheKeptThePawnbrokerS"), participants: ["char:mara", "char:elias"], where: "loc:the_bridge" },
       ],
     },
     threads: {
       threads: [
-        { name: "The duke's murder", status: "open", summary: "The captain's bandit theory is public cover while he reworks the staff interviews.", latest: "a crested glove is in the watch's evidence box", planted: ["the pawnbroker kept a receipt"] },
-        { name: "Leaving the city", status: "stalled", summary: "Mara wants out before the interviews resume, Elias will not leave the locket." },
+        { name: tr("ui.lessons.fixture.files.theDukeSMurder"), status: "open", summary: tr("ui.lessons.fixture.files.theCaptainSBanditTheoryIsPublic"), latest: tr("ui.lessons.fixture.files.aCrestedGloveIsInTheWatch"), planted: [tr("ui.lessons.fixture.files.thePawnbrokerKeptAReceipt")] },
+        { name: tr("ui.lessons.fixture.files.leavingTheCity"), status: "stalled", summary: tr("ui.lessons.fixture.files.maraWantsOutBeforeTheInterviewsResume") },
       ],
-      seeds: ["unexplained scar on the ferryman's hand"],
+      seeds: [tr("ui.lessons.fixture.files.unexplainedScarOnTheFerrymanSHand")],
     },
     world: {
       entries: [
-        { topic: "The City Watch", facts: ["answers to the magistrate, not the crown", "funeral custom bars arrests during mourning bells"] },
-        { topic: "Mourning customs", facts: ["half-black worn for a week by anyone the deceased employed"] },
+        { topic: tr("ui.lessons.fixture.files.theCityWatch"), facts: [tr("ui.lessons.fixture.files.answersToTheMagistrateNotTheCrown"), tr("ui.lessons.fixture.files.funeralCustomBarsArrestsDuringMourningBells")] },
+        { topic: tr("ui.lessons.fixture.files.mourningCustoms"), facts: [tr("ui.lessons.fixture.files.halfBlackWornForAWeekBy")] },
       ],
     },
     knowledge: {
       items: [
         {
-          fact: "Elias killed the duke",
+          fact: tr("ui.lessons.fixture.files.eliasKilledTheDuke"),
           knownBy: ["char:mara"],
           hiddenFrom: ["char:captain"],
-          falseBeliefs: [{ who: "char:captain", believes: "bandits did it" }],
+          falseBeliefs: [{ who: "char:captain", believes: tr("ui.lessons.fixture.files.banditsDidIt") }],
         },
         {
-          fact: "Mara keeps the pawnbroker's receipt sewn in her sleeve",
+          fact: tr("ui.lessons.fixture.files.maraKeepsThePawnbrokerSReceiptSewn"),
           knownBy: ["char:mara"],
           hiddenFrom: ["char:elias", "char:captain"],
-          note: "her leverage if Elias runs alone",
+          note: tr("ui.lessons.fixture.files.herLeverageIfEliasRunsAlone"),
         },
       ],
     },
@@ -349,7 +350,7 @@ export const FIXTURE_VARIANTS: readonly string[] = Object.keys(VARIANTS);
 
 export function buildFixture(variant: string): FrontendState {
   const spec = VARIANTS[variant] ?? VARIANTS["filing"]!;
-  const profile = makeDefaultProfile("default", "Default");
+  const profile = makeDefaultProfile("default", tr("ui.lessons.fixture.profile.default"));
   profile.codexEnabled = !!spec.codex;
   const stubs = makeMessages(spec.total);
   for (const idx of spec.excluded ?? []) {
@@ -370,9 +371,9 @@ export function buildFixture(variant: string): FrontendState {
 
   return {
     activeChatId: FIXTURE_CHAT_ID,
-    activeChatName: "The Ashford Case",
+    activeChatName: tr("ui.lessons.fixture.buildFixture.theAshfordCase"),
     activeCharacterId: "lesson_char",
-    activeCharacterName: "Elias",
+    activeCharacterName: tr("ui.lessons.fixture.buildFixture.elias"),
     settings: { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: "default" },
     activeProfile: profile,
     chapters,
@@ -380,17 +381,17 @@ export function buildFixture(variant: string): FrontendState {
     higherBooks: [],
     volumes: [],
     bookId: "book_lesson",
-    bookName: "LumiBooks - The Ashford Case",
+    bookName: tr("ui.lessons.fixture.buildFixture.lumiBooksTheAshfordCase"),
     connections: [
-      { id: FIXTURE_CONN, name: "Storyteller", provider: "example", model: FIXTURE_MODEL, isDefault: true, hasApiKey: true },
+      { id: FIXTURE_CONN, name: tr("ui.lessons.fixture.buildFixture.storyteller"), provider: "example", model: FIXTURE_MODEL, isDefault: true, hasApiKey: true },
     ],
     resolvedSidecarConnectionId: FIXTURE_CONN,
     coverage,
     busy: spec.busy
-      ? [{ kind: "chapter", chatId: FIXTURE_CHAT_ID, label: "Memoria is writing a chapter (~1.3kt written, ~0.8kt thought, 24s)", startedAt: Date.now() - 24_000 }]
+      ? [{ kind: "chapter", chatId: FIXTURE_CHAT_ID, label: tr("ui.lessons.fixture.buildFixture.memoriaIsWritingAChapter13kt"), startedAt: Date.now() - 24_000 }]
       : [],
     lastFailure: spec.failure
-      ? { kind: "chapter", message: "No token within 60s, the provider may be slow or unreachable", retriedTimes: 4, at: Date.now() - 90_000 }
+      ? { kind: "chapter", message: tr("ui.lessons.fixture.buildFixture.noTokenWithin60sTheProviderMay"), retriedTimes: 4, at: Date.now() - 90_000 }
       : null,
     messages: stubs,
     chapterPresets: BUILTIN_CHAPTER_PRESETS,
@@ -406,7 +407,7 @@ export function buildFixture(variant: string): FrontendState {
     rootOriginName: null,
     rootEntryCount: 0,
     availableRoots: spec.roots
-      ? [{ chatId: `${LESSON_CHAT_PREFIX}vol1`, chatName: "The Ashford Case, Vol. 1", entryCount: 5 }]
+      ? [{ chatId: `${LESSON_CHAT_PREFIX}vol1`, chatName: tr("ui.lessons.fixture.buildFixture.theAshfordCaseVol1"), entryCount: 5 }]
       : [],
     codexExists: !!spec.codex,
     codexBacklog: spec.codex ? 4 : 0,
@@ -445,6 +446,6 @@ export function applyFiledChapter(state: FrontendState): void {
 export const FIXTURE_BUSY_FILING = {
   kind: "chapter" as const,
   chatId: FIXTURE_CHAT_ID,
-  label: "Memoria is filing a chapter (2s)",
+  label: tr("ui.lessons.fixture.fixtureBusyFiling.memoriaIsFilingAChapter2s"),
   startedAt: 0,
 };

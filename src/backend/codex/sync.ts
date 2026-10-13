@@ -1,3 +1,4 @@
+import { t as tr } from "../../i18n";
 import { loadSettings } from "../storage";
 import { activationFlags } from "../../activation";
 import type { LMBProfile } from "../../shared";
@@ -116,7 +117,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
   if (problems.length > 0) {
-    throw new Error(`codex sync skipped, unreadable or invalid file${problems.length === 1 ? "" : "s"}: ${problems.map((p) => `${p.file}.json`).join(", ")}`);
+    throw new Error(tr("backend.codex.sync.doSync.codexSyncSkippedUnreadableOrInvalidFile", { length: problems.length, join: problems.map((p) => `${p.file}.json`).join(", ") }));
   }
 
   const relState = cursor.fileStates["relations"];
@@ -224,7 +225,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   }
   if (failedDeletes > 0) {
     throw new Error(
-      `${failedDeletes} outdated codex entr${failedDeletes === 1 ? "y" : "ies"} could not be removed and may still inject`,
+      tr("backend.codex.sync.doSync.outdatedCodexEntrCouldNotBeRemoved", { failedDeletes: failedDeletes }),
     );
   }
   void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
@@ -250,7 +251,7 @@ async function doWipe(chatId: string, userId: string): Promise<void> {
     });
   }
   if (failed > 0) {
-    throw new Error(`failed to delete ${failed} codex entr${failed === 1 ? "y" : "ies"}, they may still inject`);
+    throw new Error(tr("backend.codex.sync.doWipe.failedToDeleteCodexEntrTheyMay", { failed: failed }));
   }
 }
 

@@ -1,3 +1,4 @@
+import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { BackendToFrontend, FrontendToBackend } from "../types";
@@ -78,7 +79,7 @@ export async function ensureUserFolders(userId: string): Promise<void> {
 }
 
 export function debug(userId: string, ...parts: unknown[]): void {
-  spindle.log.info(`[lmb:${userId.slice(0, 6)}] ${parts.map(stringifyPart).join(" ")}`);
+  spindle.log.info(tr("backend.runtime.debug.lmb", { slice: userId.slice(0, 6), join: parts.map(stringifyPart).join(" ") }));
 }
 
 export function info(message: string): void {
