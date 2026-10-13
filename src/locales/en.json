@@ -5,13 +5,13 @@
         "selectConsecutiveSummariesWithoutCrossingAnotherSummary": "Select consecutive summaries without crossing another summary tier"
       }
     },
-    "Codex": {
+    "codex": {
       "agent": {
         "messages": {
           "theAssembledCodexPromptIsKTokens": "Codex prompt: ~{round}k tokens; limit: {round2}k. Raise Max input tokens in Tuning > Connection > Codex, or reduce the window, Chapters provided, or lore limit in Tuning > Settings > Codex. Freezing records in Codex > Overview also reduces input."
         },
         "resolveCodexConnection": {
-          "CodexConnectionHasNoModelSetPick": "Codex connection \"{id}\" has no model set, pick one in settings",
+          "codexConnectionHasNoModelSetPick": "Codex connection \"{id}\" has no model set, pick one in settings",
           "noConnectionAvailableForTheCodex": "No connection available for Codex"
         },
         "keptSuffix": {
@@ -20,9 +20,9 @@
         "runCodexAgentInner": {
           "round": "\n\n═══ round {rounds} ═══\n",
           "fullRewriteKChars": "full rewrite, {toFixed}k chars",
-          "CodexWriteJson": "\n➤ Codex_write {f}.json ({label})",
-          "CodexDone": "\n✦ Codex_done{note}",
-          "CodexSkip": "\n○ Codex_skip {choice, select, yes {{join}} other {(no files)}}",
+          "codexWriteJson": "\n➤ codex_write {f}.json ({label})",
+          "codexDone": "\n✦ codex_done{note}",
+          "codexSkip": "\n○ codex_skip {choice, select, yes {{join}} other {(no files)}}",
           "unknownTool": "\n✗ unknown tool {name}",
           "theCodexAgentReturnedAnEmptyResponse": "The Codex agent returned an empty response",
           "noJsonObjectFoundInTheReply": "\n✗ no JSON found in the reply. Retrying...",
@@ -90,7 +90,7 @@
           "activatedLoreReferenceTokens": "Activated lore reference: ~{length} tokens",
           "activatedLoreExceededTheLoreLimitTokens": "Lore exceeded the lore limit ({effectiveLoreLimitTokens} tokens) and was cut off",
           "thoroughMode": "Thorough mode: {choice, select, yes {on, adds a verification round} other {off}}",
-          "promptSizeTokensSystemTokensUserCodex": "Prompt size: ~{length} tokens system + ~{length2} tokens user (Codex max input {CodexMaxInputTokens})",
+          "promptSizeTokensSystemTokensUserCodex": "Prompt size: ~{length} tokens system + ~{length2} tokens user (Codex max input {codexMaxInputTokens})",
           "wouldFail": "WOULD FAIL: {message}",
           "samplerParametersBeingSentOnTheWire": "Sampler parameters: {stringify}"
         },
@@ -141,7 +141,7 @@
           "theSelectedRecordsAlreadyFitTokensLimit": "Records already fit within the limit ({limit} tokens)",
           "tidyTokensLimitModelTargetCallsLeft": "\nTidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} calls left.\n",
           "aCodexFileCouldNotBeRead": "Codex state issue after tidying: {details}. Undo restores the original.",
-          "CodexTidiedToTokensLimitInModel": "Codex tidied to {size} tokens (limit {limit}) in {used} model call{used, plural, one {} other {s}}",
+          "codexTidiedToTokensLimitInModel": "Codex tidied to {size} tokens (limit {limit}) in {used} model call{used, plural, one {} other {s}}",
           "stoppedAfterModelCallsTokensStillAbove": "Stopped after {used} model calls: {size} tokens, above the limit of {limit}. Edits saved; Undo restores the original.",
           "tidyingStoppedCompletedEditsAreKeptUndo": "Tidying cancelled. Edits saved; Undo restores the original."
         },
@@ -243,7 +243,7 @@
       },
       "sync": {
         "doSync": {
-          "CodexSyncSkippedUnreadableOrInvalidFile": "Codex sync failed. Unreadable or invalid file{length, plural, one {} other {s}}: {join}",
+          "codexSyncSkippedUnreadableOrInvalidFile": "Codex sync failed. Unreadable or invalid file{length, plural, one {} other {s}}: {join}",
           "outdatedCodexEntrCouldNotBeRemoved": "Couldn''t remove {failedDeletes} outdated Codex entr{failedDeletes, plural, one {y} other {ies}}. They may still inject."
         },
         "doWipe": {
@@ -518,7 +518,7 @@
         "arc": "{choice, select, yes {[Root] } other {}}Arc #{sceneNumber} - {baseComment}"
       },
       "createHigherFromEntries": {
-        "memoriaIsBindingA": "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}"
+        "memoriaIsBindingA": "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}"
       },
       "runVolume": {
         "memoriaSetsThePenDown": "Summary cancelled"
@@ -765,16 +765,16 @@
       }
     }
   },
-  "CodexTidy": {
+  "codexTidy": {
     "resolveTidyTarget": {
       "enterAPositiveTokenLimitOrA": "Enter a positive token limit or a percentage between 0 and 100.",
       "theTargetMustBeAtLeastOne": "The target must be at least one token."
     }
   },
   "prompts": {
-    "Codex": {
+    "codex": {
       "registry": {
-        "CodexTemplates": {
+        "codexTemplates": {
           "entitySheetsRelationsTableOn": "Entity sheets (relations table on)",
           "describesCharactersJsonLocationsJsonAndThings": "Entity schemas with the relations table enabled. Relationships go in relations.json. {schemaHowtoTail}",
           "theEntityFilesActiveThisRunE": "the entity files active this run, e.g. characters.json / locations.json",
@@ -796,7 +796,7 @@
           "patchRulesSetDropContent": "Patch rules (set / drop / content)",
           "theSharedExplanationOfSetDropSeeds": "Patch rules for set, drop, seeds, and content, used by both protocols below. Keep these consistent with the app''s merge behavior.",
           "protocolToolCalls": "Protocol (tool calls)",
-          "sentWhenTheProfileUsesToolCalls": "Tool-call protocol for batched updates. Keep the tool names Codex_write, Codex_skip, and Codex_done, and the requirement to write or skip the active records. Also defines <think> for models without native reasoning.",
+          "sentWhenTheProfileUsesToolCalls": "Tool-call protocol for batched updates. Keep the tool names codex_write, codex_skip, and codex_done, and the requirement to write or skip the active records. Also defines <think> for models without native reasoning.",
           "thePatchRulesTemplateAbove": "the patch rules template above",
           "protocolToolCallsOneFileAtA": "Protocol (tool calls, one file at a time)",
           "sentWhenTheProfileUsesToolCalls2": "Tool-call protocol for record-by-record updates. Uses the same tools and write-or-skip requirement as batched updates. Smaller replies reduce the risk of output being cut off.",
@@ -869,8 +869,8 @@
     "base": {
       "untitled": "Untitled"
     },
-    "CodexBookNameFor": {
-      "CodexDoNotEdit": "{worldBookNamePrefix} Codex [Do Not Edit] - {suffix}"
+    "codexBookNameFor": {
+      "codexDoNotEdit": "{worldBookNamePrefix} Codex [Do Not Edit] - {suffix}"
     },
     "lessonGradeLabel": {
       "gilded": "Gilded",
@@ -878,7 +878,7 @@
       "bronze": "Bronze",
       "apprentice": "Apprentice"
     },
-    "summaryKindTag": "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} Codex {Codex} other {{kind}}}"
+    "summaryKindTag": "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {Codex} other {{kind}}}"
   },
   "ui": {
     "activationControl": {
@@ -918,7 +918,7 @@
         "thisChatIsTakingLongerToLoad": "Loading is taking longer than usual. Wait or retry."
       }
     },
-    "CodexExtraFields": {
+    "codexExtraFields": {
       "applyExtraFields": {
         "mustBeAValidNumber": "{key} must be a valid number."
       }
@@ -1086,7 +1086,7 @@
           "andTheLastPartOfTheSettings": "And the last part of the settings, tap Prompts.",
           "myInstructions": "My instructions.",
           "thePromptsPaneHoldsMyInstructionsFour": "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token.",
-          "memoriaCouldnTFileTheChapterThe": "Memoria couldn''t file the chapter: The model didn''t return valid JSON",
+          "memoriaCouldnTFileTheChapterThe": "Couldn''t create chapter: The model didn''t return valid JSON",
           "everyOneOfMyChaptersFailsLike": "Every one of my chapters fails like this, even after retries. The most likely fix?",
           "giveMeAStrongerModelOrA": "Give me a stronger model or a different connection",
           "raiseTheLag": "Raise the lag",
@@ -1168,7 +1168,7 @@
           "lastStopMyRulesOpenTheTuning": "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           "myDials": "My dials.",
           "myCodexSettingsLiveHereByDefault": "My Codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
-          "CodexLag65": "Codex lag · 65",
+          "codexLag65": "Codex lag · 65",
           "youRaiseTheCodexLagFrom6": "You raise the Codex lag from 6 up to 65, same as the chapter lag. What changes?",
           "theBibleAlwaysRuns65MessagesBehind": "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
           "nothingTheLagOnlyAffectsChapters": "Nothing, the lag only affects chapters",
@@ -1177,7 +1177,7 @@
           "chaptersActAsReplacementsOfOldMessages": "Chapters act as replacements of old messages, where the Codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
           "twoMoreThingsRelationsTableOffMoves": "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
           "oneMoreThingEditAnyRecordWhenever": "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was Codex-recorded, my next run notices, rewinds, and corrects the Codex.",
-          "memoriaCouldnTUpdateTheCodexThe": "Memoria couldn''t update the Codex: The Codex agent narrated instead of calling tools, check that the connection supports tool calls",
+          "memoriaCouldnTUpdateTheCodexThe": "Couldn''t update the Codex: The Codex agent didn''t call tools.",
           "everyCodexRunFailsWithThisWhat": "Every Codex run fails with this. What is the most likely cause?",
           "theCodexModelCannotMakeToolCalls": "The Codex model cannot make tool calls, pick one that can under Codex connection",
           "theChatIsTooLong": "The chat is too long",
@@ -1556,7 +1556,7 @@
           "sealedUntilTheLesson": "Sealed until the lesson",
           "theCodexSettingsUnlockWhenYouFinish": "The Codex settings unlock when you finish The Archivist''s Codex. The final step is flipping this very pane on."
         },
-        "CodexSealCard": {
+        "codexSealCard": {
           "takeALessonFromMemoria": "Take a Lesson from Memoria",
           "skipForNow": "Skip for now"
         },
@@ -1574,7 +1574,7 @@
         "theUnfiledTailOfThisChatIs": "Many messages remain unfiled. The final pass will still read them raw. Use Home > File all first."
       },
       "requestCodexUpdate": {
-        "messageAreWaitingAboutPassesAtThe": "{CodexBacklog0} message{CodexBacklog02, plural, one {} other {s}} waiting (~{CodexBacklogPasses} passes). Choose a catch-up mode."
+        "messageAreWaitingAboutPassesAtThe": "{codexBacklog0} message{codexBacklog02, plural, one {} other {s}} waiting (~{codexBacklogPasses} passes). Choose a catch-up mode."
       },
       "requestCodexRebuild": {
         "rebuildTheCodex": "Rebuild the Codex",
@@ -1687,7 +1687,7 @@
       "appTabs": {
         "home": "Home",
         "books": "Books",
-        "Codex": "Codex",
+        "codex": "Codex",
         "tuning": "Tuning",
         "info": "Info"
       }
@@ -1783,7 +1783,7 @@
           "ghostNotYetInjected": "ghost, not yet injected",
           "memoria": "Memoria: {shortComment}",
           "edit": "Edit",
-          "edit2": "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}",
+          "edit2": "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}",
           "editThisEntrySLabelAndContent": "Edit label and content",
           "regenerate": "Regenerate",
           "resummarizeTheSameSources": "Resummarize the same sources",
@@ -1924,9 +1924,9 @@
           "readingSummaryFile": "Reading summary file…",
           "couldNotReadThatLorebookJsonFile": "Couldn''t read the lorebook JSON file"
         },
-        "entryFallback": "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}} {id}"
+        "entryFallback": "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} {id}"
       },
-      "CodexTab": {
+      "codexTab": {
         "deliverCodexFileState": {
           "couldnTSaveThisCategorySSetting": "Couldn''t save this category''s setting: {error}"
         },
@@ -1990,10 +1990,10 @@
           "frozenNoUpdates": "frozen · no updates"
         },
         "renderOverview": {
-          "CodexOnFile": "Codex on file",
+          "codexOnFile": "Codex on file",
           "noCodexYet": "no Codex yet",
-          "messageUnindexed": "{CodexBacklog} message{CodexBacklog, plural, one {} other {s}} unindexed",
-          "updated": "updated {CodexLastRunAt}",
+          "messageUnindexed": "{codexBacklog} message{codexBacklog, plural, one {} other {s}} unindexed",
+          "updated": "updated {codexLastRunAt}",
           "theCodexAgentIsOffForThis": "Codex is off. Enable it in Tuning > Settings > Codex.",
           "memoriaIsWorkingOnTheCodexWatch": "Codex task in progress. View progress in Home.",
           "unreadableOnDiskRebuildCodexRegeneratesThem": "Can''t read: {join}. Use Rebuild Codex to regenerate.",
@@ -2013,7 +2013,7 @@
           "abortTheCodexTaskInFlight": "Cancel the Codex task",
           "tidyUp": "Tidy up",
           "chooseATargetSizeThenCompactUp": "Shorten records to a target size, using up to six model calls",
-          "undo": "Undo {CodexUndoReasonUpdate}",
+          "undo": "Undo {codexUndoReasonUpdate}",
           "undo2": "Undo",
           "rollBackToTheSnapshotTakenBefore": "Restore the snapshot before the last Codex change",
           "nothingToUndoYetMemoriaSnapshotsThe": "No snapshot to restore"
@@ -2022,7 +2022,7 @@
           "rebuildTheCodex": "Rebuild the Codex?",
           "memoriaWillEraseTheStoryBibleAnd": "Clears the Codex and rereads the chat. Choose a speed next.",
           "undoTheLastCodexChange": "Undo the last Codex change?",
-          "memoriaWillRollTheCodexBackTo": "Restores the snapshot before {CodexUndoReasonUpdate} {CodexUndoAt}. Later changes are lost.",
+          "memoriaWillRollTheCodexBackTo": "Restores the snapshot before {codexUndoReasonUpdate} {codexUndoAt}. Later changes are lost.",
           "importACodexFile": "Import a Codex file?",
           "memoriaWillReplaceEveryCodexFileIn": "Replaces this chat''s Codex with the imported files. Can''t be undone.",
           "wipeTheCodex": "Wipe the Codex?",
@@ -2036,11 +2036,11 @@
         },
         "renderManage": {
           "noOtherChatHasACodexTo": "No chats with a Codex to copy",
-          "carriedOverFromMemoriaIndexesThisChat": "Copied from {CodexRootOriginName}. Indexing starts from this chat''s beginning.",
+          "carriedOverFromMemoriaIndexesThisChat": "Copied from {codexRootOriginName}. Indexing starts from this chat''s beginning.",
           "detachCodex": "Detach Codex",
           "eraseTheCarriedOverCodexFromThis": "Erase the carried-over Codex from this chat",
           "detachTheCarriedOverCodex": "Detach the carried-over Codex?",
-          "CodexRecordsMergeAsMemoriaWorksSo": "Copied records have merged with this chat''s Codex. Detaching clears it; the next update starts fresh. Can''t be undone.",
+          "codexRecordsMergeAsMemoriaWorksSo": "Copied records have merged with this chat''s Codex. Detaching clears it; the next update starts fresh. Can''t be undone.",
           "continuingAnEarlierChatCarryItsStory": "Copy a Codex to continue an earlier chat.",
           "sourceChatToCarryTheCodexFrom": "Source chat to carry the Codex from",
           "pickASourceChat": "Pick a source chat...",
@@ -2059,7 +2059,7 @@
           "wipeCodex": "Wipe Codex"
         },
         "files": {
-          "CodexFiles": "Codex files"
+          "codexFiles": "Codex files"
         },
         "danger": {
           "startOver": "Start over"
@@ -2426,7 +2426,7 @@
           "chapters": "Chapters ({length})",
           "uncompressedTailMsgs": "Uncompressed tail ({tailCount} msgs)",
           "excludedMsgs": "Excluded ({excludedCount} msgs)",
-          "CodexCountsIncludeEnabledConstantLorebookEntries": "Codex keyword and vector matches can add additional tokens.",
+          "codexCountsIncludeEnabledConstantLorebookEntries": "Codex keyword and vector matches can add additional tokens.",
           "storyContextInThePrompt": "Story context in the prompt"
         },
         "renderOverview": {
@@ -2438,7 +2438,7 @@
           "tail": "Tail",
           "msgsUncompressed": "{uncoveredMessages} msgs uncompressed",
           "recentMessagesStillInThePromptAt": "Messages still in context, waiting for summary window and lag",
-          "Codex": "Codex",
+          "codex": "Codex",
           "messagesTheStoryBibleHasNotRead": "Messages not yet indexed by the Codex",
           "offEnableInTuning": "off, enable in Tuning",
           "memoriaHasNoConnectionToWriteWith": "No connection available. Add a connection in Lumiverse.",
@@ -2450,14 +2450,14 @@
           "uncompressedSummariesHoverForExistingHigherTiers": "Active summaries. Hover for higher tiers."
         },
         "locked": {
-          "Codex": "Codex",
+          "codex": "Codex",
           "takeALesson": "take a lesson",
           "theKnowledgeCodexUnlocksAfterMemoriaS": "The Knowledge Codex unlocks after Memoria''s Codex lesson"
         },
         "subText": {
           "msgsUnindexedManualOnly": "msgs unindexed, manual only",
           "msgsUnindexed": "msgs unindexed",
-          "updated": "updated {CodexLastRunAt}",
+          "updated": "updated {codexLastRunAt}",
           "noCodexYet": "no Codex yet"
         },
         "watchBtn": {
@@ -2471,7 +2471,7 @@
         },
         "renderFailure": {
           "lastArcAttemptFailed": "Last arc attempt failed",
-          "lastAttemptFailed": "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}} attempt failed",
+          "lastAttemptFailed": "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} attempt failed",
           "lastChapterAttemptFailed": "Last chapter attempt failed",
           "triedX": "{message} (tried {retriedTimes}x)",
           "retry": "Retry"
@@ -2511,14 +2511,14 @@
           "worldBookWhereChaptersAndArcsAre": "This chat''s summary lorebook"
         },
         "lockedBtn": {
-          "CodexTakeALesson": "🔒 Codex · take a lesson",
+          "codexTakeALesson": "🔒 Codex · take a lesson",
           "theCodexUnlocksAfterMemoriaSCodex": "The Codex unlocks after Memoria''s Codex lesson"
         },
         "tag": {
           "bookReady": "Book ready"
         },
         "streamStatus": "{running, select, yes {streaming} other {finished}}",
-        "higherCount": "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} Codex {Codex} other {{kind}}}"
+        "higherCount": "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}"
       },
       "profileTab": {
         "profileDefaults": {
@@ -2526,13 +2526,13 @@
         },
         "sec": {
           "knowledgeCodex": "Knowledge Codex",
-          "CodexConnection": "Codex connection",
+          "codexConnection": "Codex connection",
           "reset": "Reset",
           "profile": "Profile",
           "summarySettings": "Summary settings",
           "summaryConnection": "Summary Connection",
           "summarySamplers": "Summary samplers",
-          "CodexSamplers": "Codex samplers",
+          "codexSamplers": "Codex samplers",
           "regex": "Regex",
           "context": "Context",
           "behavior": "Behavior"
@@ -2552,9 +2552,9 @@
           "loreTokens0NoLimit": "Lore tokens (0 = no limit)",
           "loreOfMaxContext": "Lore % of max context",
           "yourActivatedLorebookEntriesRideEveryCodex": "Includes lorebook entries as context. Entries that exceed the budget are skipped. A token cap of 0 removes the limit.",
-          "CodexRecall": "Codex recall",
+          "codexRecall": "Codex recall",
           "theActiveProfileSetsRecallForEnabled": "Timeline and threads are always constantly injected, but other records can use constant, keyword, or vector recall.",
-          "CodexPlacement": "Codex placement",
+          "codexPlacement": "Codex placement",
           "lorebookBefore": "Lorebook (before)",
           "atHistoryDepth": "At history depth",
           "afterChatHistory": "After chat history",
@@ -2571,7 +2571,7 @@
           "theCodexAgentSConnectionAndSamplers": "Codex connection and samplers are in Connection > Codex."
         },
         "updating": {
-          "CodexUpdating": "Codex Updating"
+          "codexUpdating": "Codex Updating"
         },
         "connOpts": {
           "sameAsSummaryConnection": "Same as Summary Connection",
@@ -2662,7 +2662,7 @@
         },
         "options": {
           "books": "Books",
-          "Codex": "Codex"
+          "codex": "Codex"
         },
         "renderCodexSamplers": {
           "samplersForTheCodexAgentOnlySeparate": "Codex samplers, separate from summaries. Empty fields use Codex defaults.",
@@ -2710,7 +2710,7 @@
           "chapter": "Chapter",
           "arc": "Arc",
           "volume": "Volume",
-          "Codex": "Codex"
+          "codex": "Codex"
         },
         "groupHelp": {
           "oneBlockPerCodexFile": "One block per Codex file.",
@@ -2719,11 +2719,11 @@
           "warningsPrependedOnlyWhenTheirSituationApplies": "Notes included when applicable."
         },
         "sec": {
-          "CodexPromptTemplates": "Codex prompt templates",
+          "codexPromptTemplates": "Codex prompt templates",
           "memoriaOverrides": "Memoria overrides",
           "arcPrompt": "Arc prompt",
           "volumePrompt": "Volume prompt",
-          "CodexDirectives": "Codex directives",
+          "codexDirectives": "Codex directives",
           "chapterPrompt": "Chapter prompt",
           "importStmbPresets": "Import STMB presets",
           "info": "Info"
@@ -2834,7 +2834,7 @@
         },
         "options": {
           "books": "Books",
-          "Codex": "Codex"
+          "codex": "Codex"
         },
         "sec": {
           "everywhere": "Everywhere"
@@ -2859,8 +2859,8 @@
     }
   },
   "guides": {
-    "Codex": {
-      "markdown": "# The Knowledge Codex\n\nModels lose facts, muddle timelines, and drift out of character as the context grows and overflows. Researchers have measured these failure modes in long-run roleplay: fact loss, timeline confusion, and persona drift ([ARPM, 2026](https://arxiv.org/pdf/2605.14802), [PCL](https://arxiv.org/html/2503.17662v1), [CloneMem](https://arxiv.org/pdf/2601.07023)).\n\nLumiBooks already fights this partially with compression. Memoria files your chat into chapters, binds chapters into arcs, and presses arcs into volumes.\n\nIn short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.\n\nThis is what knowledge Codex solves.\n\n## What it is\n\nThe Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:\n\n- **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).\n- **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.\n- **Timeline.** A dated record of major events. Timeline confusion is one of the most common failure modes, and a maintained timeline is the classic defense ([ARPM](https://arxiv.org/pdf/2605.14802), [narrative dimensions](https://arxiv.org/pdf/2604.10786), [event relation extraction](https://arxiv.org/pdf/2106.08629)).\n- **Threads.** Open/stalled storylines, and the details planted for later payoff. Explicit thread and outline state is what keeps plots coherent over thousands of words ([DOC](https://arxiv.org/pdf/2212.10077), [Writing Path](https://arxiv.org/html/2404.13919v1), [plot structure management](https://www.sciencedirect.com/science/article/pii/S1875952123000459)).\n- **World.** The rules of your setting (Magic systems, factions, geography, lore, facts true of the world itself). Important for narrative depth ([KG-guided storytelling](https://arxiv.org/html/2505.24803v2), [KG + literary theory](https://arxiv.org/pdf/2508.03137), [hierarchical story KGs](https://arxiv.org/html/2506.10008v1)).\n- **Knowledge and secrets.** Who knows what. Models improve greatly when memory is limited to what each character actually witnessed, and belief tracking is where LLMs are shit ([perspective-bounded memory](https://arxiv.org/pdf/2606.25632), [MREval](https://aclanthology.org/2026.findings-acl.1175/), [ToMATO, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/32143), [EnigmaToM](https://arxiv.org/pdf/2503.03340)).\n\n## Why these records?\n\nThese are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).\n\nSome things other trackers keep were left out on purpose:\n\n- **Numeric affection and trust meters.** Some research shows relationships benefit more from trajectories vs scores ([Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph)). A number like affection 62 is pseudo-precision an LLM can interpret in arbitrary ways. \"Loves her, hides it, betrayed on day 12\" carries far more information. We track this as relationships.\n- **Per-turn scene state.** Who is standing where, current weather, momentary moods, etc. The uncompressed tail of your chat already shows the present scene, so tracking it twice is not needed and would need to be updated every turn.\n- **Possession ledgers, personality drift logs, faction standing matrices.** Each extra table multiplies the agent''s upkeep and adds a place for old data to accumulate and relationships to track. Significant objects already live as Things, lasting character change belongs on the sheet itself, and pivotal shifts go in the timeline as events.\n- **Verbatim dialogue.** Potentially in the future, could track dialogues. idk.\n\n## How it works\n\nEvery so often, on a schedule you control, LB hands a slice of your story to a lightweight agent along with the current records and some context of the past. The agent then does three things:\n\n1. **Update.** Rewrite every section the story has outdated.\n2. **Sweep.** Verify nothing stale survived.\n3. **Compress.** Strip bloat and prose, duplicate info, verbosity.\n\nYou can edit the records yourself in the new and beautiful glass UI.\n\n## How it reaches the prompt\n\nThe Codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host''s native lorebook activation decides what enters the prompt:\n\n- **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse''s lorebook search.\n- **Timeline and threads** are constant entries as keyword matching doesn''t make as much sense here.\n\nVector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.\n\nChapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.\n\nThe mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.\n\n## For extension developers\n\nLumiBooks publishes the Codex to Spindle''s shared RPC pool. Read it from any extension backend:\n\n```ts\n// Full snapshot: all 8 files as parsed JSON, plus per-file states.\nconst snap = await spindle.rpcPool.read(`lumi_books.Codex.$'{'chatId'}'`);\n// snap: '{' chatId, userId, files: '{' characters, locations, things, relations,\n//         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'\n\n// The whole Codex rendered as one text block. Note LumiBooks itself no longer\n// injects this block: records reach the prompt as lorebook entries (see\n// \"How it reaches the prompt\"), so this is a convenience view for consumers.\nconst text = await spindle.rpcPool.read(`lumi_books.Codex.$'{'chatId'}'.rendered`);\n\n// Change signal: the most recent Codex mutation across all chats.\nconst evt = await spindle.rpcPool.read(\"lumi_books.Codex_updated\");\n// evt: '{' chatId, userId, changedFiles, reason: \"run\"|\"tidy\"|\"edit\"|\"states\"|\"wipe\", updatedAt '}'\n```\n\nNotes:\n\n- Endpoints appear after the first Codex activity of a session. `read` rejects before that, so wrap it in a try/catch.\n- A wiped Codex publishes `null` at both chat endpoints.\n- `fileStates` marks files the user switched off (`noInject`) or froze (`frozen`). The `rendered` text already excludes them. If you consume `files` directly, respect these flags.\n- `lumi_books.latest_chapter`, `lumi_books.latest_arc`, and `lumi_books.latest_volume` carry the summary events and were already published.\n"
+    "codex": {
+      "markdown": "# The Knowledge Codex\n\nModels lose facts, muddle timelines, and drift out of character as the context grows and overflows. Researchers have measured these failure modes in long-run roleplay: fact loss, timeline confusion, and persona drift ([ARPM, 2026](https://arxiv.org/pdf/2605.14802), [PCL](https://arxiv.org/html/2503.17662v1), [CloneMem](https://arxiv.org/pdf/2601.07023)).\n\nLumiBooks already fights this partially with compression. Memoria files your chat into chapters, binds chapters into arcs, and presses arcs into volumes.\n\nIn short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.\n\nThis is what knowledge Codex solves.\n\n## What it is\n\nThe Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:\n\n- **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).\n- **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.\n- **Timeline.** A dated record of major events. Timeline confusion is one of the most common failure modes, and a maintained timeline is the classic defense ([ARPM](https://arxiv.org/pdf/2605.14802), [narrative dimensions](https://arxiv.org/pdf/2604.10786), [event relation extraction](https://arxiv.org/pdf/2106.08629)).\n- **Threads.** Open/stalled storylines, and the details planted for later payoff. Explicit thread and outline state is what keeps plots coherent over thousands of words ([DOC](https://arxiv.org/pdf/2212.10077), [Writing Path](https://arxiv.org/html/2404.13919v1), [plot structure management](https://www.sciencedirect.com/science/article/pii/S1875952123000459)).\n- **World.** The rules of your setting (Magic systems, factions, geography, lore, facts true of the world itself). Important for narrative depth ([KG-guided storytelling](https://arxiv.org/html/2505.24803v2), [KG + literary theory](https://arxiv.org/pdf/2508.03137), [hierarchical story KGs](https://arxiv.org/html/2506.10008v1)).\n- **Knowledge and secrets.** Who knows what. Models improve greatly when memory is limited to what each character actually witnessed, and belief tracking is where LLMs are shit ([perspective-bounded memory](https://arxiv.org/pdf/2606.25632), [MREval](https://aclanthology.org/2026.findings-acl.1175/), [ToMATO, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/32143), [EnigmaToM](https://arxiv.org/pdf/2503.03340)).\n\n## Why these records?\n\nThese are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).\n\nSome things other trackers keep were left out on purpose:\n\n- **Numeric affection and trust meters.** Some research shows relationships benefit more from trajectories vs scores ([Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph)). A number like affection 62 is pseudo-precision an LLM can interpret in arbitrary ways. \"Loves her, hides it, betrayed on day 12\" carries far more information. We track this as relationships.\n- **Per-turn scene state.** Who is standing where, current weather, momentary moods, etc. The uncompressed tail of your chat already shows the present scene, so tracking it twice is not needed and would need to be updated every turn.\n- **Possession ledgers, personality drift logs, faction standing matrices.** Each extra table multiplies the agent''s upkeep and adds a place for old data to accumulate and relationships to track. Significant objects already live as Things, lasting character change belongs on the sheet itself, and pivotal shifts go in the timeline as events.\n- **Verbatim dialogue.** Potentially in the future, could track dialogues. idk.\n\n## How it works\n\nEvery so often, on a schedule you control, LB hands a slice of your story to a lightweight agent along with the current records and some context of the past. The agent then does three things:\n\n1. **Update.** Rewrite every section the story has outdated.\n2. **Sweep.** Verify nothing stale survived.\n3. **Compress.** Strip bloat and prose, duplicate info, verbosity.\n\nYou can edit the records yourself in the new and beautiful glass UI.\n\n## How it reaches the prompt\n\nThe Codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host''s native lorebook activation decides what enters the prompt:\n\n- **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse''s lorebook search.\n- **Timeline and threads** are constant entries as keyword matching doesn''t make as much sense here.\n\nVector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.\n\nChapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.\n\nThe mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.\n\n## For extension developers\n\nLumiBooks publishes the Codex to Spindle''s shared RPC pool. Read it from any extension backend:\n\n```ts\n// Full snapshot: all 8 files as parsed JSON, plus per-file states.\nconst snap = await spindle.rpcPool.read(`lumi_books.codex.$'{'chatId'}'`);\n// snap: '{' chatId, userId, files: '{' characters, locations, things, relations,\n//         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'\n\n// The whole Codex rendered as one text block. Note LumiBooks itself no longer\n// injects this block: records reach the prompt as lorebook entries (see\n// \"How it reaches the prompt\"), so this is a convenience view for consumers.\nconst text = await spindle.rpcPool.read(`lumi_books.codex.$'{'chatId'}'.rendered`);\n\n// Change signal: the most recent Codex mutation across all chats.\nconst evt = await spindle.rpcPool.read(\"lumi_books.codex_updated\");\n// evt: '{' chatId, userId, changedFiles, reason: \"run\"|\"tidy\"|\"edit\"|\"states\"|\"wipe\", updatedAt '}'\n```\n\nNotes:\n\n- Endpoints appear after the first Codex activity of a session. `read` rejects before that, so wrap it in a try/catch.\n- A wiped Codex publishes `null` at both chat endpoints.\n- `fileStates` marks files the user switched off (`noInject`) or froze (`frozen`). The `rendered` text already excludes them. If you consume `files` directly, respect these flags.\n- `lumi_books.latest_chapter`, `lumi_books.latest_arc`, and `lumi_books.latest_volume` carry the summary events and were already published.\n"
     }
   },
   "promptBreakdown": {

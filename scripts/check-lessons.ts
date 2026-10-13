@@ -175,7 +175,7 @@ const EXHIBIT_FRAGMENTS = [
   "the relations table is enabled, move these into relations.json rows",
   "is not a valid entity ref",
   "dangling reference",
-  "narrated instead of calling tools",
+  "didn't call tools",
 ];
 
 console.log("exhibits:");

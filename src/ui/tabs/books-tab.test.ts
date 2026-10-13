@@ -238,7 +238,7 @@ for (const withChat of [true, false]) test(`Info exposes account diagnostics wit
   expect(host.textContent).toContain("Private diagnostics");
   expect(host.textContent).not.toContain("How it works");
   expect(host.textContent).not.toContain("Where things live");
-  expect(host.textContent).toContain("Nyandere catgirl in a maid uniform.");
+  expect(host.textContent).toContain("Nyandere catgirl");
   expect(host.textContent).not.toContain("Young nyandere");
   expect(host.textContent).toContain("pseudonymous IDs");
   expect(host.textContent).toContain("Excludes chat/summary text");

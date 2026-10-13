@@ -6,7 +6,7 @@ LumiBooks already fights this partially with compression. Memoria files your cha
 
 In short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.
 
-This is what knowledge codex solves.
+This is what knowledge Codex solves.
 
 ## What it is
 
@@ -42,7 +42,7 @@ You can edit the records yourself in the new and beautiful glass UI.
 
 ## How it reaches the prompt
 
-The codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host's native lorebook activation decides what enters the prompt:
+The Codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named `LumiBooks Codex [Do Not Edit] - <chat>`, and the host's native lorebook activation decides what enters the prompt:
 
 - **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a `keywords` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse's lorebook search.
 - **Timeline and threads** are constant entries as keyword matching doesn't make as much sense here.
@@ -55,7 +55,7 @@ The mirror book is rewritten by LumiBooks often, so don't edit it by hand. Edit 
 
 ## For extension developers
 
-LumiBooks publishes the codex to Spindle's shared RPC pool. Read it from any extension backend:
+LumiBooks publishes the Codex to Spindle's shared RPC pool. Read it from any extension backend:
 
 ```ts
 // Full snapshot: all 8 files as parsed JSON, plus per-file states.
@@ -63,19 +63,19 @@ const snap = await spindle.rpcPool.read(`lumi_books.codex.${chatId}`);
 // snap: { chatId, userId, files: { characters, locations, things, relations,
 //         timeline, threads, world, knowledge }, fileStates, runs, updatedAt }
 
-// The whole codex rendered as one text block. Note LumiBooks itself no longer
+// The whole Codex rendered as one text block. Note LumiBooks itself no longer
 // injects this block: records reach the prompt as lorebook entries (see
 // "How it reaches the prompt"), so this is a convenience view for consumers.
 const text = await spindle.rpcPool.read(`lumi_books.codex.${chatId}.rendered`);
 
-// Change signal: the most recent codex mutation across all chats.
+// Change signal: the most recent Codex mutation across all chats.
 const evt = await spindle.rpcPool.read("lumi_books.codex_updated");
 // evt: { chatId, userId, changedFiles, reason: "run"|"tidy"|"edit"|"states"|"wipe", updatedAt }
 ```
 
 Notes:
 
-- Endpoints appear after the first codex activity of a session. `read` rejects before that, so wrap it in a try/catch.
-- A wiped codex publishes `null` at both chat endpoints.
+- Endpoints appear after the first Codex activity of a session. `read` rejects before that, so wrap it in a try/catch.
+- A wiped Codex publishes `null` at both chat endpoints.
 - `fileStates` marks files the user switched off (`noInject`) or froze (`frozen`). The `rendered` text already excludes them. If you consume `files` directly, respect these flags.
 - `lumi_books.latest_chapter`, `lumi_books.latest_arc`, and `lumi_books.latest_volume` carry the summary events and were already published.

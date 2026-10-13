@@ -21,6 +21,8 @@ describe("locale formatting and fallback", () => {
     expect(t("backend.pipeline.comment.arc", { choice: "yes", sceneNumber: 4, baseComment: "Test" })).toBe("[Root] Arc #4 - Test");
     expect(t("backend.pipeline.comment.arc", { choice: "no", sceneNumber: 4, baseComment: "Test" })).toBe("Arc #4 - Test");
     expect(t("backend.codex.index.reportCodexFailure.memoriaCouldnTTheCodex", { verb: "tidy", shortErrorText: "test" })).toBe("Couldn't tidy the Codex: test");
+    expect(t("shared.summaryKindTag", { kind: "codex" })).toBe("Codex");
+    expect(t("ui.tabs.codexTab.renderOverview.messageUnindexed", { codexBacklog: 2 })).toBe("2 messages unindexed");
   });
 
   test("uses locale plural rules and allows complete sentence reordering", () => {

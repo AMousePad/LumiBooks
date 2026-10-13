@@ -2846,12 +2846,12 @@ var en_default = {
 ○ codex_skip {choice, select, yes {{join}} other {(no files)}}`,
           unknownTool: `
 ✗ unknown tool {name}`,
-          theCodexAgentReturnedAnEmptyResponse: "The codex agent returned an empty response",
+          theCodexAgentReturnedAnEmptyResponse: "The Codex agent returned an empty response",
           noJsonObjectFoundInTheReply: `
 ✗ no JSON found in the reply. Retrying...`,
           memoriaCouldnTFinishTheCodexUpdate: "The model wasn't able to follow instructions :(.{keptSuffix}",
-          theCodexAgentNarratedInsteadOfCalling: "The codex agent didn't call tools. Does your connection support tool calls?",
-          theCodexAgentRepliedWithoutAParsable: "The codex agent returned faulty JSON",
+          theCodexAgentNarratedInsteadOfCalling: "The Codex agent didn't call tools. Does your connection support tool calls?",
+          theCodexAgentRepliedWithoutAParsable: "The Codex agent returned faulty JSON",
           memoriaCouldnTFinishTheCodexUpdate2: "The model stopped before writing {join}.{keptSuffix}",
           keptStillReferencedByUnchangedJson: `
 ⤳ Kept {ref}: still referenced by unchanged {file}.json`,
@@ -2917,7 +2917,7 @@ var en_default = {
           activatedLoreReferenceTokens: "Activated lore reference: ~{length} tokens",
           activatedLoreExceededTheLoreLimitTokens: "Lore exceeded the lore limit ({effectiveLoreLimitTokens} tokens) and was cut off",
           thoroughMode: "Thorough mode: {choice, select, yes {on, adds a verification round} other {off}}",
-          promptSizeTokensSystemTokensUserCodex: "Prompt size: ~{length} tokens system + ~{length2} tokens user (codex max input {codexMaxInputTokens})",
+          promptSizeTokensSystemTokensUserCodex: "Prompt size: ~{length} tokens system + ~{length2} tokens user (Codex max input {codexMaxInputTokens})",
           wouldFail: "WOULD FAIL: {message}",
           samplerParametersBeingSentOnTheWire: "Sampler parameters: {stringify}"
         },
@@ -2942,7 +2942,7 @@ var en_default = {
           everyCodexRecordIsFrozenUnfreezeOne: "Codex records are frozen. Unfreeze a record to update.",
           theCodexIsAlreadyCaughtUp: "Codex is up to date",
           memoriaClosesTheCodexForNow: "Codex update cancelled",
-          fastCatchUpNeedsTheCodexModel: "Fast catch-up needs the codex model''s context to be at least the story model''s. Raise your max context size"
+          fastCatchUpNeedsTheCodexModel: "Fast catch-up needs the Codex model''s context to be at least the story model''s. Raise your max context size"
         },
         catchupCodex: {
           memoriaIsCatchingUpTheCodex: "Catching up Codex ({choice, select, yes {ultra fast} other {fast}})",
@@ -2956,14 +2956,14 @@ var en_default = {
         rebuildCodex: {
           memoriaIsClearingTheCodexForA: "Clearing Codex for rebuild",
           memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
-          memoriaCouldnTReadTheCodexCursor: "The codex state has an issue, rebuild aborted: {shortErrorText}",
+          memoriaCouldnTReadTheCodexCursor: "The Codex state has an issue, rebuild aborted: {shortErrorText}",
           memoriaCouldnTClearCodexFileRun: "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry Rebuild.",
           memoriaCouldnTClearTheCodexLorebook: "Couldn''t clear Codex lorebook entries: {shortErrorText}"
         },
         runCodexTidy: {
           memoriaIsTidyingTheCodex: "Tidying Codex",
           memoriaIsAlreadyWorkingOnTheCodex: "Codex task in progress",
-          theRelationsFormatChangedRunUpdateNow: "The relations format changed, please update the codex",
+          theRelationsFormatChangedRunUpdateNow: "The relations format changed, please update the Codex",
           nothingToTidyThoseRecordsAreEmpty: "Nothing to tidy: records are empty, frozen, or unreadable",
           theSelectedRecordsAlreadyFitTokensLimit: "Records already fit within the limit ({limit} tokens)",
           tidyTokensLimitModelTargetCallsLeft: `
@@ -3149,9 +3149,9 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         memoriaRebuiltOntoInheritedMemorAndIs: "Added {count} inherited memor{count, plural, one {y} other {ies}}. Re-summarizing this chat.",
         memoriaWillLeaveMessageUntouched: "Excluded {length} message{length, plural, one {} other {s}} from compression",
         memoriaWillCompressMessageAgain: "Allowed compression for {length} message{length, plural, one {} other {s}}",
-        memoriaTeachesTheCodexBeforeSheOpens: "Memoria teaches the codex before she opens it, take her lesson first",
-        enableTheCodexInTuningFirst: "Enable the codex in Tuning first",
-        acceptingCurrentCodexRecords: "Accepting current codex records",
+        memoriaTeachesTheCodexBeforeSheOpens: "Memoria teaches the Codex before she opens it, take her lesson first",
+        enableTheCodexInTuningFirst: "Enable the Codex in Tuning first",
+        acceptingCurrentCodexRecords: "Accepting current Codex records",
         clearStaleTags: "clear stale tags",
         memoriaIsUpdatingTheCodexRestoreAgain: "Codex update in progress. Wait before restoring.",
         memoriaCouldnTRestoreThatBackup: "Couldn''t restore backup: {error}",
@@ -3163,7 +3163,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         memoriaHasNoCodexSnapshotToUndo: "No Codex snapshot to restore",
         memoriaCouldnTUndo: "Couldn''t undo: {error}",
         memoriaRolledTheCodexBack: "Codex restored",
-        unknownCodexFile: 'Unknown codex file "{file}".',
+        unknownCodexFile: 'Unknown Codex file "{file}".',
         memoriaIsUpdatingTheCodexSaveAgain: "Codex update in progress. Wait before saving.",
         thatIsNotValidJson: "Invalid JSON: {describeError}",
         validationFailed: "Validation failed: {errors0}{extra}",
@@ -3348,7 +3348,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         arc: "{choice, select, yes {[Root] } other {}}Arc #{sceneNumber} - {baseComment}"
       },
       createHigherFromEntries: {
-        memoriaIsBindingA: "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}"
+        memoriaIsBindingA: "Creating {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}"
       },
       runVolume: {
         memoriaSetsThePenDown: "Summary cancelled"
@@ -3708,7 +3708,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       bronze: "Bronze",
       apprentice: "Apprentice"
     },
-    summaryKindTag: "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {CODEX} other {{kind}}}"
+    summaryKindTag: "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {Codex} other {{kind}}}"
   },
   ui: {
     activationControl: {
@@ -3808,7 +3808,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           aChapterCanOnlyBeFiledAfter: "A chapter can only be filed after an arc exists",
           theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 70 minus 65 is 5, short of 18. This is also when I''d notify you that your story needs more messages if you click file~",
           theDesk: "The desk",
-          thisColoredBarIsTheSpineA: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the codex, that''s my second course (it''s really cool).",
+          thisColoredBarIsTheSpineA: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the Codex, that''s my second course (it''s really cool).",
           clickAnyColoredBlockAndILl: "Click any colored block and I''ll jump you straight to that chapter or arc on my shelf 🐰. Handy when you want to check what I wrote about a scene.",
           theListUnderItShowsTheSame: "The list under it shows the same picture in numbers: what my volumes, arcs, and chapters cost, plus the recent messages I haven''t touched yet.",
           theseTilesAreTheQuickSummaryFiled: "These tiles are the quick summary. Filed is how much of the chat I''ve compacted. Tail is the recent part I haven''t. Shelf counts everything I''ve made. The Codex tile belongs to my second course 🥷.",
@@ -3836,7 +3836,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           thereSTheWholeRecord: "There''s the whole record.",
           youLlSeeItsSizeBeforeAnd: "You''ll see its size before and after compacting, my little note, and four buttons. Edit rewrites the text. Regenerate throws the summary away and writes it again from the same messages. Release turns it into a normal lorebook entry that I stop managing. Delete removes it. Boring stuff 💤",
           fadedEntriesMeansAnArcOrVolume: "Faded entries means an arc or volume replaced them, like how chapters replace messages. Delete the arc and its chapters unhide again.",
-          importantTheGhostTagMarksAChapter: "🚩IMPORTANT🚩 The GHOST tag marks a chapter I prepared early for codex, but I don''t actually inject it or use it in the summaries yet until it passes the lag. My codex course explains those. If you ask about this on Discord I will kill you.",
+          importantTheGhostTagMarksAChapter: "🚩IMPORTANT🚩 The GHOST tag marks a chapter I prepared early for Codex, but I don''t actually inject it or use it in the summaries yet until it passes the lag. My Codex course explains those. If you ask about this on Discord I will kill you.",
           youDeleteAnArcThatWasMade: "You delete an arc that was made from 3 chapters. What happens?",
           the3ChaptersUnhideAndInjectAgain: "The 3 chapters unhide and inject again, and the messages stay hidden",
           theChaptersAndAllTheirMessagesReturn: "The chapters and all their messages return to the prompt",
@@ -3885,7 +3885,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           okThisIsActuallyTheLastPart: "Ok this is ACTUALLY the last part. Tap the Tuning tab.",
           myDials: "My dials.",
           everythingIDoIsControlledByA: "Everything I do is controlled by a profile, and the active profile applies to all of your chats at once. The Extension checkbox is my master switch, off means I do nothing anywhere.",
-          rightBelowSitsMyWritingDeskWhich: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the codex''s own connection and samplers, that''s my second course.",
+          rightBelowSitsMyWritingDeskWhich: "Right below sits my writing desk: which AI connection I write with, plus my sampler settings. Empty sampler fields fall back to my summarizing defaults, temperature 0.4 among them. The big toggle up top switches to the Codex''s own connection and samplers, that''s my second course.",
           nextRoomTapSettings: "Next room. Tap Settings.",
           thePressRoom: "The press room.",
           thisIsThatWindowThingITold: "This is that window thing I told you about earlier! Change it here.",
@@ -3916,7 +3916,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           andTheLastPartOfTheSettings: "And the last part of the settings, tap Prompts.",
           myInstructions: "My instructions.",
           thePromptsPaneHoldsMyInstructionsFour: "The Prompts pane holds my instructions. Four built-in chapter styles, or duplicate one and edit it, or import your old STMB presets. Dry run shows the exact final prompt I would send, without spending a single token.",
-          memoriaCouldnTFileTheChapterThe: "Memoria couldn''t file the chapter: The model didn''t return valid JSON",
+          memoriaCouldnTFileTheChapterThe: "Couldn''t create chapter: The model didn''t return valid JSON",
           everyOneOfMyChaptersFailsLike: "Every one of my chapters fails like this, even after retries. The most likely fix?",
           giveMeAStrongerModelOrA: "Give me a stronger model or a different connection",
           raiseTheLag: "Raise the lag",
@@ -3941,16 +3941,16 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           summaryChaptersAreAGoodOutlineBut: "Summary chapters are a good outline. But if you compress a story enough you''ll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
           beholdTheKnowledgeCodexLetSWalk: "BEHOLD the Knowledge Codex 😎. Let''s walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
           thereItIs: "There it is.",
-          eightRecordsMakeTheCodexCharactersLocations: "Eight records make the codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
-          yourCharacterCardSaysEliasHasA: "Your character card says Elias has a scar. It never comes up in the story, and the codex never records it. Is that a bug?",
-          noTheCodexOnlyRecordsWhatThe: "No. The codex only records what the story itself mentions",
-          yesTheCodexShouldCopyEverythingFrom: "Yes, the codex should copy everything from the card",
-          theCardHasToBeImportedInto: "The card has to be imported into the codex first",
-          theCodexOnlyTracksCharactersYouAdd: "The codex only tracks characters you add by hand",
+          eightRecordsMakeTheCodexCharactersLocations: "Eight records make the Codex: characters, locations, things, relations, a timeline, story threads, world rules, and secrets. A small agent reads your new messages on a schedule and updates it all 💪. Each record becomes a lorebook entry. Timeline and threads stay constant; the others use Keywords by default. In Tuning → Settings → Codex, choose Always or Vector + keywords for different recall. Vector recall needs embeddings set up in Lumiverse.",
+          yourCharacterCardSaysEliasHasA: "Your character card says Elias has a scar. It never comes up in the story, and the Codex never records it. Is that a bug?",
+          noTheCodexOnlyRecordsWhatThe: "No. The Codex only records what the story itself mentions",
+          yesTheCodexShouldCopyEverythingFrom: "Yes, the Codex should copy everything from the card",
+          theCardHasToBeImportedInto: "The card has to be imported into the Codex first",
+          theCodexOnlyTracksCharactersYouAdd: "The Codex only tracks characters you add by hand",
           iReadYourLoreAsReferenceFor: "I read your lore as reference for names and spellings, but copying it in would be duplicating information.",
-          readingTheCodex: "Reading the codex",
-          theLineUpTopIsMyLedger: "The line up top is my ledger. It tells you whether a codex exists, how many new messages I haven''t read yet, and when I last ran.",
-          theseAreTheEverydayActionsUpdateNow: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
+          readingTheCodex: "Reading the Codex",
+          theLineUpTopIsMyLedger: "The line up top is my ledger. It tells you whether a Codex exists, how many new messages I haven''t read yet, and when I last ran.",
+          theseAreTheEverydayActionsUpdateNow: "These are the everyday actions. Update now makes me read everything up to your newest message, tidy makes the Codex smaller, and undo reverts my last change. Rebuild and Wipe live in the Manage tab, along with import and export.",
           everyTileIsOneRecordItsCount: "Every tile is one record, its count, and token usage. These tiles are also buttons. Click the Relations tile once.",
           dashedMeansNotInjectedButStillUpdated: "Dashed means not injected but still updated. A second click freezes updates completely, a third turns it back on. Try clicking it more if you want.🖱️🖱️🖱️🖱️",
           youFrozeRelations40MessagesAgoAnd: "You froze Relations 40 messages ago and it now says stale. What happens when you re-enable it?",
@@ -3959,11 +3959,11 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           nothingCanRecoverTheMissedEventsExcept: "Nothing can recover the missed events except a full rebuild",
           tidyItTidyingReReadsTheMissed: "Tidy it, tidying re-reads the missed messages",
           myReadingPositionIsAlreadyPastThose: "My reading position is already past those messages, so normal updates wont fix it. The Overview offers a one-pass catch-up for re-enabled records.",
-          rebuildCodexAndWipeCodexBothErase: "Rebuild codex and Wipe codex both erase everything. What is actually different afterward?",
+          rebuildCodexAndWipeCodexBothErase: "Rebuild Codex and Wipe Codex both erase everything. What is actually different afterward?",
           wipeHelpsLumiAgentWipeHerAss: "Wipe helps LumiAgent wipe her ass.",
           rebuildKeepsYourEntriesAndOnlyRewrites: "Rebuild keeps your entries and only rewrites the stale ones",
           wipeAlsoDeletesYourChaptersAndArcs: "Wipe also deletes your chapters and arcs",
-          rebuildKeepsYourTileSettingsAndRemakes: "Rebuild keeps your tile settings and remakes the codex from scratch, whereas wipe destroys it all.",
+          rebuildKeepsYourTileSettingsAndRemakes: "Rebuild keeps your tile settings and remakes the Codex from scratch, whereas wipe destroys it all.",
           bothEraseTheRecordsAndMyReading: "Both erase the records and my reading position. The difference is when the re-reading happens and whether your tile switches survive.",
           theRecordsHandsOn: "The records, hands on",
           tapEntitiesAndBehold: "Tap Entities and behold...",
@@ -3974,12 +3974,12 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           charElias: "char:elias",
           theStoryHasMovedOnEliasIsn: `The story has moved on, Elias isn''t hiding anymore, but his sheet still says "hiding in the tannery loft". What''s happening?`,
           theAgentHasnTReadThatFar: "The agent hasn''t read that far yet. It catches up on its own.",
-          theCodexIsBrokenDeleteTheExtension: "The codex is broken, delete the extension",
+          theCodexIsBrokenDeleteTheExtension: "The Codex is broken, delete the extension",
           sheetsNeverChangeOnceWritten: "Sheets never change once written",
           youHaveToDeleteEliasAndRe: "You have to delete Elias and re-add him",
-          theCodexUpdatesOnAScheduleSo: "The codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
+          theCodexUpdatesOnAScheduleSo: "The Codex updates on a schedule, so it can trail the story by a few messages. Hand edits are safe and treated as if I wrote them.",
           charCaptain: "char:captain",
-          considerTheCaptainLetSSayThat: "Consider the Captain. Let''s say that his character card describes him well. This means I don''t need him in the codex as well. See here how it says locked after 1 click? That''s bad! I won''t write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
+          considerTheCaptainLetSSayThat: "Consider the Captain. Let''s say that his character card describes him well. This means I don''t need him in the Codex as well. See here how it says locked after 1 click? That''s bad! I won''t write to his sheet, but right now it still is added to prompts :(. Click the button one more time.",
           greatHeIsNoLongerUpdatedOr: "Great, he is no longer updated OR injected into the prompt. You can do this to entries or entry sub-sections too!",
           letSExploreTheWorldWideWeb: "Let''s explore the world wide web. Tap Relations.",
           thisIsTheListView: "This is the list view.",
@@ -3997,35 +3997,35 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           theAgentAndItsDials: "The agent and its dials",
           lastStopMyRulesOpenTheTuning: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           myDials: "My dials.",
-          myCodexSettingsLiveHereByDefault: "My codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
+          myCodexSettingsLiveHereByDefault: "My Codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
           codexLag65: "Codex lag · 65",
-          youRaiseTheCodexLagFrom6: "You raise the codex lag from 6 up to 65, same as the chapter lag. What changes?",
+          youRaiseTheCodexLagFrom6: "You raise the Codex lag from 6 up to 65, same as the chapter lag. What changes?",
           theBibleAlwaysRuns65MessagesBehind: "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
           nothingTheLagOnlyAffectsChapters: "Nothing, the lag only affects chapters",
-          theCodexGetsCheaperWithNoDownside: "The codex gets cheaper with no downside",
+          theCodexGetsCheaperWithNoDownside: "The Codex gets cheaper with no downside",
           theAgentRunsMoreOften: "The agent runs more often",
-          chaptersActAsReplacementsOfOldMessages: "Chapters act as replacements of old messages, where the codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
+          chaptersActAsReplacementsOfOldMessages: "Chapters act as replacements of old messages, where the Codex is a snapshot of the truth of the chat. It may be a good idea to keep it closer to the present.",
           twoMoreThingsRelationsTableOffMoves: "Two more things. Relations table off moves connections onto each sheet as short notes, an easier format for weaker models. Extra context mode has me write chapters early as ghosts so I can use them as small context snippets. My own model connection and samplers live on the Connection pane, behind its Codex toggle, and Use tool calls lives there too for providers that support tools.",
-          oneMoreThingEditAnyRecordWhenever: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was codex-recorded, my next run notices, rewinds, and corrects the codex.",
-          memoriaCouldnTUpdateTheCodexThe: "Memoria couldn''t update the codex: The codex agent narrated instead of calling tools, check that the connection supports tool calls",
-          everyCodexRunFailsWithThisWhat: "Every codex run fails with this. What is the most likely cause?",
-          theCodexModelCannotMakeToolCalls: "The codex model cannot make tool calls, pick one that can under Codex connection",
+          oneMoreThingEditAnyRecordWhenever: "One more thing! Edit any record whenever you like, and if you edit or delete an old message that was Codex-recorded, my next run notices, rewinds, and corrects the Codex.",
+          memoriaCouldnTUpdateTheCodexThe: "Couldn''t update the Codex: The Codex agent didn''t call tools.",
+          everyCodexRunFailsWithThisWhat: "Every Codex run fails with this. What is the most likely cause?",
+          theCodexModelCannotMakeToolCalls: "The Codex model cannot make tool calls, pick one that can under Codex connection",
           theChatIsTooLong: "The chat is too long",
-          aCodexFileIsCorrupted: "A codex file is corrupted",
+          aCodexFileIsCorrupted: "A Codex file is corrupted",
           theRelationsTableIsOff: "The Relations table is off",
-          withUseToolCallsOnTheAgent: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
+          withUseToolCallsOnTheAgent: "With Use tool calls on, the agent writes its records through tool calls, and a model that can only write prose cannot keep the Codex that way. Turning it back off (Connection pane, Codex toggle) returns me to JSON mode, which works on every connection.",
           withExtraContextModeOnAChapter: "With extra context mode on, a chapter shows up on your Shelf tagged GHOST, and it isn''t in the prompt. Is something wrong?",
-          noItSAChapterWrittenEarly: "No. It''s a chapter written early to feed the codex, but isn''t used before summary lag!",
+          noItSAChapterWrittenEarly: "No. It''s a chapter written early to feed the Codex, but isn''t used before summary lag!",
           pleaseReadThisOneCarefullyOrMousepad: "PLEASE READ THIS ONE CAREFULLY OR MOUSEPAD WILL BE MAD",
           yesItSCorruptedDeleteItAnd: "Yes, it''s corrupted, delete it and resync",
           itSADraftWaitingForYour: "It''s a draft waiting for your approval",
-          ghostsGiveTheCodexContextEarlyAnd: "Ghosts give the codex context early, and are eventually turned into real summaries later down the line. ",
+          ghostsGiveTheCodexContextEarlyAnd: "Ghosts give the Codex context early, and are eventually turned into real summaries later down the line. ",
           openingCeremony: "Opening ceremony",
-          practiceIsOverThisIsYourReal: "Practice is over, this is your real archive. Walk to your own codex pane: the Tuning tab, then Settings, then its Codex side.",
+          practiceIsOverThisIsYourReal: "Practice is over, this is your real archive. Walk to your own Codex pane: the Tuning tab, then Settings, then its Codex side.",
           alreadyThereGood: "Already there. Good.",
           flipEnableCodexOnTheDefaultSettings: "Flip Enable Codex on. The default settings below suit most chats.",
           enabledFromNowOnIKeepYour: "Enabled! From now on I keep your story bible current after every message.",
-          homeHasAnUpdateCodexButtonNow: "Home has an Update codex button now. Let''s go find it. Tap Home.",
+          homeHasAnUpdateCodexButtonNow: "Home has an Update Codex button now. Let''s go find it. Tap Home.",
           pressItAndILlReadThis: "Press it and I''ll read this chat right away, or skip and I''ll do it later!",
           readingWatchTheBusyRowOnHome: "Reading! Watch the busy row on Home if you want to see me think.",
           thatSAllGoForthAndMake: "That''s all, go forth and make some awesome stories!✨"
@@ -4071,8 +4071,8 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           oneSummaryCompressedAgainAndAgain: "one summary, compressed again and again",
           arc: "arc",
           volume: "volume",
-          withACodex: "with a codex",
-          theCodexTracksThemExplicitlyOutsideThe: "the codex tracks them explicitly, outside the summaries"
+          withACodex: "with a Codex",
+          theCodexTracksThemExplicitlyOutsideThe: "the Codex tracks them explicitly, outside the summaries"
         },
         tier: {
           chapter: "chapter"
@@ -4398,7 +4398,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderCodexPaneLock: {
           sealedUntilTheLesson: "Sealed until the lesson",
-          theCodexSettingsUnlockWhenYouFinish: "The codex settings unlock when you finish The Archivist''s Codex. The final step is flipping this very pane on."
+          theCodexSettingsUnlockWhenYouFinish: "The Codex settings unlock when you finish The Archivist''s Codex. The final step is flipping this very pane on."
         },
         codexSealCard: {
           takeALessonFromMemoria: "Take a Lesson from Memoria",
@@ -4406,7 +4406,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderCodexGrumpySkip: {
           hmphFine: "Hmph. Fine.",
-          skipIfYouMustTheCodexUnlocks: "Skip if you must (¬`‸´¬) The codex unlocks, but the agent stays off until you enable it in Tuning. A reminder will wait for you on Home.",
+          skipIfYouMustTheCodexUnlocks: "Skip if you must (¬`‸´¬) The Codex unlocks, but the agent stays off until you enable it in Tuning. A reminder will wait for you on Home.",
           fineTeachMe: "Fine, Teach Me",
           skipAnyway: "Skip anyway"
         }
@@ -4421,7 +4421,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         messageAreWaitingAboutPassesAtThe: "{codexBacklog0} message{codexBacklog02, plural, one {} other {s}} waiting (~{codexBacklogPasses} passes). Choose a catch-up mode."
       },
       requestCodexRebuild: {
-        rebuildTheCodex: "Rebuild the codex",
+        rebuildTheCodex: "Rebuild the Codex",
         memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
       },
       requestCodexTidy: {
@@ -4543,8 +4543,8 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderAboutTab: {
           memoriaTheLumiBooksLibrarian: "Memoria, the LumiBooks librarian",
-          nyandereCatgirlInAMaidUniformBlack: "Nyandere catgirl in a maid uniform. Black hair, blue eyes. Summarizes chats into chapters and arcs.",
-          builtOnLumiverseSpindleWithPromptsAnd: "Built on Lumiverse Spindle. Prompts and UX inspired by SillyTavern Memory Books."
+          nyandereCatgirlInAMaidUniformBlack: "Nyandere catgirl that tries to make sure your stories don't blow up your model, and your wallet.",
+          builtOnLumiverseSpindleWithPromptsAnd: "Inspired by SillyTavern Memory Books."
         },
         ack: {
           acknowledgements: "Acknowledgements"
@@ -4554,26 +4554,26 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           privateDiagnostics: "Private diagnostics"
         },
         renderAcademy: {
-          bothCoursesLiveHereForRetakesPer: "Both courses live here for retakes, per-section revisits, and diplomas."
+          bothCoursesLiveHereForRetakesPer: "Courses open for review."
         },
         courseCard: {
           completedAttempt: "Completed{choice, select, yes { by {signedName}} other {}}, {attempts} attempt{attempts, plural, one {} other {s}}.",
           inProgressSection: "In progress, section {section1}.",
-          lockedBehindNothingButYourTimeThis: "Locked behind nothing but your time. This one turns the codex on.",
-          theMandatoryPrimer: "The mandatory primer.",
+          lockedBehindNothingButYourTimeThis: "Locked behind your efforts. Complete to enable Codex.",
+          theMandatoryPrimer: "The mandatory tutorial.",
           viewDiploma: "View diploma",
           retakeCourse: "Retake course",
-          leaveAnytimeTheCourseStaysCompletedOn: "Leave anytime, the course stays completed on your previous grade until you finish a new run",
+          leaveAnytimeTheCourseStaysCompletedOn: "Leave anytime~",
           resume: "Resume",
           start: "Start",
           sitTheExam: "Sit the Exam",
           value: "{i1}. {title}{choice, select, yes { ◇} other { ◆}}",
-          hasSilverOrSkippedStampsRetakeTo: "Has silver or skipped stamps, retake to gild it",
+          hasSilverOrSkippedStampsRetakeTo: "Retake the course to aim for gold",
           allGold: "All gold"
         },
         renderDiagnostics: {
           turnOffLocalLogsThisIsNot: "Turn off local logs. This isn''t recommended",
-          tracksUiFailuresNavigationRequestsFilingCoverage: "Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors.",
+          tracksUiFailuresNavigationRequestsFilingCoverage: "Tracks UI failures, navigation, requests, filing, coverage, forks and context decisions, timestamps, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and unannonymized errors.",
           exportDiagnostics: "Export diagnostics",
           clearDiagnostics: "Clear diagnostics"
         }
@@ -4588,7 +4588,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           openAChatToBrowseMemoriaS: "Open a chat to view summaries"
         },
         sec: {
-          theShelf: "The Shelf",
+          theShelf: "The Bookshelf",
           pickMessagesForAChapter: "Pick messages for a chapter",
           bindChaptersIntoAnArc: "Bind chapters into an arc",
           pressArcsIntoAVolume: "Press arcs into a volume",
@@ -4597,7 +4597,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           summaryExportAndImport: "Summary export and import"
         },
         renderShelf: {
-          emptyShelfForNowMemoriaWillStart: "No summaries yet. Automation starts when window and lag are met."
+          emptyShelfForNowMemoriaWillStart: "No summaries yet."
         },
         search: {
           searchTitlesAndSummaries: "Search titles and summaries..."
@@ -4627,7 +4627,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           ghostNotYetInjected: "ghost, not yet injected",
           memoria: "Memoria: {shortComment}",
           edit: "Edit",
-          edit2: "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}",
+          edit2: "Edit {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}",
           editThisEntrySLabelAndContent: "Edit label and content",
           regenerate: "Regenerate",
           resummarizeTheSameSources: "Resummarize the same sources",
@@ -4639,9 +4639,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           regenerate: "Regenerate?",
           memoriaWillResummarizeTheSameSourcesAnd: "Resummarizes the same sources and replaces this entry on success.",
           releaseToLorebook: "Release to lorebook?",
-          memoriaWillHandThisEntryToYour: "Converts this to a regular lorebook entry with an [orphaned] prefix. LumiBooks stops managing it. {freed}",
+          memoriaWillHandThisEntryToYour: "Converts this to a regular lorebook entry with an [orphaned] prefix. Detatches it from LumiBooks. {freed}",
           delete: "Delete?",
-          memoriaWillDropThisGhostChapterShe: "Deletes this ghost chapter. Its messages will be summarized again on the next pass.",
+          memoriaWillDropThisGhostChapterShe: "Deletes this ghost chapter. Its messages will be summarized again later.",
           higherTierMemoriesKeepCoveringTheseSources: "Higher-tier memories keep covering these sources.",
           memoriaWillLetThoseMessagesBackInto: "Its messages return to the prompt.",
           itsChaptersReviveAndKeepCoveringThose: "Its chapters reactivate and keep covering these messages.",
@@ -4676,7 +4676,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         excludeBtn: {
           exclude: "Exclude",
-          toggleExclusionForTheSelectedMessagesExcluded: "Toggles compression for selected messages. Excluded messages stay in context and split summary windows."
+          toggleExclusionForTheSelectedMessagesExcluded: "Toggles compression for selected messages. Excluded messages stay in context."
         },
         syncControls: {
           selectedTokensBefore: "{size} selected (~{formatTokens} tokens before)"
@@ -4712,7 +4712,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderVolumePicker: {
           memoriaHasNoUnboundArcsToPress: "No unbound arcs",
-          aVolumeReplacesItsSourceArcsIn: "Volumes replace their source arcs in the prompt. Set automation thresholds and lag per tier in Tuning.",
+          aVolumeReplacesItsSourceArcsIn: "Volumes replace covered arcs in the prompt. Configure automation in Tuning.",
           value: "{slice}{range} - {tokenStr}",
           pressSelected: "Press selected",
           selectAllActive: "Select all active",
@@ -4762,13 +4762,13 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           activeSourceEntriesReadyBatchesUseThis: "{length} active source entries. Ready batches use this tier''s threshold and lag from Tuning."
         },
         renderSummaryTransfer: {
-          exportTheActiveShelfWithRawMessage: "Export summaries with message hashes. Imports match messages or ask for a coverage endpoint. Older lorebooks import as inherited memories. No model call; summary text is preserved.",
+          exportTheActiveShelfWithRawMessage: "Export summaries. This export is chat-aware.",
           exportSummaries: "Export summaries",
           importSummaries: "Import summaries",
           readingSummaryFile: "Reading summary file…",
           couldNotReadThatLorebookJsonFile: "Couldn''t read the lorebook JSON file"
         },
-        entryFallback: "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}} {id}"
+        entryFallback: "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} {id}"
       },
       codexTab: {
         deliverCodexFileState: {
@@ -4834,14 +4834,14 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           frozenNoUpdates: "frozen · no updates"
         },
         renderOverview: {
-          codexOnFile: "codex on file",
-          noCodexYet: "no codex yet",
+          codexOnFile: "Codex on file",
+          noCodexYet: "no Codex yet",
           messageUnindexed: "{codexBacklog} message{codexBacklog, plural, one {} other {s}} unindexed",
           updated: "updated {codexLastRunAt}",
           theCodexAgentIsOffForThis: "Codex is off. Enable it in Tuning > Settings > Codex.",
           memoriaIsWorkingOnTheCodexWatch: "Codex task in progress. View progress in Home.",
-          unreadableOnDiskRebuildCodexRegeneratesThem: "Can''t read: {join}. Use Rebuild codex to regenerate.",
-          noCodexYet2: "No codex yet.",
+          unreadableOnDiskRebuildCodexRegeneratesThem: "Can''t read: {join}. Use Rebuild Codex to regenerate.",
+          noCodexYet2: "No Codex yet.",
           clearStaleTags: "Clear stale tags",
           acceptTheCurrentRecordsAsUpTo: "Marks records as up to date without changing text or indexing. No model call. Frozen records can become stale again after missed updates.",
           recordMissedUpdatesWhileFrozen: "{length} record{length, plural, one {} other {s}} missed updates while frozen.",
@@ -4863,13 +4863,13 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           nothingToUndoYetMemoriaSnapshotsThe: "No snapshot to restore"
         },
         ok: {
-          rebuildTheCodex: "Rebuild the codex?",
+          rebuildTheCodex: "Rebuild the Codex?",
           memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
-          undoTheLastCodexChange: "Undo the last codex change?",
+          undoTheLastCodexChange: "Undo the last Codex change?",
           memoriaWillRollTheCodexBackTo: "Restores the snapshot before {codexUndoReasonUpdate} {codexUndoAt}. Later changes are lost.",
-          importACodexFile: "Import a codex file?",
+          importACodexFile: "Import a Codex file?",
           memoriaWillReplaceEveryCodexFileIn: "Replaces this chat''s Codex with the imported files. Can''t be undone.",
-          wipeTheCodex: "Wipe the codex?",
+          wipeTheCodex: "Wipe the Codex?",
           memoriaWillEraseEveryCodexRecordFor: "Clears this chat''s Codex. The next update starts fresh. Can''t be undone.",
           rebuildThisRecord: "Rebuild this record?",
           memoriaWillRegenerateEveryRecordInFrom: "Regenerates {label} from the story in a pass. Replaces content on success; keeps locked entries.",
@@ -4881,26 +4881,26 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         renderManage: {
           noOtherChatHasACodexTo: "No chats with a Codex to copy",
           carriedOverFromMemoriaIndexesThisChat: "Copied from {codexRootOriginName}. Indexing starts from this chat''s beginning.",
-          detachCodex: "Detach codex",
-          eraseTheCarriedOverCodexFromThis: "Erase the carried-over codex from this chat",
-          detachTheCarriedOverCodex: "Detach the carried-over codex?",
+          detachCodex: "Detach Codex",
+          eraseTheCarriedOverCodexFromThis: "Erase the carried-over Codex from this chat",
+          detachTheCarriedOverCodex: "Detach the carried-over Codex?",
           codexRecordsMergeAsMemoriaWorksSo: "Copied records have merged with this chat''s Codex. Detaching clears it; the next update starts fresh. Can''t be undone.",
           continuingAnEarlierChatCarryItsStory: "Copy a Codex to continue an earlier chat.",
-          sourceChatToCarryTheCodexFrom: "Source chat to carry the codex from",
+          sourceChatToCarryTheCodexFrom: "Source chat to carry the Codex from",
           pickASourceChat: "Pick a source chat...",
-          carryCodexOver: "Carry codex over",
-          copyAnotherChatSCodexIntoThis: "Copy another chat''s codex into this one",
-          carryTheCodexOver: "Carry the codex over?",
+          carryCodexOver: "Carry Codex over",
+          copyAnotherChatSCodexIntoThis: "Copy another chat''s Codex into this one",
+          carryTheCodexOver: "Carry the Codex over?",
           memoriaWillCopyTheChosenChatS: "Copies the selected chat''s Codex. Indexing starts from this chat''s beginning.",
           exportWritesEveryCodexFileAndIts: "Export saves Codex files and injection settings as JSON. Import replaces them.",
           export: "Export",
           downloadEveryCodexFilePlusItsInject: "Download Codex files and injection settings as JSON",
           import: "Import",
-          replaceThisChatSCodexFromAn: "Replace this chat''s codex from an exported file",
+          replaceThisChatSCodexFromAn: "Replace this chat''s Codex from an exported file",
           rebuildReReadsTheWholeChatFrom: "Rebuild clears and rereads the chat. Wipe leaves the Codex empty until the next update.",
-          rebuildCodex: "Rebuild codex",
+          rebuildCodex: "Rebuild Codex",
           wipeAndRegenerateTheWholeStoryBible: "Clear Codex and regenerate from the start",
-          wipeCodex: "Wipe codex"
+          wipeCodex: "Wipe Codex"
         },
         files: {
           codexFiles: "Codex files"
@@ -4941,7 +4941,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           state: "{locked, select, yes {🔒} other {🔓}} {injected, select, yes {injected} other {not injected}} · {locked, select, yes {frozen} other {updated}}"
         },
         renderEntities: {
-          clickANameToOpenItsSheet: "Click a name to edit. Changes are validated, saved, and used in future updates.",
+          clickANameToOpenItsSheet: "Click a name to edit.",
           of: "{title} · {length} of {length2}",
           value: "+ {singular, select, character {character} location {location} thing {thing} other {{singular}}}",
           noEntitiesRecordedYetAddOneOr: "No entities yet. Add an entity or run a Codex update."
@@ -4970,7 +4970,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         sync: {
           locked: "🔒 locked",
-          lockedMemoriaReadsALockMarkerInstead: "Locked from model edits. Its value is hidden from the model. Click to unlock.",
+          lockedMemoriaReadsALockMarkerInstead: "Locked from model edits. Click to unlock.",
           lockThisFieldSoOnlyYouCan: "Lock from model edits"
         },
         nameField: {
@@ -5042,7 +5042,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           zoomIn: "Zoom in",
           fit: "Fit",
           frameTheWholeWeb: "Fit graph",
-          tapAnEdgeForTheStoryTap: "Tap a connection for details or a diamond for its sheet. Drag diamonds to rearrange; drag the background to pan. Pinch or scroll to zoom."
+          tapAnEdgeForTheStoryTap: "Tap a connection for details or a diamond for its sheet. Drag diamonds to rearrange. Pinch or drag to navigate."
         },
         entries: {
           character: "character",
@@ -5099,7 +5099,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           newThread: "New thread",
           seedsOnePerLine: "Seeds (one per line)",
           noOpenStorylinesTrackedYet: "No open threads",
-          resolvedThreadsStayHereAsYourArchive: "Resolved threads are archived. They aren''t included in prompts or sent to the agent.",
+          resolvedThreadsStayHereAsYourArchive: "Resolved threads are archived and excluded from prompts.",
           editThread: "Edit thread",
           latest: "Latest: {latest}",
           planted: "◆ planted: {p}",
@@ -5186,7 +5186,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderHomeTab: {
           myLessonIsStillWaitingForYou: "My lesson is still waiting for you",
-          theCodexLessonIsStillWaitingFor: "The codex lesson is still waiting for you",
+          theCodexLessonIsStillWaitingFor: "The Codex lesson is still waiting for you",
           openAChatAndMemoriaWillSet: "Open a chat to use LumiBooks"
         },
         empty: {
@@ -5270,7 +5270,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           chapters: "Chapters ({length})",
           uncompressedTailMsgs: "Uncompressed tail ({tailCount} msgs)",
           excludedMsgs: "Excluded ({excludedCount} msgs)",
-          codexCountsIncludeEnabledConstantLorebookEntries: "Counts enabled constant Codex entries. Keyword and vector matches can add tokens. Lumiverse budgets and prompt settings affect final inclusion.",
+          codexCountsIncludeEnabledConstantLorebookEntries: "Codex keyword and vector matches can add additional tokens.",
           storyContextInThePrompt: "Story context in the prompt"
         },
         renderOverview: {
@@ -5296,13 +5296,13 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         locked: {
           codex: "Codex",
           takeALesson: "take a lesson",
-          theKnowledgeCodexUnlocksAfterMemoriaS: "The Knowledge Codex unlocks after Memoria''s codex lesson"
+          theKnowledgeCodexUnlocksAfterMemoriaS: "The Knowledge Codex unlocks after Memoria''s Codex lesson"
         },
         subText: {
           msgsUnindexedManualOnly: "msgs unindexed, manual only",
           msgsUnindexed: "msgs unindexed",
           updated: "updated {codexLastRunAt}",
-          noCodexYet: "no codex yet"
+          noCodexYet: "no Codex yet"
         },
         watchBtn: {
           hide: "Hide",
@@ -5315,7 +5315,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderFailure: {
           lastArcAttemptFailed: "Last arc attempt failed",
-          lastAttemptFailed: "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}} attempt failed",
+          lastAttemptFailed: "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} attempt failed",
           lastChapterAttemptFailed: "Last chapter attempt failed",
           triedX: "{message} (tried {retriedTimes}x)",
           retry: "Retry"
@@ -5347,7 +5347,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           rollTheOldestUnsupersededChaptersIntoA: "Combine the oldest active chapters into an arc",
           bindAll: "Bind all ({backlogArcs})",
           drainTheArcBacklogKeepsBindingArcs: "Bind arcs until threshold or lag limits are reached",
-          updateCodex: "Update codex",
+          updateCodex: "Update Codex",
           consumeEverythingUpToTheNewestMessage: "Update through the newest message, ignoring window and lag. Offers fast modes for large backlogs.",
           actionsUnlockWhenMemoriaFinishesHerCurrent: "Wait for the current task to finish",
           theExtensionIsOffFlipItOn: "Extension is off. Enable it in Tuning.",
@@ -5356,13 +5356,13 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         lockedBtn: {
           codexTakeALesson: "🔒 Codex · take a lesson",
-          theCodexUnlocksAfterMemoriaSCodex: "The codex unlocks after Memoria''s codex lesson"
+          theCodexUnlocksAfterMemoriaSCodex: "The Codex unlocks after Memoria''s Codex lesson"
         },
         tag: {
           bookReady: "Book ready"
         },
         streamStatus: "{running, select, yes {streaming} other {finished}}",
-        higherCount: "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {codex} other {{kind}}}"
+        higherCount: "{count} {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}}"
       },
       profileTab: {
         profileDefaults: {
@@ -5395,21 +5395,21 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           tokenCap: "token cap",
           loreTokens0NoLimit: "Lore tokens (0 = no limit)",
           loreOfMaxContext: "Lore % of max context",
-          yourActivatedLorebookEntriesRideEveryCodex: "Includes activated lorebook entries as read-only reference. Defaults to 25% of Codex max input. Entries that exceed the budget are skipped in activation order and flagged for the agent. A token cap of 0 removes the limit.",
+          yourActivatedLorebookEntriesRideEveryCodex: "Includes lorebook entries as context. Entries that exceed the budget are skipped. A token cap of 0 removes the limit.",
           codexRecall: "Codex recall",
-          theActiveProfileSetsRecallForEnabled: "The active profile sets recall across chats. Timeline and threads stay included when enabled. Other records can use constant, keyword, or vector recall.",
+          theActiveProfileSetsRecallForEnabled: "Timeline and threads are always constantly injected, but other records can use constant, keyword, or vector recall.",
           codexPlacement: "Codex placement",
           lorebookBefore: "Lorebook (before)",
           atHistoryDepth: "At history depth",
           afterChatHistory: "After chat history",
           depthFromNewestTurn: "Depth from newest turn",
-          summariesReplaceTheirSourceHistoryInPlace: "Summaries replace their source messages. Codex uses lorebook entries: Before follows your preset''s Lorebook Before block; depth 0 follows history. Codex updates can break the prompt cache even with constant recall. Larger windows reduce update frequency; placement after history preserves the earlier prefix.",
+          summariesReplaceTheirSourceHistoryInPlace: "Summaries inject in-place of messages whereas the Codex is injected as normal lorebook entries. Larger windows reduce update frequency and can be cheaper. Codex lore placement after history preserves more cache, assuming earlier lorebooks are constant.",
           relationsTable: "Relations table",
-          tracksConnectionsBetweenEntitiesAsOneShared: "Stores relationships in a shared table with reference checks. When off, stores them as entity ties.",
+          tracksConnectionsBetweenEntitiesAsOneShared: "Stores relationships in a shared table with reference checks. When off, stores them in entities.",
           thoroughMode: "Thorough mode",
           spendsOneExtraVerificationRoundPerUpdate: "Adds a verification round to check stale information and shorten records.",
           extraContextMode: "Extra context mode",
-          summarizesChaptersEarlyAtTheCodexLag: "Creates ghost chapters early at the Codex lag. They provide summary context, then become filed chapters at the chapter lag without another model call.",
+          summarizesChaptersEarlyAtTheCodexLag: "Creates ghost chapters early at the Codex lag. They help provide summary context to Codex.",
           chaptersProvided: "Chapters provided",
           howManyRecentChapterSummariesExtraContext: "Recent chapters included as context in extra context mode.",
           theCodexAgentSConnectionAndSamplers: "Codex connection and samplers are in Connection > Codex."
@@ -5425,9 +5425,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           useToolCalls: "Use tool calls",
           offByDefaultTheAgentWritesOne: "Off uses JSON replies. Enable if your connection supports tool calls.",
           updateDelivery: "Update delivery",
-          allRecordsAtOnce: "All records at once",
-          oneRecordAtATime: "One record at a time",
-          memoriaAlwaysMakesSureEveryRecordIs: "Batched updates cost less. Use record-by-record delivery if long replies get cut off. Both require the model to write or skip the active records."
+          allRecordsAtOnce: "Batched",
+          oneRecordAtATime: "Sequential",
+          memoriaAlwaysMakesSureEveryRecordIs: "Batched updates cost less. Only use sequential if long replies are problematic."
         },
         renderResetSettings: {
           resetsThisProfileSSettingsToTheir: "Resets this profile''s settings to their defaults."
@@ -5557,7 +5557,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           codex: "Codex"
         },
         groupHelp: {
-          oneBlockPerCodexFile: "One block per codex file.",
+          oneBlockPerCodexFile: "One block per Codex file.",
           howTheAgentIsToldToDeliver: "Edit delivery instructions. Selected by the Use tool calls setting.",
           theTaskTextForEachKindOf: "Task instructions by run type.",
           warningsPrependedOnlyWhenTheirSituationApplies: "Notes included when applicable."
@@ -5712,7 +5712,7 @@ LumiBooks already fights this partially with compression. Memoria files your cha
 
 In short, these summaries answer *what happened* in chronological order. The main problem with pure summarization is that you are relying on the summary capturing all hierarchical, high value information like entity relationships or details. This is hard to do as you compress further, therefore, you need explicit tracking.
 
-This is what knowledge codex solves.
+This is what knowledge Codex solves.
 
 ## What it is
 
@@ -5748,7 +5748,7 @@ You can edit the records yourself in the new and beautiful glass UI.
 
 ## How it reaches the prompt
 
-The codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named \`LumiBooks Codex [Do Not Edit] - <chat>\`, and the host''s native lorebook activation decides what enters the prompt:
+The Codex is not injected as one always-on block. Each record is mirrored into a dedicated per-chat lorebook named \`LumiBooks Codex [Do Not Edit] - <chat>\`, and the host''s native lorebook activation decides what enters the prompt:
 
 - **Entities, world topics, and secrets** use the three-way **Codex recall** control in Tuning → Settings → Codex: **Always**, **Keywords** (the default), or **Vector + keywords**. The agent writes a \`keywords\` list alongside each record (names, aliases, and participants match automatically). Vector mode also retrieves records by meaning through Lumiverse''s lorebook search.
 - **Timeline and threads** are constant entries as keyword matching doesn''t make as much sense here.
@@ -5761,7 +5761,7 @@ The mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit
 
 ## For extension developers
 
-LumiBooks publishes the codex to Spindle''s shared RPC pool. Read it from any extension backend:
+LumiBooks publishes the Codex to Spindle''s shared RPC pool. Read it from any extension backend:
 
 \`\`\`ts
 // Full snapshot: all 8 files as parsed JSON, plus per-file states.
@@ -5769,20 +5769,20 @@ const snap = await spindle.rpcPool.read(\`lumi_books.codex.$'{'chatId'}'\`);
 // snap: '{' chatId, userId, files: '{' characters, locations, things, relations,
 //         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'
 
-// The whole codex rendered as one text block. Note LumiBooks itself no longer
+// The whole Codex rendered as one text block. Note LumiBooks itself no longer
 // injects this block: records reach the prompt as lorebook entries (see
 // "How it reaches the prompt"), so this is a convenience view for consumers.
 const text = await spindle.rpcPool.read(\`lumi_books.codex.$'{'chatId'}'.rendered\`);
 
-// Change signal: the most recent codex mutation across all chats.
+// Change signal: the most recent Codex mutation across all chats.
 const evt = await spindle.rpcPool.read("lumi_books.codex_updated");
 // evt: '{' chatId, userId, changedFiles, reason: "run"|"tidy"|"edit"|"states"|"wipe", updatedAt '}'
 \`\`\`
 
 Notes:
 
-- Endpoints appear after the first codex activity of a session. \`read\` rejects before that, so wrap it in a try/catch.
-- A wiped codex publishes \`null\` at both chat endpoints.
+- Endpoints appear after the first Codex activity of a session. \`read\` rejects before that, so wrap it in a try/catch.
+- A wiped Codex publishes \`null\` at both chat endpoints.
 - \`fileStates\` marks files the user switched off (\`noInject\`) or froze (\`frozen\`). The \`rendered\` text already excludes them. If you consume \`files\` directly, respect these flags.
 - \`lumi_books.latest_chapter\`, \`lumi_books.latest_arc\`, and \`lumi_books.latest_volume\` carry the summary events and were already published.
 `
