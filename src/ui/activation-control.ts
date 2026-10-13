@@ -1,6 +1,8 @@
 import type { ActivationMode } from "../activation";
 import { textNode } from "./components";
 
+let nextGroup = 0;
+
 /** Native radio inputs provide keyboard navigation and one selected option. */
 export function activationControl(label: string, value: ActivationMode, onChange: (mode: ActivationMode) => void): HTMLElement {
   const group = document.createElement("fieldset");
@@ -10,7 +12,7 @@ export function activationControl(label: string, value: ActivationMode, onChange
   group.append(legend);
   const row = document.createElement("div");
   row.className = "lmb-activation-options";
-  const name = `activation-${crypto.randomUUID()}`;
+  const name = `lmb-activation-${++nextGroup}`;
   for (const [mode, title] of [["always", "Always"], ["keywords", "Keywords"], ["vector", "Vector + keywords"]] as const) {
     const option = document.createElement("label");
     const input = document.createElement("input");

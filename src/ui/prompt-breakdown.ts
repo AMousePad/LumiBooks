@@ -13,7 +13,8 @@ export function requestPromptBreakdown(
   input: Omit<PromptBreakdownRequest, "type" | "requestId">,
   timeoutMs = 120_000,
 ): Promise<PromptBreakdownResult> {
-  const requestId = crypto.randomUUID();
+  // getRandomValues also works on HTTP LAN hosts, unlike randomUUID.
+  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);

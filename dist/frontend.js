@@ -4155,7 +4155,7 @@ function promptForString(ctx, title, initial) {
 // src/ui/prompt-breakdown.ts
 var pending = new Map;
 function requestPromptBreakdown(send, input, timeoutMs = 120000) {
-  const requestId = crypto.randomUUID();
+  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
@@ -9855,6 +9855,7 @@ function renderSecrets(host, parsed, state, ctx, send) {
 }
 
 // src/ui/activation-control.ts
+var nextGroup = 0;
 function activationControl(label, value, onChange) {
   const group = document.createElement("fieldset");
   group.className = "lmb-activation";
@@ -9863,7 +9864,7 @@ function activationControl(label, value, onChange) {
   group.append(legend);
   const row = document.createElement("div");
   row.className = "lmb-activation-options";
-  const name = `activation-${crypto.randomUUID()}`;
+  const name = `lmb-activation-${++nextGroup}`;
   for (const [mode, title] of [["always", "Always"], ["keywords", "Keywords"], ["vector", "Vector + keywords"]]) {
     const option = document.createElement("label");
     const input = document.createElement("input");

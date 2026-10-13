@@ -6,6 +6,8 @@ import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
+import { renderCodexSettings } from "./profile-tab";
+import { makeDefaultProfile } from "../../shared";
 import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal, setCodexSubtab, setCodexExpandedEntity } from "./codex-tab";
 
 class Element {
@@ -30,6 +32,10 @@ class Element {
   append(...children: Element[]): void { children.forEach((c) => this.appendChild(c)); }
   replaceChildren(): void { this.children = []; this.text = ""; }
   setAttribute(name: string, value: string): void { this.attributes[name] = value; }
+  querySelectorAll(selector: string): Element[] {
+    const tags = selector.split(",").map((tag) => tag.trim());
+    return this.children.flatMap(walk).filter((node) => tags.includes(node.tagName));
+  }
   addEventListener(name: string, listener: (event: { preventDefault(): void }) => void): void {
     this.listeners.set(name, [...(this.listeners.get(name) ?? []), listener]);
   }
@@ -100,6 +106,19 @@ function group(host: Element, title: string): Element {
   expect(heading).toBeDefined();
   return heading!.parentElement!;
 }
+
+test("Codex settings render the activation controls without secure-context crypto", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+  Object.defineProperty(globalThis, "crypto", { configurable: true, value: {} });
+  try {
+    const host = new Element("host");
+    renderCodexSettings(host as unknown as HTMLElement, state(), makeDefaultProfile("p", "Test"), () => {});
+    expect(host.textContent).toContain("Vector + keywords");
+    expect(host.textContent).toContain("Enable Codex");
+  } finally {
+    Object.defineProperty(globalThis, "crypto", descriptor);
+  }
+});
 
 test("Show all reveals rooted and compacted summaries at every tier and retains ghost chapters", () => {
   const host = render(state());

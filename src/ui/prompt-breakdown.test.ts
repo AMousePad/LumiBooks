@@ -6,6 +6,25 @@ afterEach(clearPromptRequests);
 const input = { chatId: "chat", messageIds: ["message"], mode: "auto" as const };
 const result = { source: "fire" as const, d: { entries: [], totalTokens: 0, maxContext: 0 } };
 
+test("prompt requests work without secure-context randomUUID", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+  const getRandomValues = crypto.getRandomValues.bind(crypto);
+  Object.defineProperty(globalThis, "crypto", { configurable: true, value: { getRandomValues } });
+  try {
+    const ids = new Set<string>();
+    for (let i = 0; i < 2; i++) {
+      expect(await requestPromptBreakdown(m => {
+        const request = m as PromptBreakdownRequest;
+        ids.add(request.requestId);
+        deliverPromptBreakdown({ ...request, result });
+      }, input)).toEqual(result);
+    }
+    expect(ids.size).toBe(2);
+  } finally {
+    Object.defineProperty(globalThis, "crypto", descriptor);
+  }
+});
+
 test("replies match both request and chat, including synchronous and out-of-order replies", async () => {
   const sent: PromptBreakdownRequest[] = [];
   const first = requestPromptBreakdown(m => sent.push(m as PromptBreakdownRequest), input);
