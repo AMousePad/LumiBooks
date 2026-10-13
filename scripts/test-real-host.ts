@@ -121,6 +121,26 @@ try {
   const chatId = chat.id;
   const profile = { ...makeDefaultProfile("default", "Integration"), connectionId: connection.id, autoCreate: false, autoCreateChapter: false, autoCreateArc: false, codexEnabled: false, codexExtraContext: false, retryCount: 0, lagValue: 0, windowValue: 12 };
   await action({ type: "save_settings", chatId, patch: { ...DEFAULT_SETTINGS, profiles: [profile] } });
+  const frontendProbe = { type: "ui_diagnostics", rows: [{ kind: "error", view: "tuning", code: "TypeError", op: "tuning.settings.codex", count: 42, first: 100, last: 200, caps: 4, line: 321, column: 12, chatId,
+    message: "PRIVATE_UI_MESSAGE", stack: "PRIVATE_UI_STACK", filename: "PRIVATE_UI_URL" }] };
+  send(frontendProbe);
+  const frontendLog = await until("frontend diagnostics persisted", async () => JSON.parse((await response({ type: "diagnostics_export", chatId }, "diagnostics_export_data")).content),
+    (log) => log.events.some((e: any) => e.event === "frontend" && e.ui.count === 42));
+  const frontendEvent = frontendLog.events.find((e: any) => e.event === "frontend");
+  assert.equal(frontendEvent.ui.op, "tuning.settings.codex");
+  assert.equal(frontendEvent.ui.caps, 4);
+  assert.equal(frontendEvent.ui.line, 321);
+  assert.match(frontendEvent.chatId, /^r_[a-f0-9]{32}$/);
+  assert(!JSON.stringify(frontendLog).includes(chatId));
+  assert(!JSON.stringify(frontendLog).includes("PRIVATE_UI_"));
+  pass("frontend diagnostics cross the real worker bridge with compact codes and no raw errors or identifiers");
+  await action({ type: "save_settings", chatId, patch: { localLogsDisabled: true } });
+  send({ ...frontendProbe, rows: [{ ...frontendProbe.rows[0], count: 43 }] });
+  await action({ type: "refresh", chatId });
+  const optedOutLog = JSON.parse((await response({ type: "diagnostics_export", chatId }, "diagnostics_export_data")).content);
+  assert(!optedOutLog.events.some((e: any) => e.event === "frontend" && e.ui.count === 43));
+  await action({ type: "save_settings", chatId, patch: { localLogsDisabled: false } });
+  pass("backend opt-out rejects queued browser diagnostics");
   let diagnostics: unknown = null;
   await runPromptScenarios({ api, response, fromHost, pass, characterId: character.id });
   if (!process.argv.includes("--vectors-only") && !process.argv.includes("--prompt-only")) {

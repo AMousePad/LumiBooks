@@ -2517,6 +2517,311 @@ var ICON_SVG = `
 </svg>
 `;
 
+// src/frontend-diagnostics.ts
+var UI_KINDS = ["start", "stop", "view", "click", "change", "render", "error", "rejection", "resource", "send", "receive", "timeout", "overflow"];
+var UI_VIEWS = ["startup", "home", "books", "codex", "tuning", "stuff", "lesson", "unknown"];
+var UI_CODES = ["ok", "failed", "unknown", "TypeError", "ReferenceError", "RangeError", "SyntaxError", "AbortError", "TimeoutError", "Error", "state", "prompt", "closed", "stale", "button", "input", "select", "textarea", "image", "stylesheet"];
+var UI_OPERATIONS = [
+  "ready",
+  "refresh",
+  "prompt_breakdown",
+  "save_settings",
+  "save_profile",
+  "save_samplers",
+  "create_profile",
+  "delete_profile",
+  "set_active_profile",
+  "create_chapter",
+  "create_chapter_range",
+  "create_all_chapters",
+  "create_arc",
+  "create_arc_from",
+  "create_all_arcs",
+  "create_higher_from",
+  "create_higher_auto",
+  "create_volume_from",
+  "retry_last_failure",
+  "delete_entry",
+  "release_entry",
+  "regenerate_entry",
+  "update_entry",
+  "resync_hidden",
+  "resync_visibility",
+  "set_summary_activation",
+  "abort_busy",
+  "dry_run_chapter",
+  "dry_run_arc",
+  "dry_run_volume",
+  "dry_run_codex",
+  "ensure_book",
+  "import_preset",
+  "save_custom_preset",
+  "delete_custom_preset",
+  "accept_preview",
+  "discard_preview",
+  "edit_preview",
+  "rebase_root",
+  "rebuild_root",
+  "detach_root",
+  "set_message_excluded",
+  "codex_update_now",
+  "codex_read",
+  "codex_write_file",
+  "codex_reset",
+  "codex_rebuild",
+  "codex_tidy",
+  "codex_rebuild_files",
+  "codex_clear_stale",
+  "codex_refresh",
+  "codex_set_file_state",
+  "codex_backup",
+  "codex_restore",
+  "codex_undo",
+  "codex_adopt",
+  "summary_export",
+  "summary_import",
+  "summary_import_resolve",
+  "wipe_books",
+  "rebuild_books",
+  "watch_stream",
+  "lesson_patch",
+  "lesson_complete",
+  "lesson_reset",
+  "lesson_seal_skip",
+  "state",
+  "state_loading",
+  "state_error",
+  "toast",
+  "busy",
+  "error",
+  "dry_run_result",
+  "codex_files",
+  "codex_file_state_saved",
+  "stream_text",
+  "summary_transfer_status",
+  "summary_export_data",
+  "codex_backup_data",
+  "codex_tools_hint",
+  "subtab.profile",
+  "subtab.settings",
+  "subtab.prompts",
+  "subtab.shelf",
+  "subtab.compose",
+  "subtab.continuity",
+  "subtab.entities",
+  "subtab.relations",
+  "subtab.world",
+  "subtab.secrets",
+  "subtab.manage",
+  "tuning.settings.books",
+  "tuning.settings.codex",
+  "tab.home",
+  "tab.books",
+  "tab.codex",
+  "tab.tuning",
+  "tab.stuff"
+];
+var UI_BATCH_LIMIT = 32;
+function pick(v, values) {
+  return typeof v === "string" && values.includes(v) ? v : undefined;
+}
+function integer(v, max = Number.MAX_SAFE_INTEGER) {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= max ? v : undefined;
+}
+function projectUiDiagnostic(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const v = raw;
+  const kind = pick(v.kind, UI_KINDS), view = pick(v.view, UI_VIEWS);
+  if (!kind || !view)
+    return null;
+  const first = integer(v.first) ?? 0;
+  return {
+    kind,
+    view,
+    code: pick(v.code, UI_CODES),
+    op: pick(v.op, UI_OPERATIONS),
+    count: Math.max(1, integer(v.count, 1e6) ?? 1),
+    first,
+    last: Math.max(first, integer(v.last) ?? first),
+    caps: integer(v.caps, 7),
+    line: integer(v.line, 1e7),
+    column: integer(v.column, 1e7)
+  };
+}
+
+// src/ui/diagnostics.ts
+var current = null;
+function setUiDiagnostics(log) {
+  current = log;
+}
+function reportUi(kind, details = {}) {
+  current?.record(kind, details);
+}
+function uiErrorCode(error) {
+  try {
+    return projectUiDiagnostic({ kind: "error", view: "unknown", code: error instanceof Error ? error.name : undefined })?.code ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+function createUiDiagnostics(options) {
+  const pending = new Map;
+  const now = options.now ?? Date.now;
+  let timer;
+  let enabled = true, disposed = false, flushing = false, dropped = 0;
+  const clear = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    pending.clear();
+    dropped = 0;
+  };
+  const schedule = () => {
+    if (!timer && !disposed && enabled)
+      timer = setTimeout(flush, options.delay ?? 5000);
+  };
+  function record(kind, details = {}) {
+    try {
+      if (!enabled || disposed)
+        return;
+      const context = options.context(), at = now();
+      const safe = projectUiDiagnostic({ ...details, kind, view: context.view, count: 1, first: at, last: at });
+      if (!safe)
+        return;
+      const chatId = typeof context.chatId === "string" && context.chatId.length <= 1024 ? context.chatId : undefined;
+      const key = JSON.stringify([chatId, safe.kind, safe.view, safe.code, safe.op, safe.caps, safe.line, safe.column]);
+      const previous = pending.get(key);
+      if (previous)
+        pending.set(key, { ...previous, count: Math.min(1e6, previous.count + 1), last: at });
+      else {
+        if (pending.size >= UI_BATCH_LIMIT - 1) {
+          const routine = [...pending].find(([, row]) => !["error", "rejection", "timeout"].includes(row.kind));
+          if (["error", "rejection", "timeout"].includes(kind) && routine) {
+            dropped = Math.min(1e6, dropped + routine[1].count);
+            pending.delete(routine[0]);
+          } else {
+            dropped = Math.min(1e6, dropped + 1);
+            schedule();
+            return;
+          }
+        }
+        pending.set(key, { ...safe, chatId });
+      }
+      schedule();
+    } catch {}
+  }
+  function flush() {
+    clearTimeout(timer);
+    timer = undefined;
+    if (flushing || !enabled || disposed || !pending.size && !dropped)
+      return;
+    const batch = new Map(pending), lost = dropped;
+    const rows = [...batch.values()];
+    if (lost)
+      rows.push({ kind: "overflow", view: "unknown", count: lost, first: now(), last: now() });
+    flushing = true;
+    try {
+      options.send({ type: "ui_diagnostics", rows });
+      for (const [key, sent] of batch) {
+        const remaining = pending.get(key);
+        if (remaining === sent)
+          pending.delete(key);
+        else if (remaining && remaining.count > sent.count)
+          pending.set(key, { ...remaining, count: remaining.count - sent.count, first: remaining.last });
+      }
+      dropped = Math.max(0, dropped - lost);
+    } catch {} finally {
+      flushing = false;
+      if (pending.size || dropped)
+        schedule();
+    }
+  }
+  function capabilities() {
+    const caps = (globalThis.isSecureContext ? 1 : 0) | (typeof globalThis.crypto?.randomUUID === "function" ? 2 : 0) | (typeof globalThis.crypto?.getRandomValues === "function" ? 4 : 0);
+    record("start", { caps });
+  }
+  return {
+    record,
+    flush,
+    clear,
+    capabilities,
+    setEnabled(value) {
+      const changed = enabled !== value;
+      enabled = value;
+      if (!value)
+        clear();
+      else if (changed)
+        capabilities();
+    },
+    dispose() {
+      if (disposed)
+        return;
+      record("stop");
+      flush();
+      disposed = true;
+      clear();
+    }
+  };
+}
+function isOwnUiError(error, filename, source) {
+  if (!source)
+    return false;
+  if (filename === source)
+    return true;
+  try {
+    return error instanceof Error && typeof error.stack === "string" && error.stack.split(`
+`).slice(1).some((line) => line.includes(`${source}:`));
+  } catch {
+    return false;
+  }
+}
+function observeUiDiagnostics(log, source) {
+  const owned = (target) => target instanceof Element && !!target.closest(".lmb-root, .lmb-preview-overlay, .lmb-modal-form, .lmb-toast-stack");
+  const interaction = (event) => {
+    if (!owned(event.target))
+      return;
+    const control = event.target.closest("button, input, select, textarea, [role=button], [data-lesson]");
+    if (!control)
+      return;
+    const op = control.closest("[data-lesson]")?.dataset.lesson;
+    log.record(event.type === "click" ? "click" : "change", {
+      code: control.tagName.toLowerCase(),
+      op
+    });
+  };
+  const error = (event) => {
+    if (isOwnUiError(event.error, event.filename, source)) {
+      log.record("error", { code: uiErrorCode(event.error), line: event.lineno, column: event.colno });
+    } else if (owned(event.target)) {
+      log.record("resource", { code: event.target.tagName === "IMG" ? "image" : "unknown" });
+    } else if (event.target instanceof HTMLLinkElement && event.target.id === "lmb-deco-fonts") {
+      log.record("resource", { code: "stylesheet" });
+    }
+  };
+  const rejection = (event) => {
+    if (isOwnUiError(event.reason, undefined, source))
+      log.record("rejection", { code: uiErrorCode(event.reason) });
+  };
+  const visibility = () => {
+    if (document.visibilityState === "hidden")
+      log.flush();
+  };
+  document.addEventListener("click", interaction, true);
+  document.addEventListener("change", interaction, true);
+  document.addEventListener("visibilitychange", visibility);
+  window.addEventListener("error", error, true);
+  window.addEventListener("unhandledrejection", rejection);
+  window.addEventListener("pagehide", log.flush);
+  return () => {
+    document.removeEventListener("click", interaction, true);
+    document.removeEventListener("change", interaction, true);
+    document.removeEventListener("visibilitychange", visibility);
+    window.removeEventListener("error", error, true);
+    window.removeEventListener("unhandledrejection", rejection);
+    window.removeEventListener("pagehide", log.flush);
+  };
+}
+
 // src/ui/components.ts
 function textInput(opts) {
   const el = document.createElement("input");
@@ -2887,6 +3192,8 @@ function lessonMark(el, id) {
 }
 var TOAST_STACK_CAP = 5;
 function showToast(tone, text) {
+  if (tone === "error" || tone === "warn")
+    reportUi("receive", { code: "failed", op: "toast" });
   let stack = document.body.querySelector(":scope > .lmb-toast-stack");
   if (!stack) {
     stack = document.createElement("div");
@@ -4153,6 +4460,7 @@ function requestPromptBreakdown(send, input, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
+      reportUi("timeout", { code: "prompt", op: "prompt_breakdown" });
       reject(new Error("Prompt breakdown timed out. Try refreshing the panel."));
     }, timeoutMs);
     pending.set(requestId, { chatId: input.chatId, resolve, reject, timer });
@@ -4167,16 +4475,21 @@ function requestPromptBreakdown(send, input, timeoutMs = 120000) {
 }
 function deliverPromptBreakdown(message) {
   const request = pending.get(message.requestId);
-  if (!request || request.chatId !== message.chatId)
+  if (!request || request.chatId !== message.chatId) {
+    reportUi("receive", { code: "stale", op: "prompt_breakdown" });
     return;
+  }
   pending.delete(message.requestId);
   clearTimeout(request.timer);
-  if ("error" in message)
+  if ("error" in message) {
+    reportUi("receive", { code: "failed", op: "prompt_breakdown" });
     request.reject(new Error(message.error));
-  else
+  } else
     request.resolve(message.result);
 }
 function clearPromptRequests() {
+  if (pending.size)
+    reportUi("receive", { code: "closed", op: "prompt_breakdown" });
   for (const request of pending.values()) {
     clearTimeout(request.timer);
     request.reject(new Error("Prompt panel closed."));
@@ -6311,8 +6624,8 @@ function renderDiagnostics(host, state, send) {
     label: "Turn off local logs. This is not recommended",
     onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } })
   }));
-  sec.body.appendChild(textNode("On by default, per account: filing, coverage, regeneration, fork and context decisions. Keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records for export or clearing.", "lmb-help"));
-  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
+  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
+  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
   const actions = document.createElement("div");
   actions.className = "lmb-actions";
   const chatId = state.activeChatId;
@@ -14962,6 +15275,36 @@ function ensureDecoFonts() {
   document.head.append(preconnect, link);
 }
 function setup(ctx) {
+  let context = { view: "startup" };
+  const diagnostics = createUiDiagnostics({ send: (message) => ctx.sendToBackend(message), context: () => context });
+  setUiDiagnostics(diagnostics);
+  const unobserve = observeUiDiagnostics(diagnostics, import.meta.url);
+  diagnostics.capabilities();
+  try {
+    const cleanup = setupApp(ctx, diagnostics, (next) => {
+      context = next;
+    });
+    return () => {
+      try {
+        cleanup();
+      } catch (error) {
+        diagnostics.record("error", { code: uiErrorCode(error) });
+        throw error;
+      } finally {
+        unobserve();
+        diagnostics.dispose();
+        setUiDiagnostics(null);
+      }
+    };
+  } catch (error) {
+    diagnostics.record("error", { code: uiErrorCode(error) });
+    unobserve();
+    diagnostics.dispose();
+    setUiDiagnostics(null);
+    throw error;
+  }
+}
+function setupApp(ctx, diagnostics, setContext) {
   ensureDecoFonts();
   ctx.dom.addStyle(STYLES);
   const tab = ctx.ui.registerDrawerTab({
@@ -14997,10 +15340,23 @@ function setup(ctx) {
   let handshakeRetries = 0;
   const tabButtons = new Map;
   const send = (msg) => {
+    if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean")
+      diagnostics.setEnabled(!msg.patch.localLogsDisabled);
+    if (msg.type === "diagnostics_clear")
+      diagnostics.clear();
+    else if (msg.type === "diagnostics_export")
+      diagnostics.flush();
+    else
+      diagnostics.record("send", { op: msg.type });
     if (msg.type === "summary_export" || msg.type === "summary_import") {
       transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? "Preparing summary export…" : "Checking summary coverage…" });
     }
-    ctx.sendToBackend(msg);
+    try {
+      ctx.sendToBackend(msg);
+    } catch (error) {
+      diagnostics.record("error", { op: msg.type, code: uiErrorCode(error) });
+      throw error;
+    }
   };
   const transferPanel = createSummaryTransferPanel(transferHost, send);
   const onLocalTransfer = (event) => transferPanel.deliver(event.detail);
@@ -15033,6 +15389,7 @@ function setup(ctx) {
     loadTimer = setTimeout(() => {
       if (disposed || lastState)
         return;
+      diagnostics.record("timeout", { code: "state", op: type });
       if (handshakeRetries++ < 2)
         requestState("ready");
       else
@@ -15097,6 +15454,8 @@ function setup(ctx) {
     btn.append(icon, label);
     btn.addEventListener("click", () => {
       activeTab = t.key;
+      setContext({ chatId: lastState?.activeChatId, view: activeTab });
+      diagnostics.record("view");
       refreshTabStyles();
       doRender();
       scrollPaneTop(content);
@@ -15168,9 +15527,12 @@ function setup(ctx) {
     lastRenderedTab = activeTab;
   };
   const doRender = () => {
+    setContext({ chatId: lastState?.activeChatId, view: engine.isActive() ? "lesson" : activeTab });
     try {
       renderContent();
+      diagnostics.record("render", { code: "ok" });
     } catch (err) {
+      diagnostics.record("error", { code: uiErrorCode(err), op: "state" });
       console.error("[LumiBooks] render failed", err);
       content.replaceChildren();
       lastRenderedTab = null;
@@ -15204,120 +15566,136 @@ function setup(ctx) {
   refreshTabStyles();
   const unsub = ctx.onBackendMessage((raw) => {
     const msg = raw;
-    switch (msg.type) {
-      case "prompt_breakdown":
-        deliverPromptBreakdown(msg);
-        break;
-      case "state":
-        clearLoadTimer();
-        handshakeRetries = 0;
-        showLoadNotice("");
-        if (lastState && lastState.activeChatId !== msg.state.activeChatId)
-          closeCodexCatchupModal();
-        lastState = msg.state;
-        transferPanel.setChat(lastState.activeChatId);
-        renderActive();
-        break;
-      case "state_loading":
-        clearLoadTimer();
-        if (!lastState) {
-          showLoadNotice("Loading LumiBooks…", true);
-          loadTimer = setTimeout(() => showLoadNotice("This chat is taking longer to load. You can wait or retry."), 20000);
-        }
-        break;
-      case "state_error":
-        clearLoadTimer();
-        showLoadNotice(msg.text);
-        break;
-      case "toast":
-        if (msg.tone === "error")
-          console.error(`[LumiBooks] ${msg.text}`);
-        else if (msg.tone === "warn")
-          console.warn(`[LumiBooks] ${msg.text}`);
-        else
-          console.info(`[LumiBooks] ${msg.tone}: ${msg.text}`);
-        showToast(msg.tone, msg.text);
-        break;
-      case "busy":
-        if (lastState) {
-          const prev = lastState.busy;
-          const next = msg.entries;
-          lastState = { ...lastState, busy: next };
-          const finishedCodexChats = new Set;
-          for (const b of prev) {
-            if (b.kind !== "codex")
-              continue;
-            if (!next.some((n) => n.kind === "codex" && n.chatId === b.chatId)) {
-              finishedCodexChats.add(b.chatId);
+    try {
+      if (msg.type === "state") {
+        diagnostics.setEnabled(!msg.state.settings.localLogsDisabled);
+        setContext({ chatId: msg.state.activeChatId, view: activeTab });
+      }
+      diagnostics.record("receive", {
+        op: msg.type,
+        code: msg.type === "state_error" || msg.type === "error" || msg.type === "codex_file_state_saved" && msg.error || msg.type === "summary_transfer_status" && msg.status.stage === "error" ? "failed" : undefined
+      });
+      switch (msg.type) {
+        case "prompt_breakdown":
+          deliverPromptBreakdown(msg);
+          break;
+        case "state":
+          clearLoadTimer();
+          handshakeRetries = 0;
+          showLoadNotice("");
+          if (lastState && lastState.activeChatId !== msg.state.activeChatId)
+            closeCodexCatchupModal();
+          lastState = msg.state;
+          transferPanel.setChat(lastState.activeChatId);
+          renderActive();
+          break;
+        case "state_loading":
+          clearLoadTimer();
+          if (!lastState) {
+            showLoadNotice("Loading LumiBooks…", true);
+            loadTimer = setTimeout(() => {
+              diagnostics.record("timeout", { code: "state" });
+              showLoadNotice("This chat is taking longer to load. You can wait or retry.");
+            }, 20000);
+          }
+          break;
+        case "state_error":
+          clearLoadTimer();
+          showLoadNotice(msg.text);
+          break;
+        case "toast":
+          if (msg.tone === "error")
+            console.error(`[LumiBooks] ${msg.text}`);
+          else if (msg.tone === "warn")
+            console.warn(`[LumiBooks] ${msg.text}`);
+          else
+            console.info(`[LumiBooks] ${msg.tone}: ${msg.text}`);
+          showToast(msg.tone, msg.text);
+          break;
+        case "busy":
+          if (lastState) {
+            const prev = lastState.busy;
+            const next = msg.entries;
+            lastState = { ...lastState, busy: next };
+            const finishedCodexChats = new Set;
+            for (const b of prev) {
+              if (b.kind !== "codex")
+                continue;
+              if (!next.some((n) => n.kind === "codex" && n.chatId === b.chatId)) {
+                finishedCodexChats.add(b.chatId);
+              }
+            }
+            for (const chatId of finishedCodexChats) {
+              if (codexWantsRefresh(chatId))
+                send({ type: "codex_read", chatId });
+            }
+            const mode = viewMode();
+            if (mode === "lesson") {
+              engine.onHostState();
+              break;
+            }
+            if (mode === "sealed") {
+              updateSealBusy(lastState);
+              break;
+            }
+            const sameShape = prev.length === next.length && prev.every((b, i) => b.kind === next[i].kind && b.chatId === next[i].chatId);
+            if (activeTab === "home") {
+              if (sameShape && tryUpdateBusyLabelsInPlace(next))
+                break;
+              if (hasFocusedEditableChild())
+                renderPending = true;
+              else
+                renderHomeTab(content, lastState, ctx, send);
+            } else if (activeTab === "codex" && !sameShape) {
+              if (hasFocusedEditableChild())
+                renderPending = true;
+              else
+                renderCodexTab(content, lastState, ctx, send);
             }
           }
-          for (const chatId of finishedCodexChats) {
-            if (codexWantsRefresh(chatId))
-              send({ type: "codex_read", chatId });
-          }
-          const mode = viewMode();
-          if (mode === "lesson") {
-            engine.onHostState();
-            break;
-          }
-          if (mode === "sealed") {
-            updateSealBusy(lastState);
-            break;
-          }
-          const sameShape = prev.length === next.length && prev.every((b, i) => b.kind === next[i].kind && b.chatId === next[i].chatId);
-          if (activeTab === "home") {
-            if (sameShape && tryUpdateBusyLabelsInPlace(next))
-              break;
-            if (hasFocusedEditableChild())
-              renderPending = true;
-            else
-              renderHomeTab(content, lastState, ctx, send);
-          } else if (activeTab === "codex" && !sameShape) {
-            if (hasFocusedEditableChild())
-              renderPending = true;
-            else
-              renderCodexTab(content, lastState, ctx, send);
-          }
-        }
-        break;
-      case "error":
-        console.warn(`[LumiBooks] error: ${msg.text}`);
-        break;
-      case "dry_run_result":
-        showDryRunModal(msg.kind, msg.messages, msg.diagnostics);
-        break;
-      case "codex_files":
-        deliverCodexFiles(msg.chatId, msg.files, msg.revision, msg.savedFile, msg.savedSeq);
-        if (viewMode() === "tabs" && activeTab === "codex" && lastState)
-          renderActive();
-        else if (viewMode() === "lesson")
-          engine.onHostState();
-        break;
-      case "codex_file_state_saved": {
-        const confirmed = deliverCodexFileState(msg.chatId, msg.file, msg.seq, msg.error);
-        if (confirmed !== null && lastState?.activeChatId === msg.chatId) {
-          lastState = { ...lastState, codexFileStates: { ...lastState.codexFileStates, [msg.file]: confirmed } };
-          if (activeTab === "codex")
+          break;
+        case "error":
+          console.warn(`[LumiBooks] error: ${msg.text}`);
+          break;
+        case "dry_run_result":
+          showDryRunModal(msg.kind, msg.messages, msg.diagnostics);
+          break;
+        case "codex_files":
+          deliverCodexFiles(msg.chatId, msg.files, msg.revision, msg.savedFile, msg.savedSeq);
+          if (viewMode() === "tabs" && activeTab === "codex" && lastState)
             renderActive();
+          else if (viewMode() === "lesson")
+            engine.onHostState();
+          break;
+        case "codex_file_state_saved": {
+          const confirmed = deliverCodexFileState(msg.chatId, msg.file, msg.seq, msg.error);
+          if (confirmed !== null && lastState?.activeChatId === msg.chatId) {
+            lastState = { ...lastState, codexFileStates: { ...lastState.codexFileStates, [msg.file]: confirmed } };
+            if (activeTab === "codex")
+              renderActive();
+          }
+          break;
         }
-        break;
+        case "stream_text":
+          deliverStreamText(msg);
+          break;
+        case "summary_transfer_status":
+          transferPanel.deliver(msg.status);
+          break;
+        case "summary_export_data":
+        case "diagnostics_export_data":
+        case "codex_backup_data":
+          downloadCodexBackup(msg.filename, msg.content);
+          break;
+        case "codex_tools_hint":
+          if (lastState && !lastState.settings.suppressToolCallingPrompt) {
+            showCodexToolsHintModal(lastState.activeProfile.id, send);
+          }
+          break;
       }
-      case "stream_text":
-        deliverStreamText(msg);
-        break;
-      case "summary_transfer_status":
-        transferPanel.deliver(msg.status);
-        break;
-      case "summary_export_data":
-      case "diagnostics_export_data":
-      case "codex_backup_data":
-        downloadCodexBackup(msg.filename, msg.content);
-        break;
-      case "codex_tools_hint":
-        if (lastState && !lastState.settings.suppressToolCallingPrompt) {
-          showCodexToolsHintModal(lastState.activeProfile.id, send);
-        }
-        break;
+    } catch (error) {
+      diagnostics.record("error", { op: msg.type, code: uiErrorCode(error) });
+      throw error;
     }
   });
   const onRevealEntry = (e) => {

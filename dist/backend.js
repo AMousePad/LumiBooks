@@ -3461,6 +3461,139 @@ var spindle_default = {
   minimum_lumiverse_version: "1.2.5"
 };
 
+// src/frontend-diagnostics.ts
+var UI_KINDS = ["start", "stop", "view", "click", "change", "render", "error", "rejection", "resource", "send", "receive", "timeout", "overflow"];
+var UI_VIEWS = ["startup", "home", "books", "codex", "tuning", "stuff", "lesson", "unknown"];
+var UI_CODES = ["ok", "failed", "unknown", "TypeError", "ReferenceError", "RangeError", "SyntaxError", "AbortError", "TimeoutError", "Error", "state", "prompt", "closed", "stale", "button", "input", "select", "textarea", "image", "stylesheet"];
+var UI_OPERATIONS = [
+  "ready",
+  "refresh",
+  "prompt_breakdown",
+  "save_settings",
+  "save_profile",
+  "save_samplers",
+  "create_profile",
+  "delete_profile",
+  "set_active_profile",
+  "create_chapter",
+  "create_chapter_range",
+  "create_all_chapters",
+  "create_arc",
+  "create_arc_from",
+  "create_all_arcs",
+  "create_higher_from",
+  "create_higher_auto",
+  "create_volume_from",
+  "retry_last_failure",
+  "delete_entry",
+  "release_entry",
+  "regenerate_entry",
+  "update_entry",
+  "resync_hidden",
+  "resync_visibility",
+  "set_summary_activation",
+  "abort_busy",
+  "dry_run_chapter",
+  "dry_run_arc",
+  "dry_run_volume",
+  "dry_run_codex",
+  "ensure_book",
+  "import_preset",
+  "save_custom_preset",
+  "delete_custom_preset",
+  "accept_preview",
+  "discard_preview",
+  "edit_preview",
+  "rebase_root",
+  "rebuild_root",
+  "detach_root",
+  "set_message_excluded",
+  "codex_update_now",
+  "codex_read",
+  "codex_write_file",
+  "codex_reset",
+  "codex_rebuild",
+  "codex_tidy",
+  "codex_rebuild_files",
+  "codex_clear_stale",
+  "codex_refresh",
+  "codex_set_file_state",
+  "codex_backup",
+  "codex_restore",
+  "codex_undo",
+  "codex_adopt",
+  "summary_export",
+  "summary_import",
+  "summary_import_resolve",
+  "wipe_books",
+  "rebuild_books",
+  "watch_stream",
+  "lesson_patch",
+  "lesson_complete",
+  "lesson_reset",
+  "lesson_seal_skip",
+  "state",
+  "state_loading",
+  "state_error",
+  "toast",
+  "busy",
+  "error",
+  "dry_run_result",
+  "codex_files",
+  "codex_file_state_saved",
+  "stream_text",
+  "summary_transfer_status",
+  "summary_export_data",
+  "codex_backup_data",
+  "codex_tools_hint",
+  "subtab.profile",
+  "subtab.settings",
+  "subtab.prompts",
+  "subtab.shelf",
+  "subtab.compose",
+  "subtab.continuity",
+  "subtab.entities",
+  "subtab.relations",
+  "subtab.world",
+  "subtab.secrets",
+  "subtab.manage",
+  "tuning.settings.books",
+  "tuning.settings.codex",
+  "tab.home",
+  "tab.books",
+  "tab.codex",
+  "tab.tuning",
+  "tab.stuff"
+];
+var UI_BATCH_LIMIT = 32;
+function pick(v, values) {
+  return typeof v === "string" && values.includes(v) ? v : undefined;
+}
+function integer(v, max = Number.MAX_SAFE_INTEGER) {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= max ? v : undefined;
+}
+function projectUiDiagnostic(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const v = raw;
+  const kind = pick(v.kind, UI_KINDS), view = pick(v.view, UI_VIEWS);
+  if (!kind || !view)
+    return null;
+  const first = integer(v.first) ?? 0;
+  return {
+    kind,
+    view,
+    code: pick(v.code, UI_CODES),
+    op: pick(v.op, UI_OPERATIONS),
+    count: Math.max(1, integer(v.count, 1e6) ?? 1),
+    first,
+    last: Math.max(first, integer(v.last) ?? first),
+    caps: integer(v.caps, 7),
+    line: integer(v.line, 1e7),
+    column: integer(v.column, 1e7)
+  };
+}
+
 // src/backend/diagnostics.ts
 var DIAGNOSTICS_PATH = "diagnostics.json";
 var DIAGNOSTICS_MAX_BYTES = 1e7;
@@ -3468,7 +3601,7 @@ var MAX_EVENT_BYTES = 512 * 1024;
 var MAX_ROWS = 4096;
 var MAX_PENDING = 64;
 var encoder = new TextEncoder;
-var EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost"];
+var EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost", "frontend"];
 var MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"];
 var OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"];
 var REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"];
@@ -3518,6 +3651,9 @@ function project(raw, stored) {
   const ref = (id) => typeof id === "string" && id.length > 0 && id.length <= 1024 && (!stored || /^r_[a-f0-9]{32}$/.test(id)) ? id : undefined;
   const chatId = ref(v.chatId);
   if (!event || !chatId)
+    return null;
+  const ui = event === "frontend" ? projectUiDiagnostic(v.ui) : undefined;
+  if (event === "frontend" && !ui)
     return null;
   const numbers = {}, flags = {};
   for (const key of NUMBER_KEYS) {
@@ -3573,12 +3709,13 @@ function project(raw, stored) {
     mode: choice(v.mode, MODES),
     outcome: choice(v.outcome, OUTCOMES),
     reason: choice(v.reason, REASONS),
-    action: choice(v.action, ACTIONS),
+    action: choice(v.action, [...ACTIONS, ...UI_OPERATIONS]),
+    ui: ui ?? undefined,
     messageScope: choice(v.messageScope, ["all", "uncovered_and_selected", "selected", "assembled"]),
-    numbers,
-    flags,
-    messages,
-    entries,
+    numbers: event === "frontend" ? undefined : numbers,
+    flags: event === "frontend" ? undefined : flags,
+    messages: event === "frontend" ? undefined : messages,
+    entries: event === "frontend" ? undefined : entries,
     seq: number(v.seq) ?? 0,
     at: number(v.at) ?? 0,
     truncated
@@ -3619,6 +3756,7 @@ function report(store, userId) {
     queueDropsThisSession: health(userId).queueDrops,
     writeFailuresThisSession: health(userId).writeFailures,
     privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
+    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, 2 randomUUID, 4 getRandomValues; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
     events: store.events
   };
 }
@@ -3653,32 +3791,50 @@ async function anonymize(event, salt) {
     Promise.all((event.messages ?? []).map(async (m) => ({ ...m, id: await ref(m.id), coveredBy: await ref(m.coveredBy) }))),
     Promise.all((event.entries ?? []).map(async (e) => ({ ...e, id: await ref(e.id), messages: await Promise.all((e.messages ?? []).map(async (id) => await ref(id))), sources: await Promise.all((e.sources ?? []).map(async (id) => await ref(id))) })))
   ]);
-  return { ...event, chatId, relatedChatId, entryId, replacesEntryId, messages, entries };
+  return {
+    ...event,
+    chatId,
+    relatedChatId,
+    entryId,
+    replacesEntryId,
+    messages: event.event === "frontend" ? undefined : messages,
+    entries: event.event === "frontend" ? undefined : entries
+  };
 }
 function recordDiagnostic(userId, input) {
+  return recordDiagnostics(userId, [input]);
+}
+function recordDiagnostics(userId, inputs) {
   try {
     if (pendingTotal >= MAX_PENDING) {
       health(userId).queueDrops++;
       return Promise.resolve();
     }
-    const event = project(input, false);
-    if (!event)
+    const events = inputs.slice(0, UI_BATCH_LIMIT).flatMap((input) => {
+      const event = project(input, false);
+      if (!event)
+        return [];
+      event.at = Date.now();
+      return [event];
+    });
+    if (!events.length)
       return Promise.resolve();
-    event.at = Date.now();
     const storage = spindle.userStorage;
     pendingTotal++;
     return serial(userId, async () => {
       if ((await loadSettings(userId)).localLogsDisabled)
         return;
       const store = await read(userId, storage);
-      const safe = await anonymize(event, store.salt);
-      safe.seq = store.next++;
-      if (size(safe) > MAX_EVENT_BYTES) {
-        safe.messages = [];
-        safe.entries = [];
-        safe.truncated = true;
+      for (const event of events) {
+        const safe = await anonymize(event, store.salt);
+        safe.seq = store.next++;
+        if (size(safe) > MAX_EVENT_BYTES) {
+          safe.messages = [];
+          safe.entries = [];
+          safe.truncated = true;
+        }
+        store.events.push(safe);
       }
-      store.events.push(safe);
       bound(store, userId);
       if ((await loadSettings(userId)).localLogsDisabled)
         return;
@@ -3692,6 +3848,18 @@ function recordDiagnostic(userId, input) {
     health(userId).writeFailures++;
     return Promise.resolve();
   }
+}
+function recordUiDiagnostics(userId, raw) {
+  if (!Array.isArray(raw))
+    return Promise.resolve();
+  const rows = raw.slice(0, UI_BATCH_LIMIT).flatMap((row) => {
+    const ui = projectUiDiagnostic(row);
+    if (!ui)
+      return [];
+    const chatId = typeof row.chatId === "string" && row.chatId.length > 0 && row.chatId.length <= 1024 ? row.chatId : "frontend";
+    return [{ event: "frontend", chatId, ui }];
+  });
+  return recordDiagnostics(userId, rows);
 }
 async function exportDiagnostics(userId) {
   return serial(userId, async () => {
@@ -3726,12 +3894,12 @@ function diagnosticErrorReason(error) {
   }
 }
 function recordFrontendAction(userId, message, outcome) {
-  const action = choice(message.type, ACTIONS);
-  if (!action || !("chatId" in message) || !message.chatId)
+  const action = choice(message.type, [...ACTIONS, ...UI_OPERATIONS]);
+  if (!action)
     return;
   recordDiagnostic(userId, {
     event: "action",
-    chatId: message.chatId,
+    chatId: "chatId" in message && message.chatId ? message.chatId : "frontend",
     action,
     outcome,
     entryId: "entryId" in message ? message.entryId : undefined,
@@ -11869,6 +12037,10 @@ async function syncProfileSettings(userId) {
 spindle.onFrontendMessage(async (raw, userId) => {
   setLastFrontendUserId(userId);
   const msg = raw;
+  if (msg.type === "ui_diagnostics") {
+    await recordUiDiagnostics(userId, msg.rows);
+    return;
+  }
   rememberChatUser(readChatIdFromMessage(msg), userId);
   try {
     await ensureUserFolders(userId);

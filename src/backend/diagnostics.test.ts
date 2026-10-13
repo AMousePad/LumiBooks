@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
-import { captureDiagnosticSnapshot, clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic } from "./diagnostics";
+import { captureDiagnosticSnapshot, clearDiagnostics, diagnosticErrorReason, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_PATH, exportDiagnostics, recordDiagnostic, recordUiDiagnostics } from "./diagnostics";
 import { DEFAULT_SETTINGS, normalizeSettings, SETTINGS_PATH } from "../shared";
 import { patchSettings } from "./storage";
 
@@ -7,6 +7,36 @@ const original = (globalThis as any).spindle;
 let disk: Map<string, any>;
 let diskBytes: Map<string, number>;
 const key = (user: string) => `${user}/${DIAGNOSTICS_PATH}`;
+
+test("frontend batches are bounded, anonymized, compact and revalidated on export", async () => {
+  const storage = (globalThis as any).spindle.userStorage;
+  const save = storage.setJson;
+  let writes = 0;
+  storage.setJson = async (...args: any[]) => { if (args[0] === DIAGNOSTICS_PATH) writes++; return save(...args); };
+  await recordUiDiagnostics("ui-user", Array.from({ length: 100 }, () => ({
+    kind: "error", view: "tuning", op: "tuning.settings.codex", code: "TypeError", count: 500,
+    first: 100, last: 200, chatId: "PRIVATE_CHAT_ID", caps: 4, line: 44, column: 3,
+    message: "PRIVATE_CHAT_TEXT", stack: "PRIVATE_URL", filename: "PRIVATE_PATH",
+  })));
+  expect(writes).toBe(1);
+  let output = await exportDiagnostics("ui-user");
+  const events = JSON.parse(output).events;
+  expect(events).toHaveLength(32);
+  expect(events[0]).toMatchObject({ event: "frontend", ui: { count: 500, code: "TypeError", caps: 4 } });
+  expect(events[0].chatId).toMatch(/^r_[a-f0-9]{32}$/);
+  expect(output).not.toContain("PRIVATE");
+  const store = disk.get(key("ui-user"));
+  store.events[0].ui.message = "PRIVATE_CHAT_TEXT";
+  store.events[0].ui.op = "PRIVATE_CHAT_TEXT";
+  output = await exportDiagnostics("ui-user");
+  expect(output).not.toContain("PRIVATE");
+});
+
+test("frontend recording honors backend opt-out even before frontend receives settings", async () => {
+  await patchSettings("ui-disabled", { localLogsDisabled: true });
+  await recordUiDiagnostics("ui-disabled", [{ kind: "start", view: "startup", caps: 4 }]);
+  expect(JSON.parse(await exportDiagnostics("ui-disabled")).events).toEqual([]);
+});
 beforeEach(() => {
   disk = new Map();
   diskBytes = new Map();

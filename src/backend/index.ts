@@ -99,7 +99,7 @@ import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { shortErrorText } from "./pipeline";
 import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
-import { captureDiagnosticSnapshot, clearDiagnostics, exportDiagnostics, recordFrontendAction, recordDiagnostic } from "./diagnostics";
+import { captureDiagnosticSnapshot, clearDiagnostics, exportDiagnostics, recordFrontendAction, recordDiagnostic, recordUiDiagnostics } from "./diagnostics";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
 import { invalidateRegexCache } from "./regex";
@@ -530,6 +530,10 @@ async function syncProfileSettings(userId: string): Promise<void> {
 spindle.onFrontendMessage(async (raw, userId) => {
   setLastFrontendUserId(userId);
   const msg = raw as FrontendToBackend;
+  if (msg.type === "ui_diagnostics") {
+    await recordUiDiagnostics(userId, msg.rows);
+    return;
+  }
   rememberChatUser(readChatIdFromMessage(msg), userId);
 
   try {

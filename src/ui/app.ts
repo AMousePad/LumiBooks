@@ -15,6 +15,8 @@ import { clearSealBusy, renderSealPanel, updateSealBusy } from "./lessons/seal";
 import { APP_TABS, type AppTabKey } from "./tab-meta";
 import { createSummaryTransferPanel } from "./summary-transfer";
 import type { SummaryTransferStatus } from "../summary-transfer";
+import { createUiDiagnostics, observeUiDiagnostics, setUiDiagnostics, uiErrorCode, type UiDiagnostics } from "./diagnostics";
+import type { UiDiagnostic } from "../frontend-diagnostics";
 
 type TabKey = AppTabKey;
 
@@ -37,6 +39,27 @@ function ensureDecoFonts(): void {
 }
 
 export function setup(ctx: SpindleFrontendContext): () => void {
+  let context: { chatId?: string | null; view: UiDiagnostic["view"] } = { view: "startup" };
+  const diagnostics = createUiDiagnostics({ send: (message) => ctx.sendToBackend(message), context: () => context });
+  setUiDiagnostics(diagnostics);
+  const unobserve = observeUiDiagnostics(diagnostics, import.meta.url);
+  diagnostics.capabilities();
+  try {
+    const cleanup = setupApp(ctx, diagnostics, (next) => { context = next; });
+    return () => {
+      try { cleanup(); }
+      catch (error) { diagnostics.record("error", { code: uiErrorCode(error) }); throw error; }
+      finally { unobserve(); diagnostics.dispose(); setUiDiagnostics(null); }
+    };
+  } catch (error) {
+    diagnostics.record("error", { code: uiErrorCode(error) });
+    unobserve(); diagnostics.dispose(); setUiDiagnostics(null);
+    throw error;
+  }
+}
+
+function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
+  setContext: (context: { chatId?: string | null; view: UiDiagnostic["view"] }) => void): () => void {
   ensureDecoFonts();
   ctx.dom.addStyle(STYLES);
 
@@ -79,10 +102,15 @@ export function setup(ctx: SpindleFrontendContext): () => void {
   const tabButtons = new Map<TabKey, HTMLButtonElement>();
 
   const send = (msg: FrontendToBackend) => {
+    if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean") diagnostics.setEnabled(!msg.patch.localLogsDisabled);
+    if (msg.type === "diagnostics_clear") diagnostics.clear();
+    else if (msg.type === "diagnostics_export") diagnostics.flush();
+    else diagnostics.record("send", { op: msg.type as UiDiagnostic["op"] });
     if (msg.type === "summary_export" || msg.type === "summary_import") {
       transferPanel.deliver({ id: "local", chatId: msg.chatId, stage: "working", text: msg.type === "summary_export" ? "Preparing summary export…" : "Checking summary coverage…" });
     }
-    ctx.sendToBackend(msg);
+    try { ctx.sendToBackend(msg); }
+    catch (error) { diagnostics.record("error", { op: msg.type as UiDiagnostic["op"], code: uiErrorCode(error) }); throw error; }
   };
   const transferPanel = createSummaryTransferPanel(transferHost, send);
   const onLocalTransfer = (event: Event) => transferPanel.deliver((event as CustomEvent<SummaryTransferStatus>).detail);
@@ -109,6 +137,7 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     // acknowledges it: building a large chat's state can take a while.
     loadTimer = setTimeout(() => {
       if (disposed || lastState) return;
+      diagnostics.record("timeout", { code: "state", op: type });
       if (handshakeRetries++ < 2) requestState("ready");
       else showLoadNotice("LumiBooks hasn't responded. You can retry loading it.");
     }, 5000);
@@ -178,6 +207,8 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     btn.append(icon, label);
     btn.addEventListener("click", () => {
       activeTab = t.key;
+      setContext({ chatId: lastState?.activeChatId, view: activeTab });
+      diagnostics.record("view");
       refreshTabStyles();
       doRender();
       // A new tab starts at its top - inheriting the previous tab's scroll
@@ -247,8 +278,10 @@ export function setup(ctx: SpindleFrontendContext): () => void {
     lastRenderedTab = activeTab;
   };
   const doRender = () => {
-    try { renderContent(); }
+    setContext({ chatId: lastState?.activeChatId, view: engine.isActive() ? "lesson" : activeTab });
+    try { renderContent(); diagnostics.record("render", { code: "ok" }); }
     catch (err) {
+      diagnostics.record("error", { code: uiErrorCode(err), op: "state" });
       console.error("[LumiBooks] render failed", err);
       content.replaceChildren();
       lastRenderedTab = null;
@@ -283,6 +316,14 @@ export function setup(ctx: SpindleFrontendContext): () => void {
 
   const unsub = ctx.onBackendMessage((raw) => {
     const msg = raw as BackendToFrontend;
+    try {
+    if (msg.type === "state") {
+      diagnostics.setEnabled(!msg.state.settings.localLogsDisabled);
+      setContext({ chatId: msg.state.activeChatId, view: activeTab });
+    }
+    diagnostics.record("receive", { op: msg.type as UiDiagnostic["op"],
+      code: msg.type === "state_error" || msg.type === "error" || (msg.type === "codex_file_state_saved" && msg.error)
+        || (msg.type === "summary_transfer_status" && msg.status.stage === "error") ? "failed" : undefined });
     switch (msg.type) {
       case "prompt_breakdown":
         deliverPromptBreakdown(msg);
@@ -300,7 +341,10 @@ export function setup(ctx: SpindleFrontendContext): () => void {
         clearLoadTimer();
         if (!lastState) {
           showLoadNotice("Loading LumiBooks…", true);
-          loadTimer = setTimeout(() => showLoadNotice("This chat is taking longer to load. You can wait or retry."), 20000);
+          loadTimer = setTimeout(() => {
+            diagnostics.record("timeout", { code: "state" });
+            showLoadNotice("This chat is taking longer to load. You can wait or retry.");
+          }, 20000);
         }
         break;
       case "state_error":
@@ -393,6 +437,10 @@ export function setup(ctx: SpindleFrontendContext): () => void {
           showCodexToolsHintModal(lastState.activeProfile.id, send);
         }
         break;
+    }
+    } catch (error) {
+      diagnostics.record("error", { op: msg.type as UiDiagnostic["op"], code: uiErrorCode(error) });
+      throw error;
     }
   });
 

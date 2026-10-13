@@ -1,3 +1,5 @@
+import { reportUi } from "./diagnostics";
+
 export interface TextInputOpts {
   value: string;
   placeholder?: string;
@@ -425,6 +427,7 @@ const TOAST_STACK_CAP = 5;
 
 /** The one styled toast stack, shared by app messages and the lesson sandbox. */
 export function showToast(tone: "success" | "info" | "warn" | "error", text: string): void {
+  if (tone === "error" || tone === "warn") reportUi("receive", { code: "failed", op: "toast" });
   let stack = document.body.querySelector(":scope > .lmb-toast-stack") as HTMLDivElement | null;
   if (!stack) {
     stack = document.createElement("div");

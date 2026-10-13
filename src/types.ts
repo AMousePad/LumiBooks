@@ -184,6 +184,7 @@ export interface FrontendState {
 }
 
 export type FrontendToBackend =
+  | { type: "ui_diagnostics"; rows: import("./frontend-diagnostics").UiDiagnosticRow[] }
   | import("./prompt-breakdown").PromptBreakdownRequest
   | { type: "diagnostics_export"; chatId: string }
   | { type: "diagnostics_clear"; chatId: string }

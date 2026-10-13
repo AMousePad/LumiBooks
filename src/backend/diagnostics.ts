@@ -1,6 +1,7 @@
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import manifest from "../../spindle.json";
+import { projectUiDiagnostic, UI_BATCH_LIMIT, UI_OPERATIONS, type UiDiagnostic } from "../frontend-diagnostics";
 import type { FrontendToBackend } from "../types";
 import type { LMBProfile } from "../shared";
 import { buildCoverage, isEligibleForCount, isExcluded, type ChatMessage, type CoverageMap } from "./coverage";
@@ -14,7 +15,7 @@ const MAX_ROWS = 4096;
 const MAX_PENDING = 64;
 const encoder = new TextEncoder();
 
-const EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost"] as const;
+const EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost", "frontend"] as const;
 const MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"] as const;
 const OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"] as const;
 const REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"] as const;
@@ -34,7 +35,8 @@ export interface DiagnosticInput {
   mode?: typeof MODES[number];
   outcome?: typeof OUTCOMES[number];
   reason?: typeof REASONS[number];
-  action?: typeof ACTIONS[number];
+  action?: typeof ACTIONS[number] | typeof UI_OPERATIONS[number];
+  ui?: UiDiagnostic;
   messageScope?: "all" | "uncovered_and_selected" | "selected" | "assembled";
   numbers?: Numbers;
   flags?: Flags;
@@ -79,6 +81,8 @@ function project(raw: unknown, stored: boolean): Event | null {
     && (!stored || /^r_[a-f0-9]{32}$/.test(id)) ? id : undefined;
   const chatId = ref(v.chatId);
   if (!event || !chatId) return null;
+  const ui = event === "frontend" ? projectUiDiagnostic(v.ui) : undefined;
+  if (event === "frontend" && !ui) return null;
   const numbers: Numbers = {}, flags: Flags = {};
   for (const key of NUMBER_KEYS) { const n = number(object(v.numbers)[key]); if (n !== undefined) numbers[key] = n; }
   for (const key of FLAGS) { const b = bool(object(v.flags)[key]); if (b !== undefined) flags[key] = b; }
@@ -103,8 +107,10 @@ function project(raw: unknown, stored: boolean): Event | null {
     }];
   });
   return { event, chatId, relatedChatId: ref(v.relatedChatId), entryId: ref(v.entryId), replacesEntryId: ref(v.replacesEntryId),
-    mode: choice(v.mode, MODES), outcome: choice(v.outcome, OUTCOMES), reason: choice(v.reason, REASONS), action: choice(v.action, ACTIONS),
-    messageScope: choice(v.messageScope, ["all", "uncovered_and_selected", "selected", "assembled"] as const), numbers, flags, messages, entries,
+    mode: choice(v.mode, MODES), outcome: choice(v.outcome, OUTCOMES), reason: choice(v.reason, REASONS), action: choice(v.action, [...ACTIONS, ...UI_OPERATIONS]), ui: ui ?? undefined,
+    messageScope: choice(v.messageScope, ["all", "uncovered_and_selected", "selected", "assembled"] as const),
+    numbers: event === "frontend" ? undefined : numbers, flags: event === "frontend" ? undefined : flags,
+    messages: event === "frontend" ? undefined : messages, entries: event === "frontend" ? undefined : entries,
     seq: number(v.seq) ?? 0, at: number(v.at) ?? 0, truncated };
 }
 function empty(): Store { return { schema: 1, salt: crypto.randomUUID().replaceAll("-", ""), next: 1, dropped: 0, events: [] }; }
@@ -123,6 +129,7 @@ function report(store: Store, userId: string) {
     exportedAt: Date.now(), indexBase: 0, maxBytes: DIAGNOSTICS_MAX_BYTES,
     droppedEvents: store.dropped, queueDropsThisSession: health(userId).queueDrops, writeFailuresThisSession: health(userId).writeFailures,
     privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
+    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, 2 randomUUID, 4 getRandomValues; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
     events: store.events };
 }
 function bound(store: Store, userId: string): void {
@@ -152,26 +159,37 @@ async function anonymize(event: Event, salt: string): Promise<Event> {
     Promise.all((event.messages ?? []).map(async (m) => ({ ...m, id: (await ref(m.id))!, coveredBy: await ref(m.coveredBy) }))),
     Promise.all((event.entries ?? []).map(async (e) => ({ ...e, id: (await ref(e.id))!, messages: await Promise.all((e.messages ?? []).map(async (id) => (await ref(id))!)), sources: await Promise.all((e.sources ?? []).map(async (id) => (await ref(id))!)) }))),
   ]);
-  return { ...event, chatId: chatId!, relatedChatId, entryId, replacesEntryId, messages, entries };
+  return { ...event, chatId: chatId!, relatedChatId, entryId, replacesEntryId,
+    messages: event.event === "frontend" ? undefined : messages, entries: event.event === "frontend" ? undefined : entries };
 }
 
 /** Logging is best effort and cannot throw into generation, adoption or hiding.
  * Only the content-free projection is retained while waiting for disk. */
 export function recordDiagnostic(userId: string, input: DiagnosticInput): Promise<void> {
+  return recordDiagnostics(userId, [input]);
+}
+
+function recordDiagnostics(userId: string, inputs: DiagnosticInput[]): Promise<void> {
   try {
     if (pendingTotal >= MAX_PENDING) { health(userId).queueDrops++; return Promise.resolve(); }
-    const event = project(input, false);
-    if (!event) return Promise.resolve();
-    event.at = Date.now();
+    const events = inputs.slice(0, UI_BATCH_LIMIT).flatMap((input) => {
+      const event = project(input, false);
+      if (!event) return [];
+      event.at = Date.now();
+      return [event];
+    });
+    if (!events.length) return Promise.resolve();
     const storage = spindle.userStorage;
     pendingTotal++;
     return serial(userId, async () => {
       if ((await loadSettings(userId)).localLogsDisabled) return;
       const store = await read(userId, storage);
-      const safe = await anonymize(event, store.salt);
-      safe.seq = store.next++;
-      if (size(safe) > MAX_EVENT_BYTES) { safe.messages = []; safe.entries = []; safe.truncated = true; }
-      store.events.push(safe);
+      for (const event of events) {
+        const safe = await anonymize(event, store.salt);
+        safe.seq = store.next++;
+        if (size(safe) > MAX_EVENT_BYTES) { safe.messages = []; safe.entries = []; safe.truncated = true; }
+        store.events.push(safe);
+      }
       bound(store, userId);
       // The host defaults to pretty JSON; request compact output so the byte
       // budget measures the actual persisted representation.
@@ -179,6 +197,17 @@ export function recordDiagnostic(userId: string, input: DiagnosticInput): Promis
       await storage.setJson(DIAGNOSTICS_PATH, store, { userId, indent: 0 });
     }).catch(() => { health(userId).writeFailures++; }).finally(() => { pendingTotal--; });
   } catch { health(userId).writeFailures++; return Promise.resolve(); }
+}
+
+export function recordUiDiagnostics(userId: string, raw: unknown): Promise<void> {
+  if (!Array.isArray(raw)) return Promise.resolve();
+  const rows: DiagnosticInput[] = raw.slice(0, UI_BATCH_LIMIT).flatMap((row) => {
+    const ui = projectUiDiagnostic(row);
+    if (!ui) return [];
+    const chatId = typeof row.chatId === "string" && row.chatId.length > 0 && row.chatId.length <= 1024 ? row.chatId : "frontend";
+    return [{ event: "frontend", chatId, ui }];
+  });
+  return recordDiagnostics(userId, rows);
 }
 
 export async function exportDiagnostics(userId: string): Promise<string> {
@@ -207,9 +236,9 @@ export function diagnosticErrorReason(error: unknown): DiagnosticInput["reason"]
 }
 
 export function recordFrontendAction(userId: string, message: FrontendToBackend, outcome: "started" | "finished" | "failed"): void {
-  const action = choice(message.type, ACTIONS);
-  if (!action || !("chatId" in message) || !message.chatId) return;
-  void recordDiagnostic(userId, { event: "action", chatId: message.chatId, action, outcome,
+  const action = choice(message.type, [...ACTIONS, ...UI_OPERATIONS]);
+  if (!action) return;
+  void recordDiagnostic(userId, { event: "action", chatId: "chatId" in message && message.chatId ? message.chatId : "frontend", action, outcome,
     entryId: "entryId" in message ? message.entryId : undefined,
     relatedChatId: "sourceChatId" in message ? message.sourceChatId : undefined,
     numbers: { requested: "messageIds" in message ? message.messageIds.length : undefined },
