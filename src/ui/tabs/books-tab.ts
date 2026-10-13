@@ -137,7 +137,6 @@ export function renderBooksTab(
         renderSummaryTransfer(host, state, ctx, send);
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
-        renderDiagnostics(host, state, send);
       }
     });
   };
@@ -1038,21 +1037,5 @@ function renderSummaryTransfer(host: HTMLElement, state: FrontendState, ctx: Spi
         }
       } catch (err) { console.warn("[LumiBooks] summary import failed", err); reportLocalSummaryTransfer(chatId, "Could not read that lorebook JSON file", "error"); }
     }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
-  sec.body.appendChild(actions); host.appendChild(sec.wrap);
-}
-
-function renderDiagnostics(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
-  const sec = section("Private diagnostics");
-  sec.body.appendChild(checkbox({
-    checked: state.settings.localLogsDisabled,
-    label: "Turn off local logs. This is not recommended",
-    onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } }),
-  }));
-  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
-  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
-  const actions = document.createElement("div"); actions.className = "lmb-actions";
-  const chatId = state.activeChatId!;
-  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })),
-    makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
   sec.body.appendChild(actions); host.appendChild(sec.wrap);
 }

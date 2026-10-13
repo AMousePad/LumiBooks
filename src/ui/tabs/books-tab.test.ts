@@ -7,6 +7,7 @@ import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab"
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
 import { renderCodexSettings } from "./profile-tab";
+import { renderAboutTab } from "./about-tab";
 import { makeDefaultProfile } from "../../shared";
 import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal, setCodexSubtab, setCodexExpandedEntity } from "./codex-tab";
 
@@ -202,11 +203,18 @@ test("prompt replies update a rerendered panel and cannot overwrite a newer chat
 });
 
 
-test("Advanced exposes diagnostics opt-out with separate Export and Clear actions", () => {
+for (const withChat of [true, false]) test(`Info exposes account diagnostics with${withChat ? "" : "out"} an active chat`, () => {
   setBooksSubtab("continuity");
   const current = state(), sent: any[] = [], host = new Element("div");
   renderBooksTab(host as any, current, {} as any, (msg) => sent.push(msg));
+  expect(host.textContent).not.toContain("Private diagnostics");
+  if (!withChat) current.activeChatId = null;
+  renderAboutTab(host as any, current, (msg) => sent.push(msg));
   expect(host.textContent).toContain("Private diagnostics");
+  expect(host.textContent).not.toContain("How it works");
+  expect(host.textContent).not.toContain("Where things live");
+  expect(host.textContent).toContain("Nyandere catgirl in a maid uniform.");
+  expect(host.textContent).not.toContain("Young nyandere");
   expect(host.textContent).toContain("No automatic uploads");
   expect(host.textContent).toContain("as many events as fit in 10 MB");
   const optOut = walk(host).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
@@ -216,7 +224,8 @@ test("Advanced exposes diagnostics opt-out with separate Export and Clear action
   toggle.dispatch("change");
   expect(sent.pop()).toEqual({ type: "save_settings", chatId: current.activeChatId, patch: { localLogsDisabled: true } });
   current.settings.localLogsDisabled = true;
-  const disabledHost = render(current);
+  const disabledHost = new Element("div");
+  renderAboutTab(disabledHost as any, current, (msg) => sent.push(msg));
   const disabledToggle = walk(disabledHost).find((e) => e.tagName === "label" && e.textContent === "Turn off local logs. This is not recommended")!;
   expect(walk(disabledToggle).find((e) => e.tagName === "input")!.checked).toBe(true);
   toggle.checked = false;

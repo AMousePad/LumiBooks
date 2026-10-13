@@ -12080,7 +12080,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
         send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, result: await loadPromptBreakdown(msg, userId) }, userId);
         break;
       case "diagnostics_export": {
-        await captureDiagnosticSnapshot(userId, msg.chatId);
+        if (msg.chatId)
+          await captureDiagnosticSnapshot(userId, msg.chatId);
         const content = await exportDiagnostics(userId);
         send({ type: "diagnostics_export_data", filename: "lumibooks-diagnostics.json", content }, userId);
         break;

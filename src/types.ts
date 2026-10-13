@@ -186,8 +186,8 @@ export interface FrontendState {
 export type FrontendToBackend =
   | { type: "ui_diagnostics"; rows: import("./frontend-diagnostics").UiDiagnosticRow[] }
   | import("./prompt-breakdown").PromptBreakdownRequest
-  | { type: "diagnostics_export"; chatId: string }
-  | { type: "diagnostics_clear"; chatId: string }
+  | { type: "diagnostics_export"; chatId?: string | null }
+  | { type: "diagnostics_clear"; chatId?: string | null }
   | { type: "ready"; chatId?: string | null }
   | { type: "refresh"; chatId?: string | null }
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }

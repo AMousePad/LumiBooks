@@ -1,7 +1,7 @@
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LessonCourseKey } from "../../shared";
 import { LESSON_GRADE_LABEL } from "../../shared";
-import { makeButton, section, textNode } from "../components";
+import { checkbox, makeButton, section, textNode } from "../components";
 import { memoriaSprite, requestLesson } from "../lessons/seal";
 import { COURSE_BOOKS } from "../lessons/content-books";
 import { COURSE_CODEX } from "../lessons/content-codex";
@@ -26,37 +26,17 @@ export function renderAboutTab(
   const tag = document.createElement("div");
   tag.className = "lmb-about-line";
   tag.textContent =
-    "Young nyandere catgirl in a maid uniform. Black hair, blue eyes. " +
+    "Nyandere catgirl in a maid uniform. Black hair, blue eyes. " +
     "Files your chats into chapters, binds chapters into arcs, and leaves a tiny nyaa note on every shelf.";
   right.append(title, tag);
   card.append(right);
   hero.body.appendChild(card);
   host.appendChild(hero.wrap);
 
-  if (state) renderAcademy(host, state, send);
-
-  const how = section("How it works");
-  const lines = [
-    "Tail messages stay uncompressed until they pass the lag.",
-    "Once the window fills, Memoria writes a chapter, hides those messages in the chat, and slices the chapter into the prompt at the same spot.",
-    "Several chapters can be bound into a single arc that replaces them.",
-    "Arcs can be pressed into a volume the same way, manually from the Books tab.",
-    "The Knowledge Codex tracks entities, relations, timeline, threads, and lore as a story bible injected alongside the summaries.",
-    "Storage lives in a per-chat world book named LumiBooks. Renaming or deleting entries there releases the messages back.",
-  ];
-  for (const l of lines) {
-    how.body.appendChild(textNode(l, "lmb-about-line"));
+  if (state) {
+    renderDiagnostics(host, state, send);
+    renderAcademy(host, state, send);
   }
-  host.appendChild(how.wrap);
-
-  const where = section("Where things live");
-  for (const l of [
-    "Settings and toggles moved to Tuning (Connection, Settings, Prompts).",
-    "Shelf repair tools live under Books → Advanced.",
-  ]) {
-    where.body.appendChild(textNode(l, "lmb-about-line"));
-  }
-  host.appendChild(where.wrap);
 
   const ack = section("Acknowledgements");
   const a = document.createElement("div");
@@ -168,4 +148,20 @@ function courseCard(
     card.appendChild(sections);
   }
   return card;
+}
+
+function renderDiagnostics(host: HTMLElement, state: FrontendState, send: (msg: FrontendToBackend) => void): void {
+  const sec = section("Private diagnostics");
+  sec.body.appendChild(checkbox({
+    checked: state.settings.localLogsDisabled,
+    label: "Turn off local logs. This is not recommended",
+    onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } }),
+  }));
+  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
+  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
+  const actions = document.createElement("div"); actions.className = "lmb-actions";
+  const chatId = state.activeChatId;
+  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })),
+    makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
+  sec.body.appendChild(actions); host.appendChild(sec.wrap);
 }

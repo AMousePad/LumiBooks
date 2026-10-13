@@ -5846,7 +5846,6 @@ function renderBooksTab(host, state, ctx, send) {
         renderSummaryTransfer(host, state, ctx, send);
         renderContinuity(host, state, ctx, send);
         renderMaintenance(host, state, ctx, send);
-        renderDiagnostics(host, state, send);
       }
     });
   };
@@ -6614,22 +6613,6 @@ function renderSummaryTransfer(host, state, ctx, send) {
       reportLocalSummaryTransfer(chatId, "Could not read that lorebook JSON file", "error");
     }
   }, { disabled: state.busy.some((b) => b.chatId === chatId) }));
-  sec.body.appendChild(actions);
-  host.appendChild(sec.wrap);
-}
-function renderDiagnostics(host, state, send) {
-  const sec = section("Private diagnostics");
-  sec.body.appendChild(checkbox({
-    checked: state.settings.localLogsDisabled,
-    label: "Turn off local logs. This is not recommended",
-    onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } })
-  }));
-  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
-  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
-  const actions = document.createElement("div");
-  actions.className = "lmb-actions";
-  const chatId = state.activeChatId;
-  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })), makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
   sec.body.appendChild(actions);
   host.appendChild(sec.wrap);
 }
@@ -12749,34 +12732,15 @@ function renderAboutTab(host, state, send) {
   title.textContent = "Memoria, the LumiBooks librarian";
   const tag = document.createElement("div");
   tag.className = "lmb-about-line";
-  tag.textContent = "Young nyandere catgirl in a maid uniform. Black hair, blue eyes. " + "Files your chats into chapters, binds chapters into arcs, and leaves a tiny nyaa note on every shelf.";
+  tag.textContent = "Nyandere catgirl in a maid uniform. Black hair, blue eyes. " + "Files your chats into chapters, binds chapters into arcs, and leaves a tiny nyaa note on every shelf.";
   right.append(title, tag);
   card.append(right);
   hero.body.appendChild(card);
   host.appendChild(hero.wrap);
-  if (state)
+  if (state) {
+    renderDiagnostics(host, state, send);
     renderAcademy(host, state, send);
-  const how = section("How it works");
-  const lines = [
-    "Tail messages stay uncompressed until they pass the lag.",
-    "Once the window fills, Memoria writes a chapter, hides those messages in the chat, and slices the chapter into the prompt at the same spot.",
-    "Several chapters can be bound into a single arc that replaces them.",
-    "Arcs can be pressed into a volume the same way, manually from the Books tab.",
-    "The Knowledge Codex tracks entities, relations, timeline, threads, and lore as a story bible injected alongside the summaries.",
-    "Storage lives in a per-chat world book named LumiBooks. Renaming or deleting entries there releases the messages back."
-  ];
-  for (const l of lines) {
-    how.body.appendChild(textNode(l, "lmb-about-line"));
   }
-  host.appendChild(how.wrap);
-  const where = section("Where things live");
-  for (const l of [
-    "Settings and toggles moved to Tuning (Connection, Settings, Prompts).",
-    "Shelf repair tools live under Books → Advanced."
-  ]) {
-    where.body.appendChild(textNode(l, "lmb-about-line"));
-  }
-  host.appendChild(where.wrap);
   const ack = section("Acknowledgements");
   const a = document.createElement("div");
   a.className = "lmb-about-line";
@@ -12860,6 +12824,22 @@ function courseCard(key, course, state, send) {
     card.appendChild(sections);
   }
   return card;
+}
+function renderDiagnostics(host, state, send) {
+  const sec = section("Private diagnostics");
+  sec.body.appendChild(checkbox({
+    checked: state.settings.localLogsDisabled,
+    label: "Turn off local logs. This is not recommended",
+    onChange: (localLogsDisabled) => send({ type: "save_settings", chatId: state.activeChatId, patch: { localLogsDisabled } })
+  }));
+  sec.body.appendChild(textNode("On by default, per account: UI failures, navigation, requests, filing, coverage, forks and context decisions. Repeats are counted; keeps as many events as fit in 10 MB, oldest removed first. Export adds this chat’s structural snapshot while logging is on. Turning logs off preserves saved records.", "lmb-help"));
+  sec.body.appendChild(textNode("Includes timestamps, counts, message numbers, error codes, bundle locations and pseudonymous IDs. Excludes chat/summary text, prompts, reasoning, names, form values, URLs, credentials and raw errors. No automatic uploads. Clear deletes logs and resets pseudonyms without changing the toggle.", "lmb-help"));
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  const chatId = state.activeChatId;
+  actions.append(makeButton("Export diagnostics", () => send({ type: "diagnostics_export", chatId })), makeButton("Clear diagnostics", () => send({ type: "diagnostics_clear", chatId })));
+  sec.body.appendChild(actions);
+  host.appendChild(sec.wrap);
 }
 
 // src/prompts/books/target-directive.txt
@@ -13675,7 +13655,7 @@ var APP_TABS = [
   },
   {
     key: "stuff",
-    label: "Stuff",
+    label: "Info",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l0.9 2.1L22 19l-2.1 0.9L19 22l-0.9-2.1L16 19l2.1-0.9z"/></svg>`
   }
 ];
