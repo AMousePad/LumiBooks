@@ -95,6 +95,16 @@ export interface RegexScriptOption {
   name: string;
 }
 
+export interface RegexScriptPage {
+  scripts: RegexScriptOption[];
+  offset: number;
+  limit: number;
+  total: number;
+}
+
+export type RegexScriptsResponse = { type: "regex_scripts_page"; requestId: string } &
+  ({ page: RegexScriptPage } | { progress: { scanned: number; total: number } } | { error: string });
+
 export interface PendingPreview {
   kind: SummaryKind;
   draftId: string;
@@ -141,7 +151,6 @@ export interface FrontendState {
   volumePresets: BuiltInPreset[];
   codexPresets: BuiltInPreset[];
   customPresets: CustomPreset[];
-  regexScripts: RegexScriptOption[];
   pendingPreviews: PendingPreview[];
   backlogChapters: number;
   backlogArcs: number;
@@ -184,6 +193,7 @@ export interface FrontendState {
 }
 
 export type FrontendToBackend =
+  | { type: "regex_scripts_page"; requestId: string; offset: number; query?: string; refresh?: boolean }
   | { type: "ui_diagnostics"; rows: import("./frontend-diagnostics").UiDiagnosticRow[] }
   | import("./prompt-breakdown").PromptBreakdownRequest
   | { type: "diagnostics_export"; chatId?: string | null }
@@ -280,6 +290,7 @@ export interface DryRunDiagnostic {
 }
 
 export type BackendToFrontend =
+  | RegexScriptsResponse
   | import("./prompt-breakdown").PromptBreakdownResponse
   | { type: "diagnostics_export_data"; filename: string; content: string }
   | { type: "state"; state: FrontendState }

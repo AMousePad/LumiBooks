@@ -118,7 +118,7 @@ export function renderTuningTab(
           renderSummarySettings(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
-          renderRegex(body, state, profile, patch);
+          renderRegex(body, profile, patch, send);
           renderGlobalSettings(body, state, send);
           renderResetSettings(body, state, send);
         } else if (codexLessonGated(state.lessons)) {

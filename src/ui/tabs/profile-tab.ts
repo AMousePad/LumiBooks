@@ -15,7 +15,6 @@ import {
   labelled,
   lessonMark,
   makeButton,
-  multiSelect,
   numberInput,
   section,
   select,
@@ -699,46 +698,7 @@ export function renderCodexSamplers(
   host.appendChild(sec.wrap);
 }
 
-export function renderRegex(
-  host: HTMLElement,
-  state: FrontendState,
-  profile: LMBProfile,
-  patch: (p: Partial<LMBProfile>) => void,
-): void {
-  const sec = section(tr("ui.tabs.profileTab.sec.regex"));
-  if (state.regexScripts.length === 0) {
-    sec.body.appendChild(textNode(tr("ui.tabs.profileTab.renderRegex.noRegexScriptsFoundInLumiverse"), "lmb-empty"));
-    host.appendChild(sec.wrap);
-    return;
-  }
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent =
-    tr("ui.tabs.profileTab.renderRegex.outgoingRunsOnThePromptBeforeMemoria");
-  sec.body.appendChild(help);
-
-  const outgoing = field(tr("ui.tabs.profileTab.outgoing.outgoing"));
-  outgoing.body.appendChild(
-    multiSelect({
-      options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
-      selected: profile.regexOutgoingScriptIds,
-      onChange: (ids) => patch({ regexOutgoingScriptIds: ids }),
-    }),
-  );
-  sec.body.appendChild(outgoing.wrap);
-
-  const incoming = field(tr("ui.tabs.profileTab.incoming.incoming"));
-  incoming.body.appendChild(
-    multiSelect({
-      options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
-      selected: profile.regexIncomingScriptIds,
-      onChange: (ids) => patch({ regexIncomingScriptIds: ids }),
-    }),
-  );
-  sec.body.appendChild(incoming.wrap);
-
-  host.appendChild(sec.wrap);
-}
+export { renderRegex } from "../regex-picker";
 
 export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.context"));

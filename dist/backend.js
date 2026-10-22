@@ -2816,6 +2816,9 @@ var IntlMessageFormat = class IntlMessageFormat {
 // src/locales/en.json
 var en_default = {
   backend: {
+    regex: {
+      searchChanged: "Regex scripts changed while searching. Refresh to try again."
+    },
     binding: {
       messages: {
         selectConsecutiveSummariesWithoutCrossingAnotherSummary: "Select consecutive summaries without crossing another summary tier"
@@ -3712,6 +3715,19 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
     summaryKindTag: "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {Codex} other {{kind}}}"
   },
   ui: {
+    regexPicker: {
+      searchProgress: "Searching scripts\u2026 {scanned, number} of {total, number} checked",
+      search: "Search regex names\u2026",
+      noMatches: "No matching regex scripts.",
+      previous: "Previous",
+      next: "Next",
+      page: "Page",
+      refresh: "Refresh",
+      loading: "Loading regex scripts\u2026",
+      failed: "Could not load this page. Select Refresh to retry.",
+      range: "{first}\u2013{last} of {total} scripts",
+      selected: "{count} selected across all pages"
+    },
     activationControl: {
       activationControl: {
         always: "Always",
@@ -9297,7 +9313,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.1.1",
+  version: "1.1.2",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -9327,6 +9343,7 @@ var UI_OPERATIONS = [
   "ready",
   "refresh",
   "prompt_breakdown",
+  "regex_scripts_page",
   "save_settings",
   "save_profile",
   "save_samplers",
@@ -9863,35 +9880,111 @@ async function captureDiagnosticSnapshot(userId, chatId) {
 
 // src/backend/regex.ts
 var TTL_MS = 5000;
+var PAGE_LIMIT2 = 50;
+var CACHE_LIMIT = 500;
 var cachedScripts = new Map;
-async function listRegexScripts(userId) {
-  const cached = cachedScripts.get(userId);
-  if (cached && Date.now() - cached.at < TTL_MS)
-    return cached.data;
+var SEARCH_TTL_MS = 60000;
+var SEARCH_PAGE_LIMIT = 200;
+var searchIndexes = new Map;
+async function listRegexScriptsPage(userId, requestedOffset, query = "", onProgress, refresh = false) {
+  const offset = Number.isSafeInteger(requestedOffset) && requestedOffset >= 0 ? Math.floor(requestedOffset / PAGE_LIMIT2) * PAGE_LIMIT2 : 0;
+  const needle = typeof query === "string" ? query.trim().toLowerCase() : "";
+  if (refresh)
+    invalidateRegexCache(userId);
+  if (needle) {
+    const rows = await searchIndex(userId, onProgress);
+    const matches = rows.filter((row) => row.name.toLowerCase().includes(needle));
+    return { scripts: matches.slice(offset, offset + PAGE_LIMIT2), total: matches.length, offset, limit: PAGE_LIMIT2 };
+  }
+  const page = await spindle.regex_scripts.list({ userId, limit: PAGE_LIMIT2, offset });
+  return { scripts: page.data.map(({ id, name }) => ({ id, name })), total: page.total, offset, limit: PAGE_LIMIT2 };
+}
+async function searchIndex(userId, onProgress) {
+  let index = searchIndexes.get(userId);
+  if (!index || index.at && Date.now() - index.at >= SEARCH_TTL_MS) {
+    index = { rows: [], at: 0, invalidated: false, progress: { scanned: 0, total: 0 }, listeners: new Set, ready: Promise.resolve() };
+    const current = index;
+    searchIndexes.delete(userId);
+    searchIndexes.set(userId, current);
+    while (searchIndexes.size > 8)
+      searchIndexes.delete(searchIndexes.keys().next().value);
+    current.ready = (async () => {
+      let offset = 0;
+      try {
+        while (true) {
+          const page = await spindle.regex_scripts.list({ userId, limit: SEARCH_PAGE_LIMIT, offset });
+          if (current.invalidated)
+            throw new Error(t("backend.regex.searchChanged"));
+          current.rows.push(...page.data.map(({ id, name }) => ({ id, name })));
+          offset += page.data.length;
+          current.progress = { scanned: offset, total: page.total };
+          for (const listener of current.listeners) {
+            try {
+              listener(current.progress);
+            } catch {}
+          }
+          if (offset >= page.total || page.data.length === 0)
+            break;
+        }
+        current.at = Date.now();
+      } catch (err) {
+        if (searchIndexes.get(userId) === current)
+          searchIndexes.delete(userId);
+        throw err;
+      }
+    })();
+  }
+  if (onProgress)
+    index.listeners.add(onProgress);
   try {
-    const result = await spindle.regex_scripts.list({ userId });
-    cachedScripts.set(userId, { at: Date.now(), data: result.data });
-    return result.data;
-  } catch (err) {
-    warn(`regex_scripts.list failed: ${describeError(err)}`);
-    cachedScripts.set(userId, { at: Date.now(), data: [] });
-    return [];
+    if (onProgress && index.progress.scanned) {
+      try {
+        onProgress(index.progress);
+      } catch {}
+    }
+    await index.ready;
+    if (index.invalidated)
+      throw new Error(t("backend.regex.searchChanged"));
+    return index.rows;
+  } finally {
+    if (onProgress)
+      index.listeners.delete(onProgress);
   }
 }
 function invalidateRegexCache(userId) {
-  if (userId)
-    cachedScripts.delete(userId);
-  else
+  if (!userId) {
     cachedScripts.clear();
+    for (const index of searchIndexes.values())
+      index.invalidated = true;
+    searchIndexes.clear();
+  } else {
+    for (const [key, value] of cachedScripts)
+      if (value.userId === userId)
+        cachedScripts.delete(key);
+    const index = searchIndexes.get(userId);
+    if (index)
+      index.invalidated = true;
+    searchIndexes.delete(userId);
+  }
+}
+async function getScript(userId, id) {
+  const key = JSON.stringify([userId, id]);
+  const cached = cachedScripts.get(key);
+  if (cached && Date.now() - cached.at < TTL_MS)
+    return cached.script;
+  const script = await spindle.regex_scripts.get(id, userId);
+  cachedScripts.delete(key);
+  cachedScripts.set(key, { userId, at: Date.now(), script });
+  while (cachedScripts.size > CACHE_LIMIT)
+    cachedScripts.delete(cachedScripts.keys().next().value);
+  return script;
 }
 async function applySelectedRegex(text, scriptIds, userId) {
   if (!scriptIds.length)
     return text;
-  const all = await listRegexScripts(userId);
-  const byId = new Map(all.map((s) => [s.id, s]));
   let out = text;
   for (const id of scriptIds) {
-    const script = byId.get(id);
+    const script = await getScript(userId, id);
     if (!script)
       continue;
     out = runScript(out, script);
@@ -17311,9 +17404,8 @@ async function buildState(userId, requestedChatId) {
   } else {
     chat = await spindle.chats.getActive(userId).catch(() => null);
   }
-  const [connectionsRaw, regexScriptsRaw, rootCandidatesRaw] = await Promise.all([
+  const [connectionsRaw, rootCandidatesRaw] = await Promise.all([
     listConnections(userId),
-    listRegexScripts(userId),
     listRootCandidates(userId).catch(() => [])
   ]);
   const connections = connectionsRaw.map((c) => ({
@@ -17324,7 +17416,6 @@ async function buildState(userId, requestedChatId) {
     isDefault: c.is_default,
     hasApiKey: c.has_api_key
   }));
-  const regexScripts = regexScriptsRaw.map((s) => ({ id: s.id, name: s.name }));
   const allRootCandidates = rootCandidatesRaw.map((c) => ({
     chatId: c.chatId,
     chatName: c.chatName,
@@ -17362,7 +17453,6 @@ async function buildState(userId, requestedChatId) {
     volumePresets: BUILTIN_VOLUME_PRESETS,
     codexPresets: BUILTIN_CODEX_PRESETS,
     customPresets: settings.customPresets,
-    regexScripts,
     pendingPreviews: [],
     backlogChapters: 0,
     backlogArcs: 0,
@@ -17913,6 +18003,15 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "regex_scripts_page": {
+        try {
+          const page = await listRegexScriptsPage(userId, msg.offset, msg.query, (progress) => send({ type: "regex_scripts_page", requestId: msg.requestId, progress }, userId), msg.refresh);
+          send({ type: "regex_scripts_page", requestId: msg.requestId, page }, userId);
+        } catch (err) {
+          send({ type: "regex_scripts_page", requestId: msg.requestId, error: describeError(err) }, userId);
+        }
+        break;
+      }
       case "prompt_breakdown":
         send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, result: await loadPromptBreakdown(msg, userId) }, userId);
         break;

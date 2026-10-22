@@ -6,6 +6,7 @@ import { makeButton, preserveScroll, scrollPaneTop, showToast } from "./componen
 import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
 import { deliverStreamText, renderHomeTab, resetHomeTabLocal, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { deliverPromptBreakdown } from "./prompt-breakdown";
+import { deliverRegexScriptsPage, resetRegexPicker } from "./regex-picker";
 import { focusShelfEntry, renderBooksTab } from "./tabs/books-tab";
 import { codexWantsRefresh, deliverCodexFiles, deliverCodexFileState, downloadCodexBackup, renderCodexTab } from "./tabs/codex-tab";
 import { renderTuningTab } from "./tabs/tuning-tab";
@@ -326,6 +327,9 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
       code: msg.type === "state_error" || msg.type === "error" || (msg.type === "codex_file_state_saved" && msg.error)
         || (msg.type === "summary_transfer_status" && msg.status.stage === "error") ? "failed" : undefined });
     switch (msg.type) {
+      case "regex_scripts_page":
+        deliverRegexScriptsPage(msg);
+        break;
       case "prompt_breakdown":
         deliverPromptBreakdown(msg);
         break;
@@ -477,6 +481,7 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
 
   return () => {
     disposed = true;
+    resetRegexPicker();
     resetHomeTabLocal();
     clearLoadTimer();
     try { if (engine.isActive()) engine.exit(); } catch (_) { void _; }

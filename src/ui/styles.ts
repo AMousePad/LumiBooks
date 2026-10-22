@@ -845,6 +845,55 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 }
 .lmb-multiselect-row:hover { background: var(--lmb-frame-faint); }
 
+/* Compact regex browser controls, matching the RisuRealm pager. */
+.lmb-regex-results { display: flex; flex-direction: column; gap: 12px; }
+.lmb-regex-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.lmb-regex-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--lmb-edge);
+  border-radius: 999px;
+  background: var(--lmb-fill);
+  box-shadow: var(--lmb-lift);
+}
+.lmb-regex-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lmb-ink);
+  cursor: pointer;
+}
+.lmb-regex-arrow:hover:not(:disabled) { background: var(--lmb-fill-hover); color: var(--lmb-gold); }
+.lmb-regex-arrow:disabled, .lmb-regex-page:disabled { opacity: 0.4; cursor: not-allowed; }
+.lmb-regex-page {
+  appearance: textfield;
+  width: 48px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--lmb-r);
+  background: transparent;
+  color: var(--lmb-ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lmb-regex-page::-webkit-inner-spin-button,
+.lmb-regex-page::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.lmb-regex-pager :focus-visible { outline: 2px solid var(--lmb-gold); outline-offset: 1px; }
+.lmb-regex-range { margin-left: auto; }
+.lmb-regex-group-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; }
+.lmb-regex-group-heading .lmb-help { font-weight: 400; letter-spacing: normal; text-transform: none; }
+
 /* ------------------------------------------------------------------ pills */
 /* Pills are STATUS, not controls: no border-box (that's the button costume),
    a status diamond instead, and sentence case so they read at a glance. */

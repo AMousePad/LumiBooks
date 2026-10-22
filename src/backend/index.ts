@@ -103,7 +103,7 @@ import { registerForkAnomalyCallback } from "./fork";
 import { captureDiagnosticSnapshot, clearDiagnostics, exportDiagnostics, recordFrontendAction, recordDiagnostic, recordUiDiagnostics } from "./diagnostics";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
 import { invalidateConnectionsCache } from "./summarizer";
-import { invalidateRegexCache } from "./regex";
+import { invalidateRegexCache, listRegexScriptsPage } from "./regex";
 import { publishCodexWiped, registerHookEndpoints } from "./hooks";
 import { buildState } from "./state";
 import { summaryRuns } from "./binding";
@@ -541,6 +541,16 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "regex_scripts_page": {
+        try {
+          const page = await listRegexScriptsPage(userId, msg.offset, msg.query,
+            (progress) => send({ type: "regex_scripts_page", requestId: msg.requestId, progress }, userId), msg.refresh);
+          send({ type: "regex_scripts_page", requestId: msg.requestId, page }, userId);
+        } catch (err) {
+          send({ type: "regex_scripts_page", requestId: msg.requestId, error: describeError(err) }, userId);
+        }
+        break;
+      }
       case "prompt_breakdown":
         send({ type: "prompt_breakdown", requestId: msg.requestId, chatId: msg.chatId, result: await loadPromptBreakdown(msg, userId) }, userId);
         break;

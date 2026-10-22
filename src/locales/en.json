@@ -1,5 +1,8 @@
 {
   "backend": {
+    "regex": {
+      "searchChanged": "Regex scripts changed while searching. Refresh to try again."
+    },
     "binding": {
       "messages": {
         "selectConsecutiveSummariesWithoutCrossingAnotherSummary": "Select consecutive summaries without crossing another summary tier"
@@ -881,6 +884,19 @@
     "summaryKindTag": "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {Codex} other {{kind}}}"
   },
   "ui": {
+    "regexPicker": {
+      "searchProgress": "Searching scripts… {scanned, number} of {total, number} checked",
+      "search": "Search regex names…",
+      "noMatches": "No matching regex scripts.",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page",
+      "refresh": "Refresh",
+      "loading": "Loading regex scripts…",
+      "failed": "Could not load this page. Select Refresh to retry.",
+      "range": "{first}–{last} of {total} scripts",
+      "selected": "{count} selected across all pages"
+    },
     "activationControl": {
       "activationControl": {
         "always": "Always",

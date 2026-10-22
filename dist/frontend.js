@@ -2815,6 +2815,9 @@ var IntlMessageFormat = class IntlMessageFormat {
 // src/locales/en.json
 var en_default = {
   backend: {
+    regex: {
+      searchChanged: "Regex scripts changed while searching. Refresh to try again."
+    },
     binding: {
       messages: {
         selectConsecutiveSummariesWithoutCrossingAnotherSummary: "Select consecutive summaries without crossing another summary tier"
@@ -3711,6 +3714,19 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
     summaryKindTag: "{kind, select, chapter {CHAPTER} arc {ARC} volume {VOLUME} series {SERIES} saga {SAGA} library {LIBRARY} universe {UNIVERSE} codex {Codex} other {{kind}}}"
   },
   ui: {
+    regexPicker: {
+      searchProgress: "Searching scripts… {scanned, number} of {total, number} checked",
+      search: "Search regex names…",
+      noMatches: "No matching regex scripts.",
+      previous: "Previous",
+      next: "Next",
+      page: "Page",
+      refresh: "Refresh",
+      loading: "Loading regex scripts…",
+      failed: "Could not load this page. Select Refresh to retry.",
+      range: "{first}–{last} of {total} scripts",
+      selected: "{count} selected across all pages"
+    },
     activationControl: {
       activationControl: {
         always: "Always",
@@ -7374,6 +7390,55 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 }
 .lmb-multiselect-row:hover { background: var(--lmb-frame-faint); }
 
+/* Compact regex browser controls, matching the RisuRealm pager. */
+.lmb-regex-results { display: flex; flex-direction: column; gap: 12px; }
+.lmb-regex-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.lmb-regex-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--lmb-edge);
+  border-radius: 999px;
+  background: var(--lmb-fill);
+  box-shadow: var(--lmb-lift);
+}
+.lmb-regex-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lmb-ink);
+  cursor: pointer;
+}
+.lmb-regex-arrow:hover:not(:disabled) { background: var(--lmb-fill-hover); color: var(--lmb-gold); }
+.lmb-regex-arrow:disabled, .lmb-regex-page:disabled { opacity: 0.4; cursor: not-allowed; }
+.lmb-regex-page {
+  appearance: textfield;
+  width: 48px;
+  height: 28px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--lmb-r);
+  background: transparent;
+  color: var(--lmb-ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lmb-regex-page::-webkit-inner-spin-button,
+.lmb-regex-page::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.lmb-regex-pager :focus-visible { outline: 2px solid var(--lmb-gold); outline-offset: 1px; }
+.lmb-regex-range { margin-left: auto; }
+.lmb-regex-group-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; }
+.lmb-regex-group-heading .lmb-help { font-weight: 400; letter-spacing: normal; text-transform: none; }
+
 /* ------------------------------------------------------------------ pills */
 /* Pills are STATUS, not controls: no border-box (that's the button costume),
    a status diamond instead, and sentence case so they read at a glance. */
@@ -8365,6 +8430,7 @@ var UI_OPERATIONS = [
   "ready",
   "refresh",
   "prompt_breakdown",
+  "regex_scripts_page",
   "save_settings",
   "save_profile",
   "save_samplers",
@@ -11419,6 +11485,208 @@ function resetHomeTabLocal() {
   promptCache.expanded.clear();
 }
 
+// src/ui/regex-picker.ts
+var page = null;
+var loadedAt = 0;
+var pending2 = null;
+var requestedOffset = 0;
+var failed = false;
+var timer;
+var searchTimer;
+var query = "";
+var pageQuery = "";
+var pendingQuery = "";
+var progress = null;
+var repaint;
+function resetRegexPicker() {
+  clearTimeout(timer);
+  clearTimeout(searchTimer);
+  searchTimer = undefined;
+  query = "";
+  pageQuery = "";
+  pendingQuery = "";
+  progress = null;
+  page = null;
+  loadedAt = 0;
+  pending2 = null;
+  requestedOffset = 0;
+  failed = false;
+  repaint = undefined;
+}
+function deliverRegexScriptsPage(message) {
+  if (message.requestId !== pending2)
+    return;
+  if ("progress" in message) {
+    progress = message.progress;
+    armTimeout(message.requestId);
+    repaint?.();
+    return;
+  }
+  clearTimeout(timer);
+  pending2 = null;
+  failed = "error" in message;
+  if ("page" in message) {
+    page = message.page;
+    pageQuery = pendingQuery;
+    loadedAt = Date.now();
+  }
+  repaint?.();
+}
+function armTimeout(requestId) {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    if (pending2 !== requestId)
+      return;
+    pending2 = null;
+    failed = true;
+    repaint?.();
+  }, 30000);
+}
+function renderRegex(host, profile, patch, send) {
+  const sec = section(t("ui.tabs.profileTab.sec.regex"));
+  host.appendChild(sec.wrap);
+  let outgoingIds = profile.regexOutgoingScriptIds.slice();
+  let incomingIds = profile.regexIncomingScriptIds.slice();
+  sec.body.appendChild(textNode(t("ui.tabs.profileTab.renderRegex.outgoingRunsOnThePromptBeforeMemoria"), "lmb-help"));
+  const search = searchField({ value: query, placeholder: t("ui.regexPicker.search"), onChange: (value) => {
+    query = value;
+    clearTimeout(timer);
+    pending2 = null;
+    failed = false;
+    progress = null;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchTimer = undefined;
+      load(0);
+    }, 250);
+    draw();
+  } });
+  const results = document.createElement("div");
+  results.className = "lmb-regex-results";
+  sec.body.append(search.wrap, results);
+  function load(offset, refresh = false) {
+    clearTimeout(searchTimer);
+    searchTimer = undefined;
+    clearTimeout(timer);
+    pendingQuery = query.trim();
+    requestedOffset = offset;
+    failed = false;
+    progress = null;
+    const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    pending2 = requestId;
+    armTimeout(requestId);
+    draw();
+    try {
+      send({ type: "regex_scripts_page", requestId, offset, query: pendingQuery, refresh });
+    } catch {
+      clearTimeout(timer);
+      pending2 = null;
+      failed = true;
+      draw();
+    }
+  }
+  function draw() {
+    results.replaceChildren();
+    const visiblePage = pageQuery === query.trim() ? page : null;
+    const loading = !!pending2 || !!searchTimer;
+    const navigation = document.createElement("div");
+    navigation.className = "lmb-regex-toolbar";
+    const limit = visiblePage?.limit ?? 50;
+    const offset = visiblePage?.offset ?? 0;
+    const total = visiblePage?.total ?? 0;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const pager = document.createElement("div");
+    pager.className = "lmb-regex-pager";
+    const jump = numberInput({
+      value: offset / limit + 1,
+      min: 1,
+      max: pages,
+      step: 1,
+      disabled: loading || !visiblePage,
+      onBlur: (value) => {
+        if (loading || !visiblePage)
+          return;
+        const next = (Math.min(pages, Math.max(1, Math.floor(value ?? offset / limit + 1))) - 1) * limit;
+        jump.value = String(next / limit + 1);
+        if (next !== offset)
+          load(next);
+      }
+    });
+    jump.className = "lmb-regex-page";
+    jump.inputMode = "numeric";
+    jump.enterKeyHint = "go";
+    jump.setAttribute("aria-label", t("ui.regexPicker.page"));
+    jump.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        jump.blur();
+      }
+    });
+    const previous = makeButton("", () => load(Math.max(0, offset - limit)), { title: t("ui.regexPicker.previous"), disabled: loading || offset === 0 });
+    const next = makeButton("", () => load(offset + limit), { title: t("ui.regexPicker.next"), disabled: loading || offset + limit >= total });
+    for (const [button, label, points] of [
+      [previous, t("ui.regexPicker.previous"), "15 18 9 12 15 6"],
+      [next, t("ui.regexPicker.next"), "9 18 15 12 9 6"]
+    ]) {
+      button.className = "lmb-regex-arrow";
+      button.setAttribute("aria-label", label);
+      button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="${points}"/></svg>`;
+    }
+    pager.append(previous, jump, next);
+    navigation.append(pager, makeButton(t("ui.regexPicker.refresh"), () => load(failed ? requestedOffset : Math.min(offset, (pages - 1) * limit), true), { small: true, disabled: loading }));
+    if (visiblePage)
+      navigation.appendChild(textNode(t("ui.regexPicker.range", {
+        first: visiblePage.scripts.length ? offset + 1 : 0,
+        last: visiblePage.scripts.length ? offset + visiblePage.scripts.length : 0,
+        total
+      }), "lmb-help lmb-regex-range"));
+    results.appendChild(navigation);
+    if (loading)
+      results.appendChild(textNode(progress ? t("ui.regexPicker.searchProgress", { scanned: progress.scanned, total: progress.total }) : t("ui.regexPicker.loading"), "lmb-help"));
+    if (failed)
+      results.appendChild(textNode(t("ui.regexPicker.failed"), "lmb-help"));
+    if (!visiblePage)
+      return;
+    if (!visiblePage.scripts.length) {
+      results.appendChild(textNode(query.trim() ? t("ui.regexPicker.noMatches") : t("ui.tabs.profileTab.renderRegex.noRegexScriptsFoundInLumiverse"), "lmb-empty"));
+      return;
+    }
+    const options = visiblePage.scripts.map((script) => ({ value: script.id, label: script.name }));
+    const outgoing = field(t("ui.tabs.profileTab.outgoing.outgoing"));
+    outgoing.wrap.firstElementChild.classList.add("lmb-regex-group-heading");
+    outgoing.wrap.firstElementChild.appendChild(textNode(t("ui.regexPicker.selected", { count: outgoingIds.length }), "lmb-help"));
+    outgoing.body.append(multiSelect({
+      options,
+      selected: outgoingIds,
+      onChange: (ids) => {
+        outgoingIds = ids;
+        patch({ regexOutgoingScriptIds: ids });
+        draw();
+      }
+    }));
+    const incoming = field(t("ui.tabs.profileTab.incoming.incoming"));
+    incoming.wrap.firstElementChild.classList.add("lmb-regex-group-heading");
+    incoming.wrap.firstElementChild.appendChild(textNode(t("ui.regexPicker.selected", { count: incomingIds.length }), "lmb-help"));
+    incoming.body.append(multiSelect({
+      options,
+      selected: incomingIds,
+      onChange: (ids) => {
+        incomingIds = ids;
+        patch({ regexIncomingScriptIds: ids });
+        draw();
+      }
+    }));
+    results.append(outgoing.wrap, incoming.wrap);
+  }
+  repaint = () => {
+    if (sec.wrap.isConnected)
+      draw();
+  };
+  draw();
+  if (!pending2 && !searchTimer && !failed && (!page || Date.now() - loadedAt >= 5000))
+    load(page?.offset ?? 0);
+}
+
 // src/ui/summary-transfer.ts
 function reportLocalSummaryTransfer(chatId, text, stage = "working") {
   document.dispatchEvent(new CustomEvent("lmb-summary-transfer", { detail: { id: "local", chatId, stage, text } }));
@@ -13089,7 +13357,7 @@ function clearNow() {
 function Timer() {
   this._call = this._time = this._next = null;
 }
-Timer.prototype = timer.prototype = {
+Timer.prototype = timer2.prototype = {
   constructor: Timer,
   restart: function(callback, delay, time) {
     if (typeof callback !== "function")
@@ -13114,7 +13382,7 @@ Timer.prototype = timer.prototype = {
     }
   }
 };
-function timer(callback, delay, time) {
+function timer2(callback, delay, time) {
   var t = new Timer;
   t.restart(callback, delay, time);
   return t;
@@ -13197,7 +13465,7 @@ function y2(d) {
 var initialRadius = 10;
 var initialAngle = Math.PI * (3 - Math.sqrt(5));
 function simulation_default(nodes) {
-  var simulation, alpha = 1, alphaMin = 0.001, alphaDecay = 1 - Math.pow(alphaMin, 1 / 300), alphaTarget = 0, velocityDecay = 0.6, forces = new Map, stepper = timer(step), event = dispatch_default("tick", "end"), random = lcg_default();
+  var simulation, alpha = 1, alphaMin = 0.001, alphaDecay = 1 - Math.pow(alphaMin, 1 / 300), alphaTarget = 0, velocityDecay = 0.6, forces = new Map, stepper = timer2(step), event = dispatch_default("tick", "end"), random = lcg_default();
   if (nodes == null)
     nodes = [];
   function step() {
@@ -16653,33 +16921,6 @@ function renderCodexSamplers(host, state, profile, send) {
   sec.body.appendChild(sampleGrid);
   host.appendChild(sec.wrap);
 }
-function renderRegex(host, state, profile, patch) {
-  const sec = section(t("ui.tabs.profileTab.sec.regex"));
-  if (state.regexScripts.length === 0) {
-    sec.body.appendChild(textNode(t("ui.tabs.profileTab.renderRegex.noRegexScriptsFoundInLumiverse"), "lmb-empty"));
-    host.appendChild(sec.wrap);
-    return;
-  }
-  const help = document.createElement("div");
-  help.className = "lmb-help";
-  help.textContent = t("ui.tabs.profileTab.renderRegex.outgoingRunsOnThePromptBeforeMemoria");
-  sec.body.appendChild(help);
-  const outgoing = field(t("ui.tabs.profileTab.outgoing.outgoing"));
-  outgoing.body.appendChild(multiSelect({
-    options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
-    selected: profile.regexOutgoingScriptIds,
-    onChange: (ids) => patch({ regexOutgoingScriptIds: ids })
-  }));
-  sec.body.appendChild(outgoing.wrap);
-  const incoming = field(t("ui.tabs.profileTab.incoming.incoming"));
-  incoming.body.appendChild(multiSelect({
-    options: state.regexScripts.map((s) => ({ value: s.id, label: s.name })),
-    selected: profile.regexIncomingScriptIds,
-    onChange: (ids) => patch({ regexIncomingScriptIds: ids })
-  }));
-  sec.body.appendChild(incoming.wrap);
-  host.appendChild(sec.wrap);
-}
 function renderContext(host, profile, patch) {
   const sec = section(t("ui.tabs.profileTab.sec.context"));
   lessonMark(sec.wrap, "tuning.ctx");
@@ -17349,7 +17590,7 @@ function renderTuningTab(host, state, ctx, send) {
           renderSummarySettings(body, profile, patch);
           renderContext(body, profile, patch);
           renderBehavior(body, profile, patch);
-          renderRegex(body, state, profile, patch);
+          renderRegex(body, profile, patch, send);
           renderGlobalSettings(body, state, send);
           renderResetSettings(body, state, send);
         } else if (codexLessonGated(state.lessons)) {
@@ -19444,7 +19685,6 @@ function buildFixture(variant) {
     volumePresets: BUILTIN_VOLUME_PRESETS,
     codexPresets: BUILTIN_CODEX_PRESETS,
     customPresets: [],
-    regexScripts: [],
     pendingPreviews: [],
     backlogChapters: Math.floor(headroom / Math.max(1, profile.windowValue)),
     backlogArcs: 0,
@@ -21415,6 +21655,9 @@ function setupApp(ctx, diagnostics, setContext) {
         code: msg.type === "state_error" || msg.type === "error" || msg.type === "codex_file_state_saved" && msg.error || msg.type === "summary_transfer_status" && msg.status.stage === "error" ? "failed" : undefined
       });
       switch (msg.type) {
+        case "regex_scripts_page":
+          deliverRegexScriptsPage(msg);
+          break;
         case "prompt_breakdown":
           deliverPromptBreakdown(msg);
           break;
@@ -21563,6 +21806,7 @@ function setupApp(ctx, diagnostics, setContext) {
   requestState("ready");
   return () => {
     disposed = true;
+    resetRegexPicker();
     resetHomeTabLocal();
     clearLoadTimer();
     try {

@@ -6,7 +6,8 @@ import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
-import { renderCodexSettings } from "./profile-tab";
+import { renderCodexSettings, renderRegex } from "./profile-tab";
+import { deliverRegexScriptsPage, resetRegexPicker } from "../regex-picker";
 import { renderAboutTab } from "./about-tab";
 import { createSummaryTransferPanel } from "../summary-transfer";
 import { makeDefaultProfile } from "../../shared";
@@ -42,6 +43,7 @@ class Element {
     this.listeners.set(name, [...(this.listeners.get(name) ?? []), listener]);
   }
   dispatch(name: string): void { this.listeners.get(name)?.forEach((fn) => fn({ preventDefault() {} })); }
+  focus(): void {}
 }
 
 const walk = (root: Element): Element[] => [root, ...root.children.flatMap(walk)];
@@ -67,6 +69,7 @@ beforeEach(() => {
   resetBooksTabLocal();
 });
 afterEach(() => {
+  resetRegexPicker();
   resetCodexTabLocal();
   resetHomeTabLocal();
   resetBooksTabLocal();
@@ -74,6 +77,103 @@ afterEach(() => {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor);
     else Reflect.deleteProperty(globalThis, key);
   }
+});
+
+test("regex pages load on demand and both selectors preserve off-page selections", () => {
+  const profile = makeDefaultProfile("regex-test");
+  profile.regexOutgoingScriptIds = ["regex-9999"];
+  profile.regexIncomingScriptIds = ["regex-8000"];
+  const patches: any[] = [], sent: any[] = [];
+  const host = new Element("div");
+  renderRegex(host as unknown as HTMLElement, profile, (patch) => patches.push(patch), (message) => sent.push(message));
+  const reply = () => {
+    const request = sent.at(-1);
+    deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: request.requestId, page: {
+      offset: request.offset, limit: 50, total: 10_001,
+      scripts: Array.from({ length: 50 }, (_, i) => ({ id: `regex-${request.offset + i}`, name: `Regex ${request.offset + i}` })),
+    } });
+  };
+  const button = (text: string) => walk(host).find((e) => e.tagName === "button" && (e.attributes["aria-label"] ?? e.textContent) === text)!;
+  const selectors = () => walk(host).filter((e) => e.className === "lmb-multiselect");
+  const select = (group: number, row: number, checked: boolean) => {
+    const box = selectors()[group]!.children[row]!.children[0]!;
+    box.checked = checked; box.dispatch("change");
+  };
+  expect(sent).toHaveLength(1);
+  expect(sent[0].offset).toBe(0);
+  reply();
+  expect(button("Previous").disabled).toBe(true);
+  expect(selectors().map((s) => s.children.length)).toEqual([50, 50]);
+  select(0, 0, true);
+  button("Next").dispatch("click");
+  expect(sent.at(-1).offset).toBe(50);
+  expect(button("Next").disabled).toBe(true);
+  reply();
+  expect(selectors()[0]!.children[0]!.textContent).toBe("Regex 50");
+  select(0, 0, true);
+  select(1, 1, true);
+  expect(patches.at(-2)).toEqual({ regexOutgoingScriptIds: ["regex-9999", "regex-0", "regex-50"] });
+  expect(patches.at(-1)).toEqual({ regexIncomingScriptIds: ["regex-8000", "regex-51"] });
+  button("Previous").dispatch("click"); reply();
+  expect(selectors()[0]!.children[0]!.children[0]!.checked).toBe(true);
+  select(0, 0, false);
+  expect(patches.at(-1)).toEqual({ regexOutgoingScriptIds: ["regex-9999", "regex-50"] });
+  const jump = walk(host).find((e) => e.tagName === "input" && e.attributes["aria-label"] === "Page")!;
+  jump.value = "201"; jump.dispatch("blur");
+  expect(sent.at(-1).offset).toBe(10_000);
+  const request = sent.at(-1);
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: request.requestId, page: { offset: 10_000, limit: 50, total: 10_001, scripts: [{ id: "regex-10000", name: "Last" }] } });
+  expect(button("Next").disabled).toBe(true);
+  expect(selectors().map((s) => s.children.length)).toEqual([1, 1]);
+});
+
+test("regex page responses survive rerenders, reject stale replies and allow retry after failure", () => {
+  const profile = makeDefaultProfile("regex-test"), sent: any[] = [];
+  const first = new Element("div"), current = new Element("div");
+  renderRegex(first as unknown as HTMLElement, profile, () => {}, (message) => sent.push(message));
+  renderRegex(current as unknown as HTMLElement, profile, () => {}, (message) => sent.push(message));
+  expect(sent).toHaveLength(1);
+  const request = sent[0];
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: "stale", page: { scripts: [], offset: 0, limit: 50, total: 0 } });
+  expect(current.textContent).toContain("Loading regex scripts");
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: request.requestId, error: "failed" });
+  expect(current.textContent).toContain("Could not load this page");
+  walk(current).find((e) => e.tagName === "button" && e.textContent === "Refresh")!.dispatch("click");
+  expect(sent).toHaveLength(2);
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: sent[1].requestId, page: { scripts: [], offset: 0, limit: 50, total: 0 } });
+  expect(current.textContent).toContain("No regex scripts");
+});
+
+test("regex search reuses the shared field, debounces requests and keeps selections across queries", async () => {
+  const profile = makeDefaultProfile("regex-search"), sent: any[] = [], patches: any[] = [];
+  profile.regexOutgoingScriptIds = ["off-page"];
+  const host = new Element("div");
+  renderRegex(host as unknown as HTMLElement, profile, (patch) => patches.push(patch), (message) => sent.push(message));
+  const initial = sent[0];
+  const input = walk(host).find((e) => e.className === "lmb-search-input")!;
+  expect(input).toBeDefined();
+  input.value = "R"; input.dispatch("input");
+  input.value = "Rare"; input.dispatch("input");
+  expect(sent).toHaveLength(1);
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: initial.requestId,
+    page: { offset: 0, limit: 50, total: 1, scripts: [{ id: "old", name: "Old response" }] } });
+  expect(host.textContent).not.toContain("Old response");
+  await Bun.sleep(280);
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toMatchObject({ query: "Rare", offset: 0 });
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: sent[1].requestId, progress: { scanned: 200, total: 10_001 } });
+  expect(host.textContent).toContain("200 of 10,001 checked");
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: initial.requestId, progress: { scanned: 999, total: 999 } });
+  expect(host.textContent).not.toContain("999 of 999");
+  deliverRegexScriptsPage({ type: "regex_scripts_page", requestId: sent[1].requestId,
+    page: { offset: 0, limit: 50, total: 1, scripts: [{ id: "rare", name: "Rare match" }] } });
+  expect(walk(host).find((e) => e.className === "lmb-search-input")).toBe(input);
+  const select = walk(host).find((e) => e.className === "lmb-multiselect")!.children[0]!.children[0]!;
+  select.checked = true; select.dispatch("change");
+  expect(patches.at(-1)).toEqual({ regexOutgoingScriptIds: ["off-page", "rare"] });
+  walk(host).find((e) => e.className === "lmb-search-clear")!.dispatch("click");
+  await Bun.sleep(280);
+  expect(sent.at(-1)).toMatchObject({ query: "", offset: 0 });
 });
 
 function entry(tier: SummaryTier, index: number, active = true, isRoot = false, isGhost = false): ArcView {

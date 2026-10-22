@@ -3,7 +3,7 @@ export const UI_KINDS = ["start", "stop", "view", "click", "change", "render", "
 export const UI_VIEWS = ["startup", "home", "books", "codex", "tuning", "stuff", "lesson", "unknown"] as const;
 export const UI_CODES = ["ok", "failed", "unknown", "TypeError", "ReferenceError", "RangeError", "SyntaxError", "AbortError", "TimeoutError", "Error", "state", "prompt", "closed", "stale", "button", "input", "select", "textarea", "image", "stylesheet"] as const;
 export const UI_OPERATIONS = [
-  "ready", "refresh", "prompt_breakdown", "save_settings", "save_profile", "save_samplers", "create_profile", "delete_profile", "set_active_profile",
+  "ready", "refresh", "prompt_breakdown", "regex_scripts_page", "save_settings", "save_profile", "save_samplers", "create_profile", "delete_profile", "set_active_profile",
   "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs", "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure",
   "delete_entry", "release_entry", "regenerate_entry", "update_entry", "resync_hidden", "resync_visibility", "set_summary_activation", "abort_busy",
   "dry_run_chapter", "dry_run_arc", "dry_run_volume", "dry_run_codex", "ensure_book", "import_preset", "save_custom_preset", "delete_custom_preset",
