@@ -1,0 +1,2869 @@
+{
+  "backend": {
+    "binding": {
+      "messages": {
+        "selectConsecutiveSummariesWithoutCrossingAnotherSummary": "다른 요약 단계를 건너뛰지 않고 연속된 요약을 선택하세요"
+      }
+    },
+    "codex": {
+      "agent": {
+        "messages": {
+          "theAssembledCodexPromptIsKTokens": "코덱스 프롬프트: ~{round}k 토큰, 한도: {round2}k. 조정 > 연결 > 코덱스에서 최대 입력 토큰을 늘리거나, 조정 > 설정 > 코덱스에서 윈도우·제공 챕터 수·월드북 한도를 줄이세요. 코덱스 > 개요에서 기록을 동결해도 입력이 줄어요."
+        },
+        "resolveCodexConnection": {
+          "codexConnectionHasNoModelSetPick": "코덱스 연결 \"{id}\"에 모델이 설정되지 않았어요. 설정에서 모델을 고르세요",
+          "noConnectionAvailableForTheCodex": "코덱스에 쓸 수 있는 연결이 없어요"
+        },
+        "keptSuffix": {
+          "memoriaKeptTheRecordSheFinishedAnd": " 기록 {length}개는 저장했어요. 나머지는 다음에 다시 시도해요."
+        },
+        "runCodexAgentInner": {
+          "round": "\n\n═══ {rounds}번째 라운드 ═══\n",
+          "fullRewriteKChars": "전체 다시 쓰기, {toFixed}k자",
+          "codexWriteJson": "\n➤ codex_write {f}.json ({label})",
+          "codexDone": "\n✦ codex_done{note}",
+          "codexSkip": "\n○ codex_skip {choice, select, yes {{join}} other {(파일 없음)}}",
+          "unknownTool": "\n✗ 알 수 없는 도구 {name}",
+          "theCodexAgentReturnedAnEmptyResponse": "코덱스 에이전트가 빈 응답을 반환했어요",
+          "noJsonObjectFoundInTheReply": "\n✗ 응답에서 JSON을 찾지 못했어요. 다시 시도하는 중...",
+          "memoriaCouldnTFinishTheCodexUpdate": "모델이 지시를 따르지 못했어요 :(.{keptSuffix}",
+          "theCodexAgentNarratedInsteadOfCalling": "코덱스 에이전트가 도구를 호출하지 않았어요. 연결이 도구 호출을 지원하나요?",
+          "theCodexAgentRepliedWithoutAParsable": "코덱스 에이전트가 잘못된 JSON을 반환했어요",
+          "memoriaCouldnTFinishTheCodexUpdate2": "모델이 도중에 멈춰서 쓰지 못한 파일: {join}.{keptSuffix}",
+          "keptStillReferencedByUnchangedJson": "\n⤳ {ref} 유지: 바뀌지 않은 {file}.json에서 아직 참조해요",
+          "value": "\n⤳ {r}",
+          "rejected": "\n✗ 거부됨{choice, select, yes { {file}.json} other {}}: {errors0}",
+          "integrity": "\n✗ 무결성: {e}",
+          "memoriaCouldnTFinishTheCodexUpdate3": "모델이 {rounds}번 시도한 뒤에도 잘못된 JSON을 반환했어요: {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate4": "모델이 잘못된 기록을 반환했어요: {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate5": "모델이 쓰지 않은 파일: {join}.{keptSuffix}",
+          "memoriaCouldnTFinishTheCodexUpdate6": "모델이 없는 개체를 참조했어요: {join}.{keptSuffix}",
+          "tableMigrationLeftTiesOnTheRun": "관계 마이그레이션에 실패했어요: {join}에 ties가 남아 있어요.",
+          "inlineMigrationProducedNoTiesFromThe": "관계 마이그레이션에 실패했어요: 관계 표에서 ties를 하나도 만들지 못했어요.",
+          "failedToSaveJson": "{key}.json을 저장하지 못했어요: {describeError}"
+        },
+        "stream": {
+          "set": "set {count}개",
+          "drop": "drop {count}개",
+          "seeds": "seeds",
+          "empty": "비어 있음"
+        }
+      },
+      "backup": {
+        "parseCodexBackup": {
+          "thatFileIsNotACodexBackup": "이 파일은 코덱스 백업이 아니에요",
+          "thisBackupWasWrittenByANewer": "이 백업을 열려면 더 새로운 LumiBooks(버전 {version})가 필요해요",
+          "theBackupHasNoCodexFilesIn": "백업에 코덱스 파일이 없어요",
+          "jsonInTheBackupIsNotValid": "{key}.json이 올바른 JSON이 아니에요",
+          "jsonInTheBackupIsInvalid": "백업의 {key}.json이 잘못됐어요: {errors0}"
+        }
+      },
+      "index": {
+        "reportCodexFailure": {
+          "memoriaCouldnTTheCodex": "코덱스를 {verb, select, tidy {정돈} refresh {갱신} rebuild {재구축} other {업데이트}}하지 못했어요: {shortErrorText}"
+        },
+        "syncEntriesGuarded": {
+          "memoriaCouldnTSyncTheCodexTo": "코덱스를 월드북에 동기화하지 못했어요: {shortErrorText}"
+        },
+        "ensureCodexEntriesSynced": {
+          "memoriaCouldnTSyncTheCodexTo": "코덱스를 월드북에 동기화하지 못했어요: {shortErrorText}"
+        },
+        "dryRunCodex": {
+          "theWindowHasNotFilledYetAutomation": "윈도우가 아직 차지 않았어요. 수동으로 실행하면 건너뛸 수 있어요.",
+          "theLagReserveStillHoldsTheseTurns": "지연 조건을 아직 채우지 못했어요. 수동으로 실행하면 건너뛸 수 있어요.",
+          "chatHasNoMessages": "채팅에 메시지가 없어요",
+          "theCodexHasReadEverythingSoThis": "코덱스가 최신 상태예요. 미리보기는 이전 메시지를 사용해요.",
+          "noConsumableWindowSendAMessageAnd": "처리할 메시지가 없어요. 메시지를 보낸 뒤 다시 시도하세요.",
+          "everyCodexRecordIsFrozenUnfreezeOne": "코덱스 기록이 모두 동결돼 있어요. 미리 보려면 기록 하나를 동결 해제하세요.",
+          "connection": "연결: {name} ({provider}/{model})",
+          "transport": "전송 방식: {choice, select, yes {도구 호출} other {엄격한 JSON}}",
+          "updateDeliveryAndEveryRecordMustBe": "업데이트 전달: {choice, select, yes {기록별} other {일괄}}. 업데이트를 마치려면 기록 {length}개를 모두 쓰거나 건너뛰어야 해요.",
+          "preset": "프리셋: {choice, select, yes {사용자 지정: {displayName}} other {기본 제공: 기본값}}{choice2, select, yes { ({value2, plural, other {템플릿 {value}개}} 수정됨)} other {}}",
+          "relationsMode": "관계 모드: {choice, select, yes {관계 표} other {인라인 ties}}{choice2, select, yes { (형식이 바뀌어서 이번 실행에서 마이그레이션해요)} other {}}",
+          "activeFiles": "활성 파일: {join}",
+          "frozenOmittedFromThePromptEntirely": "동결되어 프롬프트에서 빠진 파일: {join}",
+          "chunkMessage": "구간: {chunkLabel} (메시지 {length}개)",
+          "reconcilePendingTheStoryWasEditedBehind": "이야기 수정이 감지됐어요. 수정 반영 메모를 포함했어요.",
+          "unreadableFilesShownEmpty": "읽을 수 없어 빈 채로 보여 준 파일: {join}",
+          "locksLockedEntitWithLockedFieldsMasked": "잠금: 개체 {length}개, 그중 {length2}개는 잠긴 필드를 모델에게 숨김",
+          "storySoFarContextTokens": "지금까지의 이야기 컨텍스트: ~{length}토큰",
+          "activatedLoreReferenceTokens": "활성화된 설정 참고 자료: ~{length}토큰",
+          "activatedLoreExceededTheLoreLimitTokens": "활성화된 월드북 항목이 월드북 한도({effectiveLoreLimitTokens}토큰)를 넘어서 잘렸어요",
+          "thoroughMode": "꼼꼼 모드: {choice, select, yes {켜짐, 검증 라운드 추가} other {꺼짐}}",
+          "promptSizeTokensSystemTokensUserCodex": "프롬프트 크기: 시스템 ~{length}토큰 + 사용자 ~{length2}토큰 (코덱스 최대 입력 {codexMaxInputTokens})",
+          "wouldFail": "실패 예상: {message}",
+          "samplerParametersBeingSentOnTheWire": "샘플러 매개변수: {stringify}"
+        },
+        "chunkLabel": {
+          "messagesOf": "전체 {length}개 중 메시지 {firstIdx1}-{lastIdx1}"
+        },
+        "runChunk": {
+          "theRelationsFormatChangedUnfreezeSoMemoria": "관계 형식이 바뀌었어요. 마이그레이션하려면 {join} 동결을 해제하세요.",
+          "relationBetweenLockedEntriesCouldNotBe": "잠긴 항목 사이의 관계 {stuck}개를 다시 쓰지 못해서 삭제해요",
+          "memoriaUpdatedTheCodexFile": "코덱스를 업데이트했어요 (파일 {length}개)"
+        },
+        "drain": {
+          "memoriaIsUpdatingTheCodex": "코덱스 업데이트 중"
+        },
+        "maybeRunCodex": {
+          "automaticUpdate": "자동 업데이트",
+          "memoriaClosesTheCodexForNow": "코덱스 업데이트를 취소했어요"
+        },
+        "runCodexNow": {
+          "memoriaIsAlreadyUpdatingTheCodex": "코덱스 업데이트가 이미 진행 중이에요",
+          "memoriaIsStillCarryingTheCodexInto": "코덱스 분기 상속이 진행 중이에요. 잠시 후 다시 시도하세요.",
+          "everyCodexRecordIsFrozenUnfreezeOne": "코덱스 기록이 모두 동결돼 있어요. 업데이트하려면 기록 하나를 동결 해제하세요.",
+          "theCodexIsAlreadyCaughtUp": "코덱스가 최신 상태예요",
+          "memoriaClosesTheCodexForNow": "코덱스 업데이트를 취소했어요",
+          "fastCatchUpNeedsTheCodexModel": "빠른 따라잡기를 하려면 코덱스 모델의 컨텍스트가 이야기 모델 이상이어야 해요. 최대 컨텍스트 크기를 늘리세요"
+        },
+        "catchupCodex": {
+          "memoriaIsCatchingUpTheCodex": "코덱스 따라잡는 중 ({choice, select, yes {초고속} other {빠름}})",
+          "memoriaIsAlreadyWorkingOnTheCodex": "코덱스 작업이 이미 진행 중이에요"
+        },
+        "maybeReconcileSweep": {
+          "memoriaIsReconcilingTheCodexWithThe": "이야기 수정에 맞춰 코덱스 업데이트 중",
+          "memoriaReconciledTheCodexWithTheEdited": "이야기 수정에 맞춰 코덱스를 업데이트했어요 (파일 {length}개)",
+          "memoriaCheckedTheCodexAgainstTheEdited": "이야기 수정에 맞춰 코덱스를 업데이트했어요"
+        },
+        "rebuildCodex": {
+          "memoriaIsClearingTheCodexForA": "재구축을 위해 코덱스 비우는 중",
+          "memoriaIsAlreadyWorkingOnTheCodex": "코덱스 작업이 이미 진행 중이에요",
+          "memoriaCouldnTReadTheCodexCursor": "코덱스 상태에 문제가 있어서 재구축을 중단했어요: {shortErrorText}",
+          "memoriaCouldnTClearCodexFileRun": "코덱스 파일 {length}개를 비우지 못했어요. 재구축을 다시 실행하세요.",
+          "memoriaCouldnTClearTheCodexLorebook": "코덱스 월드북 항목을 비우지 못했어요: {shortErrorText}"
+        },
+        "runCodexTidy": {
+          "memoriaIsTidyingTheCodex": "코덱스 정돈 중",
+          "memoriaIsAlreadyWorkingOnTheCodex": "코덱스 작업이 이미 진행 중이에요",
+          "theRelationsFormatChangedRunUpdateNow": "관계 형식이 바뀌었어요. 코덱스를 먼저 업데이트하세요",
+          "nothingToTidyThoseRecordsAreEmpty": "정돈할 게 없어요: 기록이 비어 있거나, 동결됐거나, 읽을 수 없어요",
+          "theSelectedRecordsAlreadyFitTokensLimit": "기록이 이미 한도({limit}토큰) 안에 들어와요",
+          "tidyTokensLimitModelTargetCallsLeft": "\n정돈: {tokens}토큰, 한도 {limit}, 모델 목표 {modelTarget}, 남은 호출 {remaining}회\n",
+          "aCodexFileCouldNotBeRead": "정돈 후 코덱스 상태에 문제가 생겼어요: {details}. 실행 취소하면 원래대로 돌아가요.",
+          "codexTidiedToTokensLimitInModel": "코덱스를 {size}토큰으로 정돈했어요 (한도 {limit}, 모델 호출 {used}회)",
+          "stoppedAfterModelCallsTokensStillAbove": "모델 호출 {used}회 후 멈췄어요: {size}토큰으로 아직 한도 {limit}를 넘어요. 수정한 내용은 저장했고, 실행 취소하면 원래대로 돌아가요.",
+          "tidyingStoppedCompletedEditsAreKeptUndo": "정돈을 취소했어요. 수정한 내용은 저장했고, 실행 취소하면 원래대로 돌아가요."
+        },
+        "refreshCodexFiles": {
+          "memoriaIsCatchingUpReEnabledRecords": "다시 켠 기록 따라잡는 중",
+          "memoriaIsAlreadyWorkingOnTheCodex": "코덱스 작업이 이미 진행 중이에요",
+          "theRelationsFormatChangedRunUpdateNow": "관계 형식이 바뀌었어요. 기록을 따라잡기 전에 「지금 업데이트」를 실행하세요.",
+          "noReEnabledRecordsAreWaitingFor": "따라잡을 기록이 없어요",
+          "memoriaCaughtUpRecord": "기록 {length}개를 따라잡았어요",
+          "memoriaSetsTheCatchUpAside": "따라잡기를 취소했어요",
+          "theCatchUpPassNeedsTheCodex": "따라잡기를 하려면 코덱스 컨텍스트가 이야기 모델 이상이어야 해요. 컨텍스트를 늘리거나 느린 모드로 재구축하세요."
+        },
+        "rebuildCodexFiles": {
+          "memoriaIsRebuildingCodexRecords": "코덱스 기록 재구축 중",
+          "memoriaIsAlreadyWorkingOnTheCodex": "코덱스 작업이 이미 진행 중이에요",
+          "theRelationsFormatChangedRunUpdateNow": "관계 형식이 바뀌었어요. 기록을 재구축하기 전에 「지금 업데이트」를 실행하세요.",
+          "thoseRecordsAreFrozenUnfreezeThemFirst": "이 기록들의 동결을 먼저 해제하세요",
+          "memoriaRebuiltRecordFromTheStory": "기록 {length}개를 재구축했어요",
+          "memoriaSetsTheRebuildAside": "재구축을 취소했어요",
+          "theRebuildPassNeedsTheCodexModel": "재구축을 하려면 코덱스 컨텍스트가 이야기 모델 이상이어야 해요. 연결 설정에서 늘리세요."
+        }
+      },
+      "schema": {
+        "keywordArray": {
+          "keptOfDroppedTheRestAsDuplicates": "{path}: {length2}개 중 {length}개만 남기고 나머지는 버렸어요 (중복, {keywordMaxWords}단어 초과, 기록 자체 이름과 이미 일치, 또는 키워드 한도 {keywordLimit}개 초과)"
+        },
+        "str": {
+          "requiredNonEmptyString": "{path}: 비어 있지 않은 문자열이 필요해요",
+          "expectedAString": "{path}: 문자열이어야 해요"
+        },
+        "strArray": {
+          "expectedAnArrayOfStrings": "{path}: 문자열 배열이어야 해요",
+          "expectedAString": "{path}[{i}]: 문자열이어야 해요"
+        },
+        "objArray": {
+          "expectedAnArray": "{path}: 배열이어야 해요",
+          "expectedAnObject": "{path}[{i}]: 객체여야 해요"
+        },
+        "asRecord": {
+          "expectedAJsonObject": "{path}: JSON 객체여야 해요"
+        },
+        "keepExtras": {
+          "useLowercase": "{path}.{k}: 소문자 \"{lower}\"를 쓰세요",
+          "extraFieldsMustBePrimitiveStringNumber": "{path}.{k}: 추가 필드는 기본형(string, number, boolean, string[])이어야 해요. 평평하게 펼치세요"
+        },
+        "ridOf": {
+          "ridExpectedAShortString": "{path}.rid: 짧은 문자열이어야 해요"
+        },
+        "validateEntityFile": {
+          "idMustMatch": "{path}.id: \"{id}\"는 {ns}:<lowercase_snake_case> 형식이어야 해요",
+          "idBelongsInAnotherFileIdsHere": "{path}.id: \"{id}\"는 다른 파일에 들어가야 해요. 이 파일의 id는 \"{ns}:\"로 시작해야 해요",
+          "idDuplicateId": "{path}.id: 중복된 id \"{id}\"",
+          "statusThisFieldWasRemovedKeepDurable": "{path}.status: 이 필드는 없어졌어요 - 오래 유지되는 상태는 description에 쓰고, 그 장면에서만 해당하는 상태는 버리세요",
+          "tiesTheRelationsTableIsEnabledMove": "{path}.ties: 관계 표가 켜져 있어요. 이 항목들을 relations.json 행으로 옮기세요"
+        },
+        "validateRelationsFile": {
+          "relationsTheRelationsTableIsDisabledFor": "relations: 이 프로필에서는 관계 표가 꺼져 있어요. 연결은 개체 시트의 ties로 남기세요",
+          "aIsNotAValidEntityRef": "{path}.a: \"{a}\"는 올바른 개체 참조가 아니에요",
+          "bIsNotAValidEntityRef": "{path}.b: \"{b}\"는 올바른 개체 참조가 아니에요",
+          "aAndBAreTheSameEntity": "{path}: a와 b가 같은 개체예요",
+          "membersAGroupNeedsAtLeast2": "{path}.members: 그룹에는 서로 다른 구성원이 2개 이상 있어야 해요",
+          "membersIsNotAValidEntityRef": "{path}.members: \"{m}\"는 올바른 개체 참조가 아니에요",
+          "rolesKeyIsNotAValidEntity": "{path}.roles: 키 \"{k}\"는 올바른 개체 참조가 아니에요",
+          "rolesExpectedAStringRole": "{path}.roles[\"{k}\"]: 역할은 문자열이어야 해요",
+          "typeExpectedPairOrGroup": "{path}.type: \"pair\" 또는 \"group\"이어야 해요"
+        },
+        "validateThreadsFile": {
+          "statusExpectedOpenStalledResolvedAbandoned": "{path}.status: open | stalled | resolved | abandoned 중 하나여야 해요"
+        },
+        "validateWorldFile": {
+          "factsAtLeastOneFactRequiredDrop": "{path}.facts: fact가 하나 이상 있어야 해요. 없으면 그 topic을 버리세요"
+        },
+        "validateKnowledgeFile": {
+          "appearsInBothKnownByAndHiddenFromWrite": "{path}: knownBy와 hiddenFrom 양쪽에 모두 있어요: {join}. 비밀 그 자체를 \"fact\"로 쓰고, 그 비밀을 아는 쪽과 모르는 쪽을 나열하세요 - 모른다는 사실을 fact로 쓰면 안 돼요",
+          "needsAtLeastOneOfKnownByHiddenFrom": "{path}: knownBy, hiddenFrom, falseBeliefs 중 하나 이상이 필요해요 - 모두가 아는 사실은 world나 timeline에 넣으세요",
+          "omittedDuplicateKnowledgeItem": "{path}: 중복된 지식 항목을 뺐어요"
+        },
+        "formatDangling": {
+          "isNotDefinedInAnyEntityFile": "{path}: \"{ref}\"는 어느 개체 파일에도 정의되지 않았어요 - 개체를 추가하거나, 이 행을 버리거나 대상을 바꾸세요 (relations에는 개체 참조만 들어가요)",
+          "isNotDefinedInAnyEntityFile2": "{path}: \"{ref}\"는 어느 개체 파일에도 정의되지 않았어요 - 개체를 추가하거나 일반 텍스트로 쓰세요"
+        },
+        "fix": {
+          "wasNotAKnownEntityRecordedAs": "{path}: \"{ref}\"는 알려진 개체가 아니라서 \"{plain}\"로 기록했어요"
+        }
+      },
+      "store": {
+        "loadCursor": {
+          "theCodexCursorIsUnreadable": "코덱스 커서 문제: {error}"
+        },
+        "loadCodex": {
+          "unreadableOnDisk": "디스크에서 읽을 수 없어요: {error}"
+        },
+        "copyCodexToEmptyChat": {
+          "jsonIsUnreadableOnTheSourceChat": "원본 채팅의 {key}.json을 읽을 수 없어요: {error}"
+        },
+        "readCodexFilesRaw": {
+          "unreadableJsonTheFileExistsButCannot": "{key}.json을 읽을 수 없어요: {error}. 저장하기 전에 고치거나 삭제하세요."
+        }
+      },
+      "sync": {
+        "doSync": {
+          "codexSyncSkippedUnreadableOrInvalidFile": "코덱스를 동기화하지 못했어요. 읽을 수 없거나 잘못된 파일 {length, plural, other {#개}}: {join}",
+          "outdatedCodexEntrCouldNotBeRemoved": "오래된 코덱스 항목 {failedDeletes}개를 제거하지 못했어요. 계속 주입될 수 있어요."
+        },
+        "doWipe": {
+          "failedToDeleteCodexEntrTheyMay": "코덱스 항목 {failed}개를 삭제하지 못했어요. 계속 주입될 수 있어요."
+        }
+      },
+      "tokens": {
+        "countCodexText": {
+          "invalidTokenCount": "잘못된 토큰 수"
+        }
+      }
+    },
+    "coverage": {
+      "setHidden": {
+        "couldNotUpdateVisibilityForMessagesRun": "메시지 {length}개의 표시 상태를 업데이트하지 못했어요. 「표시 상태 재동기화」를 다시 실행하세요."
+      }
+    },
+    "fork": {
+      "inheritedMessageIds": {
+        "forkAncestryCouldNotBeResolved": "분기 계보를 확인하지 못했어요",
+        "forkAncestryIsIncomplete": "분기 계보가 불완전해요"
+      },
+      "requireForkShelf": {
+        "forkInheritanceIsStillPendingRetryAfter": "분기 상속이 아직 대기 중이에요. 끝날 때까지 기다린 뒤 다시 시도하세요."
+      },
+      "doForkAdoption": {
+        "memoriaCouldnTCarryTheShelfInto": "요약 분기 상속에 실패했어요. 다시 시도할게요: {shortErrorText}"
+      },
+      "adoptForkCodex": {
+        "memoriaCouldnTCarryTheCodexInto": "코덱스 분기 상속에 실패했어요. 다시 시도할게요: {shortErrorText}"
+      },
+      "markCodexAdopted": {
+        "forkChatVanishedWhileRecordingCodexAdoption": "코덱스 분기 상속 중에 채팅이 삭제됐어요"
+      },
+      "newBook": {
+        "memoriaSShelfForThisChatChapters": "이 채팅의 LumiBooks 챕터와 아크예요."
+      }
+    },
+    "index": {
+      "doPushState": {
+        "lumiBooksStateRefreshFailed": "LumiBooks 상태를 새로 고치지 못했어요: {describeError}"
+      },
+      "messages": {
+        "summaryRepairFailed": "요약을 복구하지 못했어요: {describeError}",
+        "savedDiagnosticsCleared": "저장된 진단 기록을 지웠어요.",
+        "recallSettingSavedEntryOrBookUpdates": "상기 설정을 저장했지만 {failed}건은 업데이트하지 못했어요. 다시 적용해서 재시도하세요.",
+        "invalidProfilePayload": "프로필 데이터가 올바르지 않아요.",
+        "profileNoLongerExists": "프로필 {id}이(가) 더 이상 없어요.",
+        "memoriaKeepsAtLeastOneProfile": "프로필이 하나는 있어야 해요",
+        "memoriaIsAlreadyFilingAChapter": "챕터를 만드는 중이에요",
+        "yourStoryNeedsMoreMessagesForMe": "항목을 만들 만큼 메시지가 충분하지 않아요",
+        "memoriaIsAlreadyBindingAnArc": "아크를 만드는 중이에요",
+        "memoriaIsAlreadyPressingAVolume": "볼륨을 만드는 중이에요",
+        "memoriaCanTFindThatEntry": "항목을 찾을 수 없어요",
+        "memoriaReleasedTheEntryToYourLorebook": "항목을 월드북으로 해제했어요",
+        "memoriaCanTFindThatEntryTo": "항목을 찾을 수 없어요",
+        "memoriaIsAlreadyBusyWithA": "{busyKind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{busyKind}}} 작업이 진행 중이에요",
+        "memoriaCanTRegenerateInheritedChapters": "상속받은 챕터는 재생성할 수 없어요",
+        "memoriaCanTRegenerateAGhostChapter": "유령 챕터는 먼저 정리한 뒤에 재생성하세요",
+        "memoriaHasNoArcSourcesToRegenerate": "이 볼륨을 재생성할 원본 아크가 없어요",
+        "memoriaHasNoChapterSourcesToRegenerate": "이 아크를 재생성할 원본 챕터가 없어요",
+        "memoriaHasNoMessagesToRegenerateThis": "이 챕터를 재생성할 원본 메시지가 없어요",
+        "theseMessagesAreBoundIntoReleaseOr": "이 메시지들은 {blockerLabel}에 묶여 있어요, 먼저 해제하거나 삭제하세요",
+        "dryRunFailed": "모의 실행에 실패했어요: {text}",
+        "memoriaIsNotInTheMiddleOf": "취소할 작업이 없어요",
+        "summaryRecallSavedEntriesUpdated": "요약 상기 설정을 저장했어요. 항목 {updated}개를 업데이트했어요.",
+        "waitForTheCurrentTaskToFinish": "요약을 가져오기 전에 현재 작업이 끝날 때까지 기다리세요",
+        "importingSummaries": "요약 가져오는 중",
+        "memoriaFoundNoUsablePresetsInThat": "이 파일에는 쓸 수 있는 프리셋이 없어요",
+        "memoriaImportedPreset": "프리셋 {length}개를 가져왔어요",
+        "invalidPresetPayload": "프리셋 데이터가 올바르지 않아요.",
+        "memoriaIsBusyWaitForHerTo": "현재 작업이 끝날 때까지 기다리세요",
+        "memoriaSeededInheritedMemorBeforeTheGreeting": "첫 인사 앞에 상속 기억 {count}개를 추가했어요",
+        "memoriaRebuiltOntoInheritedMemorAndIs": "상속 기억 {count}개를 추가했어요. 이 채팅을 다시 요약하는 중이에요.",
+        "memoriaWillLeaveMessageUntouched": "메시지 {length}개를 압축에서 제외했어요",
+        "memoriaWillCompressMessageAgain": "메시지 {length}개의 압축을 허용했어요",
+        "memoriaTeachesTheCodexBeforeSheOpens": "메모리아는 코덱스를 열기 전에 먼저 가르쳐 줘요. 수업부터 들어 주세요",
+        "enableTheCodexInTuningFirst": "먼저 조정 탭에서 코덱스를 켜세요",
+        "acceptingCurrentCodexRecords": "현재 코덱스 기록을 승인하는 중",
+        "clearStaleTags": "오래된 태그 정리",
+        "memoriaIsUpdatingTheCodexRestoreAgain": "코덱스를 업데이트하는 중이에요. 끝난 뒤에 복원하세요.",
+        "memoriaCouldnTRestoreThatBackup": "백업을 복원하지 못했어요: {error}",
+        "memoriaCouldnTSyncTheCodexTo": "코덱스를 월드북에 동기화하지 못했어요: {shortErrorText}",
+        "memoriaRestoredCodexFile": "코덱스 파일 {length}개를 복원했어요",
+        "memoriaIsUpdatingTheCodexAbortThat": "먼저 코덱스 업데이트를 취소하세요",
+        "memoriaCouldnTCarryThatCodexOver": "코덱스를 복사하지 못했어요: {shortErrorText}",
+        "memoriaCarriedTheCodexOverSheWill": "코덱스를 복사했어요. 이 채팅의 처음부터 색인을 시작해요.",
+        "memoriaHasNoCodexSnapshotToUndo": "복원할 코덱스 스냅숏이 없어요",
+        "memoriaCouldnTUndo": "실행 취소하지 못했어요: {error}",
+        "memoriaRolledTheCodexBack": "코덱스를 복원했어요",
+        "unknownCodexFile": "알 수 없는 코덱스 파일 \"{file}\"이에요.",
+        "memoriaIsUpdatingTheCodexSaveAgain": "코덱스를 업데이트하는 중이에요. 끝난 뒤에 저장하세요.",
+        "thatIsNotValidJson": "올바른 JSON이 아니에요: {describeError}",
+        "validationFailed": "검증에 실패했어요: {errors0}{extra}",
+        "savedButCouldNotBeReadSo": "저장했지만 {names}을(를) 읽지 못했어요. 파일 간 검사는 건너뛰었어요.",
+        "savedWithDanglingReferenceToFixIn": "저장했어요. 끊어진 참조가 {length}개 있어요",
+        "memoriaSavedJson": "{file}.json을 저장했어요",
+        "memoriaIsClearingTheCodex": "코덱스를 비우는 중",
+        "memoriaCouldnTClearCodexFileTry": "코덱스 파일 {length}개를 비우지 못했어요. 다시 시도하세요.",
+        "memoriaCouldnTClearTheCodexLorebook": "코덱스 월드북 항목을 비우지 못했어요: {shortErrorText}",
+        "memoriaClearedTheCodexForThisChat": "코덱스를 비웠어요",
+        "rebuildFiles": "파일 재구축",
+        "memoriaClearedEntrFromTheShelf": "항목 {removed}개를 비웠어요",
+        "theShelfIsAlreadyEmpty": "책장이 비어 있어요",
+        "memoriaClearedEntrAndIsReSummarizing": "항목 {removed}개를 비웠어요. 이 채팅을 다시 요약하는 중이에요."
+      },
+      "handleExternalEntryDeletion": {
+        "memoriaUnhidMessageAfterAnExternalLorebook": "월드북이 바뀌어서 메시지 {unhidden}개의 숨김을 해제했어요"
+      },
+      "msg": {
+        "memoriaHasNoChaptersLeftToRetry": "아크를 다시 시도할 챕터가 남아 있지 않아요"
+      },
+      "retryLastFailure": {
+        "nothingToRetryYetMemoriaWillCatch": "다시 시도할 작업이 없어요. 다음 메시지를 기다리는 중이에요."
+      },
+      "syncProfileSettings": {
+        "profileSavedButCodexInjectionSettingsCould": "프로필을 저장했어요. 채팅 {length}개에서 코덱스 주입 동기화에 실패했어요: {join}. 오류를 고친 뒤 설정을 다시 적용하세요.",
+        "profileSavedButCodexInjectionSettingsCould2": "프로필을 저장했어요. 코덱스 주입 동기화에 실패했어요: {describeError}"
+      },
+      "next": {
+        "newProfile": "새 프로필"
+      },
+      "blockerLabel": {
+        "aVolume": "볼륨",
+        "anArc": "아크",
+        "anotherEntry": "다른 항목"
+      },
+      "text": {
+        "memoriaSShelfIsAlreadyAlignedNya": "메시지 표시 상태가 이미 최신이에요",
+        "memoriaResyncedMessageHiddenUnhidden": "메시지 {total}개를 재동기화했어요 (숨김 {hidden}개, 숨김 해제 {unhidden}개)",
+        "thisChatAlreadyHasMemoriesUseRebuild": "이 채팅에는 이미 요약이 있어요. 재구축을 사용하세요.",
+        "thatChatHasNoMemoriesToInherit": "원본 채팅에 상속할 요약이 없어요",
+        "memoriaIsAlreadyRebasingThisChat": "리베이스하는 중이에요",
+        "memoriaCanTRebaseAChatOnto": "리베이스할 원본으로 다른 채팅을 고르세요",
+        "memoriaIsAlreadyRebuildingThisChat": "재구축하는 중이에요",
+        "memoriaCanTRebuildAChatOnto": "재구축할 원본으로 다른 채팅을 고르세요",
+        "thisChatAlreadyHasACodexWipe": "먼저 이 채팅의 코덱스를 비우세요",
+        "thatChatHasNoCodexToCarry": "원본 채팅에 복사할 코덱스가 없어요",
+        "memoriaCanTCarryACodexOnto": "코덱스를 복사해 올 다른 채팅을 고르세요",
+        "thisChatHasNoInheritedMemoriesTo": "분리할 상속 기억이 없어요",
+        "memoriaDetachedInheritedMemor": "상속 기억 {removed}개를 분리했어요"
+      },
+      "extra": {
+        "more": " (외 {length1}개)"
+      }
+    },
+    "injection": {
+      "label": {
+        "msgs": "{tierName} 메시지 {firstIdx1}-{lastIdx1}"
+      },
+      "buildInjection": {
+        "memoriaCouldnTReadTheChatAnd": "채팅을 읽지 못했어요. 요약 주입을 건너뛰었어요.",
+        "memoriaCouldnTFindTheChatHistory": "프롬프트에서 채팅 기록을 찾지 못했어요. 요약 주입을 건너뛰었어요."
+      }
+    },
+    "lessons": {
+      "loadFromDisk": {
+        "memoriaCouldnTReadHerLessonRegister": "메모리아가 수업 기록부를 읽지 못해서 보관함 봉인을 풀었어요: {describeError}"
+      },
+      "mutateLessons": {
+        "memoriaCouldnTReadHerLessonRegister": "메모리아가 수업 기록부를 읽지 못해서 이 변경 사항은 아직 디스크에 저장되지 않았어요"
+      }
+    },
+    "memoria": {
+      "firePhrases": {
+        "memoriaStirsTheInkpotNyaa": "챕터 생성 중…",
+        "memoriaIsShelvingThisSceneHushA": "챕터 생성 중…",
+        "memoriaFlicksHerTailAndStartsWriting": "챕터 생성 중…",
+        "memoriaOpensAFreshPageForYou": "챕터 생성 중…",
+        "memoriaPadsOffToCompressThisIn": "챕터 생성 중…"
+      },
+      "retryPhrases": {
+        "memoriaTrippedOnAQuillTryingAgain": "다시 시도하는 중…",
+        "memoriaSInkSmudgedOneMoreTry": "다시 시도하는 중…",
+        "memoriaReshufflesTheIndexCardsRetrying": "다시 시도하는 중…"
+      },
+      "successPhrases": {
+        "memoriaSlidTheChapterOntoYourShelf": "챕터를 만들었어요",
+        "memoriaFiledItNeatlyBetweenTheOthers": "챕터를 만들었어요",
+        "memoriaStampedTheSpineAllYours": "챕터를 만들었어요",
+        "memoriaPurrsThePageIsDone": "챕터를 만들었어요",
+        "memoriaTapsTheChapterIntoPlace": "챕터를 만들었어요"
+      },
+      "arcFirePhrases": {
+        "memoriaGathersTheChaptersForAnArc": "아크 생성 중…",
+        "memoriaIsBindingSeveralChaptersTogether": "아크 생성 중…"
+      },
+      "arcSuccessPhrases": {
+        "memoriaBoundTheArcAndPressedIt": "아크를 만들었어요",
+        "memoriaStitchedTheSpineOfANew": "아크를 만들었어요"
+      },
+      "volumeFirePhrases": {
+        "memoriaIsPressingAWholeVolumeTogether": "볼륨 생성 중…"
+      },
+      "volumeSuccessPhrases": {
+        "memoriaEmbossedTheSpineOfANew": "볼륨을 만들었어요"
+      },
+      "pickPhrase": {
+        "memoriaNyaa": "완료"
+      }
+    },
+    "pipeline": {
+      "changedSources": {
+        "summarySourcesChangedDiscardThisResultAnd": "요약의 원본이 바뀌었어요. 이 결과는 버리고 다시 생성하세요."
+      },
+      "registerPipelineCallbacks": {
+        "busyStatus": "작업 상태",
+        "streamViewer": "스트림 뷰어"
+      },
+      "busyPhrases": {
+        "memoriaIsFilingAChapter": "챕터 생성 중",
+        "memoriaIsWritingAChapter": "챕터 작성 중",
+        "memoriaIsBindingAnArc": "아크 생성 중",
+        "memoriaIsPressingAVolume": "볼륨 생성 중",
+        "memoriaIsBindingASeries": "시리즈 생성 중",
+        "memoriaIsBindingASaga": "사가 생성 중",
+        "memoriaIsBindingALibrary": "라이브러리 생성 중",
+        "memoriaIsBindingAUniverse": "유니버스 생성 중",
+        "memoriaIsUpdatingTheCodex": "코덱스 업데이트 중"
+      },
+      "formatBusyLabel": {
+        "memoriaIsThinkingT": "추론 중 (~{thinkTokens}t, {t})",
+        "tWrittenTThought": "{writing} (출력 ~{tokens}t, 추론 ~{thinkTokens}t, {t})"
+      },
+      "capStreamPart": {
+        "earlierOutputTrimmed": "[...앞부분 출력 생략...]\n{slice}"
+      },
+      "noun": {
+        "bindTheArc": "아크를 생성",
+        "pressTheVolume": "볼륨을 생성",
+        "fileTheChapter": "챕터를 생성"
+      },
+      "failToast": {
+        "memoriaCouldnT": "{noun}하지 못했어요: {shortErrorText}"
+      },
+      "createChapterAuto": {
+        "memoriaIsFilingAChapter": "챕터 생성 중"
+      },
+      "createChapterFromRange": {
+        "memoriaIsFilingAChapter": "챕터 생성 중"
+      },
+      "runChapter": {
+        "memoriaSetsThePenDown": "요약을 취소했어요"
+      },
+      "commitChapter": {
+        "extraContextModeWasTurnedOffWhile": "유령 챕터를 만드는 동안 추가 컨텍스트 모드가 꺼졌어요",
+        "thoseMessagesAreAlreadyStagedAsA": "이 메시지들에는 유령 챕터가 있어요. 자동으로 정리될 거예요.",
+        "allMessagesInThisWindowWereJust": "이 메시지들은 이미 다른 챕터가 요약했어요"
+      },
+      "title": {
+        "chapterMsgs": "챕터 - 메시지 {firstIdx1}-{lastIdx1}"
+      },
+      "baseComment": {
+        "chapterMsgs": "챕터 - 메시지 {firstIdx1}-{lastIdx1}",
+        "arcMsgs": "아크 - 메시지 {firstIdx1}-{lastIdx1}",
+        "volumeMsgs": "볼륨 - 메시지 {firstIdx1}-{lastIdx1}"
+      },
+      "createArcFromChapters": {
+        "memoriaIsBindingAnArc": "아크 생성 중"
+      },
+      "runArc": {
+        "memoriaSetsThePenDown": "요약을 취소했어요"
+      },
+      "commitArc": {
+        "allSourceChaptersWereAlreadyBoundBy": "원본 챕터가 이미 묶였거나 삭제됐어요",
+        "theArcSavedButChapterCouldnT": "아크를 저장했지만 챕터 {length}개를 대체됨으로 표시하지 못했어요"
+      },
+      "arcTitle": {
+        "inheritedArc": "상속 아크"
+      },
+      "comment": {
+        "arc": "{choice, select, yes {[Root] } other {}}아크 #{sceneNumber} - {baseComment}"
+      },
+      "createHigherFromEntries": {
+        "memoriaIsBindingA": "{kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} 생성 중"
+      },
+      "runVolume": {
+        "memoriaSetsThePenDown": "요약을 취소했어요"
+      },
+      "commitVolume": {
+        "allSourceArcsWereAlreadyBoundBy": "원본 아크가 이미 묶였거나 삭제됐어요",
+        "theVolumeSavedButArcCouldnT": "볼륨을 저장했지만 아크 {length}개를 대체됨으로 표시하지 못했어요"
+      },
+      "volumeTitle": {
+        "inheritedVolume": "상속 볼륨"
+      },
+      "dryRunChapter": {
+        "chatHasNoMessages": "채팅에 메시지가 없어요",
+        "noWindowAvailableLowerTheLagOr": "사용할 수 있는 윈도우가 없어요. 지연이나 윈도우 기준값을 낮추세요."
+      },
+      "dryRunArc": {
+        "noChaptersToBindYet": "묶을 챕터가 없어요"
+      },
+      "dryRunVolume": {
+        "noArcsToPressYet": "합칠 아크가 없어요"
+      },
+      "promoteGhostChapters": {
+        "memoriaShelvedGhostChapter": "유령 챕터 {length}개를 정리했어요"
+      },
+      "deriveTitle": {
+        "msgs": "{trim} (메시지 {firstMsg}-{lastMsg})",
+        "msgs2": "{trimmed}{choice, select, yes {...} other {}} (메시지 {firstMsg}-{lastMsg})",
+        "compressedMsgs": "압축됨 - 메시지 {firstMsg}-{lastMsg}"
+      },
+      "preview": {
+        "chapterMsgs": "챕터 - 메시지 {firstIdx1}-{lastIdx1}",
+        "msgs": "{indexOf} - 메시지 {firstIdx1}-{lastIdx1}"
+      }
+    },
+    "presets": {
+      "builtinChapterPresets": {
+        "summary": "요약",
+        "summarize": "요약하기",
+        "synopsis": "시놉시스",
+        "minimal": "최소"
+      },
+      "builtinArcPresets": {
+        "arc": "아크"
+      },
+      "builtinVolumePresets": {
+        "volume": "볼륨"
+      },
+      "builtinCodexPresets": {
+        "default": "기본"
+      }
+    },
+    "promptBreakdown": {
+      "loadPromptBreakdown": {
+        "thePromptPanelRequiresALumiverseUpdate": "프롬프트 패널을 쓰려면 Lumiverse를 업데이트하세요. Spindle의 prompt-breakdown API가 필요해요.",
+        "dryRunReturnedNoBreakdown": "모의 실행 결과에 프롬프트 구성 정보가 없어요."
+      }
+    },
+    "rebase": {
+      "retireEntries": {
+        "someOldSummariesCouldNotBeRemoved": "오래된 요약 일부를 제거하거나 비활성화하지 못했어요. 다시 시도하기 전에 책 탭을 새로 고치세요."
+      }
+    },
+    "runtime": {
+      "debug": {
+        "lmb": "[lmb:{slice}] {join}"
+      }
+    },
+    "shelfActions": {
+      "editSummaryEntry": {
+        "thisSummaryIsNoLongerAvailableTo": "이 요약은 더 이상 없어요. 책 탭을 새로 고치세요."
+      },
+      "clearSummaryShelf": {
+        "removedSummariesButCouldNotBeDeleted": "요약 {removed}개를 제거했지만 {length}개는 삭제하지 못했어요. 재구축하기 전에 비우기를 다시 시도하세요."
+      },
+      "removeSummaryEntry": {
+        "aGhostChapterMustBeShelvedBefore": "유령 챕터는 먼저 정리한 뒤에 해제하세요"
+      }
+    },
+    "storage": {
+      "flipped": {
+        "directives": "{hasName, select, yes {{name}} other {프로필}} 지침"
+      }
+    },
+    "summarizer": {
+      "resolveConnection": {
+        "connectionHasNoModelSetPickOne": "연결 \"{id}\"에 모델이 설정되지 않았어요, 설정에서 모델을 고르세요"
+      },
+      "messages": {
+        "abortedByUser": "취소됨"
+      },
+      "assertRunning": {
+        "noTokenWithinSTheProviderMay": "{firstTokenTimeoutMs1000}초 안에 토큰이 오지 않았어요, 프로바이더가 느리거나 연결되지 않는 것 같아요",
+        "theResponseDidNotFinishWithinS": "{overallDeadlineMs1000}초 안에 응답이 끝나지 않았어요"
+      },
+      "consumeGenerationStream": {
+        "theStreamEndedBeforeCompleting": "스트림이 완료되기 전에 끝났어요"
+      },
+      "resolveMacrosWithDiagnostics": {
+        "macroOffsetLength": "매크로: {message} (오프셋 {offset}, 길이 {length})",
+        "macrosResolveFailed": "macros.resolve 실패: {describeError}"
+      },
+      "assembleChapterPrompt": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "chapterPresetMissing": "챕터 프리셋이 없어요",
+        "emptyTranscript": "대화 기록이 비어 있어요",
+        "outgoingRegexAppliedScriptS": "발신 정규식: 스크립트 {length}개"
+      },
+      "diagnostics": {
+        "connection": "연결: {name} ({provider}/{model})",
+        "windowMessageS": "윈도우: 메시지 {length}개",
+        "transcriptTokensModelTokenizer": "대화 기록: {transcriptTokens} 토큰 (모델 토크나이저 기준)",
+        "targetTokens": "목표 토큰: {targetTokens} ({choice, select, yes {고정 예산, 입력의 ~{chapterTargetUnitTokens}%} other {입력의 {chapterTargetPercent}%}})",
+        "targetWordsShownToModel": "목표 단어 수: {value}",
+        "previousMemoriesIncluded": "이전 요약: {length}",
+        "opener": "시작 문구: {opener}",
+        "presetKey": "프리셋 키: {chapterPresetKey}",
+        "samplerParametersBeingSentOnTheWire": "샘플러 매개변수: {stringify}",
+        "sourceChapters": "원본 챕터: {length}",
+        "concatenatedChapterBodyTokensModelTokenizer": "원본 챕터: {bodyTokens} 토큰 (모델 토크나이저 기준)",
+        "targetTokens2": "목표 토큰: {targetTokens} ({choice, select, yes {고정 예산, 입력의 ~{arcTargetUnitTokens}%} other {입력의 {arcTargetPercent}%}})",
+        "presetKey2": "프리셋 키: {arcPresetKey}",
+        "sourceArcs": "원본 아크: {length}",
+        "concatenatedArcBodyTokensModelTokenizer": "원본 아크: {bodyTokens} 토큰 (모델 토크나이저 기준)",
+        "targetTokens3": "목표 토큰: {targetTokens} ({choice, select, yes {고정 예산, 입력의 ~{volumeTargetUnitTokens}%} other {입력의 {volumeTargetPercent}%}})",
+        "presetKey3": "프리셋 키: {volumePresetKey}"
+      },
+      "assembleArcPrompt": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "arcPresetMissing": "아크 프리셋이 없어요",
+        "outgoingRegexAppliedScriptS": "발신 정규식: 스크립트 {length}개"
+      },
+      "assembleVolumePrompt": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "volumePresetMissing": "볼륨 프리셋이 없어요",
+        "outgoingRegexAppliedScriptS": "발신 정규식: 스크립트 {length}개"
+      },
+      "summarizeVolume": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "volumePresetMissing": "볼륨 프리셋이 없어요",
+        "emptyModelOutput": "모델 출력이 비어 있어요",
+        "theVolumeSummaryCameBackEmpty": "모델이 빈 볼륨 요약을 반환했어요"
+      },
+      "summarizeChapter": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "chapterPresetMissing": "챕터 프리셋이 없어요",
+        "emptyTranscript": "대화 기록이 비어 있어요",
+        "emptyModelOutput": "모델 출력이 비어 있어요",
+        "theSummaryCameBackEmpty": "모델이 빈 요약을 반환했어요"
+      },
+      "summarizeArc": {
+        "noConnectionAvailableForMemoria": "요약에 쓸 연결이 없어요",
+        "arcPresetMissing": "아크 프리셋이 없어요",
+        "emptyModelOutput": "모델 출력이 비어 있어요",
+        "theArcSummaryCameBackEmpty": "모델이 빈 아크 요약을 반환했어요"
+      },
+      "parseSummaryJson": {
+        "theModelSJsonHadNoContent": "모델이 반환한 JSON에 content 필드가 없어요",
+        "theModelDidnTReturnValidJson": "모델이 올바른 JSON을 반환하지 않았어요"
+      }
+    },
+    "summaryBackup": {
+      "summaryLorebook": {
+        "lumiBooksSummariesImportThroughBooksToRestore": "LumiBooks 요약이에요. 책 탭에서 가져오면 메시지 범위를 복원하거나 상속 기억으로 쓸 수 있어요.",
+        "summary": "요약 {i1}"
+      },
+      "exportSummaryLorebook": {
+        "thereAreNoActiveSummariesToExport": "내보낼 활성 요약이 없어요",
+        "fetchingRawChatMessages": "원본 채팅 메시지를 불러오는 중…",
+        "lumiBooksSummaries": "LumiBooks 요약 - {slice}"
+      },
+      "hashes": {
+        "hashingRawMessages": "원본 메시지 해시 계산 중… {done} / {length}"
+      },
+      "parseSummaryLorebook": {
+        "chooseALorebookJsonFileWithEntries": "항목이 들어 있는 월드북 JSON 파일을 고르세요",
+        "theLorebookHasNoEntries": "월드북에 항목이 없어요",
+        "theLorebookHasMoreThan10000": "월드북 항목이 10,000개를 넘어요",
+        "invalidLorebookEntry": "월드북 항목이 올바르지 않아요",
+        "everyLorebookEntryNeedsTextContent": "월드북 항목에는 텍스트 내용이 있어야 해요",
+        "invalidSummaryCoverageIndices": "요약 범위 인덱스가 올바르지 않아요",
+        "importedSummary": "가져온 요약",
+        "theLorebookHasNoEnabledSummaries": "월드북에 활성화된 요약이 없어요"
+      },
+      "readSummaryImport": {
+        "theSummaryCoverageDoesNotMatchIts": "요약 범위가 지문과 일치하지 않아요"
+      },
+      "commitImportedSummaries": {
+        "invalidDestinationCoverage": "대상 범위가 올바르지 않아요",
+        "thisImportContainsOverlappingSummaryCoverageResolve": "요약 범위가 겹쳐요. 가져오기 전에 고치세요.",
+        "someOfTheseMessagesAlreadyHaveSummaries": "일부 메시지에 이미 요약이 있어요. 가져오기 전에 책 탭에서 해제하세요.",
+        "theChatChangedWhilePreparingTheImport": "가져오는 동안 채팅이 바뀌었어요. 파일을 다시 고르세요.",
+        "importFailedAndSomeImportedSummariesCould": "가져오기에 실패했어요. 가져온 요약 일부를 제거하지 못했으니 다시 시도하기 전에 책 탭을 확인하세요."
+      }
+    },
+    "summaryMatching": {
+      "parseFingerprint": {
+        "invalidSummaryMessageFingerprint": "요약 메시지 지문이 올바르지 않아요",
+        "theSummaryMessageFingerprintIsDamaged": "요약 메시지 지문이 손상됐어요"
+      }
+    },
+    "summaryTransfer": {
+      "runSummaryTransfer": {
+        "thisImportIsNoLongerAvailableChoose": "이 가져오기는 더 이상 쓸 수 없어요. 파일을 다시 고르세요.",
+        "importCancelled": "가져오기를 취소했어요",
+        "readingSummaries": "요약을 읽는 중…",
+        "preparingSummaryExport": "요약 내보내기를 준비하는 중…",
+        "readingRawChatMessages": "원본 채팅 메시지를 읽는 중…",
+        "summaryExportReady": "요약 내보내기 준비 완료",
+        "enterAWholeMessageNumberFrom0": "0부터 {length} 사이의 정수 메시지 번호를 입력하세요.",
+        "importedSummaries": "요약을 가져왔어요",
+        "automaticMatchingWasIncompleteOrAmbiguousUp": "자동 매칭이 불완전하거나 모호해요. 어느 메시지까지 요약 범위로 할까요?",
+        "theContentOfThisChatIsDifferent": "이 채팅은 가져온 요약의 원본과 달라요. 메시지 매칭을 시도할까요?",
+        "someOfTheseMessagesAlreadyHaveSummaries": "일부 메시지에 이미 요약이 있어요. 가져오기 전에 책 탭에서 해제하세요.",
+        "theChatChangedWhilePreparingTheImport": "가져오는 동안 채팅이 바뀌었어요. 어느 메시지까지 요약 범위로 할까요?",
+        "savingImportedSummaries": "가져온 요약을 저장하는 중…",
+        "importedSummaries2": "요약 {length}개를 {choice, select, yes {메시지 {size}개 범위로} other {루트 기억으로}} 가져왔어요"
+      },
+      "manual": {
+        "upUntilWhichMessageShouldTheseSummaries": "어느 메시지까지 요약 범위로 할까요?"
+      },
+      "computed": {
+        "comparingRawMessages": "원본 메시지 비교 중… {done} / {length}"
+      }
+    },
+    "worldBook": {
+      "doEnsureBookForChat": {
+        "chatNotFoundForUser": "사용자의 채팅 {chatId}을(를) 찾을 수 없어요",
+        "memoriaReLinkedThisChatSNotebook": "요약 월드북 연결을 복구했어요. 후보 {candidates}개를 찾았으니 중복된 요약 월드북이 있는지 확인하세요.",
+        "memoriaReLinkedThisChatSNotebook2": "요약 월드북 연결을 복구했어요",
+        "memoriaCouldnTFindThisChatS": "이전 요약 월드북을 찾지 못해서 새로 만들었어요. 예전 챕터는 다른 월드북에 있을 수 있어요."
+      },
+      "book": {
+        "memoriaSShelfForThisChatChapters": "이 채팅의 LumiBooks 챕터와 아크예요.",
+        "managedByLumiBooksThisBookMirrorsThe": "LumiBooks가 관리하는 월드북이에요. 코덱스가 업데이트되면 이 월드북 항목을 덮어써요. 기록은 LumiBooks > 코덱스에서 편집하세요."
+      },
+      "bindBookToChat": {
+        "theChatIsNoLongerAvailableIts": "채팅이 더 이상 없어요. 요약 월드북을 연결하지 못했어요."
+      },
+      "bindCodexBookToChat": {
+        "theChatIsNoLongerAvailableIts": "채팅이 더 이상 없어요. 코덱스 월드북을 연결하지 못했어요."
+      },
+      "doEnsureCodexBookForChat": {
+        "chatNotFoundForUser": "사용자의 채팅 {chatId}을(를) 찾을 수 없어요"
+      }
+    }
+  },
+  "codexTidy": {
+    "resolveTidyTarget": {
+      "enterAPositiveTokenLimitOrA": "0보다 큰 토큰 한도나 0~100 사이의 비율을 입력하세요.",
+      "theTargetMustBeAtLeastOne": "목표는 토큰 하나 이상이어야 해요."
+    }
+  },
+  "prompts": {
+    "codex": {
+      "registry": {
+        "codexTemplates": {
+          "entitySheetsRelationsTableOn": "개체 시트 (관계 표 켬)",
+          "describesCharactersJsonLocationsJsonAndThings": "관계 표를 켰을 때의 개체 스키마예요. 관계는 relations.json에 들어가요. {schemaHowtoTail}",
+          "theEntityFilesActiveThisRunE": "이번 실행에서 활성화된 개체 파일 (예: characters.json / locations.json)",
+          "entitySheetsRelationsTableOff": "개체 시트 (관계 표 끔)",
+          "describesTheEntityFilesWhenTheRelations": "관계 표를 껐을 때의 개체 스키마예요. 관계는 시트의 \"ties\"에 들어가요. {schemaHowtoTail}",
+          "theEntityFilesActiveThisRun": "이번 실행에서 활성화된 개체 파일",
+          "relationsTable": "관계 표",
+          "describesRelationsJsonAndTheCoverageRules": "relations.json의 스키마와 포괄 규칙이에요. 관계 표가 켜져 있고 동결되지 않았을 때 보내요. {schemaHowtoTail}",
+          "timeline": "타임라인",
+          "describesTimelineJsonIncludingTheAppendOnly": "timeline.json의 스키마예요. 일반 업데이트에서는 사건을 덧붙이기만 할 수 있고, 앱이 이를 강제해요. {schemaHowtoTail}",
+          "threads": "스레드",
+          "describesThreadsJsonResolvedThreadsAreArchived": "threads.json의 스키마예요. 해결된 스레드는 보관되어 에이전트에게 보이지 않으니, 다시 추가하지 말라고 알려 줘요. {schemaHowtoTail}",
+          "worldRules": "세계 규칙",
+          "describesWorldJson": "world.json을 설명해요. {schemaHowtoTail}",
+          "secrets": "비밀",
+          "describesKnowledgeJsonTheValidatorRejectsItems": "knowledge.json의 스키마예요. 검증을 통과하려면 항목에 knownBy, hiddenFrom, falseBeliefs 중 하나가 있어야 해요. {schemaHowtoTail}",
+          "retrievalKeywords": "검색 키워드",
+          "theRulesForTheKeywordsListsOn": "개체·설정·비밀의 키워드 규칙이에요. 키워드 모드에서는 키워드가 상기를 결정하고, 벡터 상기도 보완해요. 너무 적으면 기록을 놓치고, 너무 넓으면 지나치게 자주 활성화될 수 있어요. 앱은 키워드를 최대 12개, 키워드당 최대 두 단어까지 유지해요.",
+          "patchRulesSetDropContent": "패치 규칙 (set / drop / content)",
+          "theSharedExplanationOfSetDropSeeds": "아래 두 프로토콜이 함께 쓰는 set, drop, seeds, content 패치 규칙이에요. 앱의 병합 동작과 어긋나지 않게 유지하세요.",
+          "protocolToolCalls": "프로토콜 (도구 호출)",
+          "sentWhenTheProfileUsesToolCalls": "일괄 업데이트용 도구 호출 프로토콜이에요. 도구 이름 codex_write, codex_skip, codex_done과, 활성 기록을 쓰거나 건너뛰어야 한다는 요구 사항은 유지하세요. 자체 추론 기능이 없는 모델을 위한 <think>도 정의해요.",
+          "thePatchRulesTemplateAbove": "위의 패치 규칙 템플릿",
+          "protocolToolCallsOneFileAtA": "프로토콜 (도구 호출, 한 번에 파일 하나)",
+          "sentWhenTheProfileUsesToolCalls2": "기록별 업데이트용 도구 호출 프로토콜이에요. 일괄 업데이트와 같은 도구, 같은 쓰기·건너뛰기 요구 사항을 써요. 응답이 작아서 출력이 잘릴 위험이 줄어요.",
+          "protocolJsonMode": "프로토콜 (JSON 모드)",
+          "sentWhenTheProfileWritesStrictJson": "일괄 업데이트용 JSON 프로토콜이에요. \"writes\" 배열, \"skip\" 목록, \"done\" 플래그와, 활성 기록을 쓰거나 건너뛰어야 한다는 요구 사항은 유지하세요.",
+          "protocolJsonModeOneFileAtA": "프로토콜 (JSON 모드, 한 번에 파일 하나)",
+          "sentWhenTheProfileWritesStrictJson2": "기록별 업데이트용 JSON 프로토콜이에요. 일괄 업데이트와 같은 응답 구조, 같은 쓰기·건너뛰기 요구 사항을 써요. 응답이 작아서 출력이 잘릴 위험이 줄어요.",
+          "taskClosingBlock": "작업 마무리 블록",
+          "theClosingBlockOfEveryNormalUpdate": "업데이트·따라잡기 프롬프트에서 스토리 본문 뒤에 붙는 마무리예요. 작업의 세 패스와 추론 지침을 다시 알려요.",
+          "verificationNudge": "검증 재요청",
+          "sentAsAnExtraRoundAfterA": "꼼꼼 모드에서 업데이트가 성공한 뒤 한 번 더 도는 라운드예요. 앱이 선택된 프로토콜의 마무리 지시를 덧붙여요.",
+          "tidyPass": "정돈 패스",
+          "theInstructionBlockForTidyUpThe": "정돈 지침이에요. 앱이 대상 파일, 잠금, 현재 기록, 마무리 지시를 덧붙여요.",
+          "refreshPass": "새로 고침 패스",
+          "sentWhenReEnabledRecordsCatchUp": "다시 켠 기록을 따라잡게 하는 지침이에요. 파일 전체를 다시 써야 해요.",
+          "theFilesBeingRefreshed": "새로 고치는 파일",
+          "itOrTheyToMatchTheTarget": "대상 개수에 맞춘 \"it\" 또는 \"they\"",
+          "itLagsOrTheyLagToMatch": "대상 개수에 맞춘 \"it lags\" 또는 \"they lag\"",
+          "howTheStoryInputIsArrangedE": "스토리 입력 형식 (예: 요약과 원본 메시지)",
+          "rebuildPass": "재구축 패스",
+          "sentWhenACategorySRebuildButton": "카테고리 재구축 지침이에요. 잠긴 행을 빼면 대상이 비어 있는 것으로 보여요. 파일 전체를 다시 써야 해요. 성공하면 파일을 교체하고, 커서는 그대로 둬요.",
+          "theFilesBeingRebuilt": "재구축하는 파일",
+          "howTheStoryInputIsArranged": "스토리 입력이 구성된 방식",
+          "reconcileSweep": "대조 점검",
+          "sentWhenMessagesWereDeletedBehindThe": "메시지가 삭제된 뒤 새 메시지가 남아 있지 않을 때 보내요. 기존 내용을 남은 스토리와 대조해 확인해요.",
+          "fastCatchUp": "빠른 따라잡기",
+          "thePreambleForEachFastCatchUp": "원본 메시지 대신 챕터 요약을 쓰는 빠른 따라잡기 배치의 도입부예요.",
+          "theMessageRangeThisBatchCovers": "이번 배치가 다루는 메시지 범위",
+          "ultraCatchUp": "초고속 따라잡기",
+          "thePreambleForTheSinglePassUltra": "초고속 따라잡기의 도입부예요. 정리된 요약과 최근 원본 메시지를 한 번에 훑어요.",
+          "theMessageRangeCovered": "다루는 메시지 범위",
+          "partialViewGuard": "부분 시야 경고",
+          "prependedToEveryNormalUpdateTheAgent": "에이전트에게 스토리의 일부만 보고 있다고 알려요. 그 범위에 없는 정보를 근거로 바꾸지 않게 해요.",
+          "reconcileWarning": "대조 경고",
+          "prependedWhenEditsOrDeletionsWereDetected": "코덱스 커서 이전 메시지가 수정·삭제되면 기존 기록을 검토 대상으로 표시해요.",
+          "migrationToRelationsTable": "관계 표로 전환",
+          "prependedOnTheFirstRunAfterThe": "관계 표를 켠 뒤 보내요. 전환 지시는 유지하세요. 앱이 결과를 확인해요.",
+          "migrationToInlineTies": "인라인 ties로 전환",
+          "prependedOnTheFirstRunAfterThe2": "관계 표를 끈 뒤 보내요.",
+          "repairWarning": "복구 경고",
+          "prependedWhenFilesOnDiskWereUnreadable": "읽을 수 없는 파일을 빈 파일로 보여 줄 때 보내요.",
+          "theUnreadableFiles": "읽을 수 없는 파일",
+          "lockedEntities": "잠긴 개체",
+          "prependedWhenEntitiesAreLockedTheApp": "잠긴 개체를 알려요. 앱도 이 개체의 변경을 거부해요.",
+          "theLockedEntityIds": "잠긴 개체 id",
+          "lockedFields": "잠긴 필드",
+          "prependedWhenIndividualFieldsAreLockedOn": "잠긴 필드를 알려요. 에이전트에게는 값 대신 \"Locked, do not edit\"가 보여요. 쓰기 때 앱이 그 값을 되돌려 놓아요.",
+          "theEntitiesCarryingLockedFields": "잠긴 필드가 있는 개체"
+        },
+        "schemaHowtoTail": "JSON 구조를 검증기와 맞게 유지하세요. 그렇지 않으면 쓰기가 실패해요. 안내 문구는 바꿔 써도 돼요."
+      }
+    }
+  },
+  "shared": {
+    "tierNames": {
+      "chapter": "챕터",
+      "arc": "아크",
+      "volume": "볼륨",
+      "series": "시리즈",
+      "saga": "사가",
+      "library": "라이브러리",
+      "universe": "유니버스"
+    },
+    "defaultSettings": {
+      "default": "기본"
+    },
+    "normalizeSettings": {
+      "default": "기본"
+    },
+    "base": {
+      "untitled": "제목 없음"
+    },
+    "codexBookNameFor": {
+      "codexDoNotEdit": "{worldBookNamePrefix} 코덱스 [수정 금지] - {suffix}"
+    },
+    "lessonGradeLabel": {
+      "gilded": "금장",
+      "silver": "은장",
+      "bronze": "동장",
+      "apprentice": "견습"
+    },
+    "summaryKindTag": "{kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}}"
+  },
+  "ui": {
+    "activationControl": {
+      "activationControl": {
+        "always": "항상",
+        "keywords": "키워드",
+        "vectorKeywords": "벡터 + 키워드"
+      },
+      "vectorSetupHint": {
+        "vectorRecallNeedsATestedEmbeddingConnection": "Lumiverse에서 테스트를 통과한 임베딩 연결과 월드북 벡터화가 필요해요. 색인은 설정된 프로바이더로 백그라운드에서 진행돼요. 준비되기 전이나 검색에 실패하면 키워드로 대신해요."
+      }
+    },
+    "app": {
+      "tab": {
+        "lumiBooks": "LumiBooks",
+        "books": "책",
+        "memoriaFilesYourChatIntoChaptersAnd": "채팅을 챕터와 아크로 요약해요.",
+        "lumiBooks2": "lumi books 루미북스"
+      },
+      "send": {
+        "preparingSummaryExport": "요약 내보내기 준비 중…",
+        "checkingSummaryCoverage": "요약 범위 확인 중…"
+      },
+      "showLoadNotice": {
+        "retry": "다시 시도"
+      },
+      "requestState": {
+        "loadingLumiBooks": "LumiBooks 불러오는 중…",
+        "lumiBooksHasnTRespondedYouCanRetry": "LumiBooks가 응답하지 않아요. 다시 불러와 보세요.",
+        "couldNotLoadLumiBooks": "LumiBooks를 불러오지 못했어요: {string}"
+      },
+      "doRender": {
+        "lumiBooksCouldnTDisplayThisViewRetry": "이 화면을 표시하지 못했어요. 다시 시도해 새로 불러오세요."
+      },
+      "unsub": {
+        "loadingLumiBooks": "LumiBooks 불러오는 중…",
+        "thisChatIsTakingLongerToLoad": "평소보다 오래 걸리고 있어요. 기다리거나 다시 시도하세요."
+      }
+    },
+    "codexExtraFields": {
+      "applyExtraFields": {
+        "mustBeAValidNumber": "{key}에는 올바른 숫자를 입력하세요."
+      }
+    },
+    "components": {
+      "multiSelect": {
+        "nothingToPick": "선택지 없음"
+      },
+      "searchField": {
+        "value": "×",
+        "clearSearch": "검색어 지우기"
+      },
+      "relativeTime": {
+        "justNow": "방금 전",
+        "mAgo": "{m}분 전",
+        "hAgo": "{h}시간 전",
+        "dAgo": "{floor}일 전"
+      },
+      "formatTokens": {
+        "thousands": "{value}k"
+      }
+    },
+    "continuity": {
+      "sec": {
+        "continuityRoot": "연속성 (루트)"
+      }
+    },
+    "lessons": {
+      "contentBooks": {
+        "courseBooks": {
+          "theLibrarianSPrimer": "사서 입문서",
+          "whyMemoriaExists": "메모리아는 왜 있을까",
+          "goodMorningWhyDoIExistAs": "좋은 아침이에요!! 제가 왜 존재하냐고요? 롤플레이를 하다 보면 채팅이 너무 길어져서 모델의 컨텍스트에 다 들어가지 않게 돼요. 오래된 메시지는 잘려 나가고, 모델은 금세 중요한 정보를 잊어버리죠. 이걸 어떻게 해결할까요?",
+          "beholdMeITakeYourOlderMessages": "보라, 이 몸을! 흐흥. 저는 오래된 메시지를 덩어리째 챕터라는 요약으로 압축해요. 요약이 너무 많아지면 그걸 다시 아크로, 그다음엔 볼륨으로 압축하고요. 각 요약은 원래 메시지가 있던 바로 그 자리에 주입되니까, 채팅 기록의 타임라인이 그대로 유지돼요!",
+          "compactedMessagesAreHiddenSoYourLlm": "압축된 메시지는 숨겨져서, LLM은 그 대신 제 압축 요약을 읽어요. 그리고 챕터를 삭제하면 그 챕터가 숨겼던 메시지가 다시 보이게 돼요.",
+          "afterICompactMessagesOfRange1": "1-18번 메시지를 챕터로 압축하고 나면, LLM 모델은 그 구간에서 무엇을 보게 될까요?",
+          "bothTheSummaryAndTheOriginalMessages": "요약과 원래 메시지 둘 다",
+          "nothingItSForgotten": "아무것도요, 잊혀졌어요!",
+          "theChapterSummariesThereInstead": "그 자리에 대신 들어간 챕터 요약",
+          "aLorebookEntryInTheWorldInfo": "프롬프트의 월드 인포 영역에 들어간 월드북 항목",
+          "theSummariesReplaceTheMessagesInPlace": "요약이 메시지를 그 자리에서 대체해요 :)",
+          "theFirstFiling": "첫 정리",
+          "thisIsAPracticeChatIMade": "이건 오로지 가르쳐 드리려고 제가 만든 연습용 채팅이에요 😾. 강조된 이 버튼들이 제 빠른 작업이에요.",
+          "thisPracticeStoryHasPlentyOfOld": "이 연습용 이야기에는 요약으로 압축할 오래된 메시지가 넉넉히 있어요. 「챕터 정리」 버튼을 누르고 어떻게 되는지 지켜보세요.",
+          "boomTheStoryIsNowMoreCompact": "쾅💣. 이야기가 한결 압축됐고, 새 요약 챕터가 제 책장에 꽂혔어요. 이 색 막대 모양도 바뀌었죠. 그 메시지들이 이제 요약으로 존재하니까요.",
+          "importantThereSAutomationTooNowYou": "중요해요! 자동화도 있어요! 이제 아주아주 중요한 질문이 떠오르겠죠: 메모리아는 언제 알아서 요약하냐고요?? 그 아주 중요한 질문에 제가 친히 답해 드리죠! 그건 딱 두(2️⃣) 가지 설정에 달려 있어요. 생각해 보세요: 압축하지 않은 메시지는 크지만 자세한 정보를 담고 있으니, 바로 압축하고 싶진 않잖아요? 그래서 첫 번째 설정이 제가 \"지연\"이라고 부르는 거예요. 기본값은 65예요. 항상 압축하지 않고 남겨 두는 가장 최근 메시지 수죠! 🗿",
+          "theSecondSettingIsTheWindowWe": "두 번째 설정은 \"윈도우\" 🪟예요. 메시지를 하나하나 따로 요약하고 싶진 않잖아요. 대신 한 18개쯤을 챕터 하나로 요약하고 싶겠죠! 마침 기본값이 18이네요, 이런 우연이! 지연 뒤로 오래된 메시지가 18개 쌓이면 이 두 \"배지\"가 둘 다 \"준비됨\"으로 바뀌고, 저는 챕터 요약을 시작해요!",
+          "theDefaultValuesAreMadeFor200k": "기본값은 200k 컨텍스트 채팅에 맞춰져 있어요. 컨텍스트 크기와 메시지 길이에 따라 지연과 윈도우를 입맛대로 조절하세요. 그래도 컨텍스트는 200k로 두기를 추천해요. LLM이 장문 컨텍스트의 신이 된 2028년에 살고 있는 게 아니라면요(아마도).",
+          "fileAllFilesChaptersUntilTheLag": "「모두 정리」는 지연에 닿을 때까지 챕터를 정리해요. 「아크 묶기」는 제일 오래된 챕터들을 가져다 아크라는 더 작은 요약 하나로 압축해요. 처리할 작업이 남아 있으면 여기에 얼마나 남았는지 알려 주는 작은 배지가 떠요.",
+          "everythingIFileIsStoredInA": "제가 정리한 건 전부 이 채팅만을 위해 만든, 채팅 이름을 딴 월드북에 저장돼요. 챕터가 처음 정리될 때 나타나요.",
+          "normallyYouNeverNeedTheseButtonsWith": "자동화를 켜 두면 보통 이 버튼들은 쓸 일이 없어요. 메시지가 올 때마다 제가 다 알아서 하거든요. 버튼이 안 눌리면 아래 작은 글씨가 이유를 알려 줘요. 보통은 제가 바쁘거나, 저를 꺼 버렸거나요 >:(",
+          "70OldMessagesLag65Window18": "오래된 메시지 70개 · 지연 65 · 윈도우 18",
+          "thesePillsSayLagReadyButWindow": "배지에는 「지연 충족」, 「윈도우 대기」이라고 떠 있는데 저는 정리를 안 하고 있어요. 왜일까요?",
+          "theLagHasNotFilledUpYet": "지연이 아직 다 차지 않았어요",
+          "theChatHasNoLorebookYet": "채팅에 아직 월드북이 없어요",
+          "70MessagesMinusThe65ProtectedBy": "메시지 70개에서 지연이 지키는 65개를 빼면 5개뿐인데, 챕터 하나에는 18개가 필요해요",
+          "aChapterCanOnlyBeFiledAfter": "챕터는 아크가 생긴 뒤에만 정리할 수 있어요",
+          "theWindowOnlyCountsMessagesOlderThan": "윈도우는 지연보다 오래된 메시지만 세요. 70 빼기 65는 5, 18에 못 미치죠. 이럴 때 정리를 누르면 이야기에 메시지가 더 필요하다고 알려 드려요~",
+          "theDesk": "책상",
+          "thisColoredBarIsTheSpineA": "이 색 막대가 책등이에요. 채팅 전체의 지도죠. 블록 하나하나가 이야기의 한 구간이고, 프롬프트를 얼마나 차지하는지에 따라 크기가 정해져요. 맨 앞의 연한 블록은 코덱스인데, 그건 제 두 번째 과정이에요(진짜 멋져요).",
+          "clickAnyColoredBlockAndILl": "색 블록을 아무거나 누르면 책장에 있는 그 챕터나 아크로 바로 데려다 드려요 🐰. 어떤 장면을 제가 뭐라고 썼는지 확인할 때 편해요.",
+          "theListUnderItShowsTheSame": "그 아래 목록은 같은 그림을 숫자로 보여 줘요. 제 볼륨, 아크, 챕터가 차지하는 양, 그리고 아직 손대지 않은 최근 메시지까지요.",
+          "theseTilesAreTheQuickSummaryFiled": "이 타일들은 한눈에 보는 요약이에요. 「정리됨」은 채팅을 얼마나 압축했는지, 「최근 구간」는 아직 압축하지 않은 최근 부분이에요. 「책장」은 제가 만든 걸 전부 세고요. 「코덱스」 타일은 제 두 번째 과정 몫이에요 🥷.",
+          "thePromptPanelShowsThePromptBreakdown": "「프롬프트」 패널은 마지막 생성 때 보낸 프롬프트 구성을 그룹별로 나눠 보여 줘요. 「시뮬레이션」은 다음 프롬프트를 시뮬레이션해요(놀랍게도요). 프롬프트가 모델 한도의 90%를 넘으면 여기서 경고해 드려요. 100%를 넘으면 나쁜 일이 생겨요... 믿으세요 🤞",
+          "iWroteTooMuchThePreviousStep": "앞 단계에서 너무 많이 써서 여기서 이어 갈게요. 100%에 가까워지면 지연을 낮추세요! 아무튼. 제가 글을 쓰는 동안엔 이런 줄이 나타나요. 혹시 엿보기를 좋아하는 음흉한 분이라면 👾, 「보기」로 제 원본 출력을 생각까지 포함해 실시간으로 읽을 수 있어요.",
+          "ifIFailEvenAfterRetryingThis": "재시도해도 실패하면 이 빨간 상자에 오류가 떠요. 꼭 읽어 주세요.",
+          "arc154Msgs08kTokens": "아크 1 · 메시지 54개 → 0.8k 토큰",
+          "lookAtTheSpineTheArcBlock": "책등을 보세요. 맨 왼쪽 아크 블록은 메시지 54개를 담고 있는데도 얇은 조각으로 그려지고, 끝의 미압축 꼬리가 막대 대부분을 차지해요. 왜일까요?",
+          "witnessThePowerOfLumibooks": "LumiBooks의 힘을 똑똑히 보아라",
+          "newerStoryIsAlwaysDrawnBigger": "새 이야기일수록 항상 크게 그려져요",
+          "theArcLostMostOfItsMessages": "아크가 메시지를 대부분 잃어버렸어요",
+          "theBarShowsTimePassingNotSize": "막대는 크기가 아니라 시간의 흐름을 보여 줘요",
+          "theSpineIsACostMapThin": "책등은 비용 지도예요. 얇은 블록은 제 끝내주는 압축 기술이 일하고 있다는 뜻이고, 두꺼운 블록은 미압축 메시지예요.",
+          "compressionIsRunningYetYourPromptIs": "압축은 돌아가고 있는데 프롬프트는 여전히 거대해요. 여기서 어떤 숫자가 그 이유를 설명할까요?",
+          "theTailRecentMessagesAreUncompressedUntil": "「최근 구간」, 최근 메시지는 지연+윈도우를 지나기 전까지 압축되지 않아요",
+          "theFiledTileFilingGrowsThePrompt": "「정리됨」 타일, 정리할수록 프롬프트가 커져요",
+          "theShelfTileTooManyChapters": "「책장」 타일, 챕터가 너무 많아요",
+          "theCodexTileEvenThoughYouDon": "「코덱스」 타일, 아직 그게 뭔지도 모르지만요 🤥",
+          "theUncompressedTailIsUsuallyTheFat": "보통 프롬프트에서 제일 뚱뚱한 부분은 미압축 꼬리예요. 컨텍스트에 안 들어가면 지연을 낮춰서 제가 현재에 더 가까운 곳까지 정리하게 하세요.",
+          "theShelf": "책장",
+          "everythingIFileEndsUpOnMy": "제가 정리한 건 전부 제 책장에 꽂혀요. 구경하러 가 봐요. 「책」 탭을 누르세요.",
+          "myShelf": "제 책장이에요.",
+          "witnessMyShelfEverythingIVeFiled": "제 책장을 똑똑히 보세요 😈. 이 채팅에서 제가 정리한 건 전부 여기 볼륨, 아크, 챕터별로 나뉘어 있어요.",
+          "entriesOpenWithAClickTapThe": "항목은 누르면 열려요. 「경비대장의 심문」 챕터를 눌러 보세요.",
+          "thereSTheWholeRecord": "기록 전체가 여기 있어요.",
+          "youLlSeeItsSizeBeforeAnd": "압축 전후의 크기, 제 짧은 메모, 그리고 버튼 네 개가 보일 거예요. 「편집」은 글을 고쳐 써요. 「재생성」은 요약을 버리고 같은 메시지로 다시 써요. 「해제」는 제가 더는 관리하지 않는 일반 월드북 항목으로 바꿔요. 「삭제」는 지워요. 지루한 것들이죠 💤",
+          "fadedEntriesMeansAnArcOrVolume": "흐릿한 항목은 아크나 볼륨이 대신하게 됐다는 뜻이에요. 챕터가 메시지를 대신하는 것처럼요. 아크를 삭제하면 그 챕터들이 다시 나타나요.",
+          "importantTheGhostTagMarksAChapter": "🚩중요🚩 「유령」 태그는 제가 코덱스용으로 미리 준비해 둔 챕터를 표시해요. 하지만 지연을 지나기 전까지는 실제로 주입하지도, 요약에 쓰지도 않아요. 자세한 건 코덱스 과정에서 설명해요. 이거 디스코드에서 물어보면 죽여 버릴 거예요.",
+          "youDeleteAnArcThatWasMade": "챕터 3개로 만든 아크를 삭제하면 어떻게 될까요?",
+          "the3ChaptersUnhideAndInjectAgain": "챕터 3개가 다시 나타나 주입되고, 메시지는 계속 숨겨진 채로 있어요",
+          "theChaptersAndAllTheirMessagesReturn": "챕터와 그 메시지 전부가 프롬프트로 돌아와요",
+          "the3ChaptersAreDeletedAlongWith": "챕터 3개도 아크와 함께 삭제돼요",
+          "prolixTakesAShit": "Prolix가 똥을 싸요",
+          "deletingATierHandsTheJobBack": "한 단계를 삭제하면 그 일이 바로 아래 단계로 넘어가요. 메시지 자체는 아무것도 덮고 있지 않을 때만 돌아와요.",
+          "halfTheChaptersHereAreFadedAnd": "여기 챕터 절반이 흐릿하고 superseded(대체됨) 표시가 붙어 있어요. 뭔가 고장 났을까요?",
+          "noAnArcReplacedThemTheyStay": "아니요, 아크가 대신하게 된 거예요. 그 장면은 아크가 맡고, 챕터는 그대로 보관돼요",
+          "yesTheyFailedToSave": "네, 저장에 실패했어요",
+          "yesTheirMessagesWereDeleted": "네, 메시지가 삭제됐어요",
+          "theyWereAccidentallyExcluded": "실수로 제외됐어요",
+          "supersededIsNormalHousekeepingAfterAnArc": "대체됨은 아크를 묶은 뒤의 평범한 정리 정돈이에요. 아크를 삭제하면 그 챕터들이 다시 깨어나요.",
+          "whichOfTheseButtonsActuallyCallsThe": "이 버튼 중 실제로 AI 모델을 호출하는 건 무엇일까요?",
+          "regenerate": "재생성",
+          "delete": "삭제",
+          "release": "해제",
+          "exclude": "제외",
+          "value": "🐌",
+          "composeManualControl": "만들기, 수동 조작",
+          "anywayManualControlsNext": "아무튼. 다음은 수동 조작이에요!",
+          "ready": "준비됐나요?",
+          "theComposeTabIsManualModeFilter": "「만들기」 탭은 수동 모드예요. 메시지를 필터링하거나 검색하고, 체크박스를 고르고, Shift+클릭(폰에서는 길게 누르기)으로 한 구간을 통째로 잡으세요. ✓는 이미 정리됨, ⊘는 제외됨이라는 뜻이에요.",
+          "compressFilesWhatYouSelectedIntoA": "「압축」은 선택한 걸 챕터로 정리해요. 와, 말도 안 돼!",
+          "excludeProtectsMessagesFromMeCompletelyPerfect": "「제외」는 메시지를 저한테서 완전히 보호해요. OOC 메모나 토씨 하나 바뀌면 안 되는 지시문에 딱이에요.",
+          "furtherDownYouCanPickChaptersTo": "더 아래에서는 아크로 묶을 챕터와 볼륨으로 합칠 아크를 고를 수 있어요. 볼륨이 가장 강한 압축이에요. 그보다 더 필요하다고요? 아마 아닐걸요.",
+          "whenIsExcludeTheRightToolInstead": "「삭제」 대신 「제외」를 써야 할 때는 언제일까요?",
+          "whenAMessageMustStayInThe": "메시지가 토씨 하나 안 바뀌고 프롬프트에 남아야 하고, 절대 요약되면 안 될 때",
+          "whenYouWantAMessageGoneFrom": "채팅에서 메시지를 없애고 싶을 때",
+          "whenAChapterCameOutBadly": "챕터가 잘못 나왔을 때",
+          "whenYouWishToDeceiveYourEnemy": "적을 속이려면 먼저 나 자신부터 속여야 할 때 🐉",
+          "excludeKeepsTheMessageFromCompressionDelete": "「제외」는 메시지를 압축에서 빼 두고, 「삭제」는 채팅에서 지워요.",
+          "continuityAndRepair": "연속성과 복구",
+          "oneMoreIPromiseTapAdvanced": "진짜 하나만 더, 약속해요! 「고급」을 누르세요.",
+          "theContinuityDesk": "연속성 책상이에요.",
+          "continuityLetsANewChatInheritAn": "연속성 기능으로 새 채팅이 옛 채팅의 기억을 물려받을 수 있어요. 「리베이스」는 다른 채팅의 챕터와 아크를 동결된 프롤로그로 복사해 와요. [Root] 표시가 붙고, 첫 메시지 앞에 주입돼요.",
+          "rebuildFromDeletesThisChatSOwn": "「다른 채팅에서 재구축...」은 먼저 이 채팅 자체의 기억을 지운 다음, 물려받은 기억 위에서 처음부터 다시 시작해요. 「루트 분리」는 물려받은 기억을 다시 떼어 내고요. 그리고 채팅을 분기하면 새 분기도 이걸 물려받아요.",
+          "maintenanceFixesThingsWhenTheShelfAnd": "「관리」는 책장과 채팅이 서로 안 맞을 때 바로잡아요. 「표시 상태 재동기화」는 챕터가 더는 없는 메시지를 다시 보이게 하고, 나머지는 제대로 다시 숨겨요. 「책 재구축」은 제 작업을 비우고 채팅 전체를 다시 요약해요. 「책 비우기」는 그냥 비우기만 해요.",
+          "someRepairsIHandleMyselfDeleteOne": "어떤 복구는 제가 알아서 해요. 월드북 패널에서 제 항목을 하나 지우면 제가 알아채고, 그 메시지들을 다시 보이게 한 다음 알림으로 알려 드려요. 채팅의 월드북 연결이 끊어지면 다시 이어 보기도 하고요. 그러니까 저한테 개기지 마세요 >:)",
+          "youStartASequelChatItsShelf": "속편 채팅을 시작했어요. 책장은 비어 있고, 옛 채팅을 원본으로 골랐어요. 리베이스일까요, 재구축일까요?",
+          "rebaseDuh": "리베이스죠, 당연히?",
+          "rebuildItIsAlwaysTheSaferOption": "재구축, 언제나 더 안전한 선택이에요",
+          "neitherCopyTheEntriesOverByHand": "둘 다 아니에요, 대자연처럼 항목을 손으로 하나하나 옮겨요",
+          "detachFirstThenRebuild": "먼저 분리하고, 그다음 재구축",
+          "rebaseIsForFreshChatsRebuildIs": "리베이스는 새 채팅용이에요. 재구축은 이미 자기 기억이 있어서 그걸 갈아 끼워야 하는 채팅용이고요.",
+          "tuningThePress": "인쇄기 조정",
+          "okThisIsActuallyTheLastPart": "좋아요, 이번엔 진짜진짜 마지막 파트예요. 「조정」 탭을 누르세요.",
+          "myDials": "제 다이얼들이에요.",
+          "everythingIDoIsControlledByA": "제가 하는 모든 일은 프로필로 조정되고, 활성 프로필은 모든 채팅에 한꺼번에 적용돼요. 「확장」 체크박스가 제 마스터 스위치예요. 끄면 어디서든 아무것도 안 해요.",
+          "rightBelowSitsMyWritingDeskWhich": "바로 아래가 제 글쓰기 책상이에요. 어떤 AI 연결로 쓸지, 그리고 샘플러 설정이 여기 있어요. 비워 둔 샘플러 칸은 제 요약 기본값을 따르는데, 온도 0.4도 그중 하나예요. 맨 위의 큰 토글은 코덱스 전용 연결과 샘플러로 전환해요. 그건 제 두 번째 과정 이야기예요.",
+          "nextRoomTapSettings": "다음 방이에요. 「설정」을 누르세요.",
+          "thePressRoom": "인쇄실이에요.",
+          "thisIsThatWindowThingITold": "아까 말한 그 윈도우가 이거예요! 여기서 바꿀 수 있어요.",
+          "arcsCanBuildAutomaticallyAfterEnoughChapters": "메시지가 충분히 쌓이면 챕터가 만들어지는 것처럼, 챕터가 충분히 쌓이면 아크도 자동으로 만들어질 수 있어요.",
+          "andThisIsTheAutomationSettingI": "그리고 이게 아까 말한 그 자동화 설정이에요! 코덱스에는 따로 있지만, 그건 더 짧은 제 두 번째 과정에서 배워 주세요.",
+          "contextIsJustHowManyPreviousChapters": "「컨텍스트」는 매번, 음, 맥락 삼아 이전 챕터를 몇 개 읽을지예요. 나머지는 지루한 것들이고요...",
+          "windowTokens18": "윈도우 · 토큰 · 18",
+          "youSwitchTheWindowUnitFromMessages": "윈도우 단위를 메시지에서 토큰으로 바꾸고 값은 18로 그대로 뒀어요. 방금 저한테 뭘 시킨 걸까요?",
+          "chaptersOfAbout18MessagesSameAs": "전처럼 메시지 18개쯤 되는 챕터",
+          "idk": "몰라요",
+          "youAskedMeToConvert18Messages": "메시지 18개를 토큰으로 환산해 달라고 했어요",
+          "chaptersWillAutomaticallyFileAfterOnly18": "이야기가 겨우 ~18토큰, 그러니까 문장 하나쯤 쌓일 때마다 챕터가 자동으로 정리돼요. 이런.",
+          "theUnitChangesWhatTheNumberMeans": "단위가 바뀌면 숫자의 뜻도 바뀌어요. 토큰은 작은 단어 조각이라 메시지 하나가 수백 개나 되니까, 토큰 윈도우에는 수천 단위 값을 넣어야 해요",
+          "lag10Messages": "지연 · 메시지 10개",
+          "youLowerTheLagFrom65Down": "지연을 65에서 10으로 낮췄어요. 무엇이 달라질까요?",
+          "iStartSummarizingMuchCloserToThe": "현재에 훨씬 가까운 곳부터 요약하기 시작해요. 가장 최근 메시지 10개만 손대지 않고 남아요",
+          "chaptersGetBigger": "챕터가 커져요",
+          "nothingUntilTheWindowAlsoChanges": "윈도우도 바꾸기 전까진 아무 변화 없어요",
+          "iGoBackAndReSummarizeOld": "돌아가서 옛 챕터를 다시 요약해요",
+          "aSmallLagSavesMoreSpaceBut": "지연이 작으면 공간은 더 아끼지만 최근 장면을 더 일찍 요약해요. 환각 없이 좋은 글이 나올 만큼만 넉넉하게 두세요.",
+          "window40TargetPercent4": "윈도우 · 40 · 목표 비율 · 4",
+          "youSetTheWindowTo40And": "윈도우를 40으로, 목표 비율을 4%로 설정했어요(기본값은 18과 15%). 챕터는 어떻게 될까요?",
+          "chaptersBecomeSmallerAndTheyCover40": "챕터가 더 작아지고, 각각 메시지 40개를 담아요.",
+          "chaptersBecomeSmallerAndMoreFrequent": "챕터가 더 작고 더 자주 만들어져요",
+          "theSameTheRatioOnlyAffectsArcs": "그대로예요, 비율은 아크에만 영향을 줘요",
+          "unchangedUntilTheLagChangesToo": "지연도 바꾸기 전까진 그대로예요",
+          "theWindowIsWhatGoesInThe": "윈도우는 들어가는 양, 비율은 나오는 양이에요. 4%는 너어무 과격한 압축이지만, 결국 선택은 자유예요!",
+          "andTheLastPartOfTheSettings": "그리고 설정의 마지막 부분, 「프롬프트」를 누르세요.",
+          "myInstructions": "제 지시문이에요.",
+          "thePromptsPaneHoldsMyInstructionsFour": "「프롬프트」 창에는 제 지시문이 있어요. 기본 챕터 스타일 네 가지 중에 고르거나, 하나를 복제해서 고치거나, 예전 STMB 프리셋을 가져올 수도 있어요. 「모의 실행」은 토큰을 한 개도 쓰지 않고 제가 보낼 최종 프롬프트를 그대로 보여 줘요.",
+          "memoriaCouldnTFileTheChapterThe": "챕터를 생성하지 못했어요: 모델이 올바른 JSON을 반환하지 않았어요",
+          "everyOneOfMyChaptersFailsLike": "재시도해도 제 챕터가 매번 이렇게 실패해요. 가장 그럴듯한 해결책은?",
+          "giveMeAStrongerModelOrA": "저한테 더 강한 모델이나 다른 연결 주기",
+          "raiseTheLag": "지연 올리기",
+          "turnOffMessageHiding": "메시지 숨기기 끄기",
+          "lowerTheRetryCount": "재시도 횟수 줄이기",
+          "retriesCannotFixAModelThatKeeps": "계속 깨진 JSON을 쓰는 모델은 재시도로 못 고쳐요. 커스텀 프롬프트나 정규식 스크립트가 제 출력을 망가뜨리고 있지 않은지도 확인하세요.",
+          "finalFuckingLee": "드디어 존나 마지막",
+          "practiceIsOverThisIsYourReal": "연습은 끝났어요. 이건 진짜진짜 UI예요.",
+          "ifYourChatAlreadyHasEnoughStory": "채팅에 이야기가 충분히 쌓였다면 이번엔 진짜로 「챕터 정리」를 누르고 제가 일하는 걸 지켜보세요. 아직이라면 건너뛰세요. 충분히 쌓이면 제가 알아서 시작할게요.",
+          "aRealChapterFiledByYourOwn": "직접 정리한 진짜 챕터예요!",
+          "myAutomationSwitchLivesInTuningTap": "제 자동화 스위치는 「조정」에 있어요. 「조정」 탭을 누르고 「설정」을 누르세요.",
+          "thereSTheSwitch": "스위치가 여기 있어요.",
+          "turnRunAutomationOnAndILl": "「자동화 사용」을 켜 주세요. 이제부터는 메시지가 올 때마다 제가 알아서 정리할게요.",
+          "automationIsOnILlTakeIt": "자동화가 켜졌어요. 이제부턴 저한테 맡기세요!",
+          "wellDoneMousepadHasLetMeKnow": "잘했어요! Mousepad가 그러는데, 여기까지 해낸 게 정말 자랑스럽다고 전해 달라고 저한테 전해 달래요 🏆. 서명하고 졸업장을 받아 가세요! 더 짧은 코덱스 과정은 궁금할 때 언제든 기다리고 있어요 :)"
+        }
+      },
+      "contentCodex": {
+        "courseCodex": {
+          "theArchivistSCodex": "기록관의 코덱스",
+          "whyAStoryBible": "스토리 바이블이 왜 필요할까",
+          "summaryChaptersAreAGoodOutlineBut": "요약 챕터는 훌륭한 개요예요. 하지만 이야기를 충분히 압축하다 보면 비밀, 장소의 세부 사항, 특정 사물에 대한 정보 같은 내용을 잃기 시작해요. 그러니 압축하는 동안 이야기의 중요한 부분은 어떻게든 따로 기록해 둬야 해요.",
+          "beholdTheKnowledgeCodexLetSWalk": "짜잔! 이것이 바로 지식 코덱스예요 😎. 작은 살인 미스터리로 만든 연습용 코덱스를 함께 둘러보며 알아봐요. 위쪽의 코덱스 탭을 누르세요.",
+          "thereItIs": "여기 있네요.",
+          "eightRecordsMakeTheCodexCharactersLocations": "코덱스는 기록 여덟 가지로 이뤄져요: 캐릭터, 장소, 사물, 관계, 타임라인, 스토리 스레드, 세계 규칙, 비밀. 작은 에이전트가 정해진 주기로 새 메시지를 읽고 이걸 전부 업데이트해요 💪. 각 기록은 월드북 항목이 돼요. 타임라인과 스레드는 항상 주입되고, 나머지는 기본적으로 키워드를 써요. 조정 → 설정 → 코덱스에서 항상 또는 벡터 + 키워드를 골라 상기 방식을 바꿀 수 있어요. 벡터 상기를 쓰려면 Lumiverse에서 임베딩을 설정해 둬야 해요.",
+          "yourCharacterCardSaysEliasHasA": "캐릭터 카드에는 엘리아스에게 흉터가 있다고 적혀 있어요. 그런데 이야기에선 한 번도 나오지 않았고, 코덱스에도 기록되지 않았어요. 버그일까요?",
+          "noTheCodexOnlyRecordsWhatThe": "아니요. 코덱스는 이야기 속에서 언급된 것만 기록해요",
+          "yesTheCodexShouldCopyEverythingFrom": "네, 코덱스는 카드 내용을 전부 옮겨 와야 해요",
+          "theCardHasToBeImportedInto": "카드를 먼저 코덱스로 가져와야 해요",
+          "theCodexOnlyTracksCharactersYouAdd": "코덱스는 직접 추가한 캐릭터만 추적해요",
+          "iReadYourLoreAsReferenceFor": "카드에 적힌 설정은 이름과 철자를 확인하는 참고 자료로 읽지만, 그대로 옮겨 적으면 정보가 중복될 뿐이에요.",
+          "readingTheCodex": "코덱스 읽는 법",
+          "theLineUpTopIsMyLedger": "맨 위의 줄은 제 장부예요. 코덱스가 있는지, 제가 아직 안 읽은 새 메시지가 몇 개인지, 마지막으로 언제 실행됐는지 알려 줘요.",
+          "theseAreTheEverydayActionsUpdateNow": "이건 평소에 쓰는 동작들이에요. 지금 업데이트를 누르면 제가 최신 메시지까지 전부 읽고, 정돈은 코덱스를 더 작게 줄이고, 실행 취소는 제 마지막 변경을 되돌려요. 재구축과 비우기는 가져오기·내보내기와 함께 관리 탭에 있어요.",
+          "everyTileIsOneRecordItsCount": "타일 하나가 기록 하나예요. 개수와 토큰 사용량도 함께 보여 줘요. 이 타일들은 버튼이기도 해요. 관계 타일을 한 번 눌러 보세요.",
+          "dashedMeansNotInjectedButStillUpdated": "점선은 주입은 안 되지만 업데이트는 계속된다는 뜻이에요. 한 번 더 누르면 업데이트가 완전히 동결되고, 세 번째로 누르면 다시 켜져요. 원하면 더 눌러 봐도 돼요.🖱️🖱️🖱️🖱️",
+          "youFrozeRelations40MessagesAgoAnd": "관계를 동결한 지 메시지 40개가 지났고, 이제 “오래됨”이라고 떠요. 다시 켜면 어떻게 될까요?",
+          "itSMarkedAsNeedingACatch": "따라잡기가 필요하다고 표시돼요. 요약과 최근 메시지로 한 번 새로 고치면 해결돼요",
+          "theGapFillsInAutomaticallyOnThe": "다음 일반 업데이트 때 빈 구간이 자동으로 채워져요",
+          "nothingCanRecoverTheMissedEventsExcept": "전체 재구축 말고는 놓친 사건을 되살릴 방법이 없어요",
+          "tidyItTidyingReReadsTheMissed": "정돈하면 돼요. 정돈이 놓친 메시지를 다시 읽어요",
+          "myReadingPositionIsAlreadyPastThose": "제 읽기 위치는 이미 그 메시지들을 지나쳤으니 일반 업데이트로는 해결되지 않아요. 개요에서 다시 켠 기록을 한 번에 따라잡을 수 있어요.",
+          "rebuildCodexAndWipeCodexBothErase": "코덱스 재구축과 코덱스 비우기는 둘 다 모든 걸 지워요. 그 뒤에 실제로 뭐가 다를까요?",
+          "wipeHelpsLumiAgentWipeHerAss": "비우기는 LumiAgent가 엉덩이 닦는 걸 도와줘요.",
+          "rebuildKeepsYourEntriesAndOnlyRewrites": "재구축은 항목을 그대로 두고 오래된 것만 다시 써요",
+          "wipeAlsoDeletesYourChaptersAndArcs": "비우기는 챕터와 아크까지 지워요",
+          "rebuildKeepsYourTileSettingsAndRemakes": "재구축은 타일 설정을 유지한 채 코덱스를 처음부터 다시 만들고, 비우기는 전부 없애 버려요.",
+          "bothEraseTheRecordsAndMyReading": "둘 다 기록과 제 읽기 위치를 지워요. 차이는 다시 읽기가 언제 일어나는지, 그리고 타일 스위치가 남아 있는지예요.",
+          "theRecordsHandsOn": "기록 직접 만져 보기",
+          "tapEntitiesAndBehold": "개체를 누르면, 짜잔...",
+          "thePeoplePlacesAndThings": "사람, 장소, 사물이에요! 🌎",
+          "everyChipIsAnEntityClickOne": "\"칩\" 하나하나가 개체예요. 하나를 누르면 시트가 열려요. 마음껏 둘러보세요.",
+          "iAddAndUpdateAllOfThese": "이건 전부 이야기가 진행되는 동안 제가 알아서 추가하고 업데이트해요. 직접 할 필요는 전혀 없어요! 그래도 제가 이상한 걸 적었을 땐 고칠 수 있고, 지금 인터페이스를 익히기에도 좋은 방법이에요. 해 보세요: + 캐릭터 칩을 누르고 이름을 입력한 다음(Mousepad 어때요?), 시트에서 저장을 누르세요.",
+          "savedYourEditsAreCanonNowI": "저장했어요. 이제 수정한 내용은 정설이에요. 저는 그걸 사실로 읽고 그 위에 쌓아 가요.",
+          "charElias": "char:elias",
+          "theStoryHasMovedOnEliasIsn": "이야기가 진행돼서 엘리아스는 더 이상 숨어 있지 않은데, 시트에는 아직 \"무두질 공방 다락에 숨어 있음\"이라고 적혀 있어요. 무슨 일일까요?",
+          "theAgentHasnTReadThatFar": "에이전트가 아직 거기까지 읽지 않았어요. 알아서 따라잡을 거예요.",
+          "theCodexIsBrokenDeleteTheExtension": "코덱스가 고장 났어요. 확장 프로그램을 지우세요",
+          "sheetsNeverChangeOnceWritten": "시트는 한 번 쓰이면 바뀌지 않아요",
+          "youHaveToDeleteEliasAndRe": "엘리아스를 지웠다가 다시 추가해야 해요",
+          "theCodexUpdatesOnAScheduleSo": "코덱스는 정해진 주기로 업데이트되니 이야기보다 메시지 몇 개만큼 뒤처질 수 있어요. 직접 수정해도 안전하고, 제가 쓴 것처럼 다뤄져요.",
+          "charCaptain": "char:captain",
+          "considerTheCaptainLetSSayThat": "경비대장을 볼까요. 캐릭터 카드가 그를 잘 묘사하고 있다고 쳐요. 그러면 코덱스에까지 둘 필요는 없겠죠. 1번 누르니 “잠김”이라고 뜨는 거 보이죠? 그건 안 돼요! 제가 시트에 쓰지는 않지만, 지금도 프롬프트에는 들어가거든요 :(. 버튼을 한 번 더 누르세요.",
+          "greatHeIsNoLongerUpdatedOr": "좋아요, 이제 그는 업데이트되지도, 프롬프트에 주입되지도 않아요! 항목이나 항목의 하위 섹션에도 이렇게 할 수 있어요!",
+          "letSExploreTheWorldWideWeb": "월드 와이드 웹을 탐험해 봐요. 관계를 누르세요.",
+          "thisIsTheListView": "이건 목록 보기예요.",
+          "iCreateTheseAndKeepTheseUpdated": "이것들도 제가 알아서 만들고 업데이트하지만, 역시 직접 고칠 수도 있어요. 필드를 볼 수 있게 한번 해 봐요. + 관계를 누르고 새 캐릭터를 누군가와 연결하세요. 시작·대상 칸은 입력하는 동안 id를 추천해 줘요. ‘빚짐’ 같은 종류와 짧은 상태를 적은 뒤 저장하세요.",
+          "recorded": "기록했어요!",
+          "youJustAddedARelationByHand": "방금 관계를 직접 추가했어요. 다음 차례에 제 에이전트가 그걸 덮어쓰거나 지울까요?",
+          "noYourEditsBecomePartOfThe": "아니요. 수정한 내용은 기록의 일부가 되고, 에이전트는 그 위에 쌓아 가며 이야기와 어긋나는 부분만 다시 써요",
+          "yesTheAgentRewritesEverythingFromScratch": "네, 에이전트는 매번 전부 처음부터 다시 써요",
+          "yesUnlessYouFreezeTheRelationsTile": "네, 관계 타일을 먼저 동결하지 않으면요",
+          "handEditsOnlySurviveWhileTheRelations": "직접 수정한 내용은 관계 표가 꺼져 있을 때만 남아요",
+          "theAgentAlwaysStartsFromTheCurrent": "에이전트는 항상 현재 기록에서 출발하니, 고친 내용은 에이전트가 지키는 정설이 돼요. 동결은 업데이트를 아예 멈출 때만 써요.",
+          "tapGraph": "그래프를 누르세요.",
+          "thereSYourWebARealStory": "이게 관계망이에요. 실제 이야기라면 훨씬 복잡해 보일 거예요.",
+          "thisIsTheWebForThisSmall": "이 작은 데모의 관계망이에요. 선을 누르면 그래프 아래에 관계 설명이 나오고, 마름모를 누르면 그 개체의 시트가 열리고, 노드는 자유롭게 끌어서 옮길 수 있어요. 나머지 패널에는 바이블의 나머지 내용이 있어요: 타임라인은 날짜가 붙은 사건을, 스레드는 진행 중인 줄거리를, 설정은 세계 규칙을, 비밀은 누가 무엇을 아는지를 담아요. 언제든 둘러보세요.",
+          "theAgentAndItsDials": "에이전트와 다이얼",
+          "lastStopMyRulesOpenTheTuning": "마지막 정거장, 제 규칙이에요. 조정 탭을 열고, 설정 패널에서 코덱스 쪽으로 가세요.",
+          "myDials": "제 다이얼이에요.",
+          "myCodexSettingsLiveHereByDefault": "제 코덱스 설정은 여기 있어요. 기본값으로는 메시지 6개만큼 지연을 두고, 업데이트마다 20개씩 읽어요.",
+          "codexLag65": "코덱스 지연 · 65",
+          "youRaiseTheCodexLagFrom6": "코덱스 지연을 챕터 지연과 똑같이 6에서 65로 올렸어요. 뭐가 달라질까요?",
+          "theBibleAlwaysRuns65MessagesBehind": "바이블이 항상 메시지 ~65개만큼 뒤처져요. 원하는 것보다 너무 늦을 수도 있어요!",
+          "nothingTheLagOnlyAffectsChapters": "아무것도요. 지연은 챕터에만 영향을 줘요",
+          "theCodexGetsCheaperWithNoDownside": "코덱스가 단점 없이 저렴해져요",
+          "theAgentRunsMoreOften": "에이전트가 더 자주 실행돼요",
+          "chaptersActAsReplacementsOfOldMessages": "챕터는 오래된 메시지를 대신하는 반면, 코덱스는 채팅 속 진실을 찍은 스냅숏이에요. 현재에 가깝게 유지하는 편이 좋을 수 있어요.",
+          "twoMoreThingsRelationsTableOffMoves": "두 가지 더요. 관계 표를 끄면 연결이 각 시트에 짧은 메모로 옮겨져서, 약한 모델도 다루기 쉬워져요. 추가 컨텍스트 모드를 켜면 제가 챕터를 유령으로 미리 써 두고 작은 컨텍스트 조각으로 활용해요. 제 전용 모델 연결과 샘플러는 연결 패널의 코덱스 토글 뒤에 있고, 도구를 지원하는 프로바이더를 위한 도구 호출 사용도 거기 있어요.",
+          "oneMoreThingEditAnyRecordWhenever": "하나 더! 기록은 언제든 마음대로 고쳐도 돼요. 그리고 코덱스에 기록된 옛 메시지를 수정하거나 지우면, 다음 실행 때 제가 알아차리고 되감아서 코덱스를 바로잡아요.",
+          "memoriaCouldnTUpdateTheCodexThe": "코덱스를 업데이트하지 못했어요: 코덱스 에이전트가 도구를 호출하지 않았어요.",
+          "everyCodexRunFailsWithThisWhat": "코덱스를 실행할 때마다 이 오류가 나요. 가장 그럴듯한 원인은 뭘까요?",
+          "theCodexModelCannotMakeToolCalls": "코덱스 모델이 도구 호출을 못 해요. 코덱스 연결에서 도구 호출이 되는 모델을 고르세요",
+          "theChatIsTooLong": "채팅이 너무 길어요",
+          "aCodexFileIsCorrupted": "코덱스 파일이 손상됐어요",
+          "theRelationsTableIsOff": "관계 표가 꺼져 있어요",
+          "withUseToolCallsOnTheAgent": "도구 호출 사용을 켜면 에이전트가 도구 호출로 기록을 쓰는데, 산문만 쓸 수 있는 모델은 그 방식으로 코덱스를 관리할 수 없어요. 다시 끄면(연결 패널, 코덱스 토글) JSON 모드로 돌아가는데, 이건 모든 연결에서 작동해요.",
+          "withExtraContextModeOnAChapter": "추가 컨텍스트 모드를 켰더니 책장에 “유령” 태그가 붙은 챕터가 보이고, 프롬프트에는 들어가지 않아요. 뭔가 잘못된 걸까요?",
+          "noItSAChapterWrittenEarly": "아니요. 코덱스에 먹이려고 미리 써 둔 챕터라서, 요약 지연을 지나기 전에는 쓰이지 않아요!",
+          "pleaseReadThisOneCarefullyOrMousepad": "이건 꼭!! 꼼꼼히!! 읽어 주세요. 안 그러면 Mousepad가 화낼 거예요",
+          "yesItSCorruptedDeleteItAnd": "네, 손상됐어요. 지우고 재동기화하세요",
+          "itSADraftWaitingForYour": "승인을 기다리는 초안이에요",
+          "ghostsGiveTheCodexContextEarlyAnd": "유령은 코덱스에 컨텍스트를 일찍 건네주고, 나중에 결국 진짜 요약으로 바뀌어요. ",
+          "openingCeremony": "개관식",
+          "practiceIsOverThisIsYourReal": "연습은 끝났어요. 이제부터는 진짜 기록 보관소예요. 직접 코덱스 패널로 가 보세요: 조정 탭, 설정, 그리고 코덱스 쪽이에요.",
+          "alreadyThereGood": "벌써 와 있네요. 좋아요.",
+          "flipEnableCodexOnTheDefaultSettings": "코덱스 사용을 켜세요. 아래 기본 설정은 대부분의 채팅에 잘 맞아요.",
+          "enabledFromNowOnIKeepYour": "켜졌어요! 이제부터 메시지마다 스토리 바이블을 최신 상태로 유지할게요.",
+          "homeHasAnUpdateCodexButtonNow": "이제 홈에 코덱스 업데이트 버튼이 생겼어요. 찾으러 가 봐요. 홈을 누르세요.",
+          "pressItAndILlReadThis": "누르면 바로 이 채팅을 읽을게요. 건너뛰면 나중에 할게요!",
+          "readingWatchTheBusyRowOnHome": "읽는 중! 제가 생각하는 모습이 궁금하면 홈의 작업 상태 줄을 보세요.",
+          "thatSAllGoForthAndMake": "이게 다예요. 이제 가서 멋진 이야기를 만들어 봐요!✨"
+        }
+      },
+      "diagrams": {
+        "diagramRot": {
+          "theContextWindow": "컨텍스트 윈도우"
+        },
+        "caption": {
+          "newTurnsPushInTheOldestGet": "새 턴이 밀려 들어오면 가장 오래된 턴은 잘려 나가요",
+          "thePlotSurvivesTheStructuredFactsThin": "줄거리는 남지만, 구조화된 사실은 점점 흐려져요"
+        },
+        "diagramFold": {
+          "yourChatHistory": "채팅 기록"
+        },
+        "states": {
+          "oldMessagesPileUp": "오래된 메시지가 쌓이고…",
+          "ch1": "챕터 1",
+          "theOldestFoldIntoAChapterIn": "…가장 오래된 메시지가 제자리에서 챕터로 접히고…",
+          "ch2": "챕터 2",
+          "thenTheNextWindowFolds": "…이어서 다음 윈도우가 접히고…",
+          "arc1": "아크 1",
+          "andChaptersBindIntoASingleArc": "…챕터들은 하나의 아크로 묶여요."
+        },
+        "diagramUnfold": {
+          "theShelf": "책장"
+        },
+        "filed": {
+          "ch3": "챕터 3",
+          "aChapterCoversMessages3754They": "챕터 하나가 메시지 37-54를 덮고, 그 메시지들은 숨겨진 채 따라가요"
+        },
+        "deleted": {
+          "deleteItAndTheMessagesComeRight": "챕터를 지우면 메시지가 바로 돌아와요"
+        },
+        "fadeChips": {
+          "eliasMaraLovesHerHidesIt": "엘리아스 → 마라: 사랑하지만 숨김",
+          "captainWronglyBelievesBandits": "경비대장의 오해: 산적 소행",
+          "day12SheSawTheFall": "12일째: 그녀가 추락을 목격함",
+          "openThreadTheReceipt": "미해결 스레드: 영수증"
+        },
+        "diagramFade": {
+          "oneSummaryCompressedAgainAndAgain": "요약 하나를 압축하고 또 압축하면",
+          "arc": "아크",
+          "volume": "볼륨",
+          "withACodex": "코덱스가 있으면",
+          "theCodexTracksThemExplicitlyOutsideThe": "코덱스가 요약 바깥에서 이것들을 따로 명시해 추적해요"
+        },
+        "tier": {
+          "chapter": "챕터"
+        },
+        "reset": {
+          "chapter": "챕터",
+          "thePlotSurvivesTheStructuredFactsThin": "줄거리는 남지만, 구조화된 사실은 점점 흐려져요"
+        }
+      },
+      "diploma": {
+        "gradeRemark": {
+          "notAPageOutOfPlaceMy": "한 장도 흐트러짐이 없어요. 제가 제일 아끼는 독자예요, 냐아.",
+          "nearlyFlawlessFilingTheShelfApproves": "거의 흠잡을 데 없는 정리예요. 책장도 인정했어요.",
+          "aSolidApprenticeshipTheStacksWillTeach": "탄탄한 견습 과정이었어요. 나머지는 서가가 가르쳐 줄 거예요.",
+          "theLibraryForgivesRetakeASectionWhenever": "도서관은 너그러워요. 원할 때 언제든 단원을 다시 들어요."
+        },
+        "renderRegister": {
+          "signTheRegister": "명부에 서명하기",
+          "theNameGoesOnYourDiploma": "이 이름이 졸업장에 들어가요."
+        },
+        "input": {
+          "reader": "독자"
+        },
+        "sign": {
+          "sign": "서명",
+          "reader": "독자"
+        },
+        "renderDiploma": {
+          "lumibooksAcademy": "LUMIBOOKS 아카데미",
+          "certifiesThat": "아래의 독자가",
+          "hasReadTheStacksAndUnderstoodThem": "서가를 읽고 그 내용을 이해했음을 증명합니다",
+          "ofGoldStamps": "금 도장 {total}개 중 {gold}개 · {toLocaleDateString}",
+          "saveAsImage": "이미지로 저장",
+          "prefersReducedMotionReduce": "(prefers-reduced-motion: reduce)"
+        },
+        "makeConfetti": {
+          "value": "◆"
+        },
+        "downloadDiploma": {
+          "lUMIBOO": "L U M I B O O K S   아 카 데 미",
+          "certifiesThat": "아래의 독자가",
+          "hasReadTheStacksAndUnderstoodThem": "서가를 읽고 그 내용을 이해했음을 증명합니다",
+          "ofGoldStamps": "금 도장 {total}개 중 {gold}개 · {toLocaleDateString}",
+          "memoriaLibrarian": "— 사서 메모리아"
+        }
+      },
+      "engine": {
+        "buildStage": {
+          "exam": "{title} · 시험",
+          "value": "✕",
+          "leaveTheExamAnUnfinishedExamIs": "시험 나가기. 끝내지 않은 시험은 저장되지 않아요",
+          "leaveAnytimeYourDiplomaAndPreviousGrade": "언제든 나가도 돼요. 졸업장과 이전 성적은 그대로 남아요",
+          "leaveTheLessonProgressIsSaved": "수업 나가기. 진행 상황은 저장돼요",
+          "leaveTheLesson": "수업 나가기",
+          "collapseTheDialogue": "대화창 접기"
+        },
+        "renderRail": {
+          "questionOf": "문제 {examIdx1} / {length}"
+        },
+        "table": {
+          "ix": "IX",
+          "iv": "IV"
+        },
+        "makeSandboxSend": {
+          "memoriaSavedJson": "메모리아가 {file}.json을 저장했어요"
+        },
+        "runDoScript": {
+          "memoriaIsFilingAChapter1s": "메모리아가 챕터를 정리하는 중 (1초)",
+          "memoriaOpensAFreshPageForYou": "메모리아가 새 페이지를 펼쳐 드려요, 냥",
+          "memoriaSlidTheChapterOntoYourShelf": "메모리아가 챕터를 책장에 쏙 꽂았어요, 냐아~",
+          "memoriaSavedJson": "메모리아가 {file}.json을 저장했어요"
+        },
+        "renderDemoFor": {
+          "noChatIsOpenRightNowSkip": "지금은 열린 채팅이 없어요. 이 단계는 건너뛰세요."
+        },
+        "renderCover": {
+          "value": "◆ ◇ ◆"
+        },
+        "positionSpotlight": {
+          "value": "◆ {chip}"
+        },
+        "renderStep": {
+          "signTheRegister": "명부에 서명하기"
+        },
+        "renderSheet": {
+          "rightWhereWeNeedToBe": "딱 와야 할 곳에 왔어요.",
+          "back": "이전",
+          "skip": "건너뛰기",
+          "yourMove": "이제 직접 해 볼 차례…",
+          "next": "다음",
+          "working": "작업 중…"
+        },
+        "renderQuiz": {
+          "alreadyStampedGoldFromTheExamOr": "시험이나 이전 회차에서 이미 금 도장을 받았어요.",
+          "answeredOnAnEarlierPass": "이전 회차에서 이미 답했어요.",
+          "back": "이전",
+          "next": "다음",
+          "filed": "정리 완료! ◆",
+          "notQuite": "아쉽지만 아니에요.",
+          "continue": "계속",
+          "skipMarkForRevisit": "건너뛰고 나중에 다시 보기",
+          "holdToPeekAtThePane": "누르고 있으면 패널을 엿볼 수 있어요"
+        },
+        "finishExam": {
+          "ofThePassedTopicsStayStampedWhile": "{length}문제 중 {correct}문제 정답! 통과한 주제는 도장이 그대로 남고, 나머지를 함께 짚어 봐요"
+        },
+        "renderStepExamPass": {
+          "signTheRegister": "명부에 서명하기"
+        },
+        "data": {
+          "reader": "독자"
+        },
+        "renderDiplomaPhase": {
+          "enterTheArchive": "서고로 들어가기",
+          "openTheCodex": "코덱스 열기",
+          "close": "닫기",
+          "yourDiplomaAsFiledInTheAcademy": "아카데미에 보관된 졸업장이에요.",
+          "signedStampedAndShelvedCongratulationsNyaa": "서명하고, 도장 찍고, 책장에 꽂았어요. 축하해요, 냐아."
+        }
+      },
+      "fixture": {
+        "lines": {
+          "theRainHadNotLetUpSince": "북쪽 길에서 공작의 마차가 텅 빈 채 발견된 뒤로, 비는 그칠 줄을 몰랐다.",
+          "eliasPressedTheSilverLocketIntoHis": "엘리아스는 걸쇠가 살을 파고들 때까지 은 로켓 목걸이를 손바닥에 꽉 눌러 쥐었다.",
+          "youWereThereMaraSaidQuietlyNot": "\"그때 거기 있었잖아요.\" 마라가 바느질감에서 눈도 떼지 않은 채 조용히 말했다.",
+          "theCaptainSMenWentDoorTo": "동이 트기도 전에 경비대장의 부하들이 렌 거리를 따라 집집마다 문을 두드렸다.",
+          "iKeepMyVoiceLevelAndAsk": "나는 목소리를 차분하게 가라앉힌 채, 전당포 주인이 입을 다무는 대가로 무엇을 원했는지 묻는다.",
+          "ashfordManorStoodDarkExceptForA": "애시퍼드 저택은 서재 창가의 등불 하나를 빼면 온통 어둠에 잠겨 있었다.",
+          "banditsTheCaptainRepeatedWritingItDown": "\"산적이라.\" 경비대장은 그 말을 되뇌며, 정말 그렇게 믿기라도 하는 듯 받아 적었다.",
+          "maraFoldedTheReceiptIntoTheHem": "마라는 영수증을 접어 소맷단 안에 밀어 넣고는 아무 말도 하지 않았다.",
+          "theBellsRangForTheDukeAt": "정오에 공작을 위한 조종이 울렸고, 도시 사람 절반이 빌려 입은 검은 옷 차림이었다.",
+          "eliasSleptInTheLoftAboveThe": "엘리아스는 무두질 공방 위 다락에서 잠들었고, 꿈속에서 서재 문을 보았다.",
+          "ifTheyFindTheLocketTheyFind": "\"그 로켓 목걸이가 발견되면, 그다음은 당신이에요.\" 다리 위에서 그녀가 속삭였다.",
+          "theFerrymanSScarCaughtTheLight": "내가 건넨 동전을 받을 때, 뱃사공의 흉터가 빛을 받아 번뜩였다."
+        },
+        "makeMeta": {
+          "msgs": "{title} (메시지 {first1}-{last1})"
+        },
+        "tag": {
+          "vol": "볼륨",
+          "arc": "아크"
+        },
+        "comment": {
+          "msgs": "#{n} - {title} (메시지 {first1}-{last1})",
+          "msgs2": "{tag} #{n} - {title} (메시지 {first1}-{last1})"
+        },
+        "ch": {
+          "theDukeFalls": "공작의 죽음",
+          "1stSummaryChapterContaining18PriorTurns": "1st Summary Chapter Containing 18 Prior Turns\n\n3일째. 애시퍼드 공작이 서재에서 시신으로 발견된다. 공작의 시종 엘리아스는 은 로켓 목걸이를 지닌 채 하인용 계단으로 달아난다. 마라는 소맷부리에 피를 묻힌 그가 마당을 가로지르는 모습을 보지만 아무 말도 하지 않는다. 해 질 무렵 도시 경비대가 저택을 봉쇄한다.",
+          "neatlyFiledOneNefariousNightOnThe": "흉흉한 밤 하나, 책장에 반듯하게 꽂아 뒀어요.",
+          "aSeamstressSSilence": "재봉사의 침묵",
+          "2ndSummaryChapterContaining18PriorTurns": "2nd Summary Chapter Containing 18 Prior Turns\n\n5일째. 경비대장이 저택 하인들을 심문한다. 마라는 북쪽 길에서 산적을 봤다고 주장하고 심문에서 풀려난다. 엘리아스는 무두질 공방 다락에 숨어 지내며, 전당포 주인에게 돈을 주고 로켓 목걸이를 맡긴다. 마라는 전당포 영수증을 소매 안에 꿰매 숨겨 둔다.",
+          "secretsStitchedIntoASleeveSoTidy": "소매에 꿰매 넣은 비밀이라니, 참 깔끔하네요 냥.",
+          "thePawnbrokerSReceipt": "전당포 영수증",
+          "3rdSummaryChapterContaining18PriorTurns": "3rd Summary Chapter Containing 18 Prior Turns\n\n8일째. 전당포 주인이 입막음 값을 올린다. 엘리아스와 마라는 다리에서 만나 도망칠지를 두고 다툰다. 경비대장은 공작의 장례식에서 산적 소행설을 공표하는 한편, 뒤로는 하인 심문을 조용히 다시 시작한다.",
+          "priceyPromisesPressedBetweenThePages": "값비싼 약속을 책장 사이에 꾹 눌러 끼워 뒀어요.",
+          "theCaptainAsksQuestions": "경비대장의 심문",
+          "4thSummaryChapterContaining18PriorTurns": "4th Summary Chapter Containing 18 Prior Turns\n\n11일째. 경비대장이 제보를 받고 무두질 공방 거리를 수색한다. 엘리아스는 지붕을 타고 달아나지만, 저택 문장이 새겨진 장갑 한 짝을 떨어뜨린다. 마라는 피 묻은 바느질감을 태우고, 애도하러 도시를 떠나겠다고 경비대장에게 말한다.",
+          "curiousCaptainsCollectSuchClumsyClues": "호기심 많은 경비대장님은 허술한 단서도 참 잘 줍네요.",
+          "locketAtTheBridge": "다리 위의 로켓 목걸이",
+          "5thSummaryChapterContaining18PriorTurns": "5th Summary Chapter Containing 18 Prior Turns\n\n14일째. 전당포 주인이 로켓 목걸이의 생김새를 경비대장에게 팔아넘긴다. 엘리아스는 경비대가 들이닥치기 몇 분 전, 남은 품삯을 탈탈 털어 목걸이를 되찾는다. 다리 위에서 마라는 엘리아스에게 3일째에 모든 것을 봤다고, 그리고 자기 나름의 보험으로 영수증을 간직해 왔다고 털어놓는다.",
+          "bridgesBearTheBestAndBoldestBargains": "다리 위에선 언제나 제일 대담한 거래가 오가죠.",
+          "rooftopConfessions": "지붕 위의 고백",
+          "6thSummaryChapterContaining18PriorTurns": "6th Summary Chapter Containing 18 Prior Turns\n\n16일째. 엘리아스는 계획한 살인이 아니었다고 고백한다. 마라의 어머니가 예전에 전당 잡혔던 로켓 목걸이를 제자리에 돌려놓다가 공작에게 들켰던 것이다. 두 사람은 뱃사공에게 누명을 씌우기로 하지만, 마라가 그의 흉터를 알아보고는 계획을 접는다.",
+          "ghostlyGossipGlidesInBeforeTheGlue": "풀이 마르기도 전에 유령 같은 소문이 스르르 끼어들었어요."
+        },
+        "arc1": {
+          "theMurderAtAshfordManor": "애시퍼드 저택 살인 사건",
+          "1stSummaryArcContaining3PriorChapters": "1st Summary ARC Containing 3 Prior Chapters and 54 Prior Turns\n\n3-8일째. 공작이 죽고, 엘리아스는 은 로켓 목걸이를 들고 달아나며, 마라는 안전 대신 침묵을 택한다. 경비대장은 겉으로는 산적 탓을 하면서도 속으로는 하인들을 의심한다. 전당포 주인은 모든 비밀이 맞물려 도는 경첩이 된다.",
+          "anArcOfAlibisBoundAndBeautifully": "알리바이로 엮은 아크, 예쁘게 묶어서 책장에 꽂아 뒀어요."
+        },
+        "files": {
+          "elias": "엘리아스",
+          "theDukeSFormerValetFugitive": "공작의 전 시종, 도망자",
+          "hidingInTheTanneryLoft": "무두질 공방 다락에 숨어 있음",
+          "quickOverRooftops": "지붕 위에서 날렵함",
+          "keepTheLocket": "로켓 목걸이 지키기",
+          "keepMaraOutOfIt": "마라를 끌어들이지 않기",
+          "killedTheDukeOnDay3": "3일째에 공작을 죽임",
+          "mara": "마라",
+          "seamstressAtAshfordManor": "애시퍼드 저택의 재봉사",
+          "publiclyMourningPrivatelyBargaining": "겉으로는 애도, 속으로는 흥정 중",
+          "leverageOverElias": "엘리아스의 약점 쥐기",
+          "leaveTheCity": "도시 떠나기",
+          "theCaptain": "경비대장",
+          "leadsTheCityWatch": "도시 경비대를 이끎",
+          "publiclyBacksTheBanditTheory": "공개적으로는 산적 소행설을 지지함",
+          "reopenTheStaffInterviewsQuietly": "하인 심문을 조용히 다시 시작하기",
+          "ashfordManor": "애시퍼드 저택",
+          "theDukeSSeatSealedByThe": "공작의 본가. 경비대가 봉쇄했고, 서재 등불 하나만 켜져 있음",
+          "theBridge": "다리",
+          "whereEliasAndMaraTradeTruths": "엘리아스와 마라가 진실을 주고받는 곳",
+          "theSilverLocket": "은 로켓 목걸이",
+          "backInEliasSCoat": "다시 엘리아스의 외투 안에 있음",
+          "tiesEliasToTheStudyOnDay": "3일째 엘리아스가 서재에 있었다는 증거",
+          "trustsHerWithHisLifeNotHis": "목숨은 맡겨도 속사정은 털어놓지 않음",
+          "day3SheSawHimFlee": "3일째: 그가 달아나는 것을 마라가 봄",
+          "day14SheRevealedSheKeptThe": "14일째: 마라가 영수증을 갖고 있다고 털어놓음",
+          "carriesItEverywhereBoughtItBackTwice": "어디든 지니고 다님, 두 번이나 되찾아 옴",
+          "doubtsHerBanditStoryLacksProof": "마라의 산적 이야기를 의심하지만 증거가 없음",
+          "silenceAboutTheMurderUneasySinceThe": "살인에 대한 침묵, 다리에서의 일 이후로 불안함",
+          "day3": "3일째",
+          "theDukeOfAshfordIsKilledIn": "애시퍼드 공작이 서재에서 살해됨",
+          "eliasFleesWithTheLocket": "엘리아스가 로켓 목걸이를 들고 달아남",
+          "day5": "5일째",
+          "maraTellsTheCaptainSheSawBandits": "마라가 경비대장에게 산적을 봤다고 말함",
+          "day8": "8일째",
+          "thePawnbrokerRaisesHisPriceForSilence": "전당포 주인이 입막음 값을 올림",
+          "eliasRunsOutOfMoney": "엘리아스의 돈이 바닥남",
+          "day11": "11일째",
+          "eliasEscapesTheTannerySearchDropsA": "엘리아스가 무두질 공방 수색을 피해 달아나다 문장이 새겨진 장갑을 떨어뜨림",
+          "day14": "14일째",
+          "maraRevealsSheKeptThePawnbrokerS": "마라가 전당포 영수증을 갖고 있었다고 밝힘",
+          "theDukeSMurder": "공작 살해 사건",
+          "theCaptainSBanditTheoryIsPublic": "경비대장은 산적 소행설을 겉으로 내세워 두고, 뒤에서는 하인 심문을 다시 하고 있다.",
+          "aCrestedGloveIsInTheWatch": "문장이 새겨진 장갑이 경비대 증거함에 있음",
+          "thePawnbrokerKeptAReceipt": "전당포 주인이 영수증을 남겨 둠",
+          "leavingTheCity": "도시를 떠나는 일",
+          "maraWantsOutBeforeTheInterviewsResume": "마라는 심문이 다시 시작되기 전에 떠나고 싶어 하지만, 엘리아스는 로켓 목걸이를 두고 갈 수 없다.",
+          "unexplainedScarOnTheFerrymanSHand": "뱃사공 손에 난 정체 모를 흉터",
+          "theCityWatch": "도시 경비대",
+          "answersToTheMagistrateNotTheCrown": "왕실이 아니라 치안판사의 지휘를 받음",
+          "funeralCustomBarsArrestsDuringMourningBells": "장례 관습상 조종이 울리는 동안에는 체포할 수 없음",
+          "mourningCustoms": "애도 관습",
+          "halfBlackWornForAWeekBy": "고인에게 고용됐던 사람은 모두 일주일 동안 반쯤 검은 상복을 입음",
+          "eliasKilledTheDuke": "엘리아스가 공작을 죽였다",
+          "banditsDidIt": "산적의 소행이다",
+          "maraKeepsThePawnbrokerSReceiptSewn": "마라가 전당포 영수증을 소매에 꿰매 숨겨 두고 있다",
+          "herLeverageIfEliasRunsAlone": "엘리아스가 혼자 달아날 때를 대비한 마라의 보험",
+          "human": "인간",
+          "careful": "신중함",
+          "sentimental": "감상적",
+          "observant": "눈썰미가 좋음",
+          "steady": "침착함",
+          "estate": "저택",
+          "landmark": "랜드마크",
+          "heirloom": "가보",
+          "bond": "유대",
+          "owns": "소유",
+          "suspects": "의심",
+          "pact": "밀약"
+        },
+        "profile": {
+          "default": "기본"
+        },
+        "buildFixture": {
+          "theAshfordCase": "애시퍼드 사건",
+          "elias": "엘리아스",
+          "lumiBooksTheAshfordCase": "LumiBooks - 애시퍼드 사건",
+          "storyteller": "이야기꾼",
+          "memoriaIsWritingAChapter13kt": "메모리아가 챕터를 쓰는 중 (~1.3kt 작성, ~0.8kt 생각, 24초)",
+          "noTokenWithin60sTheProviderMay": "60초 동안 토큰이 오지 않았어요. 프로바이더가 느리거나 연결할 수 없는 상태일 수 있어요",
+          "theAshfordCaseVol1": "애시퍼드 사건 1권"
+        },
+        "fixtureBusyFiling": {
+          "memoriaIsFilingAChapter2s": "메모리아가 챕터를 정리하는 중 (2초)"
+        }
+      },
+      "seal": {
+        "memoriaSprite": {
+          "memoria": "메모리아"
+        },
+        "runeButton": {
+          "value": "◆ ◇ ◆ ◇ ◆ ◇ ◆ ◇"
+        },
+        "renderSealPanel": {
+          "lessonsFromMemoria": "메모리아의 수업",
+          "welcomeTutorial": "환영 튜토리얼",
+          "hiUserIMTeachingATutorial": "안녕하세요! 제가 LumiBooks 튜토리얼 수업을 하거든요, 꼭 들으러 와야 해요 (˶ᵔ ᵕ ᵔ˶)",
+          "resumeTheLesson": "수업 이어 하기",
+          "takeLessonFromMemoria": "메모리아에게 수업 듣기",
+          "sitTheExam": "시험 보기",
+          "tenQuestionsFromTheCourse9Of": "과정에서 나오는 열 문제예요. 10문제 중 9문제를 맞히면 졸업이에요.",
+          "skipForNow": "나중에 하기",
+          "progressSavedAtSection": "{sec}단원에서 진행 상황을 저장했어요."
+        },
+        "renderGrumpySkip": {
+          "hmphFine": "흥. 알겠어요.",
+          "skipIfYouMustButYouHad": "꼭 건너뛰겠다면 그러세요. 대신 제 수업도 안 듣고 저를 만든 분한테 도와 달라고 찾아가기만 해 봐요 (¬`‸´¬) 홈에 안내를 남겨 둘게요.",
+          "fineTeachMe": "알았어요, 가르쳐 주세요",
+          "skipAnyway": "그래도 건너뛰기"
+        },
+        "updateSealBusy": {
+          "abort": "중단",
+          "lastAttemptFailed": "마지막 {kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} 시도가 실패했어요",
+          "retry": "다시 시도"
+        },
+        "previewTiles": {
+          "characters": "캐릭터",
+          "240Tokens": "~240 토큰",
+          "locations": "장소",
+          "90Tokens": "~90 토큰",
+          "things": "사물",
+          "50Tokens": "~50 토큰",
+          "relations": "관계",
+          "170Tokens": "~170 토큰",
+          "timeline": "타임라인",
+          "160Tokens": "~160 토큰",
+          "threads": "스레드",
+          "120Tokens": "~120 토큰",
+          "lore": "설정",
+          "110Tokens": "~110 토큰",
+          "secrets": "비밀"
+        },
+        "renderCodexTabLock": {
+          "example": "예시",
+          "theKnowledgeCodex": "지식 코덱스",
+          "aStoryBibleAnAgentKeepsFor": "에이전트가 대신 관리해 주는 스토리 바이블이에요: 캐릭터, 관계, 타임라인, 스레드, 비밀. 이 모듈을 쓰려면 먼저 수업을 들으세요."
+        },
+        "renderCodexPaneLock": {
+          "sealedUntilTheLesson": "수업 전까지 봉인됨",
+          "theCodexSettingsUnlockWhenYouFinish": "「기록관의 코덱스」 수업을 마치면 코덱스 설정이 풀려요. 마지막 단계가 바로 이 패널을 켜는 거예요."
+        },
+        "codexSealCard": {
+          "takeALessonFromMemoria": "메모리아에게 수업 듣기",
+          "skipForNow": "나중에 하기"
+        },
+        "renderCodexGrumpySkip": {
+          "hmphFine": "흥. 알겠어요.",
+          "skipIfYouMustTheCodexUnlocks": "꼭 건너뛰겠다면 그러세요 (¬`‸´¬) 코덱스 잠금은 풀리지만, 조정 탭에서 켜기 전까지 에이전트는 꺼져 있어요. 홈에 안내를 남겨 둘게요.",
+          "fineTeachMe": "알았어요, 가르쳐 주세요",
+          "skipAnyway": "그래도 건너뛰기"
+        }
+      }
+    },
+    "modals": {
+      "booksWarning": {
+        "thisChatHasNoFiledChaptersYet": "정리된 챕터가 없어요. 빠른 모드도 원본 메시지를 읽게 돼요. 먼저 홈 > 모두 정리를 실행하세요.",
+        "theUnfiledTailOfThisChatIs": "정리되지 않은 메시지가 많아요. 마지막 패스는 이 메시지들을 원본 그대로 읽어요. 먼저 홈 > 모두 정리를 실행하세요."
+      },
+      "requestCodexUpdate": {
+        "messageAreWaitingAboutPassesAtThe": "밀린 메시지 {codexBacklog0}{codexBacklog02, plural, other {개}} (약 {codexBacklogPasses}회 패스). 따라잡기 모드를 선택하세요."
+      },
+      "requestCodexRebuild": {
+        "rebuildTheCodex": "코덱스 재구축",
+        "memoriaWillEraseTheStoryBibleAnd": "코덱스를 비우고 메시지 {total}개를 다시 읽어요 (느린 패스 약 {passes}회). 재구축 모드를 선택하세요."
+      },
+      "requestCodexTidy": {
+        "tidyCodexToATargetSize": "코덱스를 목표 크기로 정돈",
+        "currentSelectedContentTokensFrozenFilesAre": "선택됨: {choice, select, yes {~} other {}}{toLocaleString}토큰. 동결된 파일은 빼고, 잠긴 내용은 유지해요.",
+        "targetUnit": "목표 단위",
+        "percentageToKeep": "남길 비율",
+        "tokens": "토큰",
+        "memoriaAims10BelowYourLimitChecks": "한도보다 10% 낮게 잡고, 수정을 포함해 모델을 최대 여섯 번 호출해요. 비율은 남길 양을 정해요: 50%면 45%를 목표로 해요. 실행 취소하면 원래 코덱스로 돌아가요. 잠금이나 모델 출력 때문에 한도까지 줄이지 못할 수도 있어요.",
+        "theTokenizerIsUnavailableForThisModel": " 토크나이저를 쓸 수 없어 크기는 추정치예요.",
+        "cancel": "취소"
+      },
+      "start": {
+        "startTidy": "정돈 시작"
+      },
+      "refresh": {
+        "keepThisPercentage": "남길 비율",
+        "maximumTokens": "최대 토큰",
+        "chooseATargetBelowTheCurrentSize": "현재 크기보다 작은 목표를 선택하세요.",
+        "yourLimitTokensModelTargetWithMargin": "한도: {toLocaleString}토큰. 모델 목표: {toLocaleString2}토큰.",
+        "enterAValidTarget": "올바른 목표를 입력하세요."
+      },
+      "showCodexCatchupModal": {
+        "theCodexIsFarBehind": "코덱스 밀린 작업",
+        "value": "×",
+        "close": "닫기",
+        "automationIsOnSoFastAndUltra": "자동화가 켜져 있으면 빠른 모드는 챕터와 아크부터 갱신해요.",
+        "fastAndUltraFastNeedTheCodex": "빠른 모드를 쓰려면 코덱스 컨텍스트가 스토리 모델의 컨텍스트 이상이어야 해요.",
+        "value2": "⚠ {booksWarning}",
+        "slow": "느림",
+        "notRecommendedReplaysEveryRawMessageWindow": "원본 메시지를 윈도우 단위로 읽어요. 몇 시간 걸릴 수 있어요.",
+        "fast": "빠름",
+        "replayTheFiledSummariesThenOneRaw": "정리된 요약을 읽은 뒤 남은 원본 메시지를 읽어요",
+        "ultraFast": "초고속",
+        "oneSinglePassOverTheFiledSummaries": "정리된 요약과 남은 원본 메시지를 한 번에 읽어요"
+      },
+      "paragraphs": {
+        "ultraFastReadsTheStorySCurrent": "요약과 남은 원본 메시지를 함께 읽어요. 가장 빠르지만 가장 덜 자세해요.",
+        "fastReplaysYourFiledChapterSummariesPass": "챕터 요약을 묶음으로 읽은 뒤 남은 원본 메시지를 읽어요. 느림 모드보다 빨라요.",
+        "slowReplaysEveryRawMessageWindowBy": "원본 메시지를 윈도우 단위로 읽어요. 가장 자세하지만 긴 채팅은 몇 시간 걸릴 수 있어요.",
+        "theCodexAgentAskedYourModelTo": "모델이 도구 호출 대신 텍스트를 돌려줬어요. 모델이나 프로바이더가 도구 호출을 지원하지 않을 수 있어요.",
+        "memoriaCanSwitchTheCodexToJson": "JSON 모드는 텍스트 응답을 쓰므로 도구 지원이 필요 없어요. 응답을 검증하지만 도구 호출보다 덜 안정적일 수 있어요.",
+        "youCanChangeThisAnytimeUnderTuning": "조정 > 연결 > 코덱스에서 「도구 호출 사용」을 바꾸거나, 도구를 지원하는 연결을 선택하세요."
+      },
+      "showCodexToolsHintModal": {
+        "toolCallsArenTGettingThrough": "도구 호출이 돌아오지 않음",
+        "value": "×",
+        "close": "닫기",
+        "donTShowThisAgain": "다시 표시하지 않기",
+        "keepToolCalls": "도구 호출 유지",
+        "switchToJsonMode": "JSON 모드로 전환"
+      },
+      "openEditModal": {
+        "label": "라벨",
+        "content": "내용",
+        "cancel": "취소",
+        "save": "저장"
+      },
+      "labelInput": {
+        "label": "라벨"
+      },
+      "r": {
+        "delete": "삭제",
+        "cancel": "취소"
+      },
+      "showDryRunModal": {
+        "dryRun": "모의 실행: {choice, select, yes {아크} other {{choice2, select, yes {볼륨} other {{choice3, select, yes {코덱스} other {챕터}}}}}}",
+        "value": "×",
+        "closeDryRun": "모의 실행 닫기",
+        "diagnostics": "진단",
+        "copyJson": "JSON 복사",
+        "copied": "복사됨",
+        "copyFailed": "복사 실패"
+      },
+      "promptForString": {
+        "cancel": "취소",
+        "ok": "확인"
+      }
+    },
+    "promptBreakdown": {
+      "timer": {
+        "promptBreakdownTimedOutTryRefreshingThe": "프롬프트 분석 시간이 초과됐어요. 패널을 새로 고쳐 보세요."
+      },
+      "clearPromptRequests": {
+        "promptPanelClosed": "프롬프트 패널이 닫혔어요."
+      }
+    },
+    "summaryTransfer": {
+      "draw": {
+        "summaryTransferInProgress": "요약 가져오기/내보내기 진행 중…",
+        "continueSummaryImportExport": "요약 가져오기/내보내기 계속",
+        "summaryImportExport": "요약 가져오기 / 내보내기",
+        "attemptMatching": "자동 매칭 시도",
+        "letMeSpecify": "직접 지정",
+        "upUntilWhichMessageShouldTheseSummaries": "요약이 어느 메시지까지 다루나요?",
+        "thisChatHasMessagesCountFrom1": "이 채팅에는 메시지가 {messageCount0}개 있어요. 0을 입력하면 물려받은 기억으로 가져와요. 그 밖의 값이면 요약 본문은 그대로 두고, 메시지 1–N을 다루는 항목 하나로 합쳐요.",
+        "importSummaries": "요약 가져오기",
+        "dismiss": "닫기",
+        "cancelImport": "가져오기 취소",
+        "hide": "숨기기"
+      },
+      "choose": {
+        "processingSummaryImport": "요약 가져오기 처리 중…"
+      }
+    },
+    "tabMeta": {
+      "appTabs": {
+        "home": "홈",
+        "books": "책",
+        "codex": "코덱스",
+        "tuning": "조정",
+        "info": "정보"
+      }
+    },
+    "tabs": {
+      "aboutTab": {
+        "hero": {
+          "memoria": "메모리아"
+        },
+        "renderAboutTab": {
+          "memoriaTheLumiBooksLibrarian": "LumiBooks의 사서, 메모리아",
+          "nyandereCatgirlInAMaidUniformBlack": "이야기 때문에 모델도, 지갑도 터지지 않게 지켜 주는 냥데레 고양이 소녀.",
+          "builtOnLumiverseSpindleWithPromptsAnd": "SillyTavern Memory Books에서 영감을 받았어요."
+        },
+        "ack": {
+          "acknowledgements": "감사의 말"
+        },
+        "sec": {
+          "memoriaSAcademy": "메모리아 아카데미",
+          "privateDiagnostics": "비공개 진단"
+        },
+        "renderAcademy": {
+          "bothCoursesLiveHereForRetakesPer": "과정을 다시 복습할 수 있어요."
+        },
+        "courseCard": {
+          "completedAttempt": "{choice, select, yes {{signedName} 님이 완료} other {완료}}, 시도 {attempts}회.",
+          "inProgressSection": "진행 중, {section1}절.",
+          "lockedBehindNothingButYourTimeThis": "노력해야 열려요. 완료하면 코덱스를 쓸 수 있어요.",
+          "theMandatoryPrimer": "필수 튜토리얼이에요.",
+          "viewDiploma": "졸업장 보기",
+          "retakeCourse": "과정 재수강",
+          "leaveAnytimeTheCourseStaysCompletedOn": "언제든 나가도 돼요~",
+          "resume": "이어 하기",
+          "start": "시작",
+          "sitTheExam": "시험 보기",
+          "value": "{i1}. {title}{choice, select, yes { ◇} other { ◆}}",
+          "hasSilverOrSkippedStampsRetakeTo": "금장을 노리려면 과정을 재수강하세요",
+          "allGold": "모두 금장"
+        },
+        "renderDiagnostics": {
+          "turnOffLocalLogsThisIsNot": "로컬 로그 끄기. 권장하지 않아요",
+          "tracksUiFailuresNavigationRequestsFilingCoverage": "UI 오류, 화면 이동, 요청, 정리, 적용 범위, 분기·컨텍스트 판단, 타임스탬프, 메시지 번호, 오류 코드, 번들 위치, 가명 ID를 기록해요. 채팅·요약 본문, 프롬프트, 추론, 이름, 입력값, URL, 자격 증명, 익명화되지 않은 오류는 기록하지 않아요.",
+          "exportDiagnostics": "진단 내보내기",
+          "clearDiagnostics": "진단 지우기"
+        }
+      },
+      "booksTab": {
+        "subtabs": {
+          "shelf": "책장",
+          "compose": "만들기",
+          "advanced": "고급"
+        },
+        "draw": {
+          "openAChatToBrowseMemoriaS": "요약을 보려면 채팅을 여세요"
+        },
+        "sec": {
+          "theShelf": "책장",
+          "pickMessagesForAChapter": "챕터로 정리할 메시지 선택",
+          "bindChaptersIntoAnArc": "챕터를 아크로 묶기",
+          "pressArcsIntoAVolume": "아크를 볼륨으로 합치기",
+          "maintenance": "관리",
+          "bind": "{tierNamesTier1} 묶기",
+          "summaryExportAndImport": "요약 내보내기·가져오기"
+        },
+        "renderShelf": {
+          "emptyShelfForNowMemoriaWillStart": "아직 요약이 없어요."
+        },
+        "search": {
+          "searchTitlesAndSummaries": "제목과 요약 검색..."
+        },
+        "groups": {
+          "volumes": "볼륨",
+          "arcs": "아크",
+          "chapters": "챕터"
+        },
+        "buildGroups": {
+          "of": "{title} ({length2}개 중 {length}개)",
+          "noMatch": "일치 항목 없음"
+        },
+        "toggle": {
+          "showRecentOnly": "최근 항목만 보기",
+          "showAllShown": "전체 {length}개 보기 ({length2}개 표시 중)"
+        },
+        "renderEntryRow": {
+          "ghost": "유령",
+          "t": "{range} · {contentTokens}t"
+        },
+        "tokenStr": {
+          "tokens": "{formatTokens}→{contentTokens} 토큰",
+          "tokens2": "{contentTokens} 토큰"
+        },
+        "renderEntryDetail": {
+          "ghostNotYetInjected": "유령, 아직 주입 안 됨",
+          "memoria": "메모리아: {shortComment}",
+          "edit": "편집",
+          "edit2": "{kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} 편집",
+          "editThisEntrySLabelAndContent": "라벨과 내용 편집",
+          "regenerate": "재생성",
+          "resummarizeTheSameSources": "같은 원본으로 다시 요약",
+          "release": "해제",
+          "stripTheLumiBooksMarkerSoTheEntry": "일반 월드북 항목으로 전환",
+          "delete": "삭제"
+        },
+        "ok": {
+          "regenerate": "재생성할까요?",
+          "memoriaWillResummarizeTheSameSourcesAnd": "같은 원본을 다시 요약하고, 성공하면 이 항목을 교체해요.",
+          "releaseToLorebook": "월드북 항목으로 해제할까요?",
+          "memoriaWillHandThisEntryToYour": "[orphaned] 접두사를 붙여 일반 월드북 항목으로 바꾸고 LumiBooks에서 분리해요. {freed}",
+          "delete": "삭제할까요?",
+          "memoriaWillDropThisGhostChapterShe": "이 유령 챕터를 삭제해요. 해당 메시지는 나중에 다시 요약돼요.",
+          "higherTierMemoriesKeepCoveringTheseSources": "상위 단계 기억이 이 원본을 계속 포함해요.",
+          "memoriaWillLetThoseMessagesBackInto": "해당 메시지가 프롬프트로 돌아가요.",
+          "itsChaptersReviveAndKeepCoveringThose": "하위 챕터가 다시 활성화되어 이 메시지를 계속 포함해요.",
+          "itsSourceSummariesReviveAndKeepCovering": "원본 요약이 다시 활성화되어 이 메시지를 계속 포함해요.",
+          "rebuildTheShelf": "책장을 재구축할까요?",
+          "memoriaWillDeleteEveryChapterArcAnd": "이 채팅의 요약을 삭제하고 처음부터 다시 요약해요. 되돌릴 수 없어요.",
+          "wipeTheShelf": "책장을 비울까요?",
+          "memoriaWillDeleteEveryChapterArcAnd2": "이 채팅의 요약을 삭제하고 메시지를 프롬프트로 되돌려요. 되돌릴 수 없어요."
+        },
+        "freed": {
+          "higherTierMemoriesKeepCoveringTheseSources": "상위 단계 기억이 이 원본을 계속 포함해요.",
+          "itsMessagesReturnToThePromptUnless": "상위 단계가 아직 포함하고 있지 않다면 해당 메시지가 프롬프트로 돌아가요.",
+          "itsChaptersReviveAndKeepCoveringThose": "하위 챕터가 다시 활성화되어 이 메시지를 계속 포함해요.",
+          "itsSourceSummariesReviveAndKeepCovering": "원본 요약이 다시 활성화되어 이 메시지를 계속 포함해요."
+        },
+        "renderChapterPicker": {
+          "pickUncompressedMessagesAndFileThemInto": "요약할 메시지를 선택하세요. ✓는 이미 정리된 메시지예요.",
+          "shiftClickOrLongPressSelectsA": "Shift+클릭하거나 길게 눌러 범위 선택",
+          "pickUncompressed": "미압축 선택",
+          "clear": "선택 해제"
+        },
+        "filterSel": {
+          "uncompressedOnly": "미압축만",
+          "allMessages": "모든 메시지",
+          "alreadyFiled": "이미 정리됨"
+        },
+        "query": {
+          "search": "검색..."
+        },
+        "compressBtn": {
+          "compress": "압축"
+        },
+        "excludeBtn": {
+          "exclude": "제외",
+          "toggleExclusionForTheSelectedMessagesExcluded": "선택한 메시지의 압축 여부를 전환해요. 제외된 메시지는 컨텍스트에 남아요."
+        },
+        "syncControls": {
+          "selectedTokensBefore": "{size}개 선택됨 (압축 전 ~{formatTokens} 토큰)"
+        },
+        "buildRows": {
+          "noMessagesMatch": "일치하는 메시지 없음"
+        },
+        "more": {
+          "showOlder": "이전 메시지 보기 ({older})"
+        },
+        "buildMessageRow": {
+          "shiftClickOrLongPressOnTouch": "Shift+클릭(터치에서는 길게 누르기)으로 범위 선택",
+          "value": "#{indexInChat1}",
+          "alreadyFiledIntoAChapterArcOr": "챕터, 아크, 볼륨 중 하나로 이미 정리됨",
+          "value2": "✓",
+          "excludedNeverHiddenReplacedOrSummarized": "제외됨 - 숨기거나 대체하거나 요약하지 않음",
+          "value3": "⊘",
+          "hiddenInChat": "채팅에서 숨김",
+          "empty": "(비어 있음)"
+        },
+        "renderArcPicker": {
+          "memoriaHasNotFiledAnyChaptersYet": "아직 챕터 없음",
+          "value": "{slice}{range} - {tokenStr}",
+          "bindSelected": "선택 항목 묶기",
+          "selectAllActive": "활성 항목 모두 선택",
+          "clear": "선택 해제"
+        },
+        "updateArcCounts": {
+          "selectedTokensBefore": "{size}개 선택됨 (압축 전 ~{formatTokens} 토큰)"
+        },
+        "range": {
+          "msgs": " (메시지 {firstMsgIdx1}-{lastMsgIdx1})"
+        },
+        "renderVolumePicker": {
+          "memoriaHasNoUnboundArcsToPress": "묶이지 않은 아크 없음",
+          "aVolumeReplacesItsSourceArcsIn": "볼륨은 프롬프트에서 자신이 포함한 아크를 대체해요. 자동화는 조정 탭에서 설정하세요.",
+          "value": "{slice}{range} - {tokenStr}",
+          "pressSelected": "선택 항목 합치기",
+          "selectAllActive": "활성 항목 모두 선택",
+          "clear": "선택 해제"
+        },
+        "updateCounts": {
+          "selectedTokensBefore": "{size}개 선택됨 (압축 전 ~{formatTokens} 토큰)"
+        },
+        "renderContinuity": {
+          "t": "[{tag}] {slice} ({contentTokens}t)"
+        },
+        "originName": {
+          "anImportedLorebook": "가져온 월드북"
+        },
+        "wrap": {
+          "noOtherChatHasMemoriesToInherit": "물려받을 요약이 있는 채팅 없음",
+          "inheritedFromMemor": "{originName}에서 물려받은 기억 {rootEntryCount, plural, other {#개}}.",
+          "detachRoot": "루트 분리",
+          "removeTheInheritedRootMemoriesFromThis": "이 채팅에서 물려받은 루트 기억 제거",
+          "detachInheritedMemories": "물려받은 기억을 분리할까요?",
+          "memoriaWillRemoveTheInheritedMemoriesFrom": "물려받은 기억을 제거해요. 이 채팅의 챕터와 아크는 그대로 둬요.",
+          "thisChatAlreadyHasItsOwnMemories": "이 채팅에는 이미 요약이 있어요. 재구축하면 기존 요약을 교체한 뒤 선택한 루트로 다시 요약해요.",
+          "seedThisChatWithAnotherChatS": "다른 채팅의 요약을 물려받아요. 더 새로운 요약으로 묶이기 전까지 첫 메시지 앞에 주입돼요.",
+          "sourceChatToInheritMemoriesFrom": "기억을 물려받을 원본 채팅",
+          "pickASourceChat": "원본 채팅 선택...",
+          "rebuildFrom": "다른 채팅에서 재구축...",
+          "replacesThisChatSMemoriesWithThe": "선택한 루트로 요약 교체",
+          "rebuildFromRoot": "루트로 재구축할까요?",
+          "memoriaWillDeleteThisChatSExisting": "이 채팅의 챕터와 아크를 삭제하고, 선택한 루트를 추가한 뒤 다시 요약해요. 되돌릴 수 없어요.",
+          "rebase": "리베이스",
+          "seedThisChatWithTheChosenChat": "선택한 채팅의 요약 물려받기"
+        },
+        "renderMaintenance": {
+          "repairToolsForWhenTheShelfAnd": "월드북 항목 편집 같은 변경 뒤에 메시지 표시 상태를 바로잡아요.",
+          "reHideCovered": "정리된 메시지 다시 숨기기",
+          "reApplyTheExcludeFromContextFlag": "요약에 포함된 메시지를 컨텍스트에서 제외",
+          "resyncVisibility": "표시 상태 재동기화",
+          "unhideMessagesWhoseChapterOrArcNo": "메시지 표시 상태를 요약 범위에 맞춤",
+          "rebuildBooks": "책 재구축",
+          "wipeTheShelfAndReSummarizeThis": "요약을 지우고 처음부터 다시 요약",
+          "wipeBooks": "책 비우기",
+          "deleteEveryLumiBooksEntryForThisChat": "이 채팅의 LumiBooks 요약 삭제"
+        },
+        "renderHigherPickers": {
+          "bindSelected": "선택 항목 묶기",
+          "bindReadyBatches": "준비된 배치 묶기",
+          "activeSourceEntriesReadyBatchesUseThis": "활성 원본 항목 {length}개. 준비된 배치는 조정 탭에 설정한 이 단계의 임계값과 지연을 따라요."
+        },
+        "renderSummaryTransfer": {
+          "exportTheActiveShelfWithRawMessage": "요약을 내보내요. 이 채팅에 맞춘 내보내기예요.",
+          "exportSummaries": "요약 내보내기",
+          "importSummaries": "요약 가져오기",
+          "readingSummaryFile": "요약 파일 읽는 중…",
+          "couldNotReadThatLorebookJsonFile": "월드북 JSON 파일을 읽지 못했어요"
+        },
+        "entryFallback": "{kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} {id}"
+      },
+      "codexTab": {
+        "deliverCodexFileState": {
+          "couldnTSaveThisCategorySSetting": "이 분류의 설정을 저장하지 못했어요: {error}"
+        },
+        "subtabs": {
+          "overview": "개요",
+          "entities": "개체",
+          "relations": "관계",
+          "timeline": "타임라인",
+          "threads": "스레드",
+          "lore": "설정",
+          "secrets": "비밀",
+          "manage": "관리"
+        },
+        "entityGroups": {
+          "characters": "캐릭터",
+          "locations": "장소",
+          "things": "사물"
+        },
+        "staleDraftAbort": {
+          "memoriaRewroteThatRecordWhileYouWere": "편집하는 동안 기록이 바뀌었어요. 새 버전에 수정 내용을 다시 적용하세요."
+        },
+        "empty": {
+          "knowledgeCodex": "지식 코덱스"
+        },
+        "renderCodexTab": {
+          "openAChatToConsultTheCodex": "코덱스를 보려면 채팅을 여세요",
+          "memoriaIsFetchingTheCodexFiles": "코덱스를 불러오는 중…"
+        },
+        "sec": {
+          "knowledgeCodex": "지식 코덱스",
+          "storyBible": "스토리 바이블",
+          "entities": "개체",
+          "relations": "관계",
+          "timeline": "타임라인",
+          "threads": "스레드"
+        },
+        "search": {
+          "searchThisSection": "이 섹션 검색..."
+        },
+        "bibleTiles": {
+          "characters": "캐릭터",
+          "locations": "장소",
+          "things": "사물",
+          "relations": "관계",
+          "timeline": "타임라인",
+          "threads": "스레드",
+          "lore": "설정",
+          "secrets": "비밀"
+        },
+        "bits": {
+          "memoriaWillDeleteEveryRecordInFor": "이 채팅의 {label} 기록을 삭제해요."
+        },
+        "purgeMessage": {
+          "referencesToThemInOtherRecordsBecome": "다른 기록에서 이 기록을 가리키던 참조는 일반 텍스트가 돼요.",
+          "theResolvedThreadArchiveClearsToo": "해결된 스레드 보관함도 비워요.",
+          "thisCannotBeUndone": "되돌릴 수 없어요."
+        },
+        "tileStateLabel": {
+          "injectedUpdated": "주입 · 갱신",
+          "notInjectedStillUpdated": "주입 안 함 · 갱신은 계속",
+          "frozenNoUpdates": "동결 · 갱신 없음"
+        },
+        "renderOverview": {
+          "codexOnFile": "코덱스 있음",
+          "noCodexYet": "코덱스 아직 없음",
+          "messageUnindexed": "색인 안 된 메시지 {codexBacklog}개",
+          "updated": "{codexLastRunAt} 갱신",
+          "theCodexAgentIsOffForThis": "코덱스가 꺼져 있어요. 조정 > 설정 > 코덱스에서 켜세요.",
+          "memoriaIsWorkingOnTheCodexWatch": "코덱스 작업이 진행 중이에요. 진행 상황은 홈에서 확인하세요.",
+          "unreadableOnDiskRebuildCodexRegeneratesThem": "읽을 수 없어요: {join}. 「코덱스 재구축」으로 다시 생성하세요.",
+          "noCodexYet2": "아직 코덱스가 없어요.",
+          "clearStaleTags": "오래됨 표시 지우기",
+          "acceptTheCurrentRecordsAsUpTo": "텍스트나 색인은 바꾸지 않고 기록을 최신으로 표시해요. 모델을 호출하지 않아요. 동결된 기록은 갱신을 놓치면 다시 오래됨이 될 수 있어요.",
+          "recordMissedUpdatesWhileFrozen": "기록 {length}개가 동결된 동안 갱신을 놓쳤어요.",
+          "catchUp1Pass": "따라잡기 (1회)",
+          "onePassRebuildsJustTheReEnabled": "다시 켠 기록만 요약과 최근 메시지로 재구축해요",
+          "rebuildInstead": "대신 재구축",
+          "wipeEverythingAndRegenerateFromTheStart": "코덱스를 비우고 처음부터 다시 생성해요",
+          "clickARecordCardToCycleIt": "카드를 클릭하면 주입 → 주입 안 함 → 동결 순으로 바뀌어요. 기록은 계속 편집할 수 있어요.",
+          "shorterAndSimplerChatsOftenRunBetter": "단순한 채팅이라면 분류를 줄이는 편이 나을 수 있어요.",
+          "updateNow": "지금 업데이트",
+          "consumeEverythingUpToTheNewestMessage": "윈도우와 지연을 무시하고 최신 메시지까지 갱신해요. 밀린 작업이 많으면 빠른 모드를 고를 수 있어요.",
+          "cancel": "취소",
+          "abortTheCodexTaskInFlight": "진행 중인 코덱스 작업 취소",
+          "tidyUp": "정돈",
+          "chooseATargetSizeThenCompactUp": "모델을 최대 6번 호출해 기록을 목표 크기로 줄여요",
+          "undo": "{codexUndoReasonUpdate} 실행 취소",
+          "undo2": "실행 취소",
+          "rollBackToTheSnapshotTakenBefore": "마지막 코덱스 변경 직전 스냅샷으로 되돌려요",
+          "nothingToUndoYetMemoriaSnapshotsThe": "되돌릴 스냅샷이 없어요"
+        },
+        "ok": {
+          "rebuildTheCodex": "코덱스를 재구축할까요?",
+          "memoriaWillEraseTheStoryBibleAnd": "코덱스를 비우고 채팅을 다시 읽어요. 다음 단계에서 속도를 고르세요.",
+          "undoTheLastCodexChange": "마지막 코덱스 변경을 실행 취소할까요?",
+          "memoriaWillRollTheCodexBackTo": "{codexUndoAt}의 {codexUndoReasonUpdate} 직전 스냅샷으로 되돌려요. 그 뒤의 변경 사항은 사라져요.",
+          "importACodexFile": "코덱스 파일을 가져올까요?",
+          "memoriaWillReplaceEveryCodexFileIn": "이 채팅의 코덱스를 가져온 파일로 바꿔요. 되돌릴 수 없어요.",
+          "wipeTheCodex": "코덱스를 비울까요?",
+          "memoriaWillEraseEveryCodexRecordFor": "이 채팅의 코덱스를 비워요. 다음 갱신은 처음부터 시작해요. 되돌릴 수 없어요.",
+          "rebuildThisRecord": "이 기록을 재구축할까요?",
+          "memoriaWillRegenerateEveryRecordInFrom": "이야기 전체를 한 번에 읽어 {label}을(를) 재생성해요. 성공하면 내용을 바꾸고, 잠긴 항목은 그대로 둬요.",
+          "purgeThisRecord": "이 기록을 영구 삭제할까요?",
+          "deleteEntity": "개체를 삭제할까요?",
+          "memoriaWillRemoveFromTheCodexReferences": "\"{str}\"을(를) 삭제해요. 이 개체를 가리키던 참조는 일반 텍스트가 돼요.",
+          "delete": "삭제할까요?"
+        },
+        "renderManage": {
+          "noOtherChatHasACodexTo": "복사할 코덱스가 있는 채팅이 없어요",
+          "carriedOverFromMemoriaIndexesThisChat": "{codexRootOriginName}에서 이어받았어요. 색인은 이 채팅의 처음부터 시작해요.",
+          "detachCodex": "코덱스 분리",
+          "eraseTheCarriedOverCodexFromThis": "이 채팅에서 이어받은 코덱스를 지워요",
+          "detachTheCarriedOverCodex": "이어받은 코덱스를 분리할까요?",
+          "codexRecordsMergeAsMemoriaWorksSo": "복사한 기록은 이미 이 채팅의 코덱스와 합쳐졌어요. 분리하면 코덱스가 비워지고 다음 갱신은 처음부터 시작해요. 되돌릴 수 없어요.",
+          "continuingAnEarlierChatCarryItsStory": "이전 채팅을 이어 간다면 그 코덱스를 복사해 오세요.",
+          "sourceChatToCarryTheCodexFrom": "코덱스를 이어받을 원본 채팅",
+          "pickASourceChat": "원본 채팅 선택...",
+          "carryCodexOver": "코덱스 이어받기",
+          "copyAnotherChatSCodexIntoThis": "다른 채팅의 코덱스를 이 채팅으로 복사해요",
+          "carryTheCodexOver": "코덱스를 이어받을까요?",
+          "memoriaWillCopyTheChosenChatS": "선택한 채팅의 코덱스를 복사해요. 색인은 이 채팅의 처음부터 시작해요.",
+          "exportWritesEveryCodexFileAndIts": "내보내기는 코덱스 파일과 주입 설정을 JSON으로 저장해요. 가져오기는 이를 덮어써요.",
+          "export": "내보내기",
+          "downloadEveryCodexFilePlusItsInject": "코덱스 파일과 주입 설정을 JSON으로 내려받아요",
+          "import": "가져오기",
+          "replaceThisChatSCodexFromAn": "내보낸 파일로 이 채팅의 코덱스를 바꿔요",
+          "rebuildReReadsTheWholeChatFrom": "재구축은 코덱스를 비우고 채팅을 다시 읽어요. 비우기는 다음 갱신 때까지 코덱스를 빈 채로 둬요.",
+          "rebuildCodex": "코덱스 재구축",
+          "wipeAndRegenerateTheWholeStoryBible": "코덱스를 비우고 처음부터 다시 생성해요",
+          "wipeCodex": "코덱스 비우기"
+        },
+        "files": {
+          "codexFiles": "코덱스 파일"
+        },
+        "danger": {
+          "startOver": "처음부터 다시"
+        },
+        "restoreBackup": {
+          "memoriaCouldnTReadThatBackupFile": "백업 파일을 읽지 못했어요"
+        },
+        "renderBibleTile": {
+          "clickToCycle": "{tileStateLabelSt}{choice, select, yes { · 동결된 동안 갱신을 놓침} other {}}{choice2, select, yes { · 따라잡기 대기 중} other {}} - 클릭해서 전환",
+          "tokens": "{choice, select, yes {~} other {}}{formatTokens} 토큰",
+          "stale": " · 오래됨",
+          "needsCatchUp": " · 따라잡기 필요",
+          "clickToCycle2": "{tileStateLabelSt} - 클릭해서 전환"
+        },
+        "tidyBtn": {
+          "cancel": "취소",
+          "tidy": "정돈",
+          "abortTheCodexTaskInFlight": "진행 중인 코덱스 작업 취소",
+          "chooseATargetSizeForThisRecord": "이 기록의 목표 크기를 골라요"
+        },
+        "rebuildBtn": {
+          "rebuild": "재구축",
+          "regenerateJustThisCategoryFromTheWhole": "이야기 전체를 한 번에 읽어 이 분류만 재생성해요"
+        },
+        "purgeBtn": {
+          "purge": "영구 삭제",
+          "deleteEveryRecordInThisCategoryAt": "이 분류의 기록을 삭제해요"
+        },
+        "sheetStateTitle": {
+          "memoriaMaintainsThisSheetClickToLock": "자동으로 갱신돼요. 클릭하면 동결해요.",
+          "frozenAndStillInjectedClickToHold": "동결됐고 주입은 돼요. 클릭하면 프롬프트에서 빼요.",
+          "frozenAndHeldOutOfThePrompt": "동결됐고 프롬프트에서 빠져 있어요. 클릭하면 다시 갱신해요."
+        },
+        "sheetStateLabel": {
+          "state": "{locked, select, yes {🔒} other {🔓}} {injected, select, yes {주입} other {주입 안 함}} · {locked, select, yes {동결} other {갱신}}"
+        },
+        "renderEntities": {
+          "clickANameToOpenItsSheet": "이름을 클릭하면 편집해요.",
+          "of": "{title} · {length2}개 중 {length}개",
+          "value": "+ {singular, select, character {캐릭터} location {장소} thing {사물} other {{singular}}}",
+          "noEntitiesRecordedYetAddOneOr": "아직 개체가 없어요. 개체를 추가하거나 코덱스를 갱신하세요."
+        },
+        "input": {
+          "name": "이름...",
+          "true": "참",
+          "false": "거짓"
+        },
+        "renderAddForm": {
+          "create": "만들기",
+          "cancel": "취소"
+        },
+        "renderEntityCard": {
+          "notInjected": "주입 안 함",
+          "locked": "잠김",
+          "editSheet": "시트 편집",
+          "delete": "삭제"
+        },
+        "addKv": {
+          "lockedFieldMemoriaCanNeverChangeIt": "모델이 수정하지 못하게 잠김"
+        },
+        "renderEntityForm": {
+          "newEntity": "새 개체",
+          "cancel": "취소"
+        },
+        "sync": {
+          "locked": "🔒 잠김",
+          "lockedMemoriaReadsALockMarkerInstead": "모델이 수정하지 못하게 잠겨 있어요. 클릭하면 잠금을 풀어요.",
+          "lockThisFieldSoOnlyYouCan": "모델이 수정하지 못하게 잠그기"
+        },
+        "nameField": {
+          "name": "이름"
+        },
+        "w": {
+          "commaSeparated": "{f} (쉼표로 구분)"
+        },
+        "label": {
+          "onePerLine": "{key} (한 줄에 하나씩)"
+        },
+        "saveBtn": {
+          "saving": "저장 중...",
+          "save": "저장",
+          "theEntityNeedsAName": "개체 이름을 입력하세요"
+        },
+        "renderRecordForm": {
+          "saving": "저장 중...",
+          "save": "저장",
+          "cancel": "취소"
+        },
+        "recordItemActions": {
+          "edit": "편집",
+          "delete": "삭제"
+        },
+        "saveRelationDraft": {
+          "theGroupNeedsAtLeastTwoMembers": "그룹에는 구성원 2명 이상과 종류, 상태가 필요해요",
+          "theRelationNeedsFromToAKind": "관계에는 시작, 대상, 종류, 상태가 필요해요"
+        },
+        "specs": {
+          "type": "유형",
+          "pairAB": "쌍 (a → b)",
+          "group": "그룹",
+          "membersCommaSeparatedRefs": "구성원 (쉼표로 구분한 참조)",
+          "charEliasCharWren": "char:elias, char:wren",
+          "fromA": "시작 (a)",
+          "charElias": "char:elias",
+          "toB": "대상 (b)",
+          "charWren": "char:wren",
+          "kind": "종류",
+          "bondOwnsAtRival": "bond, owns, at, rival...",
+          "state": "상태",
+          "lovesHerHidesIt": "그녀를 사랑하지만 숨긴다",
+          "historyOnePerLine": "이력 (한 줄에 하나씩)",
+          "day12SheSawHimKill": "12일째: 그녀가 그의 살인을 목격함"
+        },
+        "form": {
+          "editRelation": "관계 편집",
+          "newRelation": "새 관계"
+        },
+        "renderRelations": {
+          "list": "목록",
+          "graph": "그래프",
+          "relation": "+ 관계",
+          "noRelationsRecordedYetAddOneOr": "아직 관계가 없어요. 관계를 추가하거나 코덱스를 갱신하세요.",
+          "theRelationsTableIsOffForThis": "관계 표가 꺼져 있어요. 관계는 개체의 유대 필드에 저장돼요.",
+          "memoriaWillRemoveThisRelationFromThe": "이 관계를 삭제해요.",
+          "noRelationMatchesTheSearch": "검색과 일치하는 관계가 없어요"
+        },
+        "arrowSpan": {
+          "value": "→"
+        },
+        "renderRelationGraph": {
+          "noRelationMatchesTheSearch": "검색과 일치하는 관계가 없어요",
+          "noRelationsToChartYet": "그래프로 그릴 관계가 아직 없어요",
+          "group": " group",
+          "value": "{name} ({id})",
+          "zoomOut": "축소",
+          "zoomIn": "확대",
+          "fit": "맞춤",
+          "frameTheWholeWeb": "그래프 전체 보기",
+          "tapAnEdgeForTheStoryTap": "연결선을 탭하면 자세히, 마름모를 탭하면 시트를 봐요. 마름모를 끌어 배치를 바꾸고, 손가락을 오므리거나 끌어서 화면을 움직여요."
+        },
+        "entries": {
+          "character": "캐릭터",
+          "location": "장소",
+          "thing": "사물"
+        },
+        "saveEventDraft": {
+          "theEventNeedsAWhenAndWhat": "사건이 언제 일어났고 무슨 일이었는지 입력하세요"
+        },
+        "eventSpecs": {
+          "when": "언제",
+          "day12": "12일째",
+          "event": "사건",
+          "maraSeesEliasKillTheDuke": "마라가 엘리아스의 공작 살해를 목격한다",
+          "participantsCommaSeparatedRefs": "참여자 (쉼표로 구분한 참조)",
+          "where": "장소",
+          "locAshfordManor": "loc:ashford_manor",
+          "causes": "결과",
+          "sheFleesTheCity": "그녀가 도시를 떠나 달아난다"
+        },
+        "renderTimeline": {
+          "event": "+ 사건",
+          "newEvent": "새 사건",
+          "noEventsRecordedYet": "아직 기록된 사건이 없어요",
+          "noEventMatchesTheSearch": "검색과 일치하는 사건이 없어요",
+          "editEvent": "사건 편집",
+          "clickForEditAndDelete": "편집 또는 삭제",
+          "showRecentOnly": "최근 것만 보기",
+          "showEarlier": "이전 사건 보기 ({lengthTimelineRecent})"
+        },
+        "actions": {
+          "memoriaWillRemoveThisEventFromThe": "이 사건을 삭제해요.",
+          "memoriaWillRemoveThisTopicAndIts": "이 주제와 사실들을 삭제해요.",
+          "memoriaWillRemoveThisSecretFromThe": "이 비밀을 삭제해요."
+        },
+        "threadSpecs": {
+          "name": "이름",
+          "theStolenCrown": "도난당한 왕관",
+          "status": "상태",
+          "open": "진행 중",
+          "stalled": "정체",
+          "resolved": "해결",
+          "abandoned": "포기",
+          "summary": "요약",
+          "latestDevelopment": "최근 전개",
+          "plantedDetailsOnePerLine": "심어 둔 복선 (한 줄에 하나씩)"
+        },
+        "saveThreadDraft": {
+          "theThreadNeedsANameAndA": "스레드 이름과 요약을 입력하세요"
+        },
+        "renderThreads": {
+          "thread": "+ 스레드",
+          "editSeeds": "복선 편집",
+          "newThread": "새 스레드",
+          "seedsOnePerLine": "복선 (한 줄에 하나씩)",
+          "noOpenStorylinesTrackedYet": "진행 중인 스레드가 없어요",
+          "resolvedThreadsStayHereAsYourArchive": "해결된 스레드는 보관되고 프롬프트에서 빠져요.",
+          "editThread": "스레드 편집",
+          "latest": "최근: {latest}",
+          "planted": "◆ 심어 둔 복선: {p}",
+          "memoriaWillRemoveThisThreadFromThe": "이 스레드를 삭제해요.",
+          "noThreadMatchesTheSearch": "검색과 일치하는 스레드가 없어요",
+          "seeds": "복선 ({length})"
+        },
+        "saveWorldDraft": {
+          "theTopicNeedsANameAndAt": "주제 이름과 사실을 입력하세요"
+        },
+        "saveKnowledgeDraft": {
+          "theSecretNeedsItsFact": "비밀의 사실을 입력하세요"
+        },
+        "worldSpecs": {
+          "topic": "주제",
+          "magic": "마법",
+          "factsOnePerLine": "사실 (한 줄에 하나씩)",
+          "bloodMagicCostsMemories": "피의 마법은 기억을 대가로 치른다",
+          "keywordsCommaSeparatedRetrievalTags": "키워드 (쉼표로 구분, 검색용 태그)",
+          "ritualMemoriesBloodMagic": "의식, 기억, 피의 마법"
+        },
+        "knowledgeSpecs": {
+          "fact": "사실",
+          "eliasKilledTheDuke": "엘리아스가 공작을 죽였다",
+          "knownByCommaSeparatedRefs": "아는 사람 (쉼표로 구분한 참조)",
+          "hiddenFromCommaSeparatedRefs": "모르게 할 사람 (쉼표로 구분한 참조)",
+          "falseBeliefsOnePerLineWhoBelief": "잘못된 믿음 (한 줄에 하나씩, \"누가 => 믿음\")",
+          "charCaptainBanditsDidIt": "char:captain => 산적들 짓이다",
+          "note": "메모",
+          "keywordsCommaSeparatedRetrievalTags": "키워드 (쉼표로 구분, 검색용 태그)",
+          "murderDaggerDuke": "살인, 단검, 공작"
+        },
+        "world": {
+          "worldRules": "세계 규칙"
+        },
+        "renderLore": {
+          "topic": "+ 주제",
+          "newTopic": "새 주제",
+          "noWorldLoreRecordedYet": "아직 기록된 세계 설정이 없어요",
+          "noTopicMatchesTheSearch": "검색과 일치하는 주제가 없어요",
+          "editTopic": "주제 편집",
+          "clickForEditAndDelete": "편집 또는 삭제",
+          "keywords": "키워드: {join}"
+        },
+        "secrets": {
+          "whoKnowsWhat": "누가 무엇을 아는가"
+        },
+        "renderSecrets": {
+          "secret": "+ 비밀",
+          "newSecret": "새 비밀",
+          "noSecretsOrAsymmetricKnowledgeTrackedYet": "기록된 비밀이 없어요",
+          "noSecretMatchesTheSearch": "검색과 일치하는 비밀이 없어요",
+          "editSecret": "비밀 편집",
+          "clickForEditAndDelete": "편집 또는 삭제",
+          "knows": "아는 사람: {nameOf}",
+          "hidden": "모르는 사람: {nameOf}",
+          "wronglyBelieves": "{nameOf}의 잘못된 믿음: {str}",
+          "keywords": "키워드: {join}"
+        },
+        "entityFields": {
+          "kind": "종류",
+          "role": "역할",
+          "significance": "중요도",
+          "appearance": "외모",
+          "description": "설명",
+          "notes": "메모",
+          "aliases": "별칭",
+          "traits": "특성",
+          "goals": "목표",
+          "ties": "유대",
+          "keywords": "키워드"
+        },
+        "threadStatus": "{status, select, open {진행 중} stalled {정체} resolved {해결} abandoned {포기} other {{status}}}"
+      },
+      "homeTab": {
+        "buildStreamPanel": {
+          "liveFromMemoriaSDesk": "실시간 출력",
+          "value": "✕",
+          "closeTheLiveView": "실시간 보기 닫기",
+          "waitingForTheFirstTokensFromThe": "모델 출력을 기다리는 중…"
+        },
+        "lessonReminder": {
+          "takeALesson": "수업 듣기"
+        },
+        "renderHomeTab": {
+          "myLessonIsStillWaitingForYou": "제 수업이 아직 기다리고 있어요",
+          "theCodexLessonIsStillWaitingFor": "코덱스 수업이 아직 기다리고 있어요",
+          "openAChatAndMemoriaWillSet": "LumiBooks를 쓰려면 채팅을 여세요"
+        },
+        "empty": {
+          "overview": "개요",
+          "noBookYet": "아직 책 없음"
+        },
+        "hostGroups": {
+          "promptBlocks": "프롬프트 블록",
+          "chatHistory": "채팅 기록",
+          "longTermMemory": "장기 기억",
+          "worldInfo": "월드 인포",
+          "sidecar": "사이드카",
+          "extensions": "확장 기능",
+          "system": "시스템"
+        },
+        "groups": {
+          "promptBlocks": "프롬프트 블록",
+          "chatHistory": "채팅 기록",
+          "worldInfo": "월드 인포",
+          "extensions": "확장 기능"
+        },
+        "renderLessonPromptPanel": {
+          "tokens": "{label} · {tokens} 토큰",
+          "promptVsContextWindow": "컨텍스트 윈도우 대비 프롬프트",
+          "value": "{formatTokens} / {formatTokens2} ({round}%)",
+          "simulatedExampleTheLivePanelReadsYour": "모의 예시예요. 실제 패널은 호스트의 실제 프롬프트를 읽어요."
+        },
+        "sec": {
+          "thePrompt": "프롬프트",
+          "overview": "개요",
+          "pendingPreviews": "대기 중인 미리보기 ({length})",
+          "actions": "작업"
+        },
+        "simulate": {
+          "simulate": "시뮬레이션",
+          "assembleTheNextPromptThroughTheHost": "생성하지 않고 다음 프롬프트 미리보기"
+        },
+        "drawPromptContent": {
+          "readingTheLastFire": "마지막 프롬프트 불러오는 중…",
+          "memoriaIsAskingTheHostForThe": "프롬프트 구성 불러오는 중…",
+          "couldnTReadTheHostPrompt": "호스트 프롬프트를 읽지 못했어요",
+          "noPromptDataYet": "아직 프롬프트 데이터 없음",
+          "tokens": "{label} · {tokens} 토큰",
+          "freeSpaceTokens": "여유 공간 · {formatTokens} 토큰",
+          "promptVsContextWindow": "컨텍스트 윈도우 대비 프롬프트",
+          "promptTotal": "프롬프트 합계",
+          "tokens2": "{totalTokens} 토큰",
+          "contextNearlyFull": "컨텍스트가 거의 가득 참",
+          "value": "{tokens} · {pct}%",
+          "freeSpace": "여유 공간",
+          "value2": "{formatTokens} · {pct}%"
+        },
+        "retry": {
+          "retry": "재시도"
+        },
+        "srcLabel": {
+          "lastFire": "마지막 프롬프트",
+          "simulatedNextFire": "다음 프롬프트 미리보기"
+        },
+        "spineLabel": {
+          "knowledgeCodex": "지식 코덱스",
+          "inAVolume": "볼륨에 포함",
+          "inASeries": "시리즈에 포함",
+          "inASaga": "사가에 포함",
+          "inALibrary": "라이브러리에 포함",
+          "inAUniverse": "유니버스에 포함",
+          "inAnArc": "아크에 포함",
+          "inAChapter": "챕터에 포함",
+          "stagedAsGhost": "유령으로 대기 중"
+        },
+        "where": {
+          "msgs": "메시지 {from1}–{to1} · "
+        },
+        "renderSpine": {
+          "tokens": "{where}{kind} · ~{tokens} 토큰{choice, select, yes { (클릭해서 열기)} other {}}"
+        },
+        "renderBreakdown": {
+          "knowledgeCodexConstantPart": "지식 코덱스 (상시 부분)",
+          "volumesAndHigher": "볼륨 이상 ({length})",
+          "arcs": "아크 ({length})",
+          "chapters": "챕터 ({length})",
+          "uncompressedTailMsgs": "미압축 최근 구간 (메시지 {tailCount}개)",
+          "excludedMsgs": "제외됨 (메시지 {excludedCount}개)",
+          "codexCountsIncludeEnabledConstantLorebookEntries": "코덱스 키워드·벡터 일치로 토큰이 더 늘어날 수 있어요.",
+          "storyContextInThePrompt": "프롬프트 속 이야기 컨텍스트"
+        },
+        "renderOverview": {
+          "chat": "채팅",
+          "character": "캐릭터",
+          "filed": "정리됨",
+          "ofMsgs": "메시지 {totalMessages}개 중 {coveredMessages}개",
+          "shareOfThisChatSMessagesAlready": "요약에 포함된 채팅 메시지",
+          "tail": "최근 구간",
+          "msgsUncompressed": "미압축 메시지 {uncoveredMessages}개",
+          "recentMessagesStillInThePromptAt": "요약 윈도우와 지연 조건을 기다리며 컨텍스트에 남아 있는 메시지",
+          "codex": "코덱스",
+          "messagesTheStoryBibleHasNotRead": "코덱스가 아직 색인하지 않은 메시지",
+          "offEnableInTuning": "꺼짐, 조정 탭에서 켜기",
+          "memoriaHasNoConnectionToWriteWith": "사용할 연결이 없어요. Lumiverse에서 연결을 추가하세요.",
+          "pickAConnectionInTheTuningTab": "조정 탭에서 연결을 선택하세요."
+        },
+        "shelfTile": {
+          "shelf": "책장",
+          "volArcChap": "볼륨 · 아크 · 챕터",
+          "uncompressedSummariesHoverForExistingHigherTiers": "활성 요약이에요. 마우스를 올리면 상위 단계도 보여요."
+        },
+        "locked": {
+          "codex": "코덱스",
+          "takeALesson": "수업 듣기",
+          "theKnowledgeCodexUnlocksAfterMemoriaS": "메모리아의 코덱스 수업을 들으면 지식 코덱스가 열려요"
+        },
+        "subText": {
+          "msgsUnindexedManualOnly": "미색인 메시지, 수동 전용",
+          "msgsUnindexed": "미색인 메시지",
+          "updated": "업데이트: {codexLastRunAt}",
+          "noCodexYet": "아직 코덱스 없음"
+        },
+        "watchBtn": {
+          "hide": "숨기기",
+          "watch": "보기",
+          "seeMemoriaSRawOutputStreamIn": "모델 출력 보기"
+        },
+        "abortBtn": {
+          "abort": "중단",
+          "cancelTheInFlightGeneration": "생성 취소"
+        },
+        "renderFailure": {
+          "lastArcAttemptFailed": "마지막 아크 시도 실패",
+          "lastAttemptFailed": "마지막 {kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} 시도 실패",
+          "lastChapterAttemptFailed": "마지막 챕터 시도 실패",
+          "triedX": "{message} ({retriedTimes}회 시도)",
+          "retry": "재시도"
+        },
+        "titleField": {
+          "title": "제목"
+        },
+        "contentField": {
+          "content": "내용"
+        },
+        "renderPreviewCard": {
+          "memoria": "메모리아: {shortComment}",
+          "tokens": "{tokenCountOutput} 토큰",
+          "save": "저장",
+          "discard": "버리기"
+        },
+        "renderActions": {
+          "lagReady": "지연 충족",
+          "lagBuilding": "지연 대기",
+          "windowReady": "윈도우 충족",
+          "windowBuilding": "윈도우 대기",
+          "chapterReady": "챕터 {backlogChapters, plural, other {#개}} 준비됨",
+          "arcReady": "아크 {backlogArcs, plural, other {#개}} 준비됨",
+          "fileChapter": "챕터 정리",
+          "compressTheOldestUncoveredMessagesIntoA": "윈도우가 다 차지 않았어도 가장 오래된 미정리 메시지를 요약해요",
+          "fileAll": "모두 정리 ({backlogChapters})",
+          "drainTheChapterBacklogKeepsFilingChapters": "윈도우나 지연 한도에 닿을 때까지 챕터를 정리해요",
+          "bindArc": "아크 묶기",
+          "rollTheOldestUnsupersededChaptersIntoA": "가장 오래된 활성 챕터를 아크로 묶어요",
+          "bindAll": "모두 묶기 ({backlogArcs})",
+          "drainTheArcBacklogKeepsBindingArcs": "임계값이나 지연 한도에 닿을 때까지 아크를 묶어요",
+          "updateCodex": "코덱스 업데이트",
+          "consumeEverythingUpToTheNewestMessage": "윈도우와 지연을 무시하고 최신 메시지까지 업데이트해요. 밀린 작업이 많으면 빠른 모드를 제안해요.",
+          "actionsUnlockWhenMemoriaFinishesHerCurrent": "현재 작업이 끝날 때까지 기다려 주세요",
+          "theExtensionIsOffFlipItOn": "확장 기능이 꺼져 있어요. 조정 탭에서 켜세요.",
+          "memoriaWillCreateThisChatSWorld": "첫 챕터를 정리하면 월드북이 만들어져요",
+          "worldBookWhereChaptersAndArcsAre": "이 채팅의 요약 월드북"
+        },
+        "lockedBtn": {
+          "codexTakeALesson": "🔒 코덱스 · 수업 듣기",
+          "theCodexUnlocksAfterMemoriaSCodex": "메모리아의 코덱스 수업을 들으면 코덱스가 열려요"
+        },
+        "tag": {
+          "bookReady": "책 준비됨"
+        },
+        "streamStatus": "{running, select, yes {스트리밍 중} other {완료}}",
+        "higherCount": "{kind, select, chapter {챕터} arc {아크} volume {볼륨} series {시리즈} saga {사가} library {라이브러리} universe {유니버스} codex {코덱스} other {{kind}}} {count}개"
+      },
+      "profileTab": {
+        "profileDefaults": {
+          "defaults": "기본값"
+        },
+        "sec": {
+          "knowledgeCodex": "지식 코덱스",
+          "codexConnection": "코덱스 연결",
+          "reset": "재설정",
+          "profile": "프로필",
+          "summarySettings": "요약 설정",
+          "summaryConnection": "요약 연결",
+          "summarySamplers": "요약 샘플러",
+          "codexSamplers": "코덱스 샘플러",
+          "regex": "정규식",
+          "context": "컨텍스트",
+          "behavior": "동작"
+        },
+        "renderCodexSettings": {
+          "enableCodex": "코덱스 사용",
+          "window": "윈도우",
+          "lag": "지연",
+          "unit": "{kind} 단위",
+          "messages": "메시지 수",
+          "messageTokens": "메시지 토큰",
+          "tokensBreakpoint": "토큰 기준점",
+          "runsWhenEitherTheWindowOrThis": "윈도우나 이 토큰 수 중 하나에 먼저 도달하면 실행돼요.",
+          "loreLimit": "월드북 한도",
+          "ofMaxContext": "최대 컨텍스트 대비 %",
+          "tokenCap": "토큰 상한",
+          "loreTokens0NoLimit": "월드북 토큰 (0 = 제한 없음)",
+          "loreOfMaxContext": "최대 컨텍스트 대비 월드북 %",
+          "yourActivatedLorebookEntriesRideEveryCodex": "월드북 항목을 컨텍스트로 포함해요. 예산을 넘는 항목은 건너뛰어요. 토큰 상한을 0으로 두면 제한이 없어요.",
+          "codexRecall": "코덱스 상기",
+          "theActiveProfileSetsRecallForEnabled": "타임라인과 스레드는 늘 상시 주입되지만, 다른 기록은 상시·키워드·벡터 상기 중에서 고를 수 있어요.",
+          "codexPlacement": "코덱스 배치",
+          "lorebookBefore": "월드북 (앞)",
+          "atHistoryDepth": "기록 심도 위치",
+          "afterChatHistory": "채팅 기록 뒤",
+          "depthFromNewestTurn": "최신 턴 기준 심도",
+          "summariesReplaceTheirSourceHistoryInPlace": "요약은 원래 메시지 자리에 주입되고, 코덱스는 일반 월드북 항목으로 주입돼요. 윈도우가 클수록 업데이트가 뜸해져 비용이 줄 수 있어요. 앞쪽 월드북이 고정돼 있다면 코덱스를 기록 뒤에 배치할 때 캐시가 더 잘 유지돼요.",
+          "relationsTable": "관계 표",
+          "tracksConnectionsBetweenEntitiesAsOneShared": "관계를 참조 검사가 있는 공용 표에 저장해요. 끄면 각 개체 안에 저장해요.",
+          "thoroughMode": "꼼꼼 모드",
+          "spendsOneExtraVerificationRoundPerUpdate": "검증 라운드를 한 번 더 돌려 오래된 정보를 점검하고 기록을 짧게 다듬어요.",
+          "extraContextMode": "추가 컨텍스트 모드",
+          "summarizesChaptersEarlyAtTheCodexLag": "코덱스 지연 지점에서 유령 챕터를 미리 만들어요. 코덱스에 요약 컨텍스트를 주는 데 도움이 돼요.",
+          "chaptersProvided": "제공할 챕터 수",
+          "howManyRecentChapterSummariesExtraContext": "추가 컨텍스트 모드에서 컨텍스트로 넣을 최근 챕터 수예요.",
+          "theCodexAgentSConnectionAndSamplers": "코덱스 연결과 샘플러는 연결 > 코덱스에 있어요."
+        },
+        "updating": {
+          "codexUpdating": "코덱스 업데이트"
+        },
+        "connOpts": {
+          "sameAsSummaryConnection": "요약 연결과 같음",
+          "value": "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (기본값)} other {}}"
+        },
+        "renderCodexConnection": {
+          "useToolCalls": "도구 호출 사용",
+          "offByDefaultTheAgentWritesOne": "끄면 JSON 응답을 써요. 연결이 도구 호출을 지원하면 켜세요.",
+          "updateDelivery": "업데이트 전달 방식",
+          "allRecordsAtOnce": "일괄",
+          "oneRecordAtATime": "순차",
+          "memoriaAlwaysMakesSureEveryRecordIs": "일괄 업데이트가 비용이 더 적어요. 긴 응답에 문제가 있을 때만 순차를 쓰세요."
+        },
+        "renderResetSettings": {
+          "resetsThisProfileSSettingsToTheir": "이 프로필의 설정을 기본값으로 되돌려요."
+        },
+        "idle": {
+          "resetProfileToDefaults": "프로필을 기본값으로 재설정"
+        },
+        "confirm": {
+          "clickAgainToConfirm": "확인할까요?"
+        },
+        "renderProfilePicker": {
+          "new": "새로 만들기",
+          "delete": "삭제",
+          "enabled": "사용",
+          "masterSwitchWhenOffMemoriaDoesNothing": "이 계정에서 LumiBooks를 사용해요."
+        },
+        "name": {
+          "newProfileName": "새 프로필 이름"
+        },
+        "nameField": {
+          "profileName": "프로필 이름"
+        },
+        "enableWrap": {
+          "extension": "확장"
+        },
+        "renderSummarySettings": {
+          "windowLagAndCompressionSettingsForEach": "단계별 윈도우, 지연, 압축 설정이에요.",
+          "runAutomation": "자동화 사용",
+          "windowUnit": "윈도우 단위",
+          "messages": "메시지 수",
+          "messageTokens": "메시지 토큰",
+          "window": "윈도우",
+          "lagUnit": "지연 단위",
+          "lag": "지연",
+          "chapterEntries": "챕터 항목 수",
+          "summaryTokens": "요약 토큰",
+          "manualOnly": "수동 전용",
+          "entries": "{tierNamesTier2} 항목 수"
+        },
+        "card": {
+          "chapterFiling": "챕터 정리",
+          "binding": "{name} 묶기"
+        },
+        "appendAutomationControls": {
+          "automate": "자동화?"
+        },
+        "change": {
+          "targetUnit": "{prefix}TargetUnit",
+          "targetPercent": "{prefix}TargetPercent",
+          "targetTokens": "{prefix}TargetTokens"
+        },
+        "appendCompressionTarget": {
+          "compressionTarget": "압축 목표",
+          "percentOfInput": "입력 대비 비율",
+          "fixedTokens": "고정 토큰",
+          "targetTokens": "목표 토큰",
+          "targetPercent": "목표 비율"
+        },
+        "opts": {
+          "defaultConnection": "기본 연결",
+          "noConnectionsAvailable": "사용할 수 있는 연결이 없음",
+          "value": "{name} - {provider}{choice, select, yes {/{model}} other {}}{choice2, select, yes { (기본값)} other {}}"
+        },
+        "renderConnection": {
+          "memoriaWritesWith": "연결: {name}"
+        },
+        "renderSamplers": {
+          "usedWhenMemoriaWritesChaptersArcsAnd": "요약에 쓰여요. 빈 칸은 자리 표시자로 보이는 기본값을 써요. 온도, 최대 출력, 최대 입력은 항상 보내고 top_p, top_k, 패널티는 값을 정했을 때만 보내요.",
+          "maxInputTokens": "최대 입력 토큰",
+          "maxOutputTokens": "최대 출력 토큰",
+          "temperature": "온도",
+          "topP": "Top P",
+          "topK": "Top K",
+          "freqPenalty": "빈도 패널티",
+          "presPenalty": "존재 패널티"
+        },
+        "options": {
+          "books": "책",
+          "codex": "코덱스"
+        },
+        "renderCodexSamplers": {
+          "samplersForTheCodexAgentOnlySeparate": "요약과 별개인 코덱스 샘플러예요. 빈 칸은 코덱스 기본값을 써요.",
+          "maxInputTokens": "최대 입력 토큰",
+          "maxOutputTokens": "최대 출력 토큰",
+          "temperature": "온도",
+          "topP": "Top P",
+          "topK": "Top K",
+          "freqPenalty": "빈도 패널티",
+          "presPenalty": "존재 패널티"
+        },
+        "renderRegex": {
+          "noRegexScriptsFoundInLumiverse": "Lumiverse에 정규식 스크립트가 없어요",
+          "outgoingRunsOnThePromptBeforeMemoria": "보내는 정규식은 프롬프트에, 받는 정규식은 모델 출력에 적용돼요."
+        },
+        "outgoing": {
+          "outgoing": "보내는 쪽"
+        },
+        "incoming": {
+          "incoming": "받는 쪽"
+        },
+        "f": {
+          "chapterContext": "챕터 컨텍스트"
+        },
+        "renderContext": {
+          "howManyRecentChaptersToFeedMemoria": "컨텍스트로 넣을 최근 챕터 수예요.",
+          "triesPerAttemptAfterTheLastTry": "한 번 실행할 때 시도하는 횟수예요. 모두 실패하면 다음 턴에 같은 메시지로 다시 시도해요.",
+          "howLongMemoriaWaitsForTheFirst": "스트리밍 첫 토큰을 기다리는 시간이에요."
+        },
+        "retry": {
+          "retries": "재시도"
+        },
+        "ttft": {
+          "firstTokenTimeoutSeconds": "첫 토큰 제한 시간 (초)"
+        },
+        "renderBehavior": {
+          "hideMessagesOnceFiled": "정리된 메시지 숨기기",
+          "greysOutCoveredMessagesInTheChat": "요약된 메시지를 채팅에서 흐리게 표시해요. 요약 적용 범위는 이 설정과 상관없이 같아요.",
+          "previewBeforeSaving": "저장 전 미리보기",
+          "memoriaStagesNewChaptersAndArcsIn": "챕터와 아크를 저장하기 전에 홈 > 대기 중인 미리보기에서 검토해요."
+        }
+      },
+      "promptsTab": {
+        "categorySubtabs": {
+          "chapter": "챕터",
+          "arc": "아크",
+          "volume": "볼륨",
+          "codex": "코덱스"
+        },
+        "groupHelp": {
+          "oneBlockPerCodexFile": "코덱스 파일마다 블록 하나예요.",
+          "howTheAgentIsToldToDeliver": "전달 지시문을 편집해요. 도구 호출 사용 설정에 따라 선택돼요.",
+          "theTaskTextForEachKindOf": "실행 유형별 작업 지시문이에요.",
+          "warningsPrependedOnlyWhenTheirSituationApplies": "해당할 때만 포함되는 안내예요."
+        },
+        "sec": {
+          "codexPromptTemplates": "코덱스 프롬프트 템플릿",
+          "memoriaOverrides": "메모리아 덮어쓰기",
+          "arcPrompt": "아크 프롬프트",
+          "volumePrompt": "볼륨 프롬프트",
+          "codexDirectives": "코덱스 지침",
+          "chapterPrompt": "챕터 프롬프트",
+          "importStmbPresets": "STMB 프리셋 가져오기",
+          "info": "정보"
+        },
+        "draw": {
+          "everyOtherBlockOfTheCodexAgent": "추가 코덱스 프롬프트 블록이에요. \"{displayName}\" 프리셋에 저장돼요. 프리셋을 바꾸면 프롬프트 세트도 바뀌어요. 편집하기 전에 사용법을 읽어 주세요.",
+          "otherBlocksOfTheCodexAgentS": "이 프리셋의 추가 코덱스 프롬프트 블록이에요.",
+          "templateCustomizedInThisPreset": "이 프리셋에서 템플릿 {overridden, plural, other {#개}}를 수정했어요."
+        },
+        "renderTemplateRow": {
+          "customized": "수정됨",
+          "hostMacrosLikeUserAlsoWorkThey": "'{{user}}' 같은 호스트 매크로를 지원하며, 보낼 때 치환돼요.",
+          "builtInPresetDuplicateItAboveTo": "기본 제공 프리셋이에요. 이 템플릿을 편집하려면 위에서 복제하세요."
+        },
+        "howBtn": {
+          "hideHowTo": "사용법 숨기기",
+          "howTo": "사용법"
+        },
+        "resetBtn": {
+          "resetToDefault": "기본값으로 재설정",
+          "clickAgainToConfirm": "확인할까요?"
+        },
+        "renderMemoriaOverrides": {
+          "personaIsTheSystemPromptHeaderShort": "페르소나는 시스템 프롬프트 머리말을 정해요. 짧은 코멘트 규칙은 '{{memoria_short_comment_rules}}'에 채워져요.",
+          "memoriaPersona": "메모리아 페르소나",
+          "memoriaShortCommentRules": "메모리아 짧은 코멘트 규칙"
+        },
+        "buildOverrideBlock": {
+          "resetToDefault": "기본값으로 재설정",
+          "clickAgainToConfirm": "확인할까요?"
+        },
+        "restoreIdle": {
+          "resetToDefault": "기본값으로 재설정"
+        },
+        "renderCategory": {
+          "theMissionBlockAtTheTopOf": "코덱스 시스템 프롬프트 맨 앞에 들어가는 지시문이에요. 선택한 프리셋에 아래 템플릿과 함께 저장돼요. 조립된 프롬프트는 모의 실행으로 미리 볼 수 있어요.",
+          "newBlankPrompt": "빈 프롬프트 새로 만들기",
+          "duplicateToNew": "새로 복제",
+          "duplicateToEdit": "복제해서 편집",
+          "dryRun": "모의 실행",
+          "assembleTheNextCodexRunSComplete": "치환된 시스템·사용자 프롬프트를 미리 봐요. 모델은 호출하지 않아요.",
+          "assembleThisPresetSPromptWithAll": "이 프리셋의 치환된 프롬프트를 미리 봐요. 모델은 호출하지 않아요.",
+          "delete": "삭제",
+          "promptBuiltInDuplicateToEdit": "프롬프트 (기본 제공, 복제해서 편집)"
+        },
+        "opts": {
+          "builtIn": "기본 제공: {displayName}",
+          "custom": "사용자 지정: {displayName}"
+        },
+        "name": {
+          "nameForNewPrompt": "새 {category} 프롬프트 이름",
+          "untitled": "제목 없음",
+          "nameForDuplicate": "복제본 이름"
+        },
+        "sourceName": {
+          "untitled": "제목 없음"
+        },
+        "ok": {
+          "deletePrompt": "프롬프트를 삭제할까요?",
+          "thisRemovesTheCustomPromptAndFalls": "이 사용자 지정 프롬프트를 삭제하고 기본 제공 프롬프트를 선택해요.",
+          "deletePreset": "프리셋을 삭제할까요?"
+        },
+        "nameField": {
+          "displayName": "표시 이름"
+        },
+        "textField": {
+          "prompt": "프롬프트"
+        },
+        "renderImport": {
+          "uploadASillyTavernMemoryBooksExportMemoria": "SillyTavern Memory Books 내보내기 파일을 편집 가능한 프리셋으로 가져와요.",
+          "importChapterPresets": "챕터 프리셋 가져오기",
+          "importArcPresets": "아크 프리셋 가져오기",
+          "delete": "삭제",
+          "noCustomPresetsYet": "아직 사용자 지정 프리셋이 없어요"
+        },
+        "importFile": {
+          "memoriaCanTReadThisFile": "파일을 읽지 못했어요",
+          "memoriaCouldnTParseThePresetJson": "프리셋 JSON이 올바르지 않아요"
+        },
+        "showImportFailure": {
+          "importFailed": "가져오기 실패",
+          "ok": "확인"
+        },
+        "lines": {
+          "duplicateAnyBuiltInOrCreateNew": "편집하려면 기본 제공 프리셋을 복제하거나 사용자 지정 프리셋을 만드세요.",
+          "promptsMustAskTheModelForStrict": "프롬프트는 모델에게 엄격한 JSON을 요구해야 해요 (아래 예시 참고).",
+          "targetTokensExpandsToTheActiveCompression": "'{{target_tokens}}'는 현재 압축 목표로 치환돼요.",
+          "memoriaShortCommentRulesExpandsToThis": "'{{memoria_short_comment_rules}}'는 이번 턴의 냥데레 짧은 코멘트 규칙으로 치환돼요.",
+          "promptsAreMacroEvaluated": "프롬프트의 매크로는 치환돼요."
+        },
+        "groups": {
+          "fileSchemas": "파일 스키마",
+          "writeProtocol": "기록 프로토콜",
+          "passInstructions": "패스 지시문",
+          "runNotes": "실행 안내"
+        }
+      },
+      "tuningTab": {
+        "subtabs": {
+          "connection": "연결",
+          "settings": "설정",
+          "prompts": "프롬프트"
+        },
+        "renderTuningTab": {
+          "profile": "프로필",
+          "extensionOff": "· 확장 꺼짐",
+          "switchOrManageProfilesInTheConnection": "프로필 전환·관리는 연결 패널에서 하세요"
+        },
+        "options": {
+          "books": "책",
+          "codex": "코덱스"
+        },
+        "sec": {
+          "everywhere": "전체 공통"
+        },
+        "renderGlobalSettings": {
+          "theseApplyToEveryChatAndProfile": "모든 채팅과 프로필에 적용되는 계정 설정이에요.",
+          "automationToasts": "자동화 알림",
+          "whenOffMemoriaSBackgroundRunsStay": "자동 작업 알림을 표시해요. 오류와 직접 실행한 작업은 꺼도 알려요.",
+          "summaryRecall": "요약 상기",
+          "appliesToExistingAndFutureChapterAnd": "모든 채팅의 기존 요약과 앞으로 만들 요약에 적용돼요. 요약 범위는 바뀌지 않아요. 키워드·벡터 모드는 일치하는 요약을 넣고, 최근 텍스트가 보이지 않으면 벡터 상기는 키워드 방식으로 대체돼요.",
+          "lorebookNamesFollowChatNames": "월드북 이름을 채팅 이름에 맞추기",
+          "turnOffToRenameYourBooksAnd": "끄면 Lumiverse에서 책·코덱스 월드북 이름을 직접 바꿀 수 있어요. 켜면 다음 동기화 때 채팅 기반 이름으로 돌아가요."
+        }
+      }
+    },
+    "common": {
+      "messageCount": "메시지 {count}개",
+      "compactRole": "{role, select, user {사용자} assistant {AI} system {시스템} tool {도구} other {{fallback}}}",
+      "role": "{role, select, user {사용자} assistant {어시스턴트} system {시스템} tool {도구} other {{role}}}",
+      "compactTokens": "{tokens}t",
+      "compactTokenChange": "{before}t→{after}t"
+    }
+  },
+  "guides": {
+    "codex": {
+      "markdown": "# 지식 코덱스\n\n컨텍스트가 길어지고 넘쳐 흐를수록 모델은 사실을 잊고, 타임라인을 뒤섞고, 캐릭터에서 벗어나요. 연구자들은 장기 롤플레이에서 이런 실패 유형을 측정했어요. 사실 손실, 타임라인 혼동, 페르소나 이탈이에요([ARPM, 2026](https://arxiv.org/pdf/2605.14802), [PCL](https://arxiv.org/html/2503.17662v1), [CloneMem](https://arxiv.org/pdf/2601.07023)).\n\nLumiBooks는 이미 압축으로 이 문제에 어느 정도 맞서고 있어요. 메모리아가 채팅을 챕터로 정리하고, 챕터를 아크로 묶고, 아크를 볼륨으로 합쳐요.\n\n요컨대 이 요약들은 *무슨 일이 있었는지*를 시간순으로 알려 줘요. 요약에만 기대면 개체 간 관계나 세부 사항처럼 계층적이고 가치 높은 정보를 요약이 빠짐없이 담아 주기만 바라야 한다는 게 가장 큰 문제예요. 압축을 거듭할수록 이건 점점 어려워지니, 명시적인 추적이 필요해요.\n\n지식 코덱스가 바로 이 문제를 해결해요.\n\n## 코덱스란\n\n코덱스는 채팅을 위한 스토리 바이블이에요. 이야기가 자라는 동안 에이전트가 새 턴을 빠짐없이 읽고, 몇 가지 기록을 갱신해요.\n\n- **캐릭터, 장소, 사물.** 개체 시트는 계층적 시나리오 작성부터 구조화된 스토리 생성까지, 대부분의 스토리 시스템의 뼈대예요([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).\n- **관계.** 개체 사이의 관계와 그 흐름을 적는 공유 표예요. 내러티브 지식 그래프 연구에 따르면 관계는 고정된 스냅숏이 아니라 변해 가는 모습대로 추적해야 해요([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). 일부 모델은 이 표를 관리하기 버거워해서 선택 사항이에요.\n- **타임라인.** 주요 사건을 날짜와 함께 남기는 기록이에요. 타임라인 혼동은 가장 흔한 실패 유형 중 하나이고, 꾸준히 관리하는 타임라인은 고전적인 방어책이에요([ARPM](https://arxiv.org/pdf/2605.14802), [narrative dimensions](https://arxiv.org/pdf/2604.10786), [event relation extraction](https://arxiv.org/pdf/2106.08629)).\n- **스레드.** 진행 중이거나 멈춘 줄거리, 그리고 나중에 회수하려고 심어 둔 복선이에요. 스레드와 개요 상태를 명시적으로 관리해야 수천 단어가 넘어가도 플롯이 일관성을 유지해요([DOC](https://arxiv.org/pdf/2212.10077), [Writing Path](https://arxiv.org/html/2404.13919v1), [plot structure management](https://www.sciencedirect.com/science/article/pii/S1875952123000459)).\n- **세계.** 배경 세계의 규칙이에요(마법 체계, 세력, 지리, 설정, 세계 자체에 관한 사실). 이야기의 깊이에 중요해요([KG-guided storytelling](https://arxiv.org/html/2505.24803v2), [KG + literary theory](https://arxiv.org/pdf/2508.03137), [hierarchical story KGs](https://arxiv.org/html/2506.10008v1)).\n- **지식과 비밀.** 누가 무엇을 아는지예요. 각 캐릭터가 실제로 목격한 것으로 기억을 제한하면 모델이 크게 나아지는데, 믿음 추적은 LLM이 정말 형편없는 분야예요([perspective-bounded memory](https://arxiv.org/pdf/2606.25632), [MREval](https://aclanthology.org/2026.findings-acl.1175/), [ToMATO, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/32143), [EnigmaToM](https://arxiv.org/pdf/2503.03340)).\n\n## 왜 이 기록들인가요?\n\n모두 검증된 실패 유형이거나, 긴 글의 일관성을 높인다고 밝혀진 장치예요. 스토리 바이블은 쓸모 있고 간결해야 하면서도, 압축 과정에서 사라지기 쉬운 고밀도 정보를 지켜야 해요([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).\n\n다른 트래커가 기록하는 것 중 일부는 일부러 뺐어요.\n\n- **호감도·신뢰도 수치.** 관계는 점수보다 흐름으로 다루는 편이 낫다는 연구가 있어요([Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph)). 호감도 62 같은 숫자는 LLM이 제멋대로 해석할 수 있는 가짜 정밀도예요. \"그녀를 사랑하지만 숨김, 12일째에 배신당함\"이 훨씬 많은 정보를 담아요. 이런 건 관계로 추적해요.\n- **턴마다의 장면 상태.** 누가 어디에 서 있는지, 지금 날씨, 순간적인 기분 같은 것들이에요. 채팅 끝의 미압축 구간이 이미 현재 장면을 보여 주니 두 번 추적할 필요가 없고, 추적하려면 매 턴 갱신해야 해요.\n- **소지품 장부, 성격 변화 로그, 세력 관계 행렬.** 표가 하나 늘 때마다 에이전트의 관리 부담이 몇 배로 커지고, 오래된 데이터가 쌓이고 추적할 관계가 생기는 자리가 하나 더 늘어요. 중요한 물건은 이미 사물로 기록되고, 오래가는 캐릭터 변화는 시트 자체에, 결정적인 전환은 타임라인의 사건으로 들어가요.\n- **대사 원문.** 나중에는 대사도 추적할 수 있을지 몰라요. 아직은 모르겠어요.\n\n## 작동 방식\n\n직접 정한 일정에 따라 주기적으로, LB가 이야기의 한 조각을 현재 기록과 약간의 과거 맥락과 함께 가벼운 에이전트에게 넘겨요. 그러면 에이전트가 세 가지 일을 해요.\n\n1. **갱신.** 이야기가 진행되며 낡은 섹션을 모두 다시 써요.\n2. **점검.** 오래된 내용이 남아 있지 않은지 확인해요.\n3. **압축.** 군더더기와 서술형 문장, 중복 정보, 장황한 표현을 걷어내요.\n\n새롭고 아름다운 글래스 UI에서 기록을 직접 편집할 수도 있어요.\n\n## 프롬프트에 들어가는 방식\n\n코덱스는 늘 켜져 있는 한 덩어리 블록으로 주입되지 않아요. 각 기록은 `LumiBooks Codex [Do Not Edit] - <chat>`이라는 채팅별 전용 월드북에 미러링되고, 무엇이 프롬프트에 들어갈지는 호스트의 기본 월드북 활성화 기능이 정해요.\n\n- **개체, 세계 주제, 비밀**은 조정 → 설정 → 코덱스의 세 가지 **코덱스 상기** 설정을 따라요. **항상**, **키워드**(기본값), **벡터 + 키워드** 중에서 고를 수 있어요. 에이전트는 기록마다 `keywords` 목록을 함께 적어요(이름, 별칭, 참여자는 자동으로 일치해요). 벡터 모드에서는 Lumiverse의 월드북 검색으로 의미가 가까운 기록도 찾아와요.\n- **타임라인과 스레드**는 키워드 일치가 별 의미가 없어서 상시 항목이에요.\n\n벡터 상기를 쓰려면 Lumiverse에서 테스트를 마친 임베딩 연결과 월드북 벡터화가 켜져 있어야 해요. 모드를 바꾸면 기존 기록이 색인 대기열에 들어가고, 새로 만들거나 편집한 기록도 같은 설정을 따라요. 색인이 끝나기 전이나, 검색을 쓸 수 없거나, 검색에 쓸 최근 텍스트가 보이지 않을 때도 키워드 일치는 그대로 작동해요. 꺼 둔 기록과 파일은 계속 제외돼요. 검색 한도와 임베딩 프로바이더는 Lumiverse가 관리하고, 정본은 여전히 코덱스 파일이에요.\n\n챕터와 그 위 단계의 요약에는 조정 → 설정 → 책 → 전체 공통에 별도의 **요약 상기** 설정이 있어요. 기본값은 **항상**이에요. 어떤 기억을 고르든 정리되거나 숨겨지는 메시지는 바뀌지 않아요. 같은 섹션에서, Lumiverse에서 관리되는 두 월드북 중 어느 쪽이든 이름을 직접 바꾸기 전에 **월드북 이름을 채팅 이름에 맞추기**를 꺼 두세요.\n\n미러 월드북은 LumiBooks가 자주 다시 쓰니 직접 편집하지 마세요. 기록은 코덱스 탭(또는 JSON 파일)에서 편집하세요.\n\n## 확장 프로그램 개발자용\n\nLumiBooks는 코덱스를 Spindle의 공유 RPC 풀에 게시해요. 어느 확장 프로그램 백엔드에서든 읽을 수 있어요.\n\n```ts\n// Full snapshot: all 8 files as parsed JSON, plus per-file states.\nconst snap = await spindle.rpcPool.read(`lumi_books.codex.$'{'chatId'}'`);\n// snap: '{' chatId, userId, files: '{' characters, locations, things, relations,\n//         timeline, threads, world, knowledge '}', fileStates, runs, updatedAt '}'\n\n// The whole Codex rendered as one text block. Note LumiBooks itself no longer\n// injects this block: records reach the prompt as lorebook entries (see\n// \"How it reaches the prompt\"), so this is a convenience view for consumers.\nconst text = await spindle.rpcPool.read(`lumi_books.codex.$'{'chatId'}'.rendered`);\n\n// Change signal: the most recent Codex mutation across all chats.\nconst evt = await spindle.rpcPool.read(\"lumi_books.codex_updated\");\n// evt: '{' chatId, userId, changedFiles, reason: \"run\"|\"tidy\"|\"edit\"|\"states\"|\"wipe\", updatedAt '}'\n```\n\n참고:\n\n- 엔드포인트는 세션에서 코덱스가 처음 활동한 뒤에 생겨요. 그 전에는 `read`가 거부되니 try/catch로 감싸세요.\n- 코덱스를 비우면 두 채팅 엔드포인트 모두에 `null`이 게시돼요.\n- `fileStates`는 사용자가 끈(`noInject`) 파일과 동결한(`frozen`) 파일을 표시해요. `rendered` 텍스트에는 이미 빠져 있어요. `files`를 직접 쓴다면 이 플래그를 지켜 주세요.\n- `lumi_books.latest_chapter`, `lumi_books.latest_arc`, `lumi_books.latest_volume`은 요약 이벤트를 전달하며, 이전부터 게시되어 왔어요.\n"
+    }
+  },
+  "promptBreakdown": {
+    "assembledTranscript": "조합된 대화 기록"
+  }
+}
