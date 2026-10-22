@@ -6,7 +6,7 @@ import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO, ToolSchemaDTO } 
 
 type LlmMessagePartDTO = Exclude<LlmMessageDTO["content"], string>[number];
 import type { LMBProfile } from "../../shared";
-import { CODEX_SAMPLER_DEFAULTS, approximateTokensFromChars } from "../../shared";
+import { CODEX_SAMPLER_DEFAULTS, approximateTokensFromChars, promptRoleFor } from "../../shared";
 import type { ChatMessage } from "../coverage";
 import type { CodexBundle, CodexFileKey, CodexFileValue, CodexThread, ValidateOptions } from "./schema";
 import {
@@ -668,7 +668,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   if (promptTokens > maxInput) throw new CodexContextError(promptTokens, maxInput);
   const frozen = new Set<CodexFileKey>(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k) || !writable.has(k)));
   const conv: LlmMessageDTO[] = [
-    { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
+    { role: promptRoleFor(profile, "codex"), content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] },
   ];
 

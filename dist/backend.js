@@ -3372,6 +3372,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         noChaptersToBindYet: "No chapters to bind"
       },
       dryRunVolume: {
+        noSources: "No {name} summaries to consolidate",
         noArcsToPressYet: "No arcs to press"
       },
       promoteGhostChapters: {
@@ -3475,6 +3476,8 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         targetTokens2: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{arcTargetUnitTokens}% of input} other {{arcTargetPercent}% of input}})",
         presetKey2: "Preset key: {arcPresetKey}",
         sourceArcs: "Source arcs: {length}",
+        higherSources: "Source {name} summaries: {count}",
+        higherSourceTokens: "Source summaries: {bodyTokens} tokens (model tokenizer)",
         concatenatedArcBodyTokensModelTokenizer: "Source arcs: {bodyTokens} tokens (model tokenizer)",
         targetTokens3: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{volumeTargetUnitTokens}% of input} other {{volumeTargetPercent}% of input}})",
         presetKey3: "Preset key: {volumePresetKey}"
@@ -3730,6 +3733,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
     },
     activationControl: {
       activationControl: {
+        constant: "Constant",
         always: "Always",
         keywords: "Keywords",
         vectorKeywords: "Vector + keywords"
@@ -4506,6 +4510,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       showDryRunModal: {
         dryRun: "Dry run: {choice, select, yes {Arc} other {{choice2, select, yes {Volume} other {{choice3, select, yes {Codex} other {Chapter}}}}}}",
+        higherTier: "Dry run: {name}",
         value: "\xD7",
         closeDryRun: "Close dry run",
         diagnostics: "Diagnostics",
@@ -5457,6 +5462,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderProfilePicker: {
           new: "New",
+          rename: "Rename profile",
+          duplicate: "Duplicate profile",
+          copyName: "{name} copy",
           delete: "Delete",
           enabled: "Enabled",
           masterSwitchWhenOffMemoriaDoesNothing: "Enable LumiBooks for this account."
@@ -5568,6 +5576,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       promptsTab: {
         categorySubtabs: {
+          summaries: "Summaries",
           chapter: "Chapter",
           arc: "Arc",
           volume: "Volume",
@@ -5581,6 +5590,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         sec: {
           codexPromptTemplates: "Codex prompt templates",
+          summaryPrompt: "{name} prompt",
           memoriaOverrides: "Memoria overrides",
           arcPrompt: "Arc prompt",
           volumePrompt: "Volume prompt",
@@ -5608,7 +5618,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           clickAgainToConfirm: "Confirm?"
         },
         renderMemoriaOverrides: {
-          personaIsTheSystemPromptHeaderShort: "Persona sets the system-prompt header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
+          personaIsTheSystemPromptHeaderShort: "Persona sets the instruction header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
           memoriaPersona: "Memoria persona",
           memoriaShortCommentRules: "Memoria short-comment rules"
         },
@@ -5620,19 +5630,28 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           resetToDefault: "Reset to default"
         },
         renderCategory: {
-          theMissionBlockAtTheTopOf: "Instructions at the start of the Codex system prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
+          presetScope: "Preset selection is saved per profile. Editing a preset changes it for every profile using it; duplicate it for a separate version.",
+          theMissionBlockAtTheTopOf: "Instructions at the start of the Codex prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
           newBlankPrompt: "New blank prompt",
           duplicateToNew: "Duplicate to new",
           duplicateToEdit: "Duplicate to edit",
           dryRun: "Dry run",
-          assembleTheNextCodexRunSComplete: "Preview resolved system and user prompts. No model call.",
+          assembleTheNextCodexRunSComplete: "Preview resolved messages and their roles. No model call.",
           assembleThisPresetSPromptWithAll: "Preview this preset''s resolved prompt. No model call.",
           delete: "Delete",
           promptBuiltInDuplicateToEdit: "Prompt (built-in, duplicate to edit)"
         },
         opts: {
+          useVolume: "Use Volume preset (adapted to this tier)",
           builtIn: "Built-in: {displayName}",
           custom: "Custom: {displayName}"
+        },
+        sendAs: {
+          label: "Send as:",
+          system: "System",
+          assistant: "Assistant",
+          user: "User",
+          help: "Role for this category's instructions. Source material is sent as User. Saved per profile."
         },
         name: {
           nameForNewPrompt: "Name for new {category} prompt",
@@ -5687,11 +5706,6 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           connection: "Connection",
           settings: "Settings",
           prompts: "Prompts"
-        },
-        renderTuningTab: {
-          profile: "Profile",
-          extensionOff: "\xB7 extension off",
-          switchOrManageProfilesInTheConnection: "Switch or manage profiles in the Connection pane"
         },
         options: {
           books: "Books",
@@ -5772,7 +5786,7 @@ The Codex is not injected as one always-on block. Each record is mirrored into a
 
 Vector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.
 
-Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning \u2192 Settings \u2192 Books \u2192 Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
+Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning \u2192 Settings \u2192 Books \u2192 Everywhere. Its default is **Constant**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
 
 The mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.
 
@@ -6521,6 +6535,11 @@ function tierHeader(tier, number, sources, turns) {
   const sourceLabel = sources === 1 || sourceName === "series" ? sourceName : sourceName === "library" ? "libraries" : `${sourceName}s`;
   return `${MODEL_TIER_NAMES[tier - 1]} ${ordinal(number)} (${sources} ${sourceLabel}, ${turns} turns)`;
 }
+var EXTRA_PRESET_CATEGORIES = ["series", "saga", "library", "universe"];
+var PRESET_CATEGORIES = [...TIER_KINDS, "codex"];
+function promptRoleFor(profile, category) {
+  return profile.promptRoles[category] ?? "system";
+}
 var DEFAULT_SAMPLERS = {
   temperature: null,
   top_p: null,
@@ -6573,6 +6592,8 @@ function makeDefaultProfile(id, name) {
     chapterPresetKey: "summary",
     arcPresetKey: "arc_default",
     volumePresetKey: "volume_default",
+    higherTierPresetKeys: {},
+    promptRoles: {},
     previousMemoriesCount: 7,
     regexOutgoingScriptIds: [],
     regexIncomingScriptIds: [],
@@ -6683,6 +6704,14 @@ function normalizeProfile(raw) {
     chapterPresetKey: typeof v.chapterPresetKey === "string" && v.chapterPresetKey.trim() ? v.chapterPresetKey : base.chapterPresetKey,
     arcPresetKey: typeof v.arcPresetKey === "string" && v.arcPresetKey.trim() ? v.arcPresetKey : base.arcPresetKey,
     volumePresetKey: typeof v.volumePresetKey === "string" && v.volumePresetKey.trim() ? v.volumePresetKey : base.volumePresetKey,
+    higherTierPresetKeys: Object.fromEntries(EXTRA_PRESET_CATEGORIES.flatMap((category) => {
+      const key = v.higherTierPresetKeys?.[category];
+      return typeof key === "string" && key.trim() ? [[category, key]] : [];
+    })),
+    promptRoles: Object.fromEntries(PRESET_CATEGORIES.flatMap((category) => {
+      const role = v.promptRoles?.[category];
+      return role === "system" || role === "assistant" || role === "user" ? [[category, role]] : [];
+    })),
     previousMemoriesCount: clampInt(v.previousMemoriesCount, 0, 20, base.previousMemoriesCount),
     regexOutgoingScriptIds: Array.isArray(v.regexOutgoingScriptIds) ? v.regexOutgoingScriptIds.filter((x) => typeof x === "string") : base.regexOutgoingScriptIds,
     regexIncomingScriptIds: Array.isArray(v.regexIncomingScriptIds) ? v.regexIncomingScriptIds.filter((x) => typeof x === "string") : base.regexIncomingScriptIds,
@@ -6752,7 +6781,7 @@ function normalizeCustomPreset(raw) {
     return null;
   if (typeof v.prompt !== "string" || !v.prompt.trim())
     return null;
-  const category = v.category === "arc" || v.category === "volume" || v.category === "codex" ? v.category : "chapter";
+  const category = PRESET_CATEGORIES.includes(v.category) ? v.category : "chapter";
   const templates = category === "codex" ? normalizeCodexTemplates(v.templates) : undefined;
   return {
     key: v.key,
@@ -6841,9 +6870,6 @@ function buildChapterHeader(sceneNumber, turnCount) {
 }
 function buildArcHeader(sceneNumber, chapterCount, turnCount) {
   return `${ordinal(sceneNumber)} Summary ARC Containing ${chapterCount} Prior Chapter${chapterCount === 1 ? "" : "s"} and ${turnCount} Prior Turn${turnCount === 1 ? "" : "s"}`;
-}
-function buildVolumeHeader(sceneNumber, arcCount, turnCount) {
-  return `${ordinal(sceneNumber)} Summary VOLUME Containing ${arcCount} Prior Arc${arcCount === 1 ? "" : "s"} and ${turnCount} Prior Turn${turnCount === 1 ? "" : "s"}`;
 }
 function bookNameFor(chatName, chatId) {
   const cleanName = (chatName ?? "").trim();
@@ -9313,7 +9339,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.1.2",
+  version: "1.1.3",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -9878,6 +9904,49 @@ async function captureDiagnosticSnapshot(userId, chatId) {
   }
 }
 
+// src/prompts/categories.ts
+var KEY_FIELDS = { chapter: "chapterPresetKey", arc: "arcPresetKey", volume: "volumePresetKey", codex: "codexPresetKey" };
+function isExtraCategory(category) {
+  return EXTRA_PRESET_CATEGORIES.includes(category);
+}
+function presetKeyFor(profile, category) {
+  return isExtraCategory(category) ? profile.higherTierPresetKeys[category] ?? "" : profile[KEY_FIELDS[category]];
+}
+function presetKeyPatch(category, key) {
+  return isExtraCategory(category) ? { higherTierPresetKeys: { [category]: key } } : { [KEY_FIELDS[category]]: key };
+}
+function higherTierPreset(text, tier) {
+  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
+    const source = word.toLowerCase().startsWith("arc");
+    const name = MODEL_TIER_NAMES[tier - (source ? 2 : 1)];
+    const plural = word.toLowerCase().endsWith("s");
+    const replacement = name + (plural && name !== "Series" ? name === "Library" ? "" : "s" : "");
+    const result = plural && name === "Library" ? "Libraries" : replacement;
+    return word === word.toUpperCase() ? result.toUpperCase() : result;
+  });
+}
+function builtInPresetsFor(pools, category) {
+  if (!isExtraCategory(category))
+    return pools[`${category}Presets`];
+  const index = TIER_KINDS.indexOf(category);
+  return [{
+    key: `${category}_default`,
+    displayName: TIER_NAMES[index],
+    prompt: higherTierPreset(pools.volumePresets[0].prompt, index + 1)
+  }];
+}
+function resolvePresetText(profile, customs, pools, category) {
+  const key = presetKeyFor(profile, category);
+  if (isExtraCategory(category) && !key) {
+    return higherTierPreset(resolvePresetText(profile, customs, pools, "volume"), TIER_KINDS.indexOf(category) + 1);
+  }
+  const custom = customs.find((p) => p.key === key && p.category === category);
+  if (custom)
+    return custom.prompt;
+  const builtIns = builtInPresetsFor(pools, category);
+  return (builtIns.find((p) => p.key === key) ?? builtIns[0])?.prompt ?? "";
+}
+
 // src/backend/regex.ts
 var TTL_MS = 5000;
 var PAGE_LIMIT2 = 50;
@@ -10351,6 +10420,12 @@ var BUILTIN_VOLUME_PRESETS = [
 var BUILTIN_CODEX_PRESETS = [
   { key: "codex_default", displayName: t("backend.presets.builtinCodexPresets.default"), prompt: CODEX_DIRECTIVES_DEFAULT }
 ];
+var BUILTIN_PRESET_POOLS = {
+  chapterPresets: BUILTIN_CHAPTER_PRESETS,
+  arcPresets: BUILTIN_ARC_PRESETS,
+  volumePresets: BUILTIN_VOLUME_PRESETS,
+  codexPresets: BUILTIN_CODEX_PRESETS
+};
 function parseStmbPresetExport(raw, category) {
   const out = [];
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -10469,15 +10544,7 @@ class FatalSummarizerError extends Error {
   }
 }
 function findPresetText(profile, customPresets, category) {
-  const key = category === "arc" ? profile.arcPresetKey : category === "volume" ? profile.volumePresetKey : category === "codex" ? profile.codexPresetKey : profile.chapterPresetKey;
-  const builtIns = category === "arc" ? BUILTIN_ARC_PRESETS : category === "volume" ? BUILTIN_VOLUME_PRESETS : category === "codex" ? BUILTIN_CODEX_PRESETS : BUILTIN_CHAPTER_PRESETS;
-  const custom = customPresets.find((p) => p.key === key && p.category === category);
-  if (custom)
-    return custom.prompt;
-  const builtIn = builtIns.find((p) => p.key === key);
-  if (builtIn)
-    return builtIn.prompt;
-  return builtIns[0]?.prompt ?? "";
+  return resolvePresetText(profile, customPresets, BUILTIN_PRESET_POOLS, category);
 }
 function renderTranscript(messages, includeIndex = true, indexOffset = 0) {
   const lines = [];
@@ -10776,7 +10843,7 @@ async function assembleChapterPrompt(profile, customPresets, chatId, messages, p
   }
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, "chapter"), content: resolvedSystem },
       { role: "user", content: outgoingUser }
     ],
     diagnostics
@@ -10823,27 +10890,18 @@ ${c.raw.content}`).join(`
   }
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, "arc"), content: resolvedSystem },
       { role: "user", content: outgoingUser }
     ],
     diagnostics
   };
 }
-function higherTierPreset(text, tier) {
-  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
-    const source = word.toLowerCase().startsWith("arc");
-    const name = MODEL_TIER_NAMES[tier - (source ? 2 : 1)];
-    const plural = word.toLowerCase().endsWith("s");
-    const replacement = name + (plural && name !== "Series" ? name === "Library" ? "" : "s" : "");
-    const result = plural && name === "Library" ? "Libraries" : replacement;
-    return word === word.toUpperCase() ? result.toUpperCase() : result;
-  });
-}
 async function assembleVolumePrompt(profile, customPresets, chatId, arcs, userId, opener, tier = 3) {
   const conn = await resolveConnection(profile, userId);
   if (!conn)
     throw new FatalSummarizerError(t("backend.summarizer.assembleVolumePrompt.noConnectionAvailableForMemoria"));
-  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
+  const category = TIER_KINDS[tier - 1];
+  const presetText = findPresetText(profile, customPresets, category);
   if (!presetText)
     throw new Error(t("backend.summarizer.assembleVolumePrompt.volumePresetMissing"));
   const body = arcs.map((a, idx) => `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
@@ -10865,12 +10923,12 @@ ${a.raw.content}`).join(`
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics = [
     { message: t("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
-    { message: t("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length }) },
-    { message: t("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens }) },
+    { message: tier === 3 ? t("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length }) : t("backend.summarizer.diagnostics.higherSources", { name: MODEL_TIER_NAMES[tier - 2], count: arcs.length }) },
+    { message: tier === 3 ? t("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens }) : t("backend.summarizer.diagnostics.higherSourceTokens", { bodyTokens }) },
     { message: t("backend.summarizer.diagnostics.targetTokens3", { targetTokens, choice: profile.volumeTargetUnit === "tokens" ? "yes" : "no", volumeTargetUnitTokens: profile.volumeTargetUnit === "tokens" ? targetPercent : "", volumeTargetPercent: !(profile.volumeTargetUnit === "tokens") ? profile.volumeTargetPercent : "" }) },
     { message: t("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
     { message: t("backend.summarizer.diagnostics.opener", { opener }) },
-    { message: t("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: profile.volumePresetKey }) },
+    { message: t("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: presetKeyFor(profile, category) || profile.volumePresetKey }) },
     { message: t("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) }
   ];
   const resolvedSystem = await resolveMacrosWithDiagnostics(built.system, chatId, userId, diagnostics);
@@ -10880,7 +10938,7 @@ ${a.raw.content}`).join(`
   }
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, category), content: resolvedSystem },
       { role: "user", content: outgoingUser }
     ],
     diagnostics
@@ -10890,7 +10948,8 @@ async function summarizeVolume(profile, customPresets, chatId, arcs, userId, ope
   const conn = await resolveConnection(profile, userId);
   if (!conn)
     throw new FatalSummarizerError(t("backend.summarizer.summarizeVolume.noConnectionAvailableForMemoria"));
-  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
+  const category = TIER_KINDS[tier - 1];
+  const presetText = findPresetText(profile, customPresets, category);
   if (!presetText)
     throw new Error(t("backend.summarizer.summarizeVolume.volumePresetMissing"));
   const body = arcs.map((a, idx) => `<<${MODEL_TIER_NAMES[tier - 2].toUpperCase()} ${idx + 1}: ${a.raw.comment || a.meta.title || "untitled"}>>
@@ -10912,7 +10971,7 @@ ${a.raw.content}`).join(`
   const resolvedSystem = await resolveSystemMacros(built.system, chatId, userId);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   const llmMessages = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, category), content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
   recordDiagnostic(userId, { event: "request", chatId, mode: TIER_KINDS[tier - 1], outcome: "started", numbers: {
@@ -10946,7 +11005,7 @@ ${a.raw.content}`).join(`
     usageCompletionTokens: result.usage?.completion_tokens ?? 0,
     model: conn.model,
     connectionId: conn.id,
-    presetKey: profile.volumePresetKey
+    presetKey: presetKeyFor(profile, category) || profile.volumePresetKey
   };
 }
 async function summarizeChapter(profile, customPresets, chatId, messages, previousMemories, userId, opener, streamOptions) {
@@ -10974,7 +11033,7 @@ async function summarizeChapter(profile, customPresets, chatId, messages, previo
   const resolvedSystem = await resolveSystemMacros(built.system, chatId, userId);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   const llmMessages = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, "chapter"), content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
   recordDiagnostic(userId, { event: "request", chatId, mode: "chapter", outcome: "started", numbers: {
@@ -11037,7 +11096,7 @@ ${c.raw.content}`).join(`
   const resolvedSystem = await resolveSystemMacros(built.system, chatId, userId);
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
   const llmMessages = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, "arc"), content: resolvedSystem },
     { role: "user", content: outgoingUser }
   ];
   recordDiagnostic(userId, { event: "request", chatId, mode: "arc", outcome: "started", numbers: {
@@ -13637,16 +13696,20 @@ async function dryRunArc(chatId, profile, settings, userId) {
   const opener = buildArcHeader(provisionalSceneNumber, chapters.length, totalTurns);
   return assembleArcPrompt(profile, settings.customPresets, chatId, chapters, userId, opener);
 }
-async function dryRunVolume(chatId, profile, settings, userId) {
+async function dryRunVolume(chatId, profile, settings, userId, tier = 3) {
   const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
+  const arcs = summaryRuns(coverage.activeEntries, tier - 1)[0]?.entries ?? [];
   if (arcs.length === 0)
-    throw new Error(t("backend.pipeline.dryRunVolume.noArcsToPressYet"));
+    throw new Error(tier === 3 ? t("backend.pipeline.dryRunVolume.noArcsToPressYet") : t("backend.pipeline.dryRunVolume.noSources", { name: TIER_NAMES[tier - 2] }));
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
-  const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
-  const opener = buildVolumeHeader(provisionalSceneNumber, arcs.length, totalTurns);
-  return assembleVolumePrompt(profile, settings.customPresets, chatId, arcs, userId, opener);
+  const provisionalSceneNumber = await nextSceneNumber(chatId, tier, userId);
+  const opener = tierHeader(tier, provisionalSceneNumber, arcs.length, totalTurns);
+  if (tier > 3) {
+    const config = profile.higherTiers[tier];
+    profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
+  }
+  return assembleVolumePrompt(profile, settings.customPresets, chatId, arcs, userId, opener, tier);
 }
 async function drainArcBacklog(chatId, profile, settings, userId, automation = false) {
   return drainSummaryBacklog(2, chatId, profile, settings, userId, automation);
@@ -15470,7 +15533,7 @@ async function runCodexAgentInner(opts) {
     throw new CodexContextError(promptTokens, maxInput);
   const frozen = new Set(CODEX_FILE_KEYS.filter((k) => !promptCtx.activeFiles.has(k) || !writable.has(k)));
   const conv = [
-    { role: "system", content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
+    { role: promptRoleFor(profile, "codex"), content: [{ type: "text", text: system, cache_control: { ...CACHE_EPHEMERAL } }] },
     { role: "user", content: [{ type: "text", text: userText, cache_control: { ...CACHE_EPHEMERAL } }] }
   ];
   const working = structuredClone(opts.bundle);
@@ -16330,7 +16393,7 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   diagnostics.push({ message: t("backend.codex.index.dryRunCodex.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(buildCodexSamplerParameters(profile)) }) });
   return {
     messages: [
-      { role: "system", content: system },
+      { role: promptRoleFor(profile, "codex"), content: system },
       { role: "user", content: user }
     ],
     diagnostics
@@ -18064,7 +18127,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
             missing = true;
             return cur;
           }
-          const merged = normalizeProfile({ ...existing, ...incoming, id });
+          const merged = normalizeProfile({
+            ...existing,
+            ...incoming,
+            id,
+            promptRoles: Object.keys(incoming.promptRoles ?? {}).length ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
+            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys
+          });
           if (!merged)
             return cur;
           prevHide = existing.hideCoveredMessages;
@@ -18114,12 +18183,25 @@ spindle.onFrontendMessage(async (raw, userId) => {
         break;
       }
       case "create_profile": {
+        let missing = false;
         await mutateSettings(userId, (cur) => {
           const id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-          const baseProfile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? cur.profiles[0];
-          const next = { ...baseProfile, id, name: (msg.name || t("backend.index.next.newProfile")).slice(0, 60) };
+          const name = (msg.name || t("backend.index.next.newProfile")).slice(0, 60);
+          const source = msg.copyFromId ? cur.profiles.find((p) => p.id === msg.copyFromId) : makeDefaultProfile(id, name);
+          if (!source) {
+            missing = true;
+            return cur;
+          }
+          const next = { ...structuredClone(source), id, name };
           return { ...cur, profiles: [...cur.profiles, next], activeProfileId: id };
         });
+        if (missing) {
+          send({ type: "error", text: t("backend.index.messages.profileNoLongerExists", { id: msg.copyFromId }) }, userId);
+          break;
+        }
+        await syncProfileSettings(userId);
+        if (msg.chatId)
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-create");
         await pushState(userId, msg.chatId);
         break;
       }
@@ -18418,8 +18500,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (!profile)
           break;
         try {
-          const result = await dryRunVolume(msg.chatId, profile, cur, userId);
-          send({ type: "dry_run_result", kind: "volume", messages: result.messages, diagnostics: result.diagnostics }, userId);
+          const tier = msg.tier ?? 3;
+          if (!HIGHER_TIERS.includes(tier))
+            throw new Error("Invalid summary tier");
+          const result = await dryRunVolume(msg.chatId, profile, cur, userId, tier);
+          send({ type: "dry_run_result", kind: TIER_KINDS[tier - 1], messages: result.messages, diagnostics: result.diagnostics }, userId);
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_volume failed: ${text}`);
@@ -18565,6 +18650,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
             if (msg.category === "codex" && p.codexPresetKey === msg.key) {
               return { ...p, codexPresetKey: fallbackCodex };
+            }
+            if (isExtraCategory(msg.category) && presetKeyFor(p, msg.category) === msg.key) {
+              return { ...p, higherTierPresetKeys: { ...p.higherTierPresetKeys, ...presetKeyPatch(msg.category, "").higherTierPresetKeys } };
             }
             return p;
           });

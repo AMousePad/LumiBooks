@@ -6,7 +6,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
 import type { LMBProfile, LMBSettings } from "../../shared";
-import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars } from "../../shared";
+import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars, promptRoleFor } from "../../shared";
 import type { ChatMessage } from "../coverage";
 import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../coverage";
 import type { CodexCursor, CodexFileState } from "./store";
@@ -521,7 +521,7 @@ export async function dryRunCodex(
 
   return {
     messages: [
-      { role: "system", content: system },
+      { role: promptRoleFor(profile, "codex"), content: system },
       { role: "user", content: user },
     ],
     diagnostics,

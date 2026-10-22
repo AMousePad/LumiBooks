@@ -122,6 +122,9 @@ export interface LMBProfile {
   chapterPresetKey: string;
   arcPresetKey: string;
   volumePresetKey: string;
+  /** Unset higher categories keep using the Volume preset. */
+  higherTierPresetKeys: Partial<Record<ExtraPresetCategory, string>>;
+  promptRoles: Partial<Record<PresetCategory, PromptRole>>;
   previousMemoriesCount: number;
   regexOutgoingScriptIds: string[];
   regexIncomingScriptIds: string[];
@@ -178,7 +181,15 @@ export interface LMBProfile {
   codexPresetKey: string;
 }
 
-export type PresetCategory = "chapter" | "arc" | "volume" | "codex";
+export type PresetCategory = SummaryKind | "codex";
+export type ExtraPresetCategory = Exclude<SummaryKind, "chapter" | "arc" | "volume">;
+export type PromptRole = "system" | "assistant" | "user";
+export const EXTRA_PRESET_CATEGORIES = ["series", "saga", "library", "universe"] as const;
+export const PRESET_CATEGORIES = [...TIER_KINDS, "codex"] as const;
+
+export function promptRoleFor(profile: LMBProfile, category: PresetCategory): PromptRole {
+  return profile.promptRoles[category] ?? "system";
+}
 
 export interface CustomPreset {
   key: string;
@@ -293,6 +304,8 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     chapterPresetKey: "summary",
     arcPresetKey: "arc_default",
     volumePresetKey: "volume_default",
+    higherTierPresetKeys: {},
+    promptRoles: {},
     previousMemoriesCount: 7,
     regexOutgoingScriptIds: [],
     regexIncomingScriptIds: [],
@@ -412,6 +425,14 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     chapterPresetKey: typeof v.chapterPresetKey === "string" && v.chapterPresetKey.trim() ? v.chapterPresetKey : base.chapterPresetKey,
     arcPresetKey: typeof v.arcPresetKey === "string" && v.arcPresetKey.trim() ? v.arcPresetKey : base.arcPresetKey,
     volumePresetKey: typeof v.volumePresetKey === "string" && v.volumePresetKey.trim() ? v.volumePresetKey : base.volumePresetKey,
+    higherTierPresetKeys: Object.fromEntries(EXTRA_PRESET_CATEGORIES.flatMap((category) => {
+      const key = v.higherTierPresetKeys?.[category];
+      return typeof key === "string" && key.trim() ? [[category, key]] : [];
+    })),
+    promptRoles: Object.fromEntries(PRESET_CATEGORIES.flatMap((category) => {
+      const role = v.promptRoles?.[category];
+      return role === "system" || role === "assistant" || role === "user" ? [[category, role]] : [];
+    })),
     previousMemoriesCount: clampInt(v.previousMemoriesCount, 0, 20, base.previousMemoriesCount),
     regexOutgoingScriptIds: Array.isArray(v.regexOutgoingScriptIds)
       ? v.regexOutgoingScriptIds.filter((x): x is string => typeof x === "string")
@@ -491,7 +512,7 @@ export function normalizeCustomPreset(raw: unknown): CustomPreset | null {
   if (typeof v.key !== "string" || !v.key.trim()) return null;
   if (typeof v.prompt !== "string" || !v.prompt.trim()) return null;
   const category: PresetCategory =
-    v.category === "arc" || v.category === "volume" || v.category === "codex" ? v.category : "chapter";
+    PRESET_CATEGORIES.includes(v.category as PresetCategory) ? v.category! : "chapter";
   const templates = category === "codex" ? normalizeCodexTemplates(v.templates) : undefined;
   return {
     key: v.key,

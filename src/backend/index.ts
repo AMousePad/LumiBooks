@@ -3,6 +3,7 @@ import { clearSummaryShelf, editSummaryEntry, removeSummaryEntry } from "./shelf
 import { loadPromptBreakdown } from "./prompt-breakdown";
 import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
+import { isExtraCategory, presetKeyFor, presetKeyPatch } from "../prompts/categories";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
 import { selectedChapterRuns } from "./coverage";
@@ -11,7 +12,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
 import type { FrontendToBackend } from "../types";
-import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, normalizeProfile, normalizeCustomPreset } from "../shared";
+import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, makeDefaultProfile, normalizeProfile, normalizeCustomPreset } from "../shared";
 import {
   debug,
   describeError,
@@ -602,7 +603,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
             missing = true;
             return cur;
           }
-          const merged = normalizeProfile({ ...existing, ...incoming, id });
+          const merged = normalizeProfile({ ...existing, ...incoming, id,
+            promptRoles: Object.keys(incoming.promptRoles ?? {}).length
+              ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
+            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length
+              ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+          });
           if (!merged) return cur;
           prevHide = existing.hideCoveredMessages;
           nextHide = merged.hideCoveredMessages;
@@ -660,12 +666,21 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
 
       case "create_profile": {
+        let missing = false;
         await mutateSettings(userId, (cur) => {
           const id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-          const baseProfile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? cur.profiles[0]!;
-          const next = { ...baseProfile, id, name: (msg.name || tr("backend.index.next.newProfile")).slice(0, 60) };
+          const name = (msg.name || tr("backend.index.next.newProfile")).slice(0, 60);
+          const source = msg.copyFromId ? cur.profiles.find((p) => p.id === msg.copyFromId) : makeDefaultProfile(id, name);
+          if (!source) { missing = true; return cur; }
+          const next = { ...structuredClone(source), id, name };
           return { ...cur, profiles: [...cur.profiles, next], activeProfileId: id };
         });
+        if (missing) {
+          send({ type: "error", text: tr("backend.index.messages.profileNoLongerExists", { id: msg.copyFromId! }) }, userId);
+          break;
+        }
+        await syncProfileSettings(userId);
+        if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-create");
         await pushState(userId, msg.chatId);
         break;
       }
@@ -974,8 +989,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
         if (!profile) break;
         try {
-          const result = await dryRunVolume(msg.chatId, profile, cur, userId);
-          send({ type: "dry_run_result", kind: "volume", messages: result.messages, diagnostics: result.diagnostics }, userId);
+          const tier = msg.tier ?? 3;
+          if (!HIGHER_TIERS.includes(tier)) throw new Error("Invalid summary tier");
+          const result = await dryRunVolume(msg.chatId, profile, cur, userId, tier);
+          send({ type: "dry_run_result", kind: TIER_KINDS[tier - 1]!, messages: result.messages, diagnostics: result.diagnostics }, userId);
         } catch (err) {
           const text = describeError(err);
           warn(`dry_run_volume failed: ${text}`);
@@ -1126,6 +1143,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             }
             if (msg.category === "codex" && p.codexPresetKey === msg.key) {
               return { ...p, codexPresetKey: fallbackCodex };
+            }
+            if (isExtraCategory(msg.category) && presetKeyFor(p, msg.category) === msg.key) {
+              return { ...p, higherTierPresetKeys: { ...p.higherTierPresetKeys, ...presetKeyPatch(msg.category, "").higherTierPresetKeys } };
             }
             return p;
           });

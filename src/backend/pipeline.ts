@@ -1450,15 +1450,20 @@ export async function dryRunVolume(
   profile: LMBProfile,
   settings: LMBSettings,
   userId: string,
+  tier: HigherTier = 3,
 ): Promise<DryRunAssembly> {
   const entries = await listTimelineEntries(chatId, userId);
   const coverage = await buildCoverage(chatId, userId, entries);
-  const arcs = summaryRuns(coverage.activeEntries, 2)[0]?.entries ?? [];
-  if (arcs.length === 0) throw new Error(tr("backend.pipeline.dryRunVolume.noArcsToPressYet"));
+  const arcs = summaryRuns(coverage.activeEntries, (tier - 1) as SummaryTier)[0]?.entries ?? [];
+  if (arcs.length === 0) throw new Error(tier === 3 ? tr("backend.pipeline.dryRunVolume.noArcsToPressYet") : tr("backend.pipeline.dryRunVolume.noSources", { name: TIER_NAMES[tier - 2] }));
   const totalTurns = arcs.reduce((acc, a) => acc + a.meta.msgIds.length, 0);
-  const provisionalSceneNumber = await nextSceneNumber(chatId, 3, userId);
-  const opener = buildVolumeHeader(provisionalSceneNumber, arcs.length, totalTurns);
-  return assembleVolumePrompt(profile, settings.customPresets, chatId, arcs, userId, opener);
+  const provisionalSceneNumber = await nextSceneNumber(chatId, tier, userId);
+  const opener = tierHeader(tier, provisionalSceneNumber, arcs.length, totalTurns);
+  if (tier > 3) {
+    const config = profile.higherTiers[tier];
+    profile = { ...profile, volumeTargetUnit: config.targetUnit, volumeTargetPercent: config.targetPercent, volumeTargetTokens: config.targetTokens };
+  }
+  return assembleVolumePrompt(profile, settings.customPresets, chatId, arcs, userId, opener, tier);
 }
 
 export async function drainArcBacklog(

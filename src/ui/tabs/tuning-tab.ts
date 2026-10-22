@@ -54,22 +54,7 @@ export function renderTuningTab(
 ): void {
   host.replaceChildren();
 
-  // The full profile-management block lives in the Connection pane; the other
-  // panes get a one-line context strip so it doesn't repeat above everything.
-  if (local.subtab !== "profile") {
-    const strip = document.createElement("div");
-    strip.className = "lmb-profile-strip";
-    strip.append(document.createTextNode(tr("ui.tabs.tuningTab.renderTuningTab.profile")));
-    const name = document.createElement("b");
-    name.textContent = state.activeProfile.name;
-    strip.appendChild(name);
-    if (!state.settings.enabled) {
-      strip.appendChild(document.createTextNode(tr("ui.tabs.tuningTab.renderTuningTab.extensionOff")));
-    }
-    strip.title = tr("ui.tabs.tuningTab.renderTuningTab.switchOrManageProfilesInTheConnection");
-    host.appendChild(strip);
-  }
-
+  renderProfilePicker(host, state, ctx, send);
   host.appendChild(makeSubtabs(SUBTABS, local.subtab, (key) => {
     local.subtab = key;
     renderTuningTab(host, state, ctx, send);
@@ -90,7 +75,6 @@ export function renderTuningTab(
 
   switch (local.subtab) {
     case "profile": {
-      renderProfilePicker(pane, state, ctx, send);
       const rest = document.createElement("div");
       rest.className = "lmb-pane";
       if (!state.settings.enabled) {
@@ -171,7 +155,7 @@ function renderGlobalSettings(
   }));
 
   sec.body.appendChild(lessonMark(activationControl(tr("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode,
-    (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId })), "tuning.every.constant"));
+    (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), tr("ui.activationControl.activationControl.constant")), "tuning.every.constant"));
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
   hint.textContent = tr("ui.tabs.tuningTab.renderGlobalSettings.appliesToExistingAndFutureChapterAnd");

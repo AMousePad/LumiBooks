@@ -9,6 +9,8 @@ import chapterMinimalTxt from "../prompts/books/chapter-minimal.txt";
 import arcDefaultTxt from "../prompts/books/arc-default.txt";
 import volumeDefaultTxt from "../prompts/books/volume-default.txt";
 import { CODEX_DIRECTIVES_DEFAULT } from "../prompts/codex/registry";
+import { builtInPresetsFor } from "../prompts/categories";
+import type { PresetCategory } from "../shared";
 
 /** The shared target-budget sentence is spliced in at load so it has one
  * source; the {{target_*}} holes inside it survive for prompt-time fill. */
@@ -37,15 +39,13 @@ export const BUILTIN_CODEX_PRESETS: BuiltInPreset[] = [
   { key: "codex_default", displayName: tr("backend.presets.builtinCodexPresets.default"), prompt: CODEX_DIRECTIVES_DEFAULT },
 ];
 
-export function findBuiltInPreset(category: "chapter" | "arc" | "volume" | "codex", key: string): BuiltInPreset | null {
-  const pool = category === "arc"
-    ? BUILTIN_ARC_PRESETS
-    : category === "volume"
-      ? BUILTIN_VOLUME_PRESETS
-      : category === "codex"
-        ? BUILTIN_CODEX_PRESETS
-        : BUILTIN_CHAPTER_PRESETS;
-  return pool.find((p) => p.key === key) ?? null;
+export const BUILTIN_PRESET_POOLS = {
+  chapterPresets: BUILTIN_CHAPTER_PRESETS, arcPresets: BUILTIN_ARC_PRESETS,
+  volumePresets: BUILTIN_VOLUME_PRESETS, codexPresets: BUILTIN_CODEX_PRESETS,
+};
+
+export function findBuiltInPreset(category: PresetCategory, key: string): BuiltInPreset | null {
+  return builtInPresetsFor(BUILTIN_PRESET_POOLS, category).find((p) => p.key === key) ?? null;
 }
 
 export interface ImportedPresetMap {

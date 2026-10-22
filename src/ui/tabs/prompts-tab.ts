@@ -1,7 +1,8 @@
 import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
-import type { CustomPreset, LMBProfile, PresetCategory } from "../../shared";
+import { TIER_KINDS, TIER_NAMES, promptRoleFor, type CustomPreset, type LMBProfile, type PresetCategory, type HigherTier, type PromptRole, type SummaryKind } from "../../shared";
+import { builtInPresetsFor, isExtraCategory, presetKeyFor, presetKeyPatch, resolvePresetText } from "../../prompts/categories";
 import { fillPrompt } from "../../prompts/fill";
 import blankTemplateTxt from "../../prompts/books/blank-template.txt";
 import personaTxt from "../../prompts/memoria/persona.txt";
@@ -27,17 +28,16 @@ import {
 } from "../components";
 import { confirmDelete, promptForString } from "../modals";
 
-type PromptsCategory = PresetCategory;
-
-const CATEGORY_SUBTABS: { key: PromptsCategory; label: string }[] = [
-  { key: "chapter", label: tr("ui.tabs.promptsTab.categorySubtabs.chapter") },
-  { key: "arc", label: tr("ui.tabs.promptsTab.categorySubtabs.arc") },
-  { key: "volume", label: tr("ui.tabs.promptsTab.categorySubtabs.volume") },
+const CATEGORY_SUBTABS = [
+  { key: "summaries", label: tr("ui.tabs.promptsTab.categorySubtabs.summaries") },
   { key: "codex", label: tr("ui.tabs.promptsTab.categorySubtabs.codex") },
-];
+] as const;
+const SUMMARY_LABELS = [tr("ui.tabs.promptsTab.categorySubtabs.chapter"), tr("ui.tabs.promptsTab.categorySubtabs.arc"), tr("ui.tabs.promptsTab.categorySubtabs.volume"), ...TIER_NAMES.slice(3)];
+const SUMMARY_SUBTABS = TIER_KINDS.map((key, index) => ({ key, label: SUMMARY_LABELS[index]! }));
 
 const local = {
-  category: "chapter" as PromptsCategory,
+  category: "summaries" as "summaries" | "codex",
+  summary: "chapter" as SummaryKind,
   /** Codex template rows the user opened, by template key. */
   codexExpanded: new Set<string>(),
   /** How To panels open inside expanded rows. */
@@ -45,8 +45,9 @@ const local = {
 };
 
 /** Lesson-stage navigation: pin the category before a demo render. */
-export function setPromptsCategory(cat: PromptsCategory): void {
-  local.category = cat;
+export function setPromptsCategory(cat: PresetCategory): void {
+  local.category = cat === "codex" ? "codex" : "summaries";
+  if (cat !== "codex") local.summary = cat;
 }
 
 /** Prompts pane, composed into Tuning. Appends into host (no replaceChildren). */
@@ -58,23 +59,9 @@ export function renderPromptsPane(
 ): void {
   const profile = state.activeProfile;
   const setKey = (category: PresetCategory, key: string) => {
-    const p: Partial<LMBProfile> = category === "arc"
-      ? { arcPresetKey: key }
-      : category === "volume"
-        ? { volumePresetKey: key }
-        : category === "codex"
-          ? { codexPresetKey: key }
-          : { chapterPresetKey: key };
+    const p = presetKeyPatch(category, key);
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   };
-  const selectedKeyFor = (c: PresetCategory): string =>
-    c === "arc"
-      ? profile.arcPresetKey
-      : c === "volume"
-        ? profile.volumePresetKey
-        : c === "codex"
-          ? profile.codexPresetKey
-          : profile.chapterPresetKey;
 
   const pane = document.createElement("div");
   pane.className = "lmb-pane";
@@ -82,17 +69,17 @@ export function renderPromptsPane(
 
   const draw = (): void => {
     pane.replaceChildren();
-    pane.appendChild(makeSubtabs(CATEGORY_SUBTABS, local.category, (key) => {
+    pane.appendChild(makeSubtabs([...CATEGORY_SUBTABS], local.category, (key) => {
       local.category = key;
       draw();
     }));
-    const cat = local.category;
-    if (cat === "codex") {
-      renderCategory(pane, state, ctx, send, "codex", selectedKeyFor("codex"), setKey);
+    if (local.category === "codex") {
+      renderCategory(pane, state, ctx, send, "codex", presetKeyFor(profile, "codex"), setKey);
       renderCodexTemplates(pane, state, send);
       return;
     }
-    renderCategory(pane, state, ctx, send, cat, selectedKeyFor(cat), setKey);
+    pane.appendChild(makeSubtabs(SUMMARY_SUBTABS, local.summary, (key) => { local.summary = key; draw(); }));
+    renderCategory(pane, state, ctx, send, local.summary, presetKeyFor(profile, local.summary), setKey);
     renderMemoriaOverrides(pane, state, send);
     renderImport(pane, state, ctx, send);
     renderHelp(pane);
@@ -382,7 +369,11 @@ function renderCategory(
 ): void {
   const isCodex = category === "codex";
   const sec = section(
-    category === "arc" ? tr("ui.tabs.promptsTab.sec.arcPrompt") : category === "volume" ? tr("ui.tabs.promptsTab.sec.volumePrompt") : isCodex ? tr("ui.tabs.promptsTab.sec.codexDirectives") : tr("ui.tabs.promptsTab.sec.chapterPrompt"),
+    category === "chapter" ? tr("ui.tabs.promptsTab.sec.chapterPrompt")
+      : category === "arc" ? tr("ui.tabs.promptsTab.sec.arcPrompt")
+      : category === "volume" ? tr("ui.tabs.promptsTab.sec.volumePrompt")
+      : isCodex ? tr("ui.tabs.promptsTab.sec.codexDirectives")
+      : tr("ui.tabs.promptsTab.sec.summaryPrompt", { name: TIER_NAMES[TIER_KINDS.indexOf(category)] }),
   );
   lessonMark(sec.wrap, isCodex ? "tuning.prompts.codex" : "tuning.prompts");
   if (isCodex) {
@@ -393,15 +384,26 @@ function renderCategory(
     sec.body.appendChild(help);
   }
 
-  const builtIns = category === "arc"
-    ? state.arcPresets
-    : category === "volume"
-      ? state.volumePresets
-      : isCodex
-        ? state.codexPresets
-        : state.chapterPresets;
+  const roleRow = document.createElement("label");
+  roleRow.className = "lmb-field-row lmb-prompt-role-row";
+  roleRow.append(textNode(tr("ui.tabs.promptsTab.sendAs.label"), "lmb-field-label"));
+  const role = select({ value: promptRoleFor(state.activeProfile, category),
+    options: [
+      { value: "system", label: tr("ui.tabs.promptsTab.sendAs.system") },
+      { value: "assistant", label: tr("ui.tabs.promptsTab.sendAs.assistant") },
+      { value: "user", label: tr("ui.tabs.promptsTab.sendAs.user") },
+    ],
+    onChange: (value) => send({ type: "save_profile", profile: { id: state.activeProfile.id, promptRoles: { [category]: value as PromptRole } }, chatId: state.activeChatId }),
+  });
+  role.classList.add("lmb-prompt-role");
+  role.setAttribute("aria-label", tr("ui.tabs.promptsTab.sendAs.label"));
+  roleRow.append(role);
+  sec.body.append(roleRow, textNode(tr("ui.tabs.promptsTab.sendAs.help"), "lmb-field-hint"));
+
+  const builtIns = builtInPresetsFor(state, category);
   const customs = state.customPresets.filter((p) => p.category === category);
   const opts = [
+    ...(isExtraCategory(category) ? [{ value: "", label: tr("ui.tabs.promptsTab.opts.useVolume") }] : []),
     ...builtIns.map((b) => ({ value: b.key, label: tr("ui.tabs.promptsTab.opts.builtIn", { displayName: b.displayName }) })),
     ...customs.map((c) => ({ value: c.key, label: tr("ui.tabs.promptsTab.opts.custom", { displayName: c.displayName }) })),
   ];
@@ -419,9 +421,10 @@ function renderCategory(
   );
   pickerRow.append(grow);
   sec.body.appendChild(pickerRow);
+  sec.body.appendChild(textNode(tr("ui.tabs.promptsTab.renderCategory.presetScope"), "lmb-field-hint"));
 
   const isUserPreset = customs.some((c) => c.key === selectedKey);
-  const selectedText = findPresetText(state, category, selectedKey);
+  const selectedText = resolvePresetText(state.activeProfile, state.customPresets, state, category);
 
   const buttonsRow = document.createElement("div");
   buttonsRow.className = "lmb-actions";
@@ -469,11 +472,11 @@ function renderCategory(
       if (!state.activeChatId) return;
       send(category === "arc"
         ? { type: "dry_run_arc", chatId: state.activeChatId }
-        : category === "volume"
-          ? { type: "dry_run_volume", chatId: state.activeChatId }
-          : category === "codex"
+        : category === "codex"
             ? { type: "dry_run_codex", chatId: state.activeChatId }
-            : { type: "dry_run_chapter", chatId: state.activeChatId });
+            : category === "chapter"
+              ? { type: "dry_run_chapter", chatId: state.activeChatId }
+              : { type: "dry_run_volume", chatId: state.activeChatId, tier: (TIER_KINDS.indexOf(category) + 1) as HigherTier });
     }, {
       small: true,
       disabled: !state.activeChatId || !state.settings.enabled,
@@ -534,22 +537,7 @@ function renderCategory(
 
 function blankPromptTemplate(category: PresetCategory): string {
   if (category === "codex") return CODEX_DIRECTIVES_DEFAULT;
-  const noun = category === "arc" ? "arc" : category === "volume" ? "volume" : "chapter";
-  return fillPrompt(blankTemplateTxt, { NOUN: noun });
-}
-
-function findPresetText(state: FrontendState, category: PresetCategory, key: string): string {
-  const c = state.customPresets.find((p) => p.key === key && p.category === category);
-  if (c) return c.prompt;
-  const builtIns = category === "arc"
-    ? state.arcPresets
-    : category === "volume"
-      ? state.volumePresets
-      : category === "codex"
-        ? state.codexPresets
-        : state.chapterPresets;
-  const b = builtIns.find((p) => p.key === key);
-  return b?.prompt ?? "";
+  return fillPrompt(blankTemplateTxt, { NOUN: category });
 }
 
 function renderImport(

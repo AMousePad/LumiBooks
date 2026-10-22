@@ -1,6 +1,7 @@
 import { t as tr } from "../i18n";
 import { recordDiagnostic } from "./diagnostics";
-import { TIER_KINDS, MODEL_TIER_NAMES as TIER_NAMES, type HigherTier } from "../shared";
+import { TIER_KINDS, MODEL_TIER_NAMES as TIER_NAMES, promptRoleFor, type HigherTier, type PresetCategory, type PromptRole } from "../shared";
+import { presetKeyFor, resolvePresetText } from "../prompts/categories";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { ConnectionProfileDTO, LlmMessageDTO, ToolCallDTO } from "lumiverse-spindle-types";
@@ -10,7 +11,7 @@ import type { ChatMessage } from "./coverage";
 import type { LMBEntry } from "./world-book";
 import { applySelectedRegex } from "./regex";
 import { describeError, warn } from "./runtime";
-import { BUILTIN_ARC_PRESETS, BUILTIN_CHAPTER_PRESETS, BUILTIN_CODEX_PRESETS, BUILTIN_VOLUME_PRESETS } from "./presets";
+import { BUILTIN_PRESET_POOLS } from "./presets";
 import { DEFAULT_SHORT_COMMENT_RULES_TEMPLATE, MEMORIA_PERSONA_LINE } from "./memoria";
 
 type ChatMessageDTO = ChatMessage;
@@ -62,26 +63,8 @@ export class FatalSummarizerError extends Error {
   }
 }
 
-export function findPresetText(profile: LMBProfile, customPresets: CustomPreset[], category: "chapter" | "arc" | "volume" | "codex"): string {
-  const key = category === "arc"
-    ? profile.arcPresetKey
-    : category === "volume"
-      ? profile.volumePresetKey
-      : category === "codex"
-        ? profile.codexPresetKey
-        : profile.chapterPresetKey;
-  const builtIns = category === "arc"
-    ? BUILTIN_ARC_PRESETS
-    : category === "volume"
-      ? BUILTIN_VOLUME_PRESETS
-      : category === "codex"
-        ? BUILTIN_CODEX_PRESETS
-        : BUILTIN_CHAPTER_PRESETS;
-  const custom = customPresets.find((p) => p.key === key && p.category === category);
-  if (custom) return custom.prompt;
-  const builtIn = builtIns.find((p) => p.key === key);
-  if (builtIn) return builtIn.prompt;
-  return builtIns[0]?.prompt ?? "";
+export function findPresetText(profile: LMBProfile, customPresets: CustomPreset[], category: PresetCategory): string {
+  return resolvePresetText(profile, customPresets, BUILTIN_PRESET_POOLS, category);
 }
 
 export function renderTranscript(messages: ChatMessageDTO[], includeIndex = true, indexOffset = 0): string {
@@ -427,7 +410,7 @@ export async function resolveSystemMacros(text: string, chatId: string, userId: 
 }
 
 export interface DryRunAssembly {
-  messages: Array<{ role: "system" | "user"; content: string }>;
+  messages: Array<{ role: PromptRole; content: string }>;
   diagnostics: Array<{ message: string }>;
 }
 
@@ -510,7 +493,7 @@ export async function assembleChapterPrompt(
 
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, "chapter"), content: resolvedSystem },
       { role: "user", content: outgoingUser },
     ],
     diagnostics,
@@ -576,23 +559,11 @@ export async function assembleArcPrompt(
 
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, "arc"), content: resolvedSystem },
       { role: "user", content: outgoingUser },
     ],
     diagnostics,
   };
-}
-
-function higherTierPreset(text: string, tier: HigherTier): string {
-  // One pass avoids replacing a source Volume again when producing a Series.
-  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
-    const source = word.toLowerCase().startsWith("arc");
-    const name = TIER_NAMES[tier - (source ? 2 : 1)]!;
-    const plural = word.toLowerCase().endsWith("s");
-    const replacement = name + (plural && name !== "Series" ? (name === "Library" ? "" : "s") : "");
-    const result = plural && name === "Library" ? "Libraries" : replacement;
-    return word === word.toUpperCase() ? result.toUpperCase() : result;
-  });
 }
 
 export async function assembleVolumePrompt(
@@ -607,7 +578,8 @@ export async function assembleVolumePrompt(
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.assembleVolumePrompt.noConnectionAvailableForMemoria"));
 
-  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
+  const category = TIER_KINDS[tier - 1]!;
+  const presetText = findPresetText(profile, customPresets, category);
   if (!presetText) throw new Error(tr("backend.summarizer.assembleVolumePrompt.volumePresetMissing"));
 
   const body = arcs
@@ -638,12 +610,14 @@ export async function assembleVolumePrompt(
   const samplerParams = buildSamplerParameters(profile);
   const diagnostics: Array<{ message: string }> = [
     { message: tr("backend.summarizer.diagnostics.connection", { name: conn.name, provider: conn.provider, model: conn.model }) },
-    { message: tr("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length }) },
-    { message: tr("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens: bodyTokens }) },
+    { message: tier === 3 ? tr("backend.summarizer.diagnostics.sourceArcs", { length: arcs.length })
+      : tr("backend.summarizer.diagnostics.higherSources", { name: TIER_NAMES[tier - 2], count: arcs.length }) },
+    { message: tier === 3 ? tr("backend.summarizer.diagnostics.concatenatedArcBodyTokensModelTokenizer", { bodyTokens: bodyTokens })
+      : tr("backend.summarizer.diagnostics.higherSourceTokens", { bodyTokens }) },
     { message: tr("backend.summarizer.diagnostics.targetTokens3", { targetTokens: targetTokens, choice: (profile.volumeTargetUnit === "tokens") ? "yes" : "no", volumeTargetUnitTokens: (profile.volumeTargetUnit === "tokens") ? (targetPercent) : "", volumeTargetPercent: (!(profile.volumeTargetUnit === "tokens")) ? (profile.volumeTargetPercent) : "" }) },
     { message: tr("backend.summarizer.diagnostics.targetWordsShownToModel", { value: Math.max(1, Math.round(targetTokens / 1.4)) }) },
     { message: tr("backend.summarizer.diagnostics.opener", { opener: opener }) },
-    { message: tr("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: profile.volumePresetKey }) },
+    { message: tr("backend.summarizer.diagnostics.presetKey3", { volumePresetKey: presetKeyFor(profile, category) || profile.volumePresetKey }) },
     { message: tr("backend.summarizer.diagnostics.samplerParametersBeingSentOnTheWire", { stringify: JSON.stringify(samplerParams) }) },
   ];
 
@@ -655,7 +629,7 @@ export async function assembleVolumePrompt(
 
   return {
     messages: [
-      { role: "system", content: resolvedSystem },
+      { role: promptRoleFor(profile, category), content: resolvedSystem },
       { role: "user", content: outgoingUser },
     ],
     diagnostics,
@@ -675,7 +649,8 @@ export async function summarizeVolume(
   const conn = await resolveConnection(profile, userId);
   if (!conn) throw new FatalSummarizerError(tr("backend.summarizer.summarizeVolume.noConnectionAvailableForMemoria"));
 
-  const presetText = higherTierPreset(findPresetText(profile, customPresets, "volume"), tier);
+  const category = TIER_KINDS[tier - 1]!;
+  const presetText = findPresetText(profile, customPresets, category);
   if (!presetText) throw new Error(tr("backend.summarizer.summarizeVolume.volumePresetMissing"));
 
   const body = arcs
@@ -707,7 +682,7 @@ export async function summarizeVolume(
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
 
   const llmMessages: LlmMessageDTO[] = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, category), content: resolvedSystem },
     { role: "user", content: outgoingUser },
   ];
 
@@ -731,7 +706,7 @@ export async function summarizeVolume(
     usageCompletionTokens: result.usage?.completion_tokens ?? 0,
     model: conn.model,
     connectionId: conn.id,
-    presetKey: profile.volumePresetKey,
+    presetKey: presetKeyFor(profile, category) || profile.volumePresetKey,
   };
 }
 
@@ -779,7 +754,7 @@ export async function summarizeChapter(
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
 
   const llmMessages: LlmMessageDTO[] = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, "chapter"), content: resolvedSystem },
     { role: "user", content: outgoingUser },
   ];
 
@@ -852,7 +827,7 @@ export async function summarizeArc(
   const outgoingUser = await applySelectedRegex(built.user, profile.regexOutgoingScriptIds, userId);
 
   const llmMessages: LlmMessageDTO[] = [
-    { role: "system", content: resolvedSystem },
+    { role: promptRoleFor(profile, "arc"), content: resolvedSystem },
     { role: "user", content: outgoingUser },
   ];
 

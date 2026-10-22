@@ -229,26 +229,9 @@ export const STYLES = `
 
 .lmb-pane { display: flex; flex-direction: column; gap: 14px; }
 
-/* Compact profile context strip shown on Tuning subtabs that aren't Profile:
-   the full picker block would otherwise repeat above every pane. */
-.lmb-profile-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 11px;
-  background: var(--lmb-fill);
-  border: 1px solid var(--lmb-hairline);
-  border-radius: var(--lmb-r);
-  font-size: 11px;
-  color: var(--lmb-ink-dim);
-}
-.lmb-profile-strip b {
-  color: var(--lmb-ink);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.lmb-profile-picker-row { flex-wrap: wrap; }
+.lmb-profile-picker-row .lmb-grow { flex: 1 1 140px; }
+.lmb-profile-picker-row .lmb-profile-action { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; }
 
 /* ---------------------------------------------------------- section card */
 .lmb-section {
@@ -649,6 +632,13 @@ export const STYLES = `
 /* ---------------------------------------------------------------- fields */
 .lmb-field { display: flex; flex-direction: column; gap: 4px; }
 .lmb-field-row { display: flex; align-items: center; gap: 8px; }
+.lmb-prompt-role-row { flex-wrap: wrap; }
+.lmb-prompt-role-row .lmb-field-label { white-space: nowrap; }
+.lmb-prompt-role-row .lmb-prompt-role { width: 140px; }
+.lmb-summary-tier > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+.lmb-summary-tier > summary::-webkit-details-marker { display: none; }
+.lmb-summary-tier[open] > summary { margin-bottom: 10px; }
+.lmb-summary-tier[open] > summary .lmb-chevron { transform: rotate(45deg); margin-bottom: 4px; }
 .lmb-grow { flex: 1; min-width: 0; }
 .lmb-field-label {
   font-size: 10px;

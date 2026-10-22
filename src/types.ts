@@ -1,4 +1,4 @@
-import type { SummaryKind, HigherTier } from "./shared";
+import type { SummaryKind, HigherTier, PromptRole, PresetCategory } from "./shared";
 import type {
   CustomPreset,
   LMBProfile,
@@ -203,7 +203,7 @@ export type FrontendToBackend =
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }
   | { type: "save_profile"; profile: Partial<LMBProfile> & { id: string }; chatId?: string | null }
   | { type: "save_samplers"; profileId: string; samplers: Partial<SamplerSet>; target?: "main" | "codex"; chatId?: string | null }
-  | { type: "create_profile"; name: string; chatId?: string | null }
+  | { type: "create_profile"; name: string; copyFromId?: string; chatId?: string | null }
   | { type: "delete_profile"; profileId: string; chatId?: string | null }
   | { type: "set_active_profile"; profileId: string; chatId?: string | null }
   | { type: "create_chapter"; chatId: string }
@@ -226,12 +226,12 @@ export type FrontendToBackend =
   | { type: "abort_busy"; chatId: string; kind: SummaryKind | "codex" }
   | { type: "dry_run_chapter"; chatId: string }
   | { type: "dry_run_arc"; chatId: string }
-  | { type: "dry_run_volume"; chatId: string }
+  | { type: "dry_run_volume"; chatId: string; tier?: HigherTier }
   | { type: "dry_run_codex"; chatId: string }
   | { type: "ensure_book"; chatId: string }
   | { type: "import_preset"; raw: unknown; category: "chapter" | "arc"; chatId?: string | null }
   | { type: "save_custom_preset"; preset: CustomPreset; chatId?: string | null }
-  | { type: "delete_custom_preset"; key: string; category: "chapter" | "arc" | "volume" | "codex"; chatId?: string | null }
+  | { type: "delete_custom_preset"; key: string; category: PresetCategory; chatId?: string | null }
   | { type: "accept_preview"; draftId: string; chatId: string }
   | { type: "discard_preview"; draftId: string; chatId: string }
   | { type: "edit_preview"; draftId: string; chatId: string; patch: { title?: string; content?: string } }
@@ -281,7 +281,7 @@ export type FrontendToBackend =
   | { type: "lesson_seal_skip"; course?: LessonCourseKey; chatId?: string | null };
 
 export interface DryRunMessage {
-  role: "system" | "user";
+  role: PromptRole;
   content: string;
 }
 

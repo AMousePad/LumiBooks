@@ -6,9 +6,11 @@ import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
 import { deliverPromptBreakdown } from "../prompt-breakdown";
-import { renderCodexSettings, renderRegex } from "./profile-tab";
+import { renderCodexSettings, renderProfilePicker, renderRegex } from "./profile-tab";
 import { deliverRegexScriptsPage, resetRegexPicker } from "../regex-picker";
 import { renderAboutTab } from "./about-tab";
+import { renderPromptsPane, setPromptsCategory } from "./prompts-tab";
+import { renderTuningTab, resetTuningTabLocal, setTuningSubtab } from "./tuning-tab";
 import { createSummaryTransferPanel } from "../summary-transfer";
 import { makeDefaultProfile } from "../../shared";
 import { deliverCodexFiles, renderCodexTab, resetCodexTabLocal, setCodexSubtab, setCodexExpandedEntity } from "./codex-tab";
@@ -24,6 +26,7 @@ class Element {
   value = "";
   disabled = false;
   checked = false;
+  open = false;
   private text = "";
   private listeners = new Map<string, ((event: { preventDefault(): void }) => void)[]>();
   constructor(readonly tagName: string) {}
@@ -69,6 +72,8 @@ beforeEach(() => {
   resetBooksTabLocal();
 });
 afterEach(() => {
+  resetTuningTabLocal();
+  setPromptsCategory("chapter");
   resetRegexPicker();
   resetCodexTabLocal();
   resetHomeTabLocal();
@@ -208,6 +213,75 @@ function group(host: Element, title: string): Element {
   expect(heading).toBeDefined();
   return heading!.parentElement!;
 }
+
+test("Prompts groups all summary tiers and saves roles and presets for the selected category", () => {
+  const host = new Element("host"), sent: any[] = [], data = state();
+  setPromptsCategory("chapter");
+  renderPromptsPane(host as unknown as HTMLElement, data, {} as SpindleFrontendContext, message => sent.push(message));
+  const tabs = () => walk(host).filter((node) => node.className === "lmb-subtabs");
+  expect(tabs()[0]!.children.map((node) => node.textContent)).toEqual(["Summaries", "Codex"]);
+  expect(tabs()[1]!.children.map((node) => node.textContent)).toEqual([...TIER_NAMES]);
+  for (const [index, category] of ["chapter", "arc", "volume", "series", "saga", "library", "universe"].entries()) {
+    tabs()[1]!.children[index]!.dispatch("click");
+    const role = walk(host).find((node) => node.attributes["aria-label"] === "Send as:")!;
+    role.value = "assistant"; role.dispatch("change");
+    expect(sent.at(-1)).toMatchObject({ type: "save_profile", profile: { id: data.activeProfile.id, promptRoles: { [category]: "assistant" } } });
+    if (index > 2) {
+      const picker = walk(host).find((node) => node.tagName === "select" && node !== role)!;
+      expect(picker.children[0]!.value).toBe("");
+      picker.value = `${category}_default`; picker.dispatch("change");
+      expect(sent.at(-1).profile.higherTierPresetKeys).toEqual({ [category]: `${category}_default` });
+      walk(host).find((node) => node.tagName === "button" && node.textContent === "Dry run")!.dispatch("click");
+      expect(sent.at(-1)).toMatchObject({ type: "dry_run_volume", tier: index + 1 });
+    }
+  }
+  tabs()[0]!.children[1]!.dispatch("click");
+  const role = walk(host).find((node) => node.attributes["aria-label"] === "Send as:")!;
+  role.value = "user"; role.dispatch("change");
+  expect(sent.at(-1).profile.promptRoles).toEqual({ codex: "user" });
+});
+
+test("Tuning puts the profile picker above navigation, collapses later tiers, and labels summary recall Constant", () => {
+  const host = new Element("host"), data = state();
+  setTuningSubtab("settings");
+  renderTuningTab(host as unknown as HTMLElement, data, {} as SpindleFrontendContext, () => {});
+  expect(host.children[0]!.children[0]!.textContent).toBe("Profile");
+  expect(host.children[1]!.className).toBe("lmb-subtabs");
+  expect(walk(host).some((node) => node.className === "lmb-profile-strip")).toBe(false);
+  const disclosures = walk(host).filter((node) => node.tagName === "details");
+  expect(disclosures.map((node) => node.children[0]!.textContent)).toEqual(["Series Binding", "Saga Binding", "Library Binding", "Universe Binding"]);
+  expect(disclosures.every((node) => !node.open)).toBe(true);
+  disclosures[0]!.open = true; disclosures[0]!.dispatch("toggle");
+  renderTuningTab(host as unknown as HTMLElement, data, {} as SpindleFrontendContext, () => {});
+  const reopened = walk(host).find((node) => node.tagName === "details")!;
+  expect(reopened.open).toBe(true);
+  reopened.open = false; reopened.dispatch("toggle");
+  const recall = walk(host).find((node) => node.tagName === "fieldset" && node.textContent.includes("Summary recall"))!;
+  expect(recall.textContent).toContain("Constant");
+  expect(recall.textContent).not.toContain("Always");
+});
+
+test("profile icon actions create, rename, and explicitly duplicate the selected profile", async () => {
+  const host = new Element("host"), modal = new Element("modal"), data = state(), sent: any[] = [];
+  const ctx = { ui: { showModal: () => ({ root: modal, dismiss() { modal.replaceChildren(); } }) } } as unknown as SpindleFrontendContext;
+  renderProfilePicker(host as unknown as HTMLElement, data, ctx, message => sent.push(message));
+  expect(walk(host).filter(node => node.tagName === "input" && node.value === data.activeProfile.name)).toHaveLength(0);
+  const action = (name: string) => walk(host).find(node => node.attributes["aria-label"] === name)!;
+  action("Duplicate profile").dispatch("click");
+  expect(sent.at(-1)).toMatchObject({ type: "create_profile", copyFromId: data.activeProfile.id, name: `${data.activeProfile.name} copy` });
+  for (const name of ["New", "Rename profile"]) {
+    action(name).dispatch("click");
+    const input = walk(modal).find(node => node.tagName === "input")!;
+    expect(input.value).toBe(name === "New" ? "" : data.activeProfile.name);
+    input.value = "Changed profile";
+    walk(modal).find(node => node.tagName === "button" && node.textContent === "OK")!.dispatch("click");
+    await Promise.resolve();
+    if (name === "New") {
+      expect(sent.at(-1)).toMatchObject({ type: "create_profile", name: "Changed profile" });
+      expect(sent.at(-1).copyFromId).toBeUndefined();
+    } else expect(sent.at(-1).profile).toEqual({ id: data.activeProfile.id, name: "Changed profile" });
+  }
+});
 
 test("Codex settings render the activation controls without secure-context crypto", () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;

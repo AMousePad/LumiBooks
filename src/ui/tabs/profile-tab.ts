@@ -18,7 +18,6 @@ import {
   numberInput,
   section,
   select,
-  textInput,
   textNode,
 } from "../components";
 import { promptForString } from "../modals";
@@ -281,7 +280,7 @@ export function renderProfilePicker(
 ): void {
   const sec = section(tr("ui.tabs.profileTab.sec.profile"));
   const row = document.createElement("div");
-  row.className = "lmb-field-row";
+  row.className = "lmb-field-row lmb-profile-picker-row";
   lessonMark(row, "tuning.profile.select");
 
   const grow = document.createElement("div");
@@ -294,27 +293,34 @@ export function renderProfilePicker(
     }),
   );
   row.appendChild(grow);
-  row.append(
-    makeButton(tr("ui.tabs.profileTab.renderProfilePicker.new"), async () => {
+  const iconButton = (title: string, drawing: string, onClick: () => void): HTMLButtonElement => {
+    const button = makeButton("", onClick, { small: true, title });
+    button.classList.add("lmb-profile-action");
+    button.setAttribute("aria-label", title);
+    button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawing}</svg>`;
+    return button;
+  };
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  row.appendChild(actions);
+  actions.append(
+    iconButton(tr("ui.tabs.profileTab.renderProfilePicker.new"), '<path d="M12 5v14M5 12h14"/>', async () => {
       const name = await promptForString(ctx, tr("ui.tabs.profileTab.name.newProfileName"), "");
       if (!name) return;
       send({ type: "create_profile", name, chatId: state.activeChatId });
-    }, { small: true }),
+    }),
+    iconButton(tr("ui.tabs.profileTab.renderProfilePicker.rename"), '<path d="m16 3 5 5-12 12H4v-5L16 3ZM14 5l5 5"/>', async () => {
+      const name = await promptForString(ctx, tr("ui.tabs.profileTab.nameField.profileName"), state.activeProfile.name);
+      if (name) send({ type: "save_profile", profile: { id: state.activeProfile.id, name: name.slice(0, 60) }, chatId: state.activeChatId });
+    }),
+    iconButton(tr("ui.tabs.profileTab.renderProfilePicker.duplicate"), '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>', () => {
+      send({ type: "create_profile", name: tr("ui.tabs.profileTab.renderProfilePicker.copyName", { name: state.activeProfile.name }), copyFromId: state.activeProfile.id, chatId: state.activeChatId });
+    }),
     makeButton(tr("ui.tabs.profileTab.renderProfilePicker.delete"), () => {
       send({ type: "delete_profile", profileId: state.activeProfile.id, chatId: state.activeChatId });
     }, { small: true, danger: true, disabled: state.settings.profiles.length <= 1 }),
   );
   sec.body.appendChild(row);
-
-  const profile = state.activeProfile;
-  const nameField = field(tr("ui.tabs.profileTab.nameField.profileName"));
-  nameField.body.appendChild(
-    textInput({
-      value: profile.name,
-      onBlur: (v) => send({ type: "save_profile", profile: { id: profile.id, name: v.slice(0, 60) }, chatId: state.activeChatId }),
-    }),
-  );
-  sec.body.appendChild(nameField.wrap);
 
   const enableWrap = field(tr("ui.tabs.profileTab.enableWrap.extension"));
   enableWrap.body.appendChild(
@@ -330,6 +336,26 @@ export function renderProfilePicker(
   host.appendChild(sec.wrap);
 }
 
+const expandedSummaryTiers = new Set<number>();
+
+function summaryTierSection(title: string, tier: number): ReturnType<typeof section> {
+  if (tier <= 3) return section(title);
+  const wrap = document.createElement("details");
+  wrap.className = "lmb-section lmb-summary-tier";
+  wrap.open = expandedSummaryTiers.has(tier);
+  wrap.addEventListener("toggle", () => {
+    if (wrap.open) expandedSummaryTiers.add(tier);
+    else expandedSummaryTiers.delete(tier);
+  });
+  const head = document.createElement("summary");
+  head.className = "lmb-section-title";
+  head.append(document.createTextNode(title), textNode("", "lmb-chevron"));
+  const body = document.createElement("div");
+  body.className = "lmb-collapsible-body";
+  wrap.append(head, body);
+  return { wrap, head, body };
+}
+
 /** Each tier owns one card containing both its cadence and output target. */
 export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.summarySettings"));
@@ -341,7 +367,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
 
   for (const tier of [1, 2, ...HIGHER_TIERS] as const) {
     const name = TIER_NAMES[tier - 1]!;
-    const card = section(tier === 1 ? tr("ui.tabs.profileTab.card.chapterFiling") : tr("ui.tabs.profileTab.card.binding", { name: name }));
+    const card = summaryTierSection(tier === 1 ? tr("ui.tabs.profileTab.card.chapterFiling") : tr("ui.tabs.profileTab.card.binding", { name: name }), tier);
     const lag = document.createElement("div");
     lag.className = "lmb-collapsible-body";
     if (tier === 1) {

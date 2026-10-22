@@ -3371,6 +3371,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         noChaptersToBindYet: "No chapters to bind"
       },
       dryRunVolume: {
+        noSources: "No {name} summaries to consolidate",
         noArcsToPressYet: "No arcs to press"
       },
       promoteGhostChapters: {
@@ -3474,6 +3475,8 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         targetTokens2: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{arcTargetUnitTokens}% of input} other {{arcTargetPercent}% of input}})",
         presetKey2: "Preset key: {arcPresetKey}",
         sourceArcs: "Source arcs: {length}",
+        higherSources: "Source {name} summaries: {count}",
+        higherSourceTokens: "Source summaries: {bodyTokens} tokens (model tokenizer)",
         concatenatedArcBodyTokensModelTokenizer: "Source arcs: {bodyTokens} tokens (model tokenizer)",
         targetTokens3: "Target tokens: {targetTokens} ({choice, select, yes {fixed budget, ~{volumeTargetUnitTokens}% of input} other {{volumeTargetPercent}% of input}})",
         presetKey3: "Preset key: {volumePresetKey}"
@@ -3729,6 +3732,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
     },
     activationControl: {
       activationControl: {
+        constant: "Constant",
         always: "Always",
         keywords: "Keywords",
         vectorKeywords: "Vector + keywords"
@@ -4505,6 +4509,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       showDryRunModal: {
         dryRun: "Dry run: {choice, select, yes {Arc} other {{choice2, select, yes {Volume} other {{choice3, select, yes {Codex} other {Chapter}}}}}}",
+        higherTier: "Dry run: {name}",
         value: "×",
         closeDryRun: "Close dry run",
         diagnostics: "Diagnostics",
@@ -5456,6 +5461,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderProfilePicker: {
           new: "New",
+          rename: "Rename profile",
+          duplicate: "Duplicate profile",
+          copyName: "{name} copy",
           delete: "Delete",
           enabled: "Enabled",
           masterSwitchWhenOffMemoriaDoesNothing: "Enable LumiBooks for this account."
@@ -5567,6 +5575,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       promptsTab: {
         categorySubtabs: {
+          summaries: "Summaries",
           chapter: "Chapter",
           arc: "Arc",
           volume: "Volume",
@@ -5580,6 +5589,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         sec: {
           codexPromptTemplates: "Codex prompt templates",
+          summaryPrompt: "{name} prompt",
           memoriaOverrides: "Memoria overrides",
           arcPrompt: "Arc prompt",
           volumePrompt: "Volume prompt",
@@ -5607,7 +5617,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           clickAgainToConfirm: "Confirm?"
         },
         renderMemoriaOverrides: {
-          personaIsTheSystemPromptHeaderShort: "Persona sets the system-prompt header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
+          personaIsTheSystemPromptHeaderShort: "Persona sets the instruction header. Short-comment rules fill '{{memoria_short_comment_rules}}'.",
           memoriaPersona: "Memoria persona",
           memoriaShortCommentRules: "Memoria short-comment rules"
         },
@@ -5619,19 +5629,28 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           resetToDefault: "Reset to default"
         },
         renderCategory: {
-          theMissionBlockAtTheTopOf: "Instructions at the start of the Codex system prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
+          presetScope: "Preset selection is saved per profile. Editing a preset changes it for every profile using it; duplicate it for a separate version.",
+          theMissionBlockAtTheTopOf: "Instructions at the start of the Codex prompt. Saved with the templates below in the selected preset. Preview assembled prompts with Dry run.",
           newBlankPrompt: "New blank prompt",
           duplicateToNew: "Duplicate to new",
           duplicateToEdit: "Duplicate to edit",
           dryRun: "Dry run",
-          assembleTheNextCodexRunSComplete: "Preview resolved system and user prompts. No model call.",
+          assembleTheNextCodexRunSComplete: "Preview resolved messages and their roles. No model call.",
           assembleThisPresetSPromptWithAll: "Preview this preset''s resolved prompt. No model call.",
           delete: "Delete",
           promptBuiltInDuplicateToEdit: "Prompt (built-in, duplicate to edit)"
         },
         opts: {
+          useVolume: "Use Volume preset (adapted to this tier)",
           builtIn: "Built-in: {displayName}",
           custom: "Custom: {displayName}"
+        },
+        sendAs: {
+          label: "Send as:",
+          system: "System",
+          assistant: "Assistant",
+          user: "User",
+          help: "Role for this category's instructions. Source material is sent as User. Saved per profile."
         },
         name: {
           nameForNewPrompt: "Name for new {category} prompt",
@@ -5686,11 +5705,6 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           connection: "Connection",
           settings: "Settings",
           prompts: "Prompts"
-        },
-        renderTuningTab: {
-          profile: "Profile",
-          extensionOff: "· extension off",
-          switchOrManageProfilesInTheConnection: "Switch or manage profiles in the Connection pane"
         },
         options: {
           books: "Books",
@@ -5771,7 +5785,7 @@ The Codex is not injected as one always-on block. Each record is mirrored into a
 
 Vector recall requires a tested embedding connection and lorebook vectorization enabled in Lumiverse. Existing records are queued for indexing when you switch modes; new and edited records follow the same setting. Until indexing finishes, or when retrieval is unavailable or there is no visible recent text for a query, keyword matching remains available. Disabled records and files stay excluded. Lumiverse controls retrieval limits and the embedding provider; Codex files remain the source of truth.
 
-Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Always**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
+Chapter and higher-tier summaries have a separate **Summary recall** control in Tuning → Settings → Books → Everywhere. Its default is **Constant**. Selecting memories never changes which messages are filed or hidden. In the same section, turn off **Lorebook names follow chat names** before manually renaming either managed lorebook in Lumiverse.
 
 The mirror book is rewritten by LumiBooks often, so don''t edit it by hand. Edit records in the Codex tab (or the JSON files) instead.
 
@@ -6774,26 +6788,9 @@ var STYLES = `
 
 .lmb-pane { display: flex; flex-direction: column; gap: 14px; }
 
-/* Compact profile context strip shown on Tuning subtabs that aren't Profile:
-   the full picker block would otherwise repeat above every pane. */
-.lmb-profile-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 11px;
-  background: var(--lmb-fill);
-  border: 1px solid var(--lmb-hairline);
-  border-radius: var(--lmb-r);
-  font-size: 11px;
-  color: var(--lmb-ink-dim);
-}
-.lmb-profile-strip b {
-  color: var(--lmb-ink);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.lmb-profile-picker-row { flex-wrap: wrap; }
+.lmb-profile-picker-row .lmb-grow { flex: 1 1 140px; }
+.lmb-profile-picker-row .lmb-profile-action { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; }
 
 /* ---------------------------------------------------------- section card */
 .lmb-section {
@@ -7194,6 +7191,13 @@ var STYLES = `
 /* ---------------------------------------------------------------- fields */
 .lmb-field { display: flex; flex-direction: column; gap: 4px; }
 .lmb-field-row { display: flex; align-items: center; gap: 8px; }
+.lmb-prompt-role-row { flex-wrap: wrap; }
+.lmb-prompt-role-row .lmb-field-label { white-space: nowrap; }
+.lmb-prompt-role-row .lmb-prompt-role { width: 140px; }
+.lmb-summary-tier > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+.lmb-summary-tier > summary::-webkit-details-marker { display: none; }
+.lmb-summary-tier[open] > summary { margin-bottom: 10px; }
+.lmb-summary-tier[open] > summary .lmb-chevron { transform: rotate(45deg); margin-bottom: 4px; }
 .lmb-grow { flex: 1; min-width: 0; }
 .lmb-field-label {
   font-size: 10px;
@@ -9725,6 +9729,7 @@ var CODEX_FILE_KEYS = [
 ];
 var STORAGE_VERSION = 7;
 var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
+var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
 var TIER_NAMES = [t("shared.tierNames.chapter"), t("shared.tierNames.arc"), t("shared.tierNames.volume"), t("shared.tierNames.series"), t("shared.tierNames.saga"), t("shared.tierNames.library"), t("shared.tierNames.universe")];
 var HIGHER_TIERS = [3, 4, 5, 6, 7];
 function defaultHigherTiers() {
@@ -9737,6 +9742,11 @@ function defaultHigherTiers() {
     targetPercent: 25,
     targetTokens: 3000
   }]));
+}
+var EXTRA_PRESET_CATEGORIES = ["series", "saga", "library", "universe"];
+var PRESET_CATEGORIES = [...TIER_KINDS, "codex"];
+function promptRoleFor(profile, category) {
+  return profile.promptRoles[category] ?? "system";
 }
 var DEFAULT_SAMPLERS = {
   temperature: null,
@@ -9790,6 +9800,8 @@ function makeDefaultProfile(id, name) {
     chapterPresetKey: "summary",
     arcPresetKey: "arc_default",
     volumePresetKey: "volume_default",
+    higherTierPresetKeys: {},
+    promptRoles: {},
     previousMemoriesCount: 7,
     regexOutgoingScriptIds: [],
     regexIncomingScriptIds: [],
@@ -10261,7 +10273,8 @@ function showDryRunModal(kind, messages, diagnostics) {
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = t("ui.modals.showDryRunModal.dryRun", { choice: kind === "arc" ? "yes" : "no", choice2: !(kind === "arc") && kind === "volume" ? "yes" : "no", choice3: !(kind === "arc") && !(kind === "volume") && kind === "codex" ? "yes" : "no" });
+  const tierIndex = TIER_KINDS.indexOf(kind);
+  title.textContent = tierIndex > 2 ? t("ui.modals.showDryRunModal.higherTier", { name: TIER_NAMES[tierIndex] }) : t("ui.modals.showDryRunModal.dryRun", { choice: kind === "arc" ? "yes" : "no", choice2: !(kind === "arc") && kind === "volume" ? "yes" : "no", choice3: !(kind === "arc") && !(kind === "volume") && kind === "codex" ? "yes" : "no" });
   header.appendChild(title);
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
@@ -16268,7 +16281,7 @@ function renderSecrets(host, parsed, state, ctx, send) {
 
 // src/ui/activation-control.ts
 var nextGroup = 0;
-function activationControl(label, value, onChange) {
+function activationControl(label, value, onChange, alwaysLabel = t("ui.activationControl.activationControl.always")) {
   const group = document.createElement("fieldset");
   group.className = "lmb-activation";
   const legend = document.createElement("legend");
@@ -16277,7 +16290,7 @@ function activationControl(label, value, onChange) {
   const row = document.createElement("div");
   row.className = "lmb-activation-options";
   const name = `lmb-activation-${++nextGroup}`;
-  for (const [mode, title] of [["always", t("ui.activationControl.activationControl.always")], ["keywords", t("ui.activationControl.activationControl.keywords")], ["vector", t("ui.activationControl.activationControl.vectorKeywords")]]) {
+  for (const [mode, title] of [["always", alwaysLabel], ["keywords", t("ui.activationControl.activationControl.keywords")], ["vector", t("ui.activationControl.activationControl.vectorKeywords")]]) {
     const option = document.createElement("label");
     const input = document.createElement("input");
     input.type = "radio";
@@ -16517,7 +16530,7 @@ function renderResetSettings(host, state, send) {
 function renderProfilePicker(host, state, ctx, send) {
   const sec = section(t("ui.tabs.profileTab.sec.profile"));
   const row = document.createElement("div");
-  row.className = "lmb-field-row";
+  row.className = "lmb-field-row lmb-profile-picker-row";
   lessonMark(row, "tuning.profile.select");
   const grow = document.createElement("div");
   grow.className = "lmb-grow";
@@ -16527,22 +16540,31 @@ function renderProfilePicker(host, state, ctx, send) {
     onChange: (v) => send({ type: "set_active_profile", profileId: v, chatId: state.activeChatId })
   }));
   row.appendChild(grow);
-  row.append(makeButton(t("ui.tabs.profileTab.renderProfilePicker.new"), async () => {
+  const iconButton = (title, drawing, onClick) => {
+    const button = makeButton("", onClick, { small: true, title });
+    button.classList.add("lmb-profile-action");
+    button.setAttribute("aria-label", title);
+    button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${drawing}</svg>`;
+    return button;
+  };
+  const actions = document.createElement("div");
+  actions.className = "lmb-actions";
+  row.appendChild(actions);
+  actions.append(iconButton(t("ui.tabs.profileTab.renderProfilePicker.new"), '<path d="M12 5v14M5 12h14"/>', async () => {
     const name = await promptForString(ctx, t("ui.tabs.profileTab.name.newProfileName"), "");
     if (!name)
       return;
     send({ type: "create_profile", name, chatId: state.activeChatId });
-  }, { small: true }), makeButton(t("ui.tabs.profileTab.renderProfilePicker.delete"), () => {
+  }), iconButton(t("ui.tabs.profileTab.renderProfilePicker.rename"), '<path d="m16 3 5 5-12 12H4v-5L16 3ZM14 5l5 5"/>', async () => {
+    const name = await promptForString(ctx, t("ui.tabs.profileTab.nameField.profileName"), state.activeProfile.name);
+    if (name)
+      send({ type: "save_profile", profile: { id: state.activeProfile.id, name: name.slice(0, 60) }, chatId: state.activeChatId });
+  }), iconButton(t("ui.tabs.profileTab.renderProfilePicker.duplicate"), '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>', () => {
+    send({ type: "create_profile", name: t("ui.tabs.profileTab.renderProfilePicker.copyName", { name: state.activeProfile.name }), copyFromId: state.activeProfile.id, chatId: state.activeChatId });
+  }), makeButton(t("ui.tabs.profileTab.renderProfilePicker.delete"), () => {
     send({ type: "delete_profile", profileId: state.activeProfile.id, chatId: state.activeChatId });
   }, { small: true, danger: true, disabled: state.settings.profiles.length <= 1 }));
   sec.body.appendChild(row);
-  const profile = state.activeProfile;
-  const nameField = field(t("ui.tabs.profileTab.nameField.profileName"));
-  nameField.body.appendChild(textInput({
-    value: profile.name,
-    onBlur: (v) => send({ type: "save_profile", profile: { id: profile.id, name: v.slice(0, 60) }, chatId: state.activeChatId })
-  }));
-  sec.body.appendChild(nameField.wrap);
   const enableWrap = field(t("ui.tabs.profileTab.enableWrap.extension"));
   enableWrap.body.appendChild(checkbox({
     checked: state.settings.enabled,
@@ -16552,6 +16574,27 @@ function renderProfilePicker(host, state, ctx, send) {
   }));
   sec.body.appendChild(enableWrap.wrap);
   host.appendChild(sec.wrap);
+}
+var expandedSummaryTiers = new Set;
+function summaryTierSection(title, tier) {
+  if (tier <= 3)
+    return section(title);
+  const wrap = document.createElement("details");
+  wrap.className = "lmb-section lmb-summary-tier";
+  wrap.open = expandedSummaryTiers.has(tier);
+  wrap.addEventListener("toggle", () => {
+    if (wrap.open)
+      expandedSummaryTiers.add(tier);
+    else
+      expandedSummaryTiers.delete(tier);
+  });
+  const head = document.createElement("summary");
+  head.className = "lmb-section-title";
+  head.append(document.createTextNode(title), textNode("", "lmb-chevron"));
+  const body = document.createElement("div");
+  body.className = "lmb-collapsible-body";
+  wrap.append(head, body);
+  return { wrap, head, body };
 }
 function renderSummarySettings(host, profile, patch) {
   const sec = section(t("ui.tabs.profileTab.sec.summarySettings"));
@@ -16563,7 +16606,7 @@ function renderSummarySettings(host, profile, patch) {
   }), "tuning.auto"));
   for (const tier of [1, 2, ...HIGHER_TIERS]) {
     const name = TIER_NAMES[tier - 1];
-    const card = section(tier === 1 ? t("ui.tabs.profileTab.card.chapterFiling") : t("ui.tabs.profileTab.card.binding", { name }));
+    const card = summaryTierSection(tier === 1 ? t("ui.tabs.profileTab.card.chapterFiling") : t("ui.tabs.profileTab.card.binding", { name }), tier);
     const lag = document.createElement("div");
     lag.className = "lmb-collapsible-body";
     if (tier === 1) {
@@ -16983,6 +17026,49 @@ function renderBehavior(host, profile, patch) {
   host.appendChild(sec.wrap);
 }
 
+// src/prompts/categories.ts
+var KEY_FIELDS = { chapter: "chapterPresetKey", arc: "arcPresetKey", volume: "volumePresetKey", codex: "codexPresetKey" };
+function isExtraCategory(category) {
+  return EXTRA_PRESET_CATEGORIES.includes(category);
+}
+function presetKeyFor(profile, category) {
+  return isExtraCategory(category) ? profile.higherTierPresetKeys[category] ?? "" : profile[KEY_FIELDS[category]];
+}
+function presetKeyPatch(category, key) {
+  return isExtraCategory(category) ? { higherTierPresetKeys: { [category]: key } } : { [KEY_FIELDS[category]]: key };
+}
+function higherTierPreset(text, tier) {
+  return text.replace(/\b(volumes?|arcs?)\b/gi, (word) => {
+    const source = word.toLowerCase().startsWith("arc");
+    const name = MODEL_TIER_NAMES[tier - (source ? 2 : 1)];
+    const plural = word.toLowerCase().endsWith("s");
+    const replacement = name + (plural && name !== "Series" ? name === "Library" ? "" : "s" : "");
+    const result = plural && name === "Library" ? "Libraries" : replacement;
+    return word === word.toUpperCase() ? result.toUpperCase() : result;
+  });
+}
+function builtInPresetsFor(pools, category) {
+  if (!isExtraCategory(category))
+    return pools[`${category}Presets`];
+  const index = TIER_KINDS.indexOf(category);
+  return [{
+    key: `${category}_default`,
+    displayName: TIER_NAMES[index],
+    prompt: higherTierPreset(pools.volumePresets[0].prompt, index + 1)
+  }];
+}
+function resolvePresetText(profile, customs, pools, category) {
+  const key = presetKeyFor(profile, category);
+  if (isExtraCategory(category) && !key) {
+    return higherTierPreset(resolvePresetText(profile, customs, pools, "volume"), TIER_KINDS.indexOf(category) + 1);
+  }
+  const custom = customs.find((p) => p.key === key && p.category === category);
+  if (custom)
+    return custom.prompt;
+  const builtIns = builtInPresetsFor(pools, category);
+  return (builtIns.find((p) => p.key === key) ?? builtIns[0])?.prompt ?? "";
+}
+
 // src/prompts/fill.ts
 function fillPrompt(template, vars) {
   return template.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars) ? String(vars[k]) : m);
@@ -17009,42 +17095,47 @@ var short_comment_rules_default = 'A single playful nyandere remark in Memoria v
 
 // src/ui/tabs/prompts-tab.ts
 var CATEGORY_SUBTABS = [
-  { key: "chapter", label: t("ui.tabs.promptsTab.categorySubtabs.chapter") },
-  { key: "arc", label: t("ui.tabs.promptsTab.categorySubtabs.arc") },
-  { key: "volume", label: t("ui.tabs.promptsTab.categorySubtabs.volume") },
+  { key: "summaries", label: t("ui.tabs.promptsTab.categorySubtabs.summaries") },
   { key: "codex", label: t("ui.tabs.promptsTab.categorySubtabs.codex") }
 ];
+var SUMMARY_LABELS = [t("ui.tabs.promptsTab.categorySubtabs.chapter"), t("ui.tabs.promptsTab.categorySubtabs.arc"), t("ui.tabs.promptsTab.categorySubtabs.volume"), ...TIER_NAMES.slice(3)];
+var SUMMARY_SUBTABS = TIER_KINDS.map((key, index) => ({ key, label: SUMMARY_LABELS[index] }));
 var local2 = {
-  category: "chapter",
+  category: "summaries",
+  summary: "chapter",
   codexExpanded: new Set,
   codexHowTo: new Set
 };
 function setPromptsCategory(cat) {
-  local2.category = cat;
+  local2.category = cat === "codex" ? "codex" : "summaries";
+  if (cat !== "codex")
+    local2.summary = cat;
 }
 function renderPromptsPane(host, state, ctx, send) {
   const profile = state.activeProfile;
   const setKey = (category, key) => {
-    const p = category === "arc" ? { arcPresetKey: key } : category === "volume" ? { volumePresetKey: key } : category === "codex" ? { codexPresetKey: key } : { chapterPresetKey: key };
+    const p = presetKeyPatch(category, key);
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   };
-  const selectedKeyFor = (c) => c === "arc" ? profile.arcPresetKey : c === "volume" ? profile.volumePresetKey : c === "codex" ? profile.codexPresetKey : profile.chapterPresetKey;
   const pane = document.createElement("div");
   pane.className = "lmb-pane";
   host.appendChild(pane);
   const draw = () => {
     pane.replaceChildren();
-    pane.appendChild(makeSubtabs(CATEGORY_SUBTABS, local2.category, (key) => {
+    pane.appendChild(makeSubtabs([...CATEGORY_SUBTABS], local2.category, (key) => {
       local2.category = key;
       draw();
     }));
-    const cat = local2.category;
-    if (cat === "codex") {
-      renderCategory(pane, state, ctx, send, "codex", selectedKeyFor("codex"), setKey);
+    if (local2.category === "codex") {
+      renderCategory(pane, state, ctx, send, "codex", presetKeyFor(profile, "codex"), setKey);
       renderCodexTemplates(pane, state, send);
       return;
     }
-    renderCategory(pane, state, ctx, send, cat, selectedKeyFor(cat), setKey);
+    pane.appendChild(makeSubtabs(SUMMARY_SUBTABS, local2.summary, (key) => {
+      local2.summary = key;
+      draw();
+    }));
+    renderCategory(pane, state, ctx, send, local2.summary, presetKeyFor(profile, local2.summary), setKey);
     renderMemoriaOverrides(pane, state, send);
     renderImport(pane, state, ctx, send);
     renderHelp(pane);
@@ -17276,7 +17367,7 @@ function buildOverrideBlock(opts) {
 }
 function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   const isCodex = category === "codex";
-  const sec = section(category === "arc" ? t("ui.tabs.promptsTab.sec.arcPrompt") : category === "volume" ? t("ui.tabs.promptsTab.sec.volumePrompt") : isCodex ? t("ui.tabs.promptsTab.sec.codexDirectives") : t("ui.tabs.promptsTab.sec.chapterPrompt"));
+  const sec = section(category === "chapter" ? t("ui.tabs.promptsTab.sec.chapterPrompt") : category === "arc" ? t("ui.tabs.promptsTab.sec.arcPrompt") : category === "volume" ? t("ui.tabs.promptsTab.sec.volumePrompt") : isCodex ? t("ui.tabs.promptsTab.sec.codexDirectives") : t("ui.tabs.promptsTab.sec.summaryPrompt", { name: TIER_NAMES[TIER_KINDS.indexOf(category)] }));
   lessonMark(sec.wrap, isCodex ? "tuning.prompts.codex" : "tuning.prompts");
   if (isCodex) {
     const help = document.createElement("div");
@@ -17284,9 +17375,26 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
     help.textContent = t("ui.tabs.promptsTab.renderCategory.theMissionBlockAtTheTopOf");
     sec.body.appendChild(help);
   }
-  const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : isCodex ? state.codexPresets : state.chapterPresets;
+  const roleRow = document.createElement("label");
+  roleRow.className = "lmb-field-row lmb-prompt-role-row";
+  roleRow.append(textNode(t("ui.tabs.promptsTab.sendAs.label"), "lmb-field-label"));
+  const role = select({
+    value: promptRoleFor(state.activeProfile, category),
+    options: [
+      { value: "system", label: t("ui.tabs.promptsTab.sendAs.system") },
+      { value: "assistant", label: t("ui.tabs.promptsTab.sendAs.assistant") },
+      { value: "user", label: t("ui.tabs.promptsTab.sendAs.user") }
+    ],
+    onChange: (value) => send({ type: "save_profile", profile: { id: state.activeProfile.id, promptRoles: { [category]: value } }, chatId: state.activeChatId })
+  });
+  role.classList.add("lmb-prompt-role");
+  role.setAttribute("aria-label", t("ui.tabs.promptsTab.sendAs.label"));
+  roleRow.append(role);
+  sec.body.append(roleRow, textNode(t("ui.tabs.promptsTab.sendAs.help"), "lmb-field-hint"));
+  const builtIns = builtInPresetsFor(state, category);
   const customs = state.customPresets.filter((p) => p.category === category);
   const opts = [
+    ...isExtraCategory(category) ? [{ value: "", label: t("ui.tabs.promptsTab.opts.useVolume") }] : [],
     ...builtIns.map((b) => ({ value: b.key, label: t("ui.tabs.promptsTab.opts.builtIn", { displayName: b.displayName }) })),
     ...customs.map((c) => ({ value: c.key, label: t("ui.tabs.promptsTab.opts.custom", { displayName: c.displayName }) }))
   ];
@@ -17301,8 +17409,9 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   }));
   pickerRow.append(grow);
   sec.body.appendChild(pickerRow);
+  sec.body.appendChild(textNode(t("ui.tabs.promptsTab.renderCategory.presetScope"), "lmb-field-hint"));
   const isUserPreset = customs.some((c) => c.key === selectedKey);
-  const selectedText = findPresetText(state, category, selectedKey);
+  const selectedText = resolvePresetText(state.activeProfile, state.customPresets, state, category);
   const buttonsRow = document.createElement("div");
   buttonsRow.className = "lmb-actions";
   buttonsRow.append(makeButton(t("ui.tabs.promptsTab.renderCategory.newBlankPrompt"), async () => {
@@ -17344,7 +17453,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
   buttonsRow.append(makeButton(t("ui.tabs.promptsTab.renderCategory.dryRun"), () => {
     if (!state.activeChatId)
       return;
-    send(category === "arc" ? { type: "dry_run_arc", chatId: state.activeChatId } : category === "volume" ? { type: "dry_run_volume", chatId: state.activeChatId } : category === "codex" ? { type: "dry_run_codex", chatId: state.activeChatId } : { type: "dry_run_chapter", chatId: state.activeChatId });
+    send(category === "arc" ? { type: "dry_run_arc", chatId: state.activeChatId } : category === "codex" ? { type: "dry_run_codex", chatId: state.activeChatId } : category === "chapter" ? { type: "dry_run_chapter", chatId: state.activeChatId } : { type: "dry_run_volume", chatId: state.activeChatId, tier: TIER_KINDS.indexOf(category) + 1 });
   }, {
     small: true,
     disabled: !state.activeChatId || !state.settings.enabled,
@@ -17401,16 +17510,7 @@ function renderCategory(host, state, ctx, send, category, selectedKey, setKey) {
 function blankPromptTemplate(category) {
   if (category === "codex")
     return CODEX_DIRECTIVES_DEFAULT;
-  const noun = category === "arc" ? "arc" : category === "volume" ? "volume" : "chapter";
-  return fillPrompt(blank_template_default, { NOUN: noun });
-}
-function findPresetText(state, category, key) {
-  const c = state.customPresets.find((p) => p.key === key && p.category === category);
-  if (c)
-    return c.prompt;
-  const builtIns = category === "arc" ? state.arcPresets : category === "volume" ? state.volumePresets : category === "codex" ? state.codexPresets : state.chapterPresets;
-  const b = builtIns.find((p) => p.key === key);
-  return b?.prompt ?? "";
+  return fillPrompt(blank_template_default, { NOUN: category });
 }
 function renderImport(host, state, ctx, send) {
   const sec = section(t("ui.tabs.promptsTab.sec.importStmbPresets"));
@@ -17533,19 +17633,7 @@ function resetTuningTabLocal() {
 }
 function renderTuningTab(host, state, ctx, send) {
   host.replaceChildren();
-  if (local3.subtab !== "profile") {
-    const strip = document.createElement("div");
-    strip.className = "lmb-profile-strip";
-    strip.append(document.createTextNode(t("ui.tabs.tuningTab.renderTuningTab.profile")));
-    const name = document.createElement("b");
-    name.textContent = state.activeProfile.name;
-    strip.appendChild(name);
-    if (!state.settings.enabled) {
-      strip.appendChild(document.createTextNode(t("ui.tabs.tuningTab.renderTuningTab.extensionOff")));
-    }
-    strip.title = t("ui.tabs.tuningTab.renderTuningTab.switchOrManageProfilesInTheConnection");
-    host.appendChild(strip);
-  }
+  renderProfilePicker(host, state, ctx, send);
   host.appendChild(makeSubtabs(SUBTABS3, local3.subtab, (key) => {
     local3.subtab = key;
     renderTuningTab(host, state, ctx, send);
@@ -17562,7 +17650,6 @@ function renderTuningTab(host, state, ctx, send) {
   host.appendChild(pane);
   switch (local3.subtab) {
     case "profile": {
-      renderProfilePicker(pane, state, ctx, send);
       const rest = document.createElement("div");
       rest.className = "lmb-pane";
       if (!state.settings.enabled) {
@@ -17634,7 +17721,7 @@ function renderGlobalSettings(host, state, send) {
     hint: t("ui.tabs.tuningTab.renderGlobalSettings.whenOffMemoriaSBackgroundRunsStay"),
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId })
   }));
-  sec.body.appendChild(lessonMark(activationControl(t("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode, (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId })), "tuning.every.constant"));
+  sec.body.appendChild(lessonMark(activationControl(t("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode, (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), t("ui.activationControl.activationControl.constant")), "tuning.every.constant"));
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
   hint.textContent = t("ui.tabs.tuningTab.renderGlobalSettings.appliesToExistingAndFutureChapterAnd");

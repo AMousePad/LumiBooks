@@ -446,7 +446,10 @@ export function showDryRunModal(
   const header = document.createElement("div");
   header.className = "lmb-preview-modal__header";
   const title = document.createElement("h3");
-  title.textContent = tr("ui.modals.showDryRunModal.dryRun", { choice: (kind === "arc") ? "yes" : "no", choice2: ((!(kind === "arc")) && (kind === "volume")) ? "yes" : "no", choice3: (((!(kind === "arc")) && !(kind === "volume")) && (kind === "codex")) ? "yes" : "no" });
+  const tierIndex = TIER_KINDS.indexOf(kind as SummaryKind);
+  title.textContent = tierIndex > 2
+    ? tr("ui.modals.showDryRunModal.higherTier", { name: TIER_NAMES[tierIndex] })
+    : tr("ui.modals.showDryRunModal.dryRun", { choice: (kind === "arc") ? "yes" : "no", choice2: ((!(kind === "arc")) && (kind === "volume")) ? "yes" : "no", choice3: (((!(kind === "arc")) && !(kind === "volume")) && (kind === "codex")) ? "yes" : "no" });
   header.appendChild(title);
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
