@@ -45,6 +45,7 @@ function makeMessages(total: number): MessageStub[] {
       hidden: false,
       covered: false,
       coveredByEntryId: null,
+      staged: false,
       indexInChat: i,
       excluded: false,
     });

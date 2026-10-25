@@ -3317,6 +3317,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         memoriaIsFilingAChapter: "Creating chapter"
       },
       createChapterFromRange: {
+        alreadyFiled: "Some selected messages are already filed. Select unfiled messages or regenerate the existing chapter.",
         memoriaIsFilingAChapter: "Creating chapter"
       },
       runChapter: {
@@ -4710,6 +4711,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           showOlder: "Show older ({older})"
         },
         buildMessageRow: {
+          stagedGhost: "Staged for Codex. Compressing these messages replaces the overlapping ghost chapters after saving.",
           shiftClickOrLongPressOnTouch: "Shift+click (or long-press on touch) to select a range",
           value: "#{indexInChat1}",
           alreadyFiledIntoAChapterArcOr: "Already filed into a chapter, arc, or volume",
@@ -5336,6 +5338,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           cancelTheInFlightGeneration: "Cancel generation"
         },
         renderFailure: {
+          saveFailed: "Summary generated, but saving failed. {message}",
           lastArcAttemptFailed: "Last arc attempt failed",
           lastAttemptFailed: "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} attempt failed",
           lastChapterAttemptFailed: "Last chapter attempt failed",
@@ -7768,7 +7771,8 @@ function withLiveMessageRanges(entries, messages) {
 }
 async function buildCoverage(chatId, userId, preloadedEntries, includeGhosts = false, selectedEntryIds) {
   const allEntries = preloadedEntries ?? await listLmbEntries(chatId, userId);
-  const entries = allEntries.filter((e) => (!selectedEntryIds || selectedEntryIds.has(e.raw.id)) && (!e.raw.disabled || includeGhosts && e.meta.ghost === true));
+  const realCoverage = includeGhosts ? await buildCoverage(chatId, userId, allEntries) : undefined;
+  const entries = allEntries.filter((e) => (!selectedEntryIds || selectedEntryIds.has(e.raw.id)) && (!e.raw.disabled || includeGhosts && e.meta.ghost === true && !e.meta.msgIds.some((id) => realCoverage.coveredBy.has(id))));
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);
@@ -9339,7 +9343,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.1.3",
+  version: "1.1.4",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -9505,7 +9509,7 @@ var encoder = new TextEncoder;
 var EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost", "frontend"];
 var MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"];
 var OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"];
-var REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"];
+var REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "sources_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"];
 var NUMBER_KEYS = ["tier", "attempt", "durationMs", "total", "covered", "uncovered", "excluded", "eligible", "hidden", "selected", "requested", "missing", "entries", "previous", "first", "last", "input", "output", "sourceCount", "changed", "rounds", "promptTokens", "completionTokens", "indexGaps", "duplicateIndexes", "gaps", "overlaps", "rangeMismatches", "missingSources", "lag", "window", "previousCount", "retryCount", "regexOutgoing", "regexIncoming", "arcBatch", "arcLag", "inputCharacters", "outputCharacters", "maxInputTokens", "maxOutputTokens", "temperature", "targetPercent", "targetTokens"];
 var FLAGS = ["automation", "ghost", "regeneration", "previews", "hideCovered", "extraContext", "lagTokens", "windowTokens", "active", "root", "disabled", "vector", "constant"];
 var ACTIONS = ["save_settings", "save_profile", "save_samplers", "set_active_profile", "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs", "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure", "delete_entry", "release_entry", "regenerate_entry", "update_entry", "resync_hidden", "resync_visibility", "abort_busy", "accept_preview", "discard_preview", "edit_preview", "rebase_root", "rebuild_root", "detach_root", "set_message_excluded", "summary_import", "summary_import_resolve", "codex_update_now", "codex_reset", "codex_rebuild", "codex_tidy"];
@@ -9777,6 +9781,8 @@ async function clearDiagnostics(userId) {
 function diagnosticErrorReason(error) {
   const name = error instanceof Error ? error.name : "";
   switch (name) {
+    case "SummarySourcesChangedError":
+      return "sources_changed";
     case "AbortError":
     case "AbortedSummarizerError":
       return "cancelled";
@@ -12559,7 +12565,7 @@ var failureByChat = new Map;
 var previewsByChat = new Map;
 var previewSources = new WeakMap;
 var replacementSources = new WeakMap;
-var changedSources = () => new Error(t("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd"));
+var changedSources = () => Object.assign(new Error(t("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd")), { name: "SummarySourcesChangedError" });
 var messageSource = (m) => msgSig(m.role, m.content || "");
 var entrySource = (e) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 var replacementSource = (e) => msgSig("replacement", JSON.stringify([entrySource(e), e.raw.comment, e.raw.key]));
@@ -12908,7 +12914,7 @@ async function runWithRetry(attempts, fn, onRetry) {
   }
   return { ok: false, err: lastErr, retries: tries - 1 };
 }
-function recordFailure(userId, chatId, kind, retries, err, selection) {
+function recordFailure(userId, chatId, kind, retries, err, selection, phase = "generation") {
   recordDiagnostic(userId, { event: "failure", chatId, mode: kind, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: retries }, replacesEntryId: selection?.replacesEntryId });
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key))
@@ -12917,6 +12923,7 @@ function recordFailure(userId, chatId, kind, retries, err, selection) {
     kind,
     message: describeError(err),
     retriedTimes: retries,
+    phase,
     at: Date.now(),
     ...selection
   });
@@ -12978,7 +12985,12 @@ async function createChapterFromRange(chatId, messageIds, profile, settings, use
     const window = messages.filter((m) => set.has(m.id) && !isExcluded(m));
     if (window.length !== set.size)
       throw changedSources();
-    const coverage = await buildCoverage(chatId, userId, undefined, extraContextActive(profile));
+    const entries = await listLmbEntries(chatId, userId, true);
+    const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
+    const realCoverage = await buildCoverage(chatId, userId, entries.filter((e) => e.raw.id !== opts.replacesEntryId));
+    if (window.some((m) => realCoverage.coveredBy.has(m.id))) {
+      throw new Error(t("backend.pipeline.createChapterFromRange.alreadyFiled"));
+    }
     recordSelection(userId, chatId, profile, messages, coverage, window, opts.replacesEntryId ? "regenerate" : "selected", opts.replacesEntryId);
     recordDiagnostic(userId, { event: "action", chatId, mode: opts.replacesEntryId ? "regenerate" : "selected", numbers: { requested: messageIds.length, selected: window.length, missing: messageIds.filter((id) => !liveIds.has(id)).length } });
     if (window.length === 0)
@@ -13065,7 +13077,7 @@ async function runChapter(chatId, profile, settings, userId, allMessages, window
     return entryId;
   } catch (err) {
     warn(`commitChapter failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "chapter", 0, err, retrySelection);
+    recordFailure(userId, chatId, "chapter", 0, err, retrySelection, "save");
     failToast(userId, "chapter", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -13094,7 +13106,7 @@ async function commitChapter(chatId, profile, userId, window, result, firstIdx, 
     const freshEntries = await listLmbEntries(chatId, userId, true);
     await assertReplacementActive(freshEntries, replacesEntryId, chatId, userId, result);
     const entriesForCoverage = replacesEntryId ? freshEntries.filter((e) => e.raw.id !== replacesEntryId) : freshEntries;
-    const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
+    const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost);
     const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
     if (validWindow.length === 0) {
       const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true]));
@@ -13151,6 +13163,23 @@ ${result.content}`;
       throw err;
     }
     recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
+    if (!ghost) {
+      const selectedIds = new Set(msgIds);
+      for (const staged of freshEntries) {
+        if (staged.meta.tier !== 1 || !staged.meta.ghost || !staged.raw.disabled || !staged.meta.msgIds.some((id) => selectedIds.has(id)))
+          continue;
+        try {
+          await deleteEntry(staged.raw.id, userId);
+          recordDiagnostic(userId, { event: "ghost", chatId, entryId: staged.raw.id, outcome: "removed", reason: "coverage_changed" });
+          const remaining = staged.meta.msgIds.filter((id) => !selectedIds.has(id));
+          if (remaining.length && typeof staged.meta.sceneNumber === "number") {
+            recordFreedGhostNumber(userId, chatId, remaining, staged.meta.sceneNumber);
+          }
+        } catch (err) {
+          warn(`failed to remove replaced ghost ${staged.raw.id}: ${describeError(err)}`);
+        }
+      }
+    }
     invalidateBookCache(userId, chatId);
     if (profile.hideCoveredMessages && !ghost) {
       try {
@@ -13263,7 +13292,7 @@ async function runArc(chatId, profile, settings, userId, selected, opts = {}) {
     return entryId;
   } catch (err) {
     warn(`commitArc failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
+    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId }, "save");
     failToast(userId, "arc", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -13449,7 +13478,7 @@ async function runVolume(chatId, profile, settings, userId, selected, replacesEn
     return entryId;
   } catch (err) {
     warn(`commitVolume failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
+    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId }, "save");
     failToast(userId, kind, err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -13566,7 +13595,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
     if (preview.kind === "chapter") {
       const messages = await spindle.chat.getMessages(chatId);
       const acceptEntries = preview.replacesEntryId ? (await listLmbEntries(chatId, userId, true)).filter((e) => e.raw.id !== preview.replacesEntryId) : await listLmbEntries(chatId, userId, true);
-      const coverage = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
+      const coverage = await buildCoverage(chatId, userId, acceptEntries);
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage.coveredBy.has(m.id) && !isExcluded(m));
       const sources = previewSources.get(preview);
@@ -13594,11 +13623,12 @@ async function acceptPreview(chatId, draftId, profile, userId) {
       try {
         const entryId = await commitChapter(chatId, profile, userId, window, fakeResult, firstIdx, lastIdx, messages, true, preview.replacesEntryId);
         dropPendingPreview(userId, chatId, draftId);
+        clearLastFailure(userId, chatId);
         nyaaToast(userId, "success", false);
         cb?.onStateChange(userId, chatId);
         return entryId;
       } catch (err) {
-        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId });
+        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId }, "save");
         failToast(userId, "chapter", err);
         cb?.onStateChange(userId, chatId);
         return null;
@@ -13644,7 +13674,7 @@ async function acceptPreview(chatId, draftId, profile, userId) {
       recordFailure(userId, chatId, preview.kind, 0, err, {
         sourceEntryIds: selected.map((e) => e.raw.id),
         replacesEntryId: preview.replacesEntryId
-      });
+      }, "save");
       failToast(userId, preview.kind, err);
       cb?.onStateChange(userId, chatId);
       return null;
@@ -17595,6 +17625,7 @@ async function buildState(userId, requestedChatId) {
   chapters.sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
   arcs.sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
   volumes.sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
+  const stagedIds = new Set(backlogCoverage.activeEntries.filter((e) => e.meta.ghost && e.raw.disabled).flatMap((e) => e.meta.msgIds));
   const messageStubs = messages.map((m) => {
     const covered = coverage.coveredBy.get(m.id) ?? null;
     const hidden = !!(m.extra && m.extra.hidden);
@@ -17609,6 +17640,7 @@ async function buildState(userId, requestedChatId) {
       approxTokens: approximateTokensFromChars(charCount),
       hidden,
       covered: !!covered,
+      staged: stagedIds.has(m.id),
       coveredByEntryId: covered,
       indexInChat: m.index_in_chat,
       excluded

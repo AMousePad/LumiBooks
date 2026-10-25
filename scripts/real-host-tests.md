@@ -42,6 +42,15 @@ creates 1,445 messages, deletes five, files 92 chapters manually, changes lag
 and window, then files 29 chapters automatically and forks the result. It checks
 every filed source against the actual provider requests and stored ranges.
 
+Use `--ghosts-only` for manual compression with Codex Extra Context enabled.
+These scenarios file a 64-message selection and an edited 80-message preview
+across pending ghost chapters, including a partial overlap. They check the exact
+provider input, stored source IDs, ghost cleanup, message hiding, and raw
+messages left outside the selection. They also run in the full suite. The
+chapter unit tests exhaust all 63 nonempty selections across two small ghosts
+and a raw tail, with previews and deletion failures, and exercise competing
+preview saves and ghost-promotion races.
+
 Success exits zero and writes `report.json`, including tested revisions, bundle
 hashes, scenario results, duration, and diagnostics counters. A failure exits
 nonzero and writes synthetic request/state evidence to `failure.json`. Artifacts

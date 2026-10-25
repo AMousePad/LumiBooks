@@ -56,7 +56,7 @@ const previewsByChat = new Map<string, PendingPreview[]>();
 // Source fingerprints stay backend-only and expire with their in-memory draft.
 const previewSources = new WeakMap<PendingPreview, string[]>();
 const replacementSources = new WeakMap<object, string>();
-const changedSources = () => new Error(tr("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd"));
+const changedSources = () => Object.assign(new Error(tr("backend.pipeline.changedSources.summarySourcesChangedDiscardThisResultAnd")), { name: "SummarySourcesChangedError" });
 const messageSource = (m: ChatMessageDTO) => msgSig(m.role, m.content || "");
 const entrySource = (e: LMBEntry) => msgSig("summary", JSON.stringify([e.raw.content, e.meta.tier, e.meta.msgIds, e.meta.sourceChapterEntryIds, e.meta.isRoot]));
 const replacementSource = (e: LMBEntry) => msgSig("replacement", JSON.stringify([entrySource(e), e.raw.comment, e.raw.key]));
@@ -444,7 +444,8 @@ async function runWithRetry<T>(
 }
 
 function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind"], retries: number, err: unknown,
-  selection?: Pick<FailureRecord, "sourceEntryIds" | "sourceMessageIds" | "replacesEntryId">): void {
+  selection?: Pick<FailureRecord, "sourceEntryIds" | "sourceMessageIds" | "replacesEntryId">,
+  phase: FailureRecord["phase"] = "generation"): void {
   void recordDiagnostic(userId, { event: "failure", chatId, mode: kind, outcome: "failed", reason: diagnosticErrorReason(err), numbers: { attempt: retries }, replacesEntryId: selection?.replacesEntryId });
   const key = chatKey(userId, chatId);
   if (failureByChat.has(key)) failureByChat.delete(key);
@@ -452,6 +453,7 @@ function recordFailure(userId: string, chatId: string, kind: FailureRecord["kind
     kind,
     message: describeError(err),
     retriedTimes: retries,
+    phase,
     at: Date.now(),
     ...selection,
   });
@@ -542,7 +544,14 @@ export async function createChapterFromRange(
     const liveIds = new Set(messages.map((m) => m.id));
     const window = messages.filter((m) => set.has(m.id) && !isExcluded(m));
     if (window.length !== set.size) throw changedSources();
-    const coverage = await buildCoverage(chatId, userId, undefined, extraContextActive(profile));
+    const entries = await listLmbEntries(chatId, userId, true);
+    const coverage = await buildCoverage(chatId, userId, entries, extraContextActive(profile));
+    const realCoverage = await buildCoverage(chatId, userId, entries.filter((e) => e.raw.id !== opts.replacesEntryId));
+    // Manual intent may replace staged ghosts, but never an already-filed
+    // summary. Check before paying for generation, then recheck at commit.
+    if (window.some((m) => realCoverage.coveredBy.has(m.id))) {
+      throw new Error(tr("backend.pipeline.createChapterFromRange.alreadyFiled"));
+    }
     recordSelection(userId, chatId, profile, messages, coverage, window, opts.replacesEntryId ? "regenerate" : "selected", opts.replacesEntryId);
     void recordDiagnostic(userId, { event: "action", chatId, mode: opts.replacesEntryId ? "regenerate" : "selected", numbers: { requested: messageIds.length, selected: window.length, missing: messageIds.filter((id) => !liveIds.has(id)).length } });
     if (window.length === 0) return null;
@@ -647,7 +656,7 @@ async function runChapter(
     return entryId;
   } catch (err) {
     warn(`commitChapter failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "chapter", 0, err, retrySelection);
+    recordFailure(userId, chatId, "chapter", 0, err, retrySelection, "save");
     failToast(userId, "chapter", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -692,11 +701,12 @@ async function commitChapter(
   const entriesForCoverage = replacesEntryId
     ? freshEntries.filter((e) => e.raw.id !== replacesEntryId)
     : freshEntries;
-  const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost || extraContextActive(profile));
+  // Staged ghosts reserve automatic generation, not an explicit real chapter.
+  // They remain intact until the replacement has been saved successfully.
+  const freshCoverage = await buildCoverage(chatId, userId, entriesForCoverage, ghost);
   const validWindow = window.filter((m) => !freshCoverage.coveredBy.has(m.id));
   if (validWindow.length === 0) {
-    // Distinguish a ghost cover from a real one: a hand-picked range that
-    // lands entirely on a ghost span should not read as "bound by a chapter".
+    // A concurrent ghost result can already have staged this entire window.
     const ghostById = new Map(freshEntries.map((e) => [e.raw.id, e.meta.ghost === true] as const));
     const allGhost = window.every((m) => ghostById.get(freshCoverage.coveredBy.get(m.id) ?? "") === true);
     throw new Error(allGhost
@@ -758,6 +768,25 @@ async function commitChapter(
     throw err;
   }
   void recordDiagnostic(userId, { event: "commit", chatId, entryId: entry.id, replacesEntryId, outcome: "success", entries: diagnosticEntries([{ raw: entry, meta }]) });
+  if (!ghost) {
+    const selectedIds = new Set(msgIds);
+    for (const staged of freshEntries) {
+      if (staged.meta.tier !== 1 || !staged.meta.ghost || !staged.raw.disabled
+        || !staged.meta.msgIds.some((id) => selectedIds.has(id))) continue;
+      try {
+        await deleteEntry(staged.raw.id, userId);
+        void recordDiagnostic(userId, { event: "ghost", chatId, entryId: staged.raw.id, outcome: "removed", reason: "coverage_changed" });
+        const remaining = staged.meta.msgIds.filter((id) => !selectedIds.has(id));
+        if (remaining.length && typeof staged.meta.sceneNumber === "number") {
+          recordFreedGhostNumber(userId, chatId, remaining, staged.meta.sceneNumber);
+        }
+      } catch (err) {
+        // The chapter already saved. Coverage ignores this overlapping ghost,
+        // and the regular promotion pass retries cleanup without duplicating it.
+        warn(`failed to remove replaced ghost ${staged.raw.id}: ${describeError(err)}`);
+      }
+    }
+  }
   invalidateBookCache(userId, chatId);
 
   if (profile.hideCoveredMessages && !ghost) {
@@ -913,7 +942,7 @@ async function runArc(
     return entryId;
   } catch (err) {
     warn(`commitArc failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
+    recordFailure(userId, chatId, "arc", 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId }, "save");
     failToast(userId, "arc", err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -1139,7 +1168,7 @@ async function runVolume(
     return entryId;
   } catch (err) {
     warn(`commitVolume failed: ${describeError(err)}`);
-    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId });
+    recordFailure(userId, chatId, kind, 0, err, { sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId }, "save");
     failToast(userId, kind, err);
     cb?.onStateChange(userId, chatId);
     return null;
@@ -1275,7 +1304,7 @@ export async function acceptPreview(
       const acceptEntries = preview.replacesEntryId
         ? (await listLmbEntries(chatId, userId, true)).filter((e) => e.raw.id !== preview.replacesEntryId)
         : await listLmbEntries(chatId, userId, true);
-      const coverage = await buildCoverage(chatId, userId, acceptEntries, extraContextActive(profile));
+      const coverage = await buildCoverage(chatId, userId, acceptEntries);
       const intent = new Set(preview.sourceMessageIds);
       const window = messages.filter((m) => intent.has(m.id) && !coverage.coveredBy.has(m.id) && !isExcluded(m));
       const sources = previewSources.get(preview);
@@ -1306,11 +1335,12 @@ export async function acceptPreview(
           firstIdx, lastIdx, messages, true, preview.replacesEntryId,
         );
         dropPendingPreview(userId, chatId, draftId);
+        clearLastFailure(userId, chatId);
         nyaaToast(userId, "success", false);
         cb?.onStateChange(userId, chatId);
         return entryId;
       } catch (err) {
-        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId });
+        recordFailure(userId, chatId, "chapter", 0, err, { sourceMessageIds: preview.sourceMessageIds, replacesEntryId: preview.replacesEntryId }, "save");
         failToast(userId, "chapter", err);
         cb?.onStateChange(userId, chatId);
         return null;
@@ -1365,7 +1395,7 @@ export async function acceptPreview(
     } catch (err) {
       recordFailure(userId, chatId, preview.kind, 0, err, {
         sourceEntryIds: selected.map((e) => e.raw.id), replacesEntryId: preview.replacesEntryId,
-      });
+      }, "save");
       failToast(userId, preview.kind, err);
       cb?.onStateChange(userId, chatId);
       return null;

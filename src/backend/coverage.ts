@@ -44,11 +44,16 @@ export async function buildCoverage(
   selectedEntryIds?: ReadonlySet<string>,
 ): Promise<CoverageMap> {
   const allEntries = preloadedEntries ?? (await listLmbEntries(chatId, userId));
+  // A manual chapter can replace only part of a staged ghost. Even if deleting
+  // that ghost fails, none of its old summary may shadow the new chapter or
+  // block generation of the remaining raw messages (including in Codex).
+  const realCoverage = includeGhosts ? await buildCoverage(chatId, userId, allEntries) : undefined;
   // Ghost chapters are disabled entries (never injected, never hiding), but
-  // chapter *generation* must treat them as covering so their span isn't
+  // automatic chapter generation must treat them as covering so their span isn't
   // summarized twice. Callers on the injection/hiding path leave includeGhosts off.
   const entries = allEntries.filter((e) => (!selectedEntryIds || selectedEntryIds.has(e.raw.id))
-    && (!e.raw.disabled || (includeGhosts && e.meta.ghost === true)));
+    && (!e.raw.disabled || (includeGhosts && e.meta.ghost === true
+      && !e.meta.msgIds.some((id) => realCoverage!.coveredBy.has(id)))));
   const chapters = entries.filter((e) => e.meta.tier === 1);
   const arcs = entries.filter((e) => e.meta.tier === 2);
   const volumes = entries.filter((e) => e.meta.tier === 3);

@@ -486,6 +486,7 @@
         "memoriaIsFilingAChapter": "Creating chapter"
       },
       "createChapterFromRange": {
+        "alreadyFiled": "Some selected messages are already filed. Select unfiled messages or regenerate the existing chapter.",
         "memoriaIsFilingAChapter": "Creating chapter"
       },
       "runChapter": {
@@ -1865,6 +1866,7 @@
           "showOlder": "Show older ({older})"
         },
         "buildMessageRow": {
+          "stagedGhost": "Staged for Codex. Compressing these messages replaces the overlapping ghost chapters after saving.",
           "shiftClickOrLongPressOnTouch": "Shift+click (or long-press on touch) to select a range",
           "value": "#{indexInChat1}",
           "alreadyFiledIntoAChapterArcOr": "Already filed into a chapter, arc, or volume",
@@ -2491,6 +2493,7 @@
           "cancelTheInFlightGeneration": "Cancel generation"
         },
         "renderFailure": {
+          "saveFailed": "Summary generated, but saving failed. {message}",
           "lastArcAttemptFailed": "Last arc attempt failed",
           "lastAttemptFailed": "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} attempt failed",
           "lastChapterAttemptFailed": "Last chapter attempt failed",

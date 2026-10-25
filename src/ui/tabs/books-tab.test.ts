@@ -36,7 +36,7 @@ class Element {
   classList = { add: (name: string) => { this.className += ` ${name}`; }, toggle: (_name: string, _force?: boolean) => {} };
   appendChild(child: Element): Element { child.parentElement = this; this.children.push(child); return child; }
   append(...children: Element[]): void { children.forEach((c) => this.appendChild(c)); }
-  replaceChildren(): void { this.children = []; this.text = ""; }
+  replaceChildren(...children: Element[]): void { this.children = []; this.text = ""; this.append(...children); }
   setAttribute(name: string, value: string): void { this.attributes[name] = value; }
   querySelectorAll(selector: string): Element[] {
     const tags = selector.split(",").map((tag) => tag.trim());
@@ -213,6 +213,30 @@ function group(host: Element, title: string): Element {
   expect(heading).toBeDefined();
   return heading!.parentElement!;
 }
+
+test("Compose identifies staged ghosts and keeps them selectable for manual compression", () => {
+  const data = state(), host = new Element("host"), sent: any[] = [];
+  data.messages = data.messages.slice(0, 2).map((m, i) => ({ ...m, covered: false, coveredByEntryId: null, excluded: false, staged: i === 0 }));
+  setBooksSubtab("compose");
+  renderBooksTab(host as any, data, {} as any, (msg) => sent.push(msg));
+  const rows = walk(host).filter((node) => node.className.startsWith("lmb-message-row"));
+  expect(rows).toHaveLength(2);
+  expect(rows[0]!.textContent).toContain("GHOST");
+  expect(rows[1]!.textContent).not.toContain("GHOST");
+  const box = rows[0]!.children.find((node) => node.tagName === "input")!;
+  expect(box.disabled).toBe(false);
+  box.checked = true; box.dispatch("change");
+  walk(host).find((node) => node.tagName === "button" && node.textContent === "Compress")!.dispatch("click");
+  expect(sent).toContainEqual({ type: "create_chapter_range", chatId: data.activeChatId, messageIds: [data.messages[0]!.id] });
+});
+
+test("Home distinguishes save failures from generation retries", () => {
+  const data = state(), host = new Element("host");
+  data.lastFailure = { kind: "chapter", message: "Summary sources changed.", retriedTimes: 0, at: Date.now(), phase: "save" };
+  renderHomeTab(host as any, data, {} as any, () => {});
+  expect(host.textContent).toContain("Summary generated, but saving failed. Summary sources changed.");
+  expect(host.textContent).not.toContain("tried 0x");
+});
 
 test("Prompts groups all summary tiers and saves roles and presets for the selected category", () => {
   const host = new Element("host"), sent: any[] = [], data = state();

@@ -108,7 +108,10 @@ for (const action of ["file", "selection", "import"] as const) test(`${action} c
   try {
     // A selection of already inherited messages must not be duplicated, but
     // the inheritance retry must succeed for every manual entry point.
-    await work();
+    if (action === "selection") {
+      await expect(work()).rejects.toThrow("already filed");
+      expect(generations).toBe(0);
+    } else await work();
   } finally { Date.now = now; }
   expect(await forkShelfPending(child, user)).toBe(false);
   expect((await listLmbEntries(child, user)).some((e) => e.raw.content === "inherited-chapter")).toBe(true);

@@ -18,7 +18,7 @@ const encoder = new TextEncoder();
 const EVENTS = ["operation", "request", "selection", "context", "retry", "failure", "preview", "commit", "fork", "snapshot", "injection", "codex", "action", "message", "ghost", "frontend"] as const;
 const MODES = ["automatic", "manual", "selected", "regenerate", "ghost", "chapter", "arc", "volume", "series", "saga", "library", "universe", "codex"] as const;
 const OUTCOMES = ["started", "finished", "success", "failed", "skipped", "created", "removed", "pending"] as const;
-const REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"] as const;
+const REASONS = ["busy", "empty", "no_window", "generation", "storage", "coverage_changed", "sources_changed", "unknown", "cancelled", "excluded", "missing", "adoption", "snapshot_unavailable", "timeout", "invalid_output", "context_limit", "connection", "protocol", "stale"] as const;
 const NUMBER_KEYS = ["tier", "attempt", "durationMs", "total", "covered", "uncovered", "excluded", "eligible", "hidden", "selected", "requested", "missing", "entries", "previous", "first", "last", "input", "output", "sourceCount", "changed", "rounds", "promptTokens", "completionTokens", "indexGaps", "duplicateIndexes", "gaps", "overlaps", "rangeMismatches", "missingSources", "lag", "window", "previousCount", "retryCount", "regexOutgoing", "regexIncoming", "arcBatch", "arcLag", "inputCharacters", "outputCharacters", "maxInputTokens", "maxOutputTokens", "temperature", "targetPercent", "targetTokens"] as const;
 const FLAGS = ["automation", "ghost", "regeneration", "previews", "hideCovered", "extraContext", "lagTokens", "windowTokens", "active", "root", "disabled", "vector", "constant"] as const;
 const ACTIONS = ["save_settings", "save_profile", "save_samplers", "set_active_profile", "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs", "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure", "delete_entry", "release_entry", "regenerate_entry", "update_entry", "resync_hidden", "resync_visibility", "abort_busy", "accept_preview", "discard_preview", "edit_preview", "rebase_root", "rebuild_root", "detach_root", "set_message_excluded", "summary_import", "summary_import_resolve", "codex_update_now", "codex_reset", "codex_rebuild", "codex_tidy"] as const;
@@ -225,6 +225,7 @@ export async function clearDiagnostics(userId: string): Promise<void> {
 export function diagnosticErrorReason(error: unknown): DiagnosticInput["reason"] {
   const name = error instanceof Error ? error.name : "";
   switch (name) {
+    case "SummarySourcesChangedError": return "sources_changed";
     case "AbortError": case "AbortedSummarizerError": return "cancelled";
     case "TimeoutError": return "timeout";
     case "CodexContextError": return "context_limit";

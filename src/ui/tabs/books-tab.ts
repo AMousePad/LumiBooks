@@ -649,6 +649,13 @@ function buildMessageRow(
   preview.textContent = m.preview || tr("ui.tabs.booksTab.buildMessageRow.empty");
   const icons = document.createElement("span");
   icons.className = "lmb-msg-icons";
+  if (m.staged && !m.covered && !m.excluded) {
+    const staged = document.createElement("span");
+    staged.className = "lmb-entry-tag ghost";
+    staged.textContent = tr("ui.tabs.booksTab.renderEntryRow.ghost");
+    staged.title = tr("ui.tabs.booksTab.buildMessageRow.stagedGhost");
+    icons.appendChild(staged);
+  }
   if (m.covered && !m.excluded) {
     const filed = document.createElement("span");
     filed.title = tr("ui.tabs.booksTab.buildMessageRow.alreadyFiledIntoAChapterArcOr");

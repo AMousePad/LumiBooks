@@ -96,6 +96,11 @@ for (const extra of [false, true]) for (const regenerate of [false, true]) test(
  old.extensions.lumibooks.msgIds = ids;
  old.extensions.lumibooks.sceneNumber = 67;
  if (regenerate) entries = [old];
+  else if (extra) {
+    old.disabled = true;
+    old.extensions.lumibooks.ghost = true;
+    entries = [old];
+  }
  await saveSettings(userId, settings());
  const requests: any[] = [];
  (globalThis as any).spindle.generate.rawStream = async function* (req: any) {
@@ -104,6 +109,7 @@ for (const extra of [false, true]) for (const regenerate of [false, true]) test(
    yield { type: "done", content: JSON.stringify({ title: "Retried", content: "Summary.", keywords: [] }) };
  };
  expect(await createChapterFromRange(chatId, ids, profile, settings(), userId, regenerate ? { replacesEntryId: old.id } : {})).toBeNull();
+  if (extra && !regenerate) expect(entries).toEqual([old]);
  await retryLastFailure(chatId, userId, profile, settings());
  const created = entries.find((e) => regenerate ? e.id === old.id : e.id.startsWith("new-"));
  expect(created?.extensions.lumibooks.msgIds).toEqual(ids);
@@ -111,6 +117,7 @@ for (const extra of [false, true]) for (const regenerate of [false, true]) test(
  expect(requests).toHaveLength(2);
  expect(requests[1].messages[1].content.match(/RETRY_SOURCE_\d+_END/g)).toEqual(ids.map((id) => `RETRY_SOURCE_${id.slice(1)}_END`));
  expect(getLastFailure(userId, chatId)).toBeNull();
+  if (extra && !regenerate) expect(entries).toHaveLength(1);
  if (regenerate) {
    expect(entries).toHaveLength(1);
    expect(created.extensions.lumibooks.sceneNumber).toBe(67);

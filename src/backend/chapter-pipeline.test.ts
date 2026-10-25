@@ -391,6 +391,211 @@ function ghost(number: number, start: number, end: number) {
   return entry;
 }
 
+// The reported 80/82/64-message selections contained 70/72/54 messages
+// already staged as ghosts, plus ten genuinely uncovered messages.
+for (const start of [20, 18, 36]) for (const preview of [false, true]) {
+  test(`manual selection of ${100 - start} messages replaces overlapping ghosts${preview ? " through an edited preview" : ""}`, async () => {
+    entries = [chapter(1, 0, 18), ...[18, 36, 54, 72].map((s, i) => ghost(i + 2, s, s + 18))];
+    profile.codexEnabled = true; profile.codexExtraContext = true;
+    profile.lagValue = 65; profile.codexLagValue = 6; profile.windowValue = 18;
+    profile.showMemoryPreviews = preview;
+    await saveSettings(userId, settings());
+    const ids = messages.slice(start).map((m) => m.id), before = structuredClone(entries);
+    let created = await createChapterFromRange(chatId, ids, profile, settings(), userId);
+    if (preview) {
+      expect(entries).toEqual(before);
+      const draft = getPendingPreviews(userId, chatId)[0]!;
+      patchPendingPreview(userId, chatId, draft.draftId, { content: "Reviewed chapter" });
+      created = await acceptPreview(chatId, draft.draftId, profile, userId);
+    }
+    expect(created).toBeTruthy();
+    expect(requests).toHaveLength(1);
+    const saved = entries.find((e) => e.id === created);
+    expect(saved.extensions.lumibooks.msgIds).toEqual(ids);
+    expect(saved.extensions.lumibooks.ghost).not.toBe(true);
+    expect(entries.filter((e) => e.extensions.lumibooks.ghost).map((e) => e.id)).toEqual(start === 36 ? ["chapter-2"] : []);
+    if (start === 20) {
+      // The unselected two-message fragment of the first ghost is still raw
+      // and must be refilled, rather than silently inheriting its old summary.
+      profile.showMemoryPreviews = false;
+      const refill = await createChapterAuto(chatId, profile, settings(), userId, true, true);
+      expect(entries.find((e) => e.id === refill).extensions.lumibooks.msgIds).toEqual(["m19", "m20"]);
+    }
+  });
+}
+
+test("manual all-ghost selection saves, while real coverage is rejected before generation", async () => {
+  entries = [ghost(1, 0, 12)];
+  profile.codexEnabled = true; profile.codexExtraContext = true;
+  await saveSettings(userId, settings());
+  const ids = messages.slice(0, 12).map((m) => m.id);
+  expect(await createChapterFromRange(chatId, ids, profile, settings(), userId)).toBeTruthy();
+  await expect(createChapterFromRange(chatId, ids, profile, settings(), userId)).rejects.toThrow("already filed");
+  expect(requests).toHaveLength(1);
+});
+
+test("failed manual save preserves ghosts and the original selection for retry", async () => {
+  const { getLastFailure } = await import("./pipeline");
+  entries = [ghost(1, 0, 12)];
+  profile.codexEnabled = true; profile.codexExtraContext = true;
+  await saveSettings(userId, settings());
+  const host = (globalThis as any).spindle, create = host.world_books.entries.create;
+  host.world_books.entries.create = async () => { throw new Error("storage unavailable"); };
+  const before = structuredClone(entries), ids = messages.slice(0, 20).map((m) => m.id);
+  expect(await createChapterFromRange(chatId, ids, profile, settings(), userId)).toBeNull();
+  expect(entries).toEqual(before);
+  expect(getLastFailure(userId, chatId)?.phase).toBe("save");
+  host.world_books.entries.create = create;
+  await createChapterFromRange(chatId, getLastFailure(userId, chatId)!.sourceMessageIds!, profile, settings(), userId);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].extensions.lumibooks.msgIds).toEqual(ids);
+  expect(getLastFailure(userId, chatId)).toBeNull();
+});
+
+test("failed ghost deletion cannot duplicate Codex context or block a partial ghost refill", async () => {
+  entries = [ghost(1, 0, 12)];
+  profile.codexEnabled = true; profile.codexExtraContext = true;
+  await saveSettings(userId, settings());
+  (globalThis as any).spindle.world_books.entries.delete = async () => { throw new Error("delete unavailable"); };
+  const ids = messages.slice(6, 18).map((m) => m.id);
+  const created = await createChapterFromRange(chatId, ids, profile, settings(), userId);
+  expect(created).toBeTruthy();
+  const coverage = await buildCoverage(chatId, userId, undefined, true);
+  expect(coverage.activeEntries.map((e) => e.raw.id)).toEqual([created!]);
+  expect(coverage.coveredBy.has("m1")).toBe(false);
+  const refill = await createChapterAuto(chatId, profile, settings(), userId, true, true);
+  expect(entries.find((e) => e.id === refill).extensions.lumibooks.msgIds).toEqual(messages.slice(0, 6).map((m) => m.id));
+});
+
+// Exhaust every nonempty selection from two two-message ghosts and two raw
+// messages. Include noncontiguous selections, host index gaps, previews, and
+// persistent cleanup failures; then drain every remaining message automatically.
+for (let mask = 1; mask < 64; mask++) for (const preview of [false, true]) for (const failedCleanup of [false, true]) {
+  test(`ghost overlap matrix ${mask}/63, preview=${preview}, deleteFailure=${failedCleanup}`, async () => {
+    messages = messages.slice(0, 6).map((m, i) => ({ ...m, index_in_chat: [4, 6, 8, 13, 20, 21][i] }));
+    const rawBefore = structuredClone(messages);
+    entries = [ghost(1, 0, 2), ghost(2, 2, 4)];
+    profile.codexEnabled = true; profile.codexExtraContext = true;
+    profile.codexLagValue = 0; profile.windowValue = 1; profile.previousMemoriesCount = 0;
+    profile.showMemoryPreviews = preview; profile.hideCoveredMessages = true;
+    await saveSettings(userId, settings());
+    const host = (globalThis as any).spindle;
+    host.chat.setMessagesHidden = async (_chat: string, ids: string[], hidden: boolean) => {
+      for (const m of messages) if (ids.includes(m.id)) m.extra.hidden = hidden;
+    };
+    if (failedCleanup) host.world_books.entries.delete = async () => { throw new Error("persistent cleanup fault"); };
+    const selected = messages.filter((_, i) => mask & (1 << i)), ids = selected.map((m) => m.id);
+    let created = await createChapterFromRange(chatId, ids.toReversed(), profile, settings(), userId);
+    if (preview) {
+      expect(entries).toHaveLength(2);
+      created = await acceptPreview(chatId, getPendingPreviews(userId, chatId)[0]!.draftId, profile, userId);
+    }
+    expect(created).toBeTruthy();
+    expect(entries.find((e) => e.id === created).extensions.lumibooks.msgIds).toEqual(ids);
+    expect(requests[0].messages.map((m: any) => m.content).join("\n").match(/RAW_MESSAGE_\d+_END/g)).toEqual(selected.map((m) => m.content));
+    expect(messages.filter((m) => m.extra.hidden).map((m) => m.id)).toEqual(ids);
+    expect([...(await buildCoverage(chatId, userId)).coveredBy.keys()]).toEqual(ids);
+    for (let i = 0; i < messages.length; i++) {
+      if (!await createChapterAuto(chatId, profile, settings(), userId, true, true)) break;
+    }
+    const coverage = await buildCoverage(chatId, userId, undefined, true);
+    const allSources = coverage.activeEntries.flatMap((e) => e.meta.msgIds);
+    expect(allSources.toSorted()).toEqual(messages.map((m) => m.id).toSorted());
+    expect(new Set(allSources).size).toBe(allSources.length);
+    expect(messages.map(({ extra, ...m }) => m)).toEqual(rawBefore.map(({ extra, ...m }) => m));
+    expect(messages.filter((m) => m.extra.hidden).map((m) => m.id)).toEqual(ids);
+    for (const e of entries.filter((e) => e.id.startsWith("new-"))) {
+      const sources = messages.filter((m) => e.extensions.lumibooks.msgIds.includes(m.id));
+      expect(e.extensions.lumibooks.firstMsgIdx).toBe(sources[0].index_in_chat);
+      expect(e.extensions.lumibooks.lastMsgIdx).toBe(sources.at(-1)!.index_in_chat);
+    }
+  });
+}
+
+for (const first of [0, 1]) test(`competing overlapping ghost previews commit only selection ${first + 1}`, async () => {
+  entries = [ghost(1, 0, 18)];
+  profile.codexEnabled = true; profile.codexExtraContext = true; profile.showMemoryPreviews = true;
+  await saveSettings(userId, settings());
+  const selections = [messages.slice(0, 12), messages.slice(6, 18)].map((ms) => ms.map((m) => m.id));
+  for (const ids of selections) await createChapterFromRange(chatId, ids, profile, settings(), userId);
+  const drafts = getPendingPreviews(userId, chatId);
+  expect(drafts).toHaveLength(2);
+  const outcomes = await Promise.all([first, 1 - first].map((i) => acceptPreview(chatId, drafts[i]!.draftId, profile, userId)));
+  expect(outcomes[0]).toBeTruthy(); expect(outcomes[1]).toBeNull();
+  expect(entries).toHaveLength(1);
+  expect(entries[0].extensions.lumibooks.msgIds).toEqual(selections[first]);
+  expect(getPendingPreviews(userId, chatId).map((p) => p.draftId)).toEqual([drafts[1 - first]!.draftId]);
+});
+
+for (const first of ["manual", "promotion"] as const) test(`${first} wins an actual commit-lock race with ghost promotion`, async () => {
+  entries = [ghost(1, 0, 12)];
+  profile.codexEnabled = true; profile.codexExtraContext = true;
+  await saveSettings(userId, settings());
+  const api = (globalThis as any).spindle.world_books.entries;
+  const method = first === "manual" ? "create" : "update", originalWrite = api[method];
+  let release!: () => void, entered!: () => void;
+  const writing = new Promise<void>((resolve) => { entered = resolve; });
+  const paused = new Promise<void>((resolve) => { release = resolve; });
+  api[method] = async (...args: any[]) => { entered(); await paused; return originalWrite(...args); };
+  const ids = messages.slice(0, 20).map((m) => m.id);
+  const manual = () => createChapterFromRange(chatId, ids, profile, settings(), userId);
+  const promotion = () => promoteGhostChapters(chatId, profile, userId);
+  const winner = first === "manual" ? manual() : promotion();
+  await writing;
+  const loser = first === "manual" ? promotion() : manual();
+  try {
+    await Bun.sleep(0);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].disabled).toBe(true);
+  } finally { release(); }
+  const [won, lost] = await Promise.all([winner, loser]);
+  expect(won).toBeTruthy(); expect(lost).toBe(first === "manual" ? 0 : null);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].disabled).toBe(false);
+  expect(entries[0].extensions.lumibooks.msgIds).toEqual(first === "manual" ? ids : messages.slice(0, 12).map((m) => m.id));
+});
+
+test("turning off Extra Context while a preview waits still files the original selection", async () => {
+  const { cleanupGhostsAfterModeOff } = await import("./pipeline");
+  entries = [ghost(1, 0, 12)];
+  profile.codexEnabled = true; profile.codexExtraContext = true; profile.showMemoryPreviews = true; profile.lagValue = 100;
+  await saveSettings(userId, settings());
+  const ids = messages.slice(0, 20).map((m) => m.id);
+  await createChapterFromRange(chatId, ids, profile, settings(), userId);
+  const draft = getPendingPreviews(userId, chatId)[0]!;
+  profile.codexExtraContext = false;
+  await saveSettings(userId, settings());
+  await cleanupGhostsAfterModeOff(chatId, profile, userId);
+  expect(entries).toHaveLength(0);
+  expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeTruthy();
+  expect(entries[0].extensions.lumibooks.msgIds).toEqual(ids);
+});
+
+for (const change of ["edit", "promote"] as const) for (const preview of [false, true]) {
+  test(`manual ghost replacement still refuses ${change} ${preview ? "before preview acceptance" : "during generation"}`, async () => {
+    entries = [ghost(1, 0, 12)];
+    profile.codexEnabled = true; profile.codexExtraContext = true; profile.showMemoryPreviews = preview;
+    await saveSettings(userId, settings());
+    const mutate = async () => {
+      if (change === "edit") messages[0] = { ...messages[0], content: "Changed source" };
+      else expect(await promoteGhostChapters(chatId, profile, userId)).toBe(1);
+    };
+    if (!preview) {
+      const generate = (globalThis as any).spindle.generate.rawStream;
+      (globalThis as any).spindle.generate.rawStream = async function* (req: any) { await mutate(); yield* generate(req); };
+    }
+    expect(await createChapterFromRange(chatId, messages.slice(0, 20).map((m) => m.id), profile, settings(), userId)).toBeNull();
+    if (preview) {
+      await mutate();
+      const draft = getPendingPreviews(userId, chatId)[0]!;
+      expect(await acceptPreview(chatId, draft.draftId, profile, userId)).toBeNull();
+      expect(getPendingPreviews(userId, chatId)).toHaveLength(1);
+    }
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe("chapter-1");
+  });
+}
+
 for (const change of ["edit", "exclude"] as const) for (const failedCleanup of [false, true]) {
   test(`ghost promotion rejects ${change} even when cleanup ${failedCleanup ? "fails" : "has not run"}`, async () => {
     entries = [ghost(1, 0, 12)];

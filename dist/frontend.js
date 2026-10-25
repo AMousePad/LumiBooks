@@ -3316,6 +3316,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         memoriaIsFilingAChapter: "Creating chapter"
       },
       createChapterFromRange: {
+        alreadyFiled: "Some selected messages are already filed. Select unfiled messages or regenerate the existing chapter.",
         memoriaIsFilingAChapter: "Creating chapter"
       },
       runChapter: {
@@ -4709,6 +4710,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           showOlder: "Show older ({older})"
         },
         buildMessageRow: {
+          stagedGhost: "Staged for Codex. Compressing these messages replaces the overlapping ghost chapters after saving.",
           shiftClickOrLongPressOnTouch: "Shift+click (or long-press on touch) to select a range",
           value: "#{indexInChat1}",
           alreadyFiledIntoAChapterArcOr: "Already filed into a chapter, arc, or volume",
@@ -5335,6 +5337,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           cancelTheInFlightGeneration: "Cancel generation"
         },
         renderFailure: {
+          saveFailed: "Summary generated, but saving failed. {message}",
           lastArcAttemptFailed: "Last arc attempt failed",
           lastAttemptFailed: "Last {kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} attempt failed",
           lastChapterAttemptFailed: "Last chapter attempt failed",
@@ -11323,7 +11326,7 @@ function renderFailure(host, state, send) {
   head.textContent = f.kind === "arc" ? t("ui.tabs.homeTab.renderFailure.lastArcAttemptFailed") : f.kind !== "chapter" ? t("ui.tabs.homeTab.renderFailure.lastAttemptFailed", { kind: f.kind }) : t("ui.tabs.homeTab.renderFailure.lastChapterAttemptFailed");
   const detail = document.createElement("div");
   detail.style.opacity = "0.85";
-  detail.textContent = t("ui.tabs.homeTab.renderFailure.triedX", { message: f.message, retriedTimes: f.retriedTimes });
+  detail.textContent = f.phase === "save" ? t("ui.tabs.homeTab.renderFailure.saveFailed", { message: f.message }) : t("ui.tabs.homeTab.renderFailure.triedX", { message: f.message, retriedTimes: f.retriedTimes });
   const row = document.createElement("div");
   row.className = "lmb-actions";
   const chatId = state.activeChatId;
@@ -12400,6 +12403,13 @@ function buildMessageRow(m, state, onToggle, redraw) {
   preview.textContent = m.preview || t("ui.tabs.booksTab.buildMessageRow.empty");
   const icons = document.createElement("span");
   icons.className = "lmb-msg-icons";
+  if (m.staged && !m.covered && !m.excluded) {
+    const staged = document.createElement("span");
+    staged.className = "lmb-entry-tag ghost";
+    staged.textContent = t("ui.tabs.booksTab.renderEntryRow.ghost");
+    staged.title = t("ui.tabs.booksTab.buildMessageRow.stagedGhost");
+    icons.appendChild(staged);
+  }
   if (m.covered && !m.excluded) {
     const filed = document.createElement("span");
     filed.title = t("ui.tabs.booksTab.buildMessageRow.alreadyFiledIntoAChapterArcOr");
@@ -19410,6 +19420,7 @@ function makeMessages(total) {
       hidden: false,
       covered: false,
       coveredByEntryId: null,
+      staged: false,
       indexInChat: i,
       excluded: false
     });

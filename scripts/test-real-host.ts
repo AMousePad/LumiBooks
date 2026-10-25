@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS, makeDefaultProfile } from "../src/shared";
 import { embeddingFixture, embeddingResponse, runVectorScenarios } from "./vector-host-scenarios";
 import { runPromptScenarios } from "./prompt-host-scenarios";
+import { runGhostScenarios } from "./ghost-host-scenarios";
 
 const repo = resolve(import.meta.dir, "..");
 const host = resolve(process.argv[2] || "../Lumiverse");
@@ -143,7 +144,7 @@ try {
   pass("backend opt-out rejects queued browser diagnostics");
   let diagnostics: unknown = null;
   await runPromptScenarios({ api, response, fromHost, pass, characterId: character.id });
-  if (!process.argv.includes("--vectors-only") && !process.argv.includes("--prompt-only")) {
+  if (!process.argv.includes("--vectors-only") && !process.argv.includes("--prompt-only") && !process.argv.includes("--ghosts-only")) {
   const messages = [];
   for (let i = 0; i < 53; i++) messages.push(await api(`/api/v1/chats/${chatId}/messages`, "POST", { name: i % 2 ? "Assistant" : "User", is_user: i % 2 === 0, content: `PRIVATE_CHAT_MARKER_${i}_END` }));
   for (const message of messages.slice(0, 5)) await api(`/api/v1/chats/${chatId}/messages/${message.id}`, "DELETE");
@@ -388,7 +389,8 @@ try {
   pass("clearing diagnostics empties saved records, preserves opt-out and coverage, and resets pseudonyms");
   diagnostics = { bytes: new TextEncoder().encode(saturatedExport).length, retained: saturated.events.length, evicted: saturated.droppedEvents, queueDrops: saturated.queueDropsThisSession, writeFailures: saturated.writeFailuresThisSession };
   }
-  if (!process.argv.includes("--prompt-only")) await runVectorScenarios({ api, action, response, until, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
+  if (!process.argv.includes("--prompt-only") && !process.argv.includes("--vectors-only")) await runGhostScenarios({ api, action, send, until, pass, connectionId: connection.id, characterId: character.id, requests });
+  if (!process.argv.includes("--prompt-only") && !process.argv.includes("--ghosts-only")) await runVectorScenarios({ api, action, response, until, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
   await Bun.write(join(runDir, "checkpoint.json"), JSON.stringify({ chatId, connectionId: connection.id, characterId: character.id, extensionId, results }, null, 2));
   const revision = (directory: string) => Bun.spawnSync(["git", "-C", directory, "rev-parse", "HEAD"]).stdout.toString().trim();
   await Bun.write(join(runDir, "report.json"), JSON.stringify({

@@ -202,6 +202,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
   arcs.sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
   volumes.sort((a, b) => (a.meta.firstMsgIdx ?? 0) - (b.meta.firstMsgIdx ?? 0));
 
+  const stagedIds = new Set(backlogCoverage.activeEntries.filter((e) => e.meta.ghost && e.raw.disabled).flatMap((e) => e.meta.msgIds));
   const messageStubs: MessageStub[] = messages.map((m) => {
     const covered = coverage.coveredBy.get(m.id) ?? null;
     const hidden = !!(m.extra && (m.extra as Record<string, unknown>).hidden);
@@ -216,6 +217,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
       approxTokens: approximateTokensFromChars(charCount),
       hidden,
       covered: !!covered,
+      staged: stagedIds.has(m.id),
       coveredByEntryId: covered,
       indexInChat: m.index_in_chat,
       excluded,

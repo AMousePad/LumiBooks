@@ -65,6 +65,7 @@ export interface FailureRecord {
   kind: SummaryKind;
   message: string;
   retriedTimes: number;
+  phase?: "generation" | "save";
   at: number;
   sourceEntryIds?: string[];
   sourceMessageIds?: string[];
@@ -79,6 +80,7 @@ export interface MessageStub {
   approxTokens: number;
   hidden: boolean;
   covered: boolean;
+  staged: boolean;
   coveredByEntryId: string | null;
   indexInChat: number;
   excluded: boolean;

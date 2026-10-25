@@ -813,7 +813,9 @@ function renderFailure(host: HTMLElement, state: FrontendState, send: (m: Fronte
     : tr("ui.tabs.homeTab.renderFailure.lastChapterAttemptFailed");
   const detail = document.createElement("div");
   detail.style.opacity = "0.85";
-  detail.textContent = tr("ui.tabs.homeTab.renderFailure.triedX", { message: f.message, retriedTimes: f.retriedTimes });
+  detail.textContent = f.phase === "save"
+    ? tr("ui.tabs.homeTab.renderFailure.saveFailed", { message: f.message })
+    : tr("ui.tabs.homeTab.renderFailure.triedX", { message: f.message, retriedTimes: f.retriedTimes });
   const row = document.createElement("div");
   row.className = "lmb-actions";
   const chatId = state.activeChatId;
