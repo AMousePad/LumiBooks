@@ -330,7 +330,7 @@ spindle.registerInterceptor(async (messages, context) => {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;
   }
-}, 90);
+}, 40);
 
 spindle.on("MESSAGE_SENT", async (payload: unknown, hostUserId?: string) => {
   const p = payload as { chatId?: string; messageId?: string };

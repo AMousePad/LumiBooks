@@ -17903,7 +17903,7 @@ spindle.registerInterceptor(async (messages, context) => {
     warn(`interceptor failed: ${describeError(err)}`);
     return messages;
   }
-}, 90);
+}, 40);
 spindle.on("MESSAGE_SENT", async (payload, hostUserId) => {
   const p = payload;
   if (!p?.chatId)

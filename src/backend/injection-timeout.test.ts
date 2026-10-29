@@ -155,7 +155,7 @@ afterAll(() => {
 });
 
 test("waits for lorebook reads beyond three seconds", async () => {
-  expect(registeredPriority).toBe(90);
+  expect(registeredPriority).toBe(40);
   expect(registeredInterceptor).toBeDefined();
 
   rememberChatUser(chatId, userId);
