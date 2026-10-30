@@ -143,7 +143,7 @@ try {
   await action({ type: "save_settings", chatId, patch: { localLogsDisabled: false } });
   pass("backend opt-out rejects queued browser diagnostics");
   let diagnostics: unknown = null;
-  await runPromptScenarios({ api, response, fromHost, pass, characterId: character.id });
+  await runPromptScenarios({ api, response, action, until, fromHost, pass, characterId: character.id, connectionId: connection.id, requests });
   if (!process.argv.includes("--vectors-only") && !process.argv.includes("--prompt-only") && !process.argv.includes("--ghosts-only")) {
   const messages = [];
   for (let i = 0; i < 53; i++) messages.push(await api(`/api/v1/chats/${chatId}/messages`, "POST", { name: i % 2 ? "Assistant" : "User", is_user: i % 2 === 0, content: `PRIVATE_CHAT_MARKER_${i}_END` }));
