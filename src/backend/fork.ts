@@ -1,12 +1,12 @@
 import { t as tr } from "../i18n";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
-import { bookNameFor } from "../shared";
 import {
   codexBookChatTag,
   findBookForChat,
   invalidateBookCache,
   listLmbEntries,
+  managedBookName,
   unbindBookFromChat,
   withChatMetaLock,
 } from "./world-book";
@@ -417,7 +417,7 @@ async function cloneShelfForFork(
 
   const newBook = await spindle.world_books.create(
     {
-      name: bookNameFor(forkChatName, forkChatId),
+      name: await managedBookName(forkChatId, forkChatName, userId),
       description: tr("backend.fork.newBook.memoriaSShelfForThisChatChapters"),
       metadata: {
         lumibooks_chat_id: forkChatId,

@@ -6883,14 +6883,16 @@ function buildChapterHeader(sceneNumber, turnCount) {
 function buildArcHeader(sceneNumber, chapterCount, turnCount) {
   return `${ordinal(sceneNumber)} Summary ARC Containing ${chapterCount} Prior Chapter${chapterCount === 1 ? "" : "s"} and ${turnCount} Prior Turn${turnCount === 1 ? "" : "s"}`;
 }
-function bookNameFor(chatName, chatId) {
+function bookNameFor(chatName, chatId, characterName) {
   const cleanName = (chatName ?? "").trim();
   const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
-  return `${WORLD_BOOK_NAME_PREFIX} - ${suffix}`;
+  const character = characterName?.trim().slice(0, 60);
+  return `${WORLD_BOOK_NAME_PREFIX} - ${character ? `${character} - ` : ""}${suffix}`;
 }
-function codexBookNameFor(chatName, chatId) {
+function codexBookNameFor(chatName, chatId, characterName) {
   const cleanName = (chatName ?? "").trim();
-  const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
+  const character = characterName?.trim().slice(0, 60);
+  const suffix = `${character ? `${character} - ` : ""}${cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8)}`;
   return t("shared.codexBookNameFor.codexDoNotEdit", { worldBookNamePrefix: WORLD_BOOK_NAME_PREFIX, suffix });
 }
 var LESSONS_PATH = "lessons.json";
@@ -7213,6 +7215,17 @@ function setBookCache(key, value) {
 function cacheKey(userId, chatId) {
   return `${userId}::${chatId}`;
 }
+async function managedBookName(chatId, chatName, userId, codex = false) {
+  let characterName;
+  try {
+    const chat = await spindle.chats.get(chatId, userId);
+    if (chat?.character_id)
+      characterName = (await spindle.characters.get(chat.character_id, userId))?.name;
+  } catch (err) {
+    warn(`book character name unavailable: ${describeError(err)}`);
+  }
+  return codex ? codexBookNameFor(chatName, chatId, characterName) : bookNameFor(chatName, chatId, characterName);
+}
 async function listAllBooks(userId) {
   const out = [];
   let offset = 0;
@@ -7309,7 +7322,7 @@ async function doEnsureBookForChat(chatId, userId) {
     bookAnomalyCb?.(userId, "error", t("backend.worldBook.doEnsureBookForChat.memoriaCouldnTFindThisChatS"));
   }
   const book = await spindle.world_books.create({
-    name: bookNameFor(chat.name, chatId),
+    name: await managedBookName(chatId, chat.name, userId),
     description: t("backend.worldBook.book.memoriaSShelfForThisChatChapters"),
     metadata: {
       lumibooks_chat_id: chatId,
@@ -7411,10 +7424,10 @@ async function reassertChatBinding(chatId, userId) {
 var nameSyncAt = new Map;
 var NAME_SYNC_TTL_MS = 60000;
 async function syncManagedBookNames(chatId, chatName, shelfBookId, userId) {
-  await syncManagedBookName(chatId, shelfBookId, bookNameFor(chatName, chatId), userId);
+  await syncManagedBookName(chatId, shelfBookId, await managedBookName(chatId, chatName, userId), userId);
   const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
   if (codexBookId)
-    await syncManagedBookName(chatId, codexBookId, codexBookNameFor(chatName, chatId), userId);
+    await syncManagedBookName(chatId, codexBookId, await managedBookName(chatId, chatName, userId, true), userId);
 }
 async function syncManagedBookName(chatId, bookId, name, userId) {
   const key = `${cacheKey(userId, chatId)}::${bookId}`;
@@ -7646,7 +7659,7 @@ function bindCodexBookToChat(chatId, bookId, userId) {
     const existing = Array.isArray(md["chat_world_book_ids"]) ? md["chat_world_book_ids"].filter((x) => typeof x === "string") : [];
     const alreadyBound = existing.includes(bookId);
     const alreadyClaimed = md[CODEX_BOOK_CLAIM_KEY] === bookId;
-    await syncManagedBookName(chatId, bookId, codexBookNameFor(chat.name ?? null, chatId), userId).catch((err) => warn(`Codex book name sync failed: ${describeError(err)}`));
+    await syncManagedBookName(chatId, bookId, await managedBookName(chatId, chat.name, userId, true), userId).catch((err) => warn(`Codex book name sync failed: ${describeError(err)}`));
     if (alreadyBound && alreadyClaimed)
       return;
     await spindle.chats.update(chatId, {
@@ -7682,7 +7695,7 @@ async function doEnsureCodexBookForChat(chatId, userId) {
   if (!chat)
     throw new Error(t("backend.worldBook.doEnsureCodexBookForChat.chatNotFoundForUser", { chatId }));
   const book = await spindle.world_books.create({
-    name: codexBookNameFor(chat.name, chatId),
+    name: await managedBookName(chatId, chat.name, userId, true),
     description: t("backend.worldBook.book.managedByLumiBooksThisBookMirrorsThe"),
     metadata: {
       [CODEX_BOOK_META_KEY]: chatId,
@@ -14429,7 +14442,7 @@ async function cloneShelfForFork(forkChatId, forkChatName, parentChatId, userId)
     return { msgIds: ids, firstMsgIdx: firstIdx, lastMsgIdx: lastIdx, extra: { chatId: forkChatId } };
   };
   const newBook = await spindle.world_books.create({
-    name: bookNameFor(forkChatName, forkChatId),
+    name: await managedBookName(forkChatId, forkChatName, userId),
     description: t("backend.fork.newBook.memoriaSShelfForThisChatChapters"),
     metadata: {
       lumibooks_chat_id: forkChatId,

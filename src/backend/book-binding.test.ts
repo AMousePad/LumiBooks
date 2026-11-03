@@ -25,6 +25,15 @@ beforeEach(() => {
 });
 afterEach(() => { invalidateBookCache(userId, chatId); (globalThis as any).spindle = original; });
 
+test("new summary and Codex books include the character before the chat name", async () => {
+  chat.character_id = "alice";
+  chat.name = "Oct 20, 2026, 6:18:55 PM";
+  (globalThis as any).spindle.characters = { async get() { return { name: "Alice" }; } };
+  for (const ensure of [ensureBookForChat, ensureCodexBookForChat]) {
+    expect((await ensure(chatId, userId)).name).toContain("Alice - Oct 20, 2026, 6:18:55 PM");
+  }
+});
+
 for (const kind of ["new", "existing", "recovered"] as const) test(`${kind} shelf cannot be used until chat binding succeeds`, async () => {
   if (kind !== "new") books.set("original", { id: "original", name: `${WORLD_BOOK_NAME_PREFIX} Test`, metadata: kind === "existing" ? { lumibooks_chat_id: chatId } : {} });
   if (kind === "recovered") entries = [{ id: "chapter", extensions: { lumibooks: normalizeEntryMeta({ chatId, tier: 1, msgIds: ["m0"] }) } }];

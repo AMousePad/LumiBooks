@@ -46,6 +46,17 @@ export interface LMBEntry {
   meta: LMBEntryMeta;
 }
 
+export async function managedBookName(chatId: string, chatName: string | null | undefined, userId: string, codex = false): Promise<string> {
+  let characterName: string | undefined;
+  try {
+    const chat = await spindle.chats.get(chatId, userId);
+    if (chat?.character_id) characterName = (await spindle.characters.get(chat.character_id, userId))?.name;
+  } catch (err) {
+    warn(`book character name unavailable: ${describeError(err)}`);
+  }
+  return codex ? codexBookNameFor(chatName, chatId, characterName) : bookNameFor(chatName, chatId, characterName);
+}
+
 export async function listAllBooks(userId: string): Promise<WorldBookDTO[]> {
   const out: WorldBookDTO[] = [];
   let offset = 0;
@@ -167,7 +178,7 @@ async function doEnsureBookForChat(chatId: string, userId: string): Promise<Worl
 
   const book = await spindle.world_books.create(
     {
-      name: bookNameFor(chat.name, chatId),
+      name: await managedBookName(chatId, chat.name, userId),
       description: tr("backend.worldBook.book.memoriaSShelfForThisChatChapters"),
       metadata: {
         lumibooks_chat_id: chatId,
@@ -305,9 +316,9 @@ const NAME_SYNC_TTL_MS = 60_000;
 /** Managed book names follow the chat name, so renames (fork-time ones
  * included) propagate to the shelf and codex books. */
 async function syncManagedBookNames(chatId: string, chatName: string | null, shelfBookId: string, userId: string): Promise<void> {
-  await syncManagedBookName(chatId, shelfBookId, bookNameFor(chatName, chatId), userId);
+  await syncManagedBookName(chatId, shelfBookId, await managedBookName(chatId, chatName, userId), userId);
   const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
-  if (codexBookId) await syncManagedBookName(chatId, codexBookId, codexBookNameFor(chatName, chatId), userId);
+  if (codexBookId) await syncManagedBookName(chatId, codexBookId, await managedBookName(chatId, chatName, userId, true), userId);
 }
 
 async function syncManagedBookName(chatId: string, bookId: string, name: string, userId: string): Promise<void> {
@@ -580,7 +591,7 @@ function bindCodexBookToChat(chatId: string, bookId: string, userId: string): Pr
       : [];
     const alreadyBound = existing.includes(bookId);
     const alreadyClaimed = md[CODEX_BOOK_CLAIM_KEY] === bookId;
-    await syncManagedBookName(chatId, bookId, codexBookNameFor(chat.name ?? null, chatId), userId)
+    await syncManagedBookName(chatId, bookId, await managedBookName(chatId, chat.name, userId, true), userId)
       .catch((err) => warn(`Codex book name sync failed: ${describeError(err)}`));
     if (alreadyBound && alreadyClaimed) return;
     await spindle.chats.update(
@@ -622,7 +633,7 @@ async function doEnsureCodexBookForChat(chatId: string, userId: string): Promise
   if (!chat) throw new Error(tr("backend.worldBook.doEnsureCodexBookForChat.chatNotFoundForUser", { chatId: chatId }));
   const book = await spindle.world_books.create(
     {
-      name: codexBookNameFor(chat.name, chatId),
+      name: await managedBookName(chatId, chat.name, userId, true),
       description:
         tr("backend.worldBook.book.managedByLumiBooksThisBookMirrorsThe"),
       metadata: {

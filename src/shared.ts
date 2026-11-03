@@ -605,16 +605,18 @@ export function buildVolumeHeader(sceneNumber: number, arcCount: number, turnCou
   return `${ordinal(sceneNumber)} Summary VOLUME Containing ${arcCount} Prior Arc${arcCount === 1 ? "" : "s"} and ${turnCount} Prior Turn${turnCount === 1 ? "" : "s"}`;
 }
 
-export function bookNameFor(chatName: string | null | undefined, chatId: string): string {
+export function bookNameFor(chatName: string | null | undefined, chatId: string, characterName?: string): string {
   const cleanName = (chatName ?? "").trim();
   const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
-  return `${WORLD_BOOK_NAME_PREFIX} - ${suffix}`;
+  const character = characterName?.trim().slice(0, 60);
+  return `${WORLD_BOOK_NAME_PREFIX} - ${character ? `${character} - ` : ""}${suffix}`;
 }
 
 /** The codex mirror book: managed wholesale by sync, hence the loud name. */
-export function codexBookNameFor(chatName: string | null | undefined, chatId: string): string {
+export function codexBookNameFor(chatName: string | null | undefined, chatId: string, characterName?: string): string {
   const cleanName = (chatName ?? "").trim();
-  const suffix = cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8);
+  const character = characterName?.trim().slice(0, 60);
+  const suffix = `${character ? `${character} - ` : ""}${cleanName ? cleanName.slice(0, 60) : chatId.slice(0, 8)}`;
   return tr("shared.codexBookNameFor.codexDoNotEdit", { worldBookNamePrefix: WORLD_BOOK_NAME_PREFIX, suffix: suffix });
 }
 
