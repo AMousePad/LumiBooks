@@ -632,6 +632,8 @@ export type LessonAnswer = "gold" | "silver" | "skip";
 export type LessonGrade = "gilded" | "silver" | "bronze" | "apprentice";
 
 export interface LessonCourseState {
+  revision?: number;
+  deliveryIds?: string[];
   status: LessonStatus;
   section: number;
   step: number;
@@ -728,6 +730,8 @@ export function normalizeLessonCourse(raw: unknown): LessonCourseState {
     v.grade === "gilded" || v.grade === "silver" || v.grade === "bronze" || v.grade === "apprentice" ? v.grade : null;
   return {
     status,
+    revision: typeof v.revision === "number" && Number.isSafeInteger(v.revision) ? Math.max(0, v.revision) : 0,
+    deliveryIds: Array.isArray(v.deliveryIds) ? v.deliveryIds.filter((id): id is string => typeof id === "string").slice(-128) : [],
     section: clampInt(v.section, 0, 100, 0),
     step: clampInt(v.step, 0, 1000, 0),
     answers: normalizeLessonAnswers(v.answers),

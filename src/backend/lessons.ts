@@ -125,7 +125,7 @@ async function tryReadRealLessons(userId: string): Promise<LessonsState | null> 
   }
 }
 
-async function mutateLessons(userId: string, fn: (cur: LessonsState) => LessonsState): Promise<LessonsState> {
+async function mutateLessons(userId: string, fn: (cur: LessonsState) => LessonsState, delivery?: { id: string; course: LessonCourseKey }): Promise<LessonsState> {
   return withLessonsLock(userId, async () => {
     let cur = await ensureLessons(userId);
     if (failOpenUsers.has(userId)) {
@@ -135,8 +135,16 @@ async function mutateLessons(userId: string, fn: (cur: LessonsState) => LessonsS
         cur = real;
       }
     }
-    const next = fn(cur);
+    if (delivery && cur[delivery.course].deliveryIds?.includes(delivery.id)) return cur;
+    const next = { ...fn(cur) };
+    for (const course of ["books", "codex"] as const) {
+      if (next[course] !== cur[course] || delivery?.course === course) {
+        next[course] = { ...next[course], revision: (cur[course].revision ?? 0) + 1,
+          deliveryIds: delivery?.course === course ? [...(cur[course].deliveryIds ?? []), delivery.id].slice(-128) : cur[course].deliveryIds };
+      }
+    }
     if (failOpenUsers.has(userId)) {
+      if (delivery) throw new Error("Lesson progress has not been saved yet; the lesson register is unavailable");
       cache.set(userId, next);
       warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
       anomalyCb?.(userId, tr("backend.lessons.mutateLessons.memoriaCouldnTReadHerLessonRegister"));
@@ -152,6 +160,7 @@ export function patchLessonCourse(
   userId: string,
   course: LessonCourseKey,
   patch: Partial<LessonCourseState>,
+  deliveryId?: string,
 ): Promise<LessonsState> {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
@@ -160,10 +169,11 @@ export function patchLessonCourse(
       [course]: {
         ...prev,
         ...patch,
+        status: prev.status === "done" ? "done" : patch.status ?? prev.status,
         answers: patch.answers ? { ...prev.answers, ...patch.answers } : prev.answers,
       },
     };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
 
 export function completeLessonCourse(
@@ -174,6 +184,7 @@ export function completeLessonCourse(
   grade: LessonCourseState["grade"],
   signedName: string | null,
   answers?: LessonCourseState["answers"],
+  deliveryId?: string,
 ): Promise<LessonsState> {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
@@ -194,7 +205,7 @@ export function completeLessonCourse(
         startedAt: prev.startedAt ?? Date.now(),
       },
     };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
 
 export function resetLessonCourse(
@@ -203,6 +214,7 @@ export function resetLessonCourse(
   mode: "course" | "section",
   section?: number,
   answerIds?: string[],
+  deliveryId?: string,
 ): Promise<LessonsState> {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
@@ -234,17 +246,33 @@ export function resetLessonCourse(
       };
     }
     return { ...cur, [course]: next };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
 
 /** Seal skip: the gated surface opens, the Home reminder takes over. */
-export function skipCourseSeal(userId: string, course: LessonCourseKey): Promise<LessonsState> {
+export function skipCourseSeal(userId: string, course: LessonCourseKey, deliveryId?: string): Promise<LessonsState> {
   return mutateLessons(userId, (cur) => {
     if (course === "codex" ? cur.codexSealSkipped : cur.booksSealSkipped) return cur;
     return course === "codex"
       ? { ...cur, codexSealSkipped: true }
       : { ...cur, booksSealSkipped: true };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
+}
+
+export async function applyLessonDelivery(userId: string, delivery: Extract<import("../types").FrontendToBackend, { type: "lesson_delivery" }>): Promise<LessonsState> {
+  if (delivery.ownerUserId !== userId || typeof delivery.id !== "string" || !delivery.id || delivery.id.length > 200) throw new Error("Invalid lesson delivery identity");
+  const msg = delivery.message;
+  if (!msg || !["lesson_patch", "lesson_complete", "lesson_reset", "lesson_seal_skip"].includes(msg.type)) throw new Error("Invalid lesson delivery");
+  const course = msg.course ?? (msg.type === "lesson_seal_skip" ? "books" : undefined);
+  if (course !== "books" && course !== "codex") throw new Error("Unknown lesson course");
+  if (msg.type === "lesson_patch") return patchLessonCourse(userId, course, msg.patch, delivery.id);
+  if (msg.type === "lesson_complete") {
+    const grade = ["gilded", "silver", "bronze", "apprentice"].includes(msg.grade) ? msg.grade : "apprentice";
+    return completeLessonCourse(userId, course, Number.isFinite(msg.wrong) ? Math.max(0, Math.round(msg.wrong)) : 0,
+      Number.isFinite(msg.total) ? Math.max(0, Math.round(msg.total)) : 0, grade, msg.signedName, msg.answers, delivery.id);
+  }
+  if (msg.type === "lesson_reset") return resetLessonCourse(userId, course, msg.mode, msg.section, msg.answerIds, delivery.id);
+  return skipCourseSeal(userId, course, delivery.id);
 }
 
 /** The one codex gate. While Course 2 is incomplete (and not skipped) the

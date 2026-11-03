@@ -930,6 +930,9 @@
       }
     },
     "app": {
+      "lessonSync": {
+        "pending": "Saving tutorial progress… It will retry automatically if the connection drops."
+      },
       "tab": {
         "lumiBooks": "LumiBooks",
         "books": "Books",

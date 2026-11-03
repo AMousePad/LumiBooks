@@ -1,4 +1,5 @@
 import { t as tr } from "../i18n";
+import { LessonOutbox } from "./lesson-outbox";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
@@ -87,6 +88,11 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
   loadNotice.className = "lmb-load-notice";
   loadNotice.setAttribute("role", "status");
   root.appendChild(loadNotice);
+  const lessonSyncNotice = document.createElement("div");
+  lessonSyncNotice.className = "lmb-help";
+  lessonSyncNotice.setAttribute("role", "status");
+  lessonSyncNotice.hidden = true;
+  root.appendChild(lessonSyncNotice);
   const transferHost = document.createElement("div");
   transferHost.hidden = true;
   root.appendChild(transferHost);
@@ -102,8 +108,18 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
   let loadTimer: ReturnType<typeof setTimeout> | undefined;
   let handshakeRetries = 0;
   const tabButtons = new Map<TabKey, HTMLButtonElement>();
+  let lessonStorage: Storage | null = null;
+  try { lessonStorage = window.localStorage; } catch { /* In-memory retries still work when browser storage is disabled. */ }
+  const lessonOutbox = new LessonOutbox(message => ctx.sendToBackend(message), lessonStorage, () => {
+    lessonSyncNotice.hidden = lessonOutbox.pending === 0;
+    lessonSyncNotice.textContent = lessonOutbox.pending ? tr("ui.app.lessonSync.pending") : "";
+  });
+  const lessonRetryTimer = setInterval(() => lessonOutbox.flush(), 3000);
+  const retryLessons = () => lessonOutbox.flush();
+  window.addEventListener("online", retryLessons);
 
   const send = (msg: FrontendToBackend) => {
+    if (lessonOutbox.enqueue(msg)) return;
     if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean") diagnostics.setEnabled(!msg.patch.localLogsDisabled);
     if (msg.type === "diagnostics_clear") diagnostics.clear();
     else if (msg.type === "diagnostics_export") diagnostics.flush();
@@ -338,9 +354,17 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
         handshakeRetries = 0;
         showLoadNotice("");
         if (lastState && lastState.activeChatId !== msg.state.activeChatId) closeCodexCatchupModal();
-        lastState = msg.state;
+        if (msg.state.userId) lessonOutbox.setUser(msg.state.userId);
+        lastState = { ...msg.state, lessons: lessonOutbox.overlay(msg.state.lessons) };
+        lessonOutbox.flush();
         transferPanel.setChat(lastState.activeChatId);
         renderActive();
+        break;
+      case "lesson_saved":
+        if (lessonOutbox.acknowledge(msg.id, msg.userId, msg.lessons) && lastState) {
+          lastState = { ...lastState, lessons: lessonOutbox.overlay(msg.lessons) };
+          renderActive();
+        }
         break;
       case "state_loading":
         clearLoadTimer();
@@ -481,6 +505,8 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
 
   return () => {
     disposed = true;
+    clearInterval(lessonRetryTimer);
+    window.removeEventListener("online", retryLessons);
     resetRegexPicker();
     resetHomeTabLocal();
     clearLoadTimer();

@@ -3760,6 +3760,9 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       }
     },
     app: {
+      lessonSync: {
+        pending: "Saving tutorial progress… It will retry automatically if the connection drops."
+      },
       tab: {
         lumiBooks: "LumiBooks",
         books: "Books",
@@ -5887,6 +5890,131 @@ function createTranslator(locale = DEFAULT_LOCALE, catalogs = {}) {
   };
 }
 var t = createTranslator();
+
+// src/ui/lesson-outbox.ts
+var isLessonMutation = (value) => ["lesson_patch", "lesson_complete", "lesson_reset", "lesson_seal_skip"].includes(value.type ?? "");
+
+class LessonOutbox {
+  transmit;
+  storage;
+  changed;
+  userId = null;
+  queue = [];
+  confirmed = null;
+  constructor(transmit, storage, changed = () => {}) {
+    this.transmit = transmit;
+    this.storage = storage;
+    this.changed = changed;
+  }
+  get pending() {
+    return this.queue.length;
+  }
+  key() {
+    return `lumibooks.lesson-outbox.v1:${this.userId}`;
+  }
+  setUser(userId) {
+    if (this.userId === userId)
+      return;
+    this.userId = userId;
+    this.queue = [];
+    this.confirmed = null;
+    try {
+      const raw = JSON.parse(this.storage?.getItem(this.key()) ?? "[]");
+      if (Array.isArray(raw))
+        this.queue = raw.filter((item) => item?.type === "lesson_delivery" && item.ownerUserId === userId && typeof item.id === "string" && item.message && isLessonMutation(item.message));
+    } catch {}
+    this.changed();
+  }
+  persist() {
+    if (!this.userId)
+      return;
+    try {
+      if (this.queue.length)
+        this.storage?.setItem(this.key(), JSON.stringify(this.queue));
+      else
+        this.storage?.removeItem(this.key());
+    } catch {}
+    this.changed();
+  }
+  enqueue(message) {
+    if (!this.userId || !isLessonMutation(message))
+      return false;
+    this.queue.push({ type: "lesson_delivery", id: crypto.randomUUID(), ownerUserId: this.userId, message: structuredClone(message) });
+    this.persist();
+    if (this.queue.length === 1)
+      this.flush();
+    return true;
+  }
+  flush() {
+    const first = this.queue[0];
+    if (first)
+      try {
+        this.transmit(first);
+      } catch {}
+  }
+  acknowledge(id, userId, lessons) {
+    if (userId !== this.userId || this.queue[0]?.id !== id)
+      return false;
+    this.accept(lessons);
+    this.queue.shift();
+    this.persist();
+    this.flush();
+    return true;
+  }
+  accept(lessons) {
+    const next = { ...lessons };
+    if (this.confirmed) {
+      for (const course of ["books", "codex"]) {
+        if ((this.confirmed[course].revision ?? 0) > (lessons[course].revision ?? 0))
+          next[course] = this.confirmed[course];
+      }
+      next.booksSealSkipped ||= this.confirmed.booksSealSkipped;
+      next.codexSealSkipped ||= this.confirmed.codexSealSkipped;
+    }
+    this.confirmed = next;
+    return next;
+  }
+  overlay(lessons) {
+    const result = { ...this.accept(lessons) };
+    for (const { message } of this.queue) {
+      const course = message.course ?? "books";
+      const prev = result[course];
+      if (message.type === "lesson_complete") {
+        result[course] = {
+          ...prev,
+          status: "done",
+          grade: message.grade,
+          lastWrong: message.wrong,
+          lastTotal: message.total,
+          signedName: message.signedName,
+          answers: { ...prev.answers, ...message.answers }
+        };
+      } else if (message.type === "lesson_patch") {
+        result[course] = {
+          ...prev,
+          ...message.patch,
+          status: prev.status === "done" ? "done" : message.patch.status ?? prev.status,
+          answers: { ...prev.answers, ...message.patch.answers }
+        };
+      } else if (message.type === "lesson_reset") {
+        const answers = { ...prev.answers };
+        for (const id of message.answerIds ?? [])
+          delete answers[id];
+        result[course] = {
+          ...prev,
+          status: prev.status === "done" ? "done" : "in_progress",
+          step: 0,
+          section: message.mode === "course" ? 0 : message.section ?? prev.section,
+          answers: message.mode === "course" ? {} : answers
+        };
+      } else if (course === "books")
+        result.booksSealSkipped = true;
+      else
+        result.codexSealSkipped = true;
+    }
+    return result;
+  }
+}
 
 // src/ui/lessons/styles-lessons.ts
 var LESSON_STYLES = `
@@ -21541,6 +21669,11 @@ function setupApp(ctx, diagnostics, setContext) {
   loadNotice.className = "lmb-load-notice";
   loadNotice.setAttribute("role", "status");
   root.appendChild(loadNotice);
+  const lessonSyncNotice = document.createElement("div");
+  lessonSyncNotice.className = "lmb-help";
+  lessonSyncNotice.setAttribute("role", "status");
+  lessonSyncNotice.hidden = true;
+  root.appendChild(lessonSyncNotice);
   const transferHost = document.createElement("div");
   transferHost.hidden = true;
   root.appendChild(transferHost);
@@ -21554,7 +21687,20 @@ function setupApp(ctx, diagnostics, setContext) {
   let loadTimer;
   let handshakeRetries = 0;
   const tabButtons = new Map;
+  let lessonStorage = null;
+  try {
+    lessonStorage = window.localStorage;
+  } catch {}
+  const lessonOutbox = new LessonOutbox((message) => ctx.sendToBackend(message), lessonStorage, () => {
+    lessonSyncNotice.hidden = lessonOutbox.pending === 0;
+    lessonSyncNotice.textContent = lessonOutbox.pending ? t("ui.app.lessonSync.pending") : "";
+  });
+  const lessonRetryTimer = setInterval(() => lessonOutbox.flush(), 3000);
+  const retryLessons = () => lessonOutbox.flush();
+  window.addEventListener("online", retryLessons);
   const send = (msg) => {
+    if (lessonOutbox.enqueue(msg))
+      return;
     if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean")
       diagnostics.setEnabled(!msg.patch.localLogsDisabled);
     if (msg.type === "diagnostics_clear")
@@ -21803,9 +21949,18 @@ function setupApp(ctx, diagnostics, setContext) {
           showLoadNotice("");
           if (lastState && lastState.activeChatId !== msg.state.activeChatId)
             closeCodexCatchupModal();
-          lastState = msg.state;
+          if (msg.state.userId)
+            lessonOutbox.setUser(msg.state.userId);
+          lastState = { ...msg.state, lessons: lessonOutbox.overlay(msg.state.lessons) };
+          lessonOutbox.flush();
           transferPanel.setChat(lastState.activeChatId);
           renderActive();
+          break;
+        case "lesson_saved":
+          if (lessonOutbox.acknowledge(msg.id, msg.userId, msg.lessons) && lastState) {
+            lastState = { ...lastState, lessons: lessonOutbox.overlay(msg.lessons) };
+            renderActive();
+          }
           break;
         case "state_loading":
           clearLoadTimer();
@@ -21942,6 +22097,8 @@ function setupApp(ctx, diagnostics, setContext) {
   requestState("ready");
   return () => {
     disposed = true;
+    clearInterval(lessonRetryTimer);
+    window.removeEventListener("online", retryLessons);
     resetRegexPicker();
     resetHomeTabLocal();
     clearLoadTimer();

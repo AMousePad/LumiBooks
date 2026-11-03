@@ -100,6 +100,7 @@ import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, r
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { repairCodexReferences } from "./codex/repair";
 import { registerLumiAgentCodex } from "./codex/lumiagent";
+import { applyLessonDelivery } from "./lessons";
 import { shortErrorText } from "./pipeline";
 import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
@@ -544,6 +545,12 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "lesson_delivery": {
+        const lessons = await applyLessonDelivery(userId, msg);
+        send({ type: "lesson_saved", id: msg.id, userId, lessons }, userId);
+        if (msg.message.type !== "lesson_patch") await pushState(userId, msg.message.chatId);
+        break;
+      }
       case "regex_scripts_page": {
         try {
           const page = await listRegexScriptsPage(userId, msg.offset, msg.query,

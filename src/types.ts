@@ -130,6 +130,7 @@ export interface PendingPreview {
 }
 
 export interface FrontendState {
+  userId?: string;
   activeChatId: string | null;
   activeChatName: string | null;
   activeCharacterId: string | null;
@@ -281,7 +282,10 @@ export type FrontendToBackend =
       answerIds?: string[];
       chatId?: string | null;
     }
-  | { type: "lesson_seal_skip"; course?: LessonCourseKey; chatId?: string | null };
+  | { type: "lesson_seal_skip"; course?: LessonCourseKey; chatId?: string | null }
+  | { type: "lesson_delivery"; id: string; ownerUserId: string; message: LessonMutation };
+
+export type LessonMutation = Extract<FrontendToBackend, { type: "lesson_patch" | "lesson_complete" | "lesson_reset" | "lesson_seal_skip" }>;
 
 export interface DryRunMessage {
   role: PromptRole;
@@ -293,6 +297,7 @@ export interface DryRunDiagnostic {
 }
 
 export type BackendToFrontend =
+  | { type: "lesson_saved"; id: string; userId: string; lessons: LessonsState }
   | RegexScriptsResponse
   | import("./prompt-breakdown").PromptBreakdownResponse
   | { type: "diagnostics_export_data"; filename: string; content: string }

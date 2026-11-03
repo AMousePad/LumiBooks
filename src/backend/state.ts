@@ -80,6 +80,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
   const resolved = await resolveConnection(activeProfile, userId).catch(() => null);
 
   const baseState: FrontendState = {
+    userId,
     activeChatId: null,
     activeChatName: null,
     activeCharacterId: null,

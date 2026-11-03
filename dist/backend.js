@@ -3761,6 +3761,9 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       }
     },
     app: {
+      lessonSync: {
+        pending: "Saving tutorial progress\u2026 It will retry automatically if the connection drops."
+      },
       tab: {
         lumiBooks: "LumiBooks",
         books: "Books",
@@ -6956,6 +6959,8 @@ function normalizeLessonCourse(raw) {
   const grade = v.grade === "gilded" || v.grade === "silver" || v.grade === "bronze" || v.grade === "apprentice" ? v.grade : null;
   return {
     status,
+    revision: typeof v.revision === "number" && Number.isSafeInteger(v.revision) ? Math.max(0, v.revision) : 0,
+    deliveryIds: Array.isArray(v.deliveryIds) ? v.deliveryIds.filter((id) => typeof id === "string").slice(-128) : [],
     section: clampInt(v.section, 0, 100, 0),
     step: clampInt(v.step, 0, 1000, 0),
     answers: normalizeLessonAnswers(v.answers),
@@ -12572,7 +12577,7 @@ async function tryReadRealLessons(userId) {
     return null;
   }
 }
-async function mutateLessons(userId, fn) {
+async function mutateLessons(userId, fn, delivery) {
   return withLessonsLock(userId, async () => {
     let cur = await ensureLessons(userId);
     if (failOpenUsers.has(userId)) {
@@ -12582,8 +12587,21 @@ async function mutateLessons(userId, fn) {
         cur = real;
       }
     }
-    const next = fn(cur);
+    if (delivery && cur[delivery.course].deliveryIds?.includes(delivery.id))
+      return cur;
+    const next = { ...fn(cur) };
+    for (const course of ["books", "codex"]) {
+      if (next[course] !== cur[course] || delivery?.course === course) {
+        next[course] = {
+          ...next[course],
+          revision: (cur[course].revision ?? 0) + 1,
+          deliveryIds: delivery?.course === course ? [...cur[course].deliveryIds ?? [], delivery.id].slice(-128) : cur[course].deliveryIds
+        };
+      }
+    }
     if (failOpenUsers.has(userId)) {
+      if (delivery)
+        throw new Error("Lesson progress has not been saved yet; the lesson register is unavailable");
       cache.set(userId, next);
       warn(`lessons: register still unreadable for ${userId.slice(0, 6)}, keeping the change in memory only`);
       anomalyCb?.(userId, t("backend.lessons.mutateLessons.memoriaCouldnTReadHerLessonRegister"));
@@ -12594,7 +12612,7 @@ async function mutateLessons(userId, fn) {
     return next;
   });
 }
-function patchLessonCourse(userId, course, patch) {
+function patchLessonCourse(userId, course, patch, deliveryId) {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
     return {
@@ -12602,12 +12620,13 @@ function patchLessonCourse(userId, course, patch) {
       [course]: {
         ...prev,
         ...patch,
+        status: prev.status === "done" ? "done" : patch.status ?? prev.status,
         answers: patch.answers ? { ...prev.answers, ...patch.answers } : prev.answers
       }
     };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
-function completeLessonCourse(userId, course, wrong, total, grade, signedName, answers) {
+function completeLessonCourse(userId, course, wrong, total, grade, signedName, answers, deliveryId) {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
     const bestWrong = prev.bestWrong === null ? wrong : Math.min(prev.bestWrong, wrong);
@@ -12627,9 +12646,9 @@ function completeLessonCourse(userId, course, wrong, total, grade, signedName, a
         startedAt: prev.startedAt ?? Date.now()
       }
     };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
-function resetLessonCourse(userId, course, mode, section, answerIds) {
+function resetLessonCourse(userId, course, mode, section, answerIds, deliveryId) {
   return mutateLessons(userId, (cur) => {
     const prev = cur[course];
     const wasDone = prev.status === "done" || prev.completedAt !== null && prev.grade !== null;
@@ -12658,14 +12677,33 @@ function resetLessonCourse(userId, course, mode, section, answerIds) {
       };
     }
     return { ...cur, [course]: next };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
 }
-function skipCourseSeal(userId, course) {
+function skipCourseSeal(userId, course, deliveryId) {
   return mutateLessons(userId, (cur) => {
     if (course === "codex" ? cur.codexSealSkipped : cur.booksSealSkipped)
       return cur;
     return course === "codex" ? { ...cur, codexSealSkipped: true } : { ...cur, booksSealSkipped: true };
-  });
+  }, deliveryId ? { id: deliveryId, course } : undefined);
+}
+async function applyLessonDelivery(userId, delivery) {
+  if (delivery.ownerUserId !== userId || typeof delivery.id !== "string" || !delivery.id || delivery.id.length > 200)
+    throw new Error("Invalid lesson delivery identity");
+  const msg = delivery.message;
+  if (!msg || !["lesson_patch", "lesson_complete", "lesson_reset", "lesson_seal_skip"].includes(msg.type))
+    throw new Error("Invalid lesson delivery");
+  const course = msg.course ?? (msg.type === "lesson_seal_skip" ? "books" : undefined);
+  if (course !== "books" && course !== "codex")
+    throw new Error("Unknown lesson course");
+  if (msg.type === "lesson_patch")
+    return patchLessonCourse(userId, course, msg.patch, delivery.id);
+  if (msg.type === "lesson_complete") {
+    const grade = ["gilded", "silver", "bronze", "apprentice"].includes(msg.grade) ? msg.grade : "apprentice";
+    return completeLessonCourse(userId, course, Number.isFinite(msg.wrong) ? Math.max(0, Math.round(msg.wrong)) : 0, Number.isFinite(msg.total) ? Math.max(0, Math.round(msg.total)) : 0, grade, msg.signedName, msg.answers, delivery.id);
+  }
+  if (msg.type === "lesson_reset")
+    return resetLessonCourse(userId, course, msg.mode, msg.section, msg.answerIds, delivery.id);
+  return skipCourseSeal(userId, course, delivery.id);
 }
 function effectiveProfile(profile, lessons) {
   if (!codexLessonGated(lessons))
@@ -17803,6 +17841,7 @@ async function buildState(userId, requestedChatId) {
   }));
   const resolved = await resolveConnection(activeProfile, userId).catch(() => null);
   const baseState = {
+    userId,
     activeChatId: null,
     activeChatName: null,
     activeCharacterId: null,
@@ -18385,6 +18424,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
     await ensureUserFolders(userId);
     recordFrontendAction(userId, msg, "started");
     switch (msg.type) {
+      case "lesson_delivery": {
+        const lessons = await applyLessonDelivery(userId, msg);
+        send({ type: "lesson_saved", id: msg.id, userId, lessons }, userId);
+        if (msg.message.type !== "lesson_patch")
+          await pushState(userId, msg.message.chatId);
+        break;
+      }
       case "regex_scripts_page": {
         try {
           const page = await listRegexScriptsPage(userId, msg.offset, msg.query, (progress) => send({ type: "regex_scripts_page", requestId: msg.requestId, progress }, userId), msg.refresh);
