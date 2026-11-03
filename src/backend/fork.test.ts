@@ -69,6 +69,43 @@ beforeEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 
+test("a deleted fork source with leftover Codex files settles without inheriting or blocking updates", async () => {
+  chats.delete(parent);
+  (globalThis as any).spindle.chat.getMessages = async (id: string) => {
+    if (id === parent) throw new Error("chat not found");
+    return messages.get(id) ?? [];
+  };
+  await ensureForkAdoption(child, user);
+  expect(await forkCodexPending(child, user)).toBe(false);
+  expect(await forkShelfPending(child, user)).toBe(false);
+  expect(disk.has(`codex/${child}/world.json`)).toBe(false);
+  expect(chats.get(child).metadata.lumibooks_codex_fork_adopted).toBe(child);
+  expect(chats.get(child).metadata.chat_world_book_ids).toEqual(["ordinary-lore"]);
+});
+
+for (const parentId of ["", "   ", "self"]) test(`invalid fork parent ${parentId || "empty"} never blocks a standalone chat`, async () => {
+  chats.get(child).metadata.branched_from = parentId === "self" ? child : parentId;
+  expect(await forkCodexPending(child, user)).toBe(false);
+  await ensureForkAdoption(child, user);
+  expect(await forkShelfPending(child, user)).toBe(false);
+});
+
+test("a transient parent read failure keeps inheritance pending and retries", async () => {
+  const get = (globalThis as any).spindle.chats.get;
+  (globalThis as any).spindle.chats.get = async (id: string) => {
+    if (id === parent) throw new Error("temporarily unavailable");
+    return get(id);
+  };
+  await ensureForkAdoption(child, user);
+  expect(await forkCodexPending(child, user)).toBe(true);
+  (globalThis as any).spindle.chats.get = get;
+  const now = Date.now, later = now() + 31_000;
+  Date.now = () => later;
+  try { await ensureForkAdoption(child, user); } finally { Date.now = now; }
+  expect(await forkCodexPending(child, user)).toBe(false);
+  expect(disk.get(`codex/${child}/world.json`)).toEqual(disk.get(`codex/${parent}/world.json`));
+});
+
 function branch(from: string, to: string, count: number) {
   chats.set(to, { id: to, name: "Fork", metadata: { ...structuredClone(chats.get(from).metadata), branched_from: from, branch_at_message: messages.get(from)![count - 1]?.id } });
   messages.set(to, messages.get(from)!.slice(0, count).map((m, i) => ({ ...m, id: `${to}-m${i}` })));

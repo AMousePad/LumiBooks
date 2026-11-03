@@ -37,6 +37,11 @@ function key(userId: string, chatId: string): string {
   return `${userId}::${chatId}`;
 }
 
+function forkParent(metadata: Record<string, unknown> | null | undefined, chatId: string): string | null {
+  const parent = metadata?.["branched_from"];
+  return typeof parent === "string" && parent.trim() && parent !== chatId ? parent : null;
+}
+
 /** Host forks preserve indexes but later turns can reuse the other branch's
  * indexes. Compose a map through the actual fork points, never through those
  * later turns or messages whose content has since diverged. */
@@ -114,8 +119,8 @@ export async function forkShelfPending(chatId: string, userId: string): Promise<
   const md = chat && chat.metadata && typeof chat.metadata === "object"
     ? (chat.metadata as Record<string, unknown>)
     : null;
-  if (!md || typeof md["branched_from"] !== "string") return false;
-  const flag = md[FORK_ADOPTED_FLAG];
+  if (!forkParent(md, chatId)) return false;
+  const flag = md?.[FORK_ADOPTED_FLAG];
   if (flag === chatId) return false;
   if (flag === true) {
     return (await findBookForChat(chatId, userId).catch(() => null)) === null;
@@ -136,8 +141,8 @@ export async function forkCodexPending(chatId: string, userId: string): Promise<
   const md = chat && chat.metadata && typeof chat.metadata === "object"
     ? (chat.metadata as Record<string, unknown>)
     : null;
-  if (!md || typeof md["branched_from"] !== "string") return false;
-  const flag = md[CODEX_ADOPTED_FLAG];
+  if (!forkParent(md, chatId)) return false;
+  const flag = md?.[CODEX_ADOPTED_FLAG];
   if (flag === chatId) return false;
   // Legacy boolean flags predate id-stamping; only this chat's own codex
   // corroborates one, since the host fork copies the parent's flags.
@@ -151,8 +156,21 @@ async function doForkAdoption(forkChatId: string, userId: string): Promise<boole
   const chat = await spindle.chats.get(forkChatId, userId).catch(() => null);
   if (!chat) return false;
   const meta = chat.metadata && typeof chat.metadata === "object" ? (chat.metadata as Record<string, unknown>) : null;
-  const branchedFrom = meta && typeof meta["branched_from"] === "string" ? (meta["branched_from"] as string) : null;
+  const branchedFrom = forkParent(meta, forkChatId);
   if (!branchedFrom) return true;
+  // Imports and deleted branches can retain lineage metadata and even Codex
+  // files. A confirmed absent parent is terminal; a rejected read must retry.
+  if (!(await spindle.chats.get(branchedFrom, userId))) {
+    for (const bookId of Array.isArray(meta?.["chat_world_book_ids"]) ? meta["chat_world_book_ids"] : []) {
+      if (typeof bookId !== "string") continue;
+      const book = await spindle.world_books.get(bookId, userId);
+      const owner = book && (codexBookChatTag(book) ?? book.metadata?.["lumibooks_chat_id"]);
+      if (owner && owner !== forkChatId) await unbindBookFromChat(forkChatId, bookId, userId);
+    }
+    await markShelfAdopted(forkChatId, userId);
+    await markCodexAdopted(forkChatId, userId);
+    return true;
+  }
   void recordDiagnostic(userId, { event: "fork", chatId: forkChatId, relatedChatId: branchedFrom, outcome: "started", reason: "adoption" });
 
   let shelfSettled = true;
@@ -219,7 +237,7 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
 
     let ancestorChatId: string | null = null;
     {
-      const seen = new Set<string>();
+      const seen = new Set<string>([forkChatId]);
       let cur: string | null = branchedFrom;
       let hops = 0;
       while (cur && hops < MAX_ANCESTRY_HOPS) {
@@ -227,15 +245,16 @@ async function adoptForkCodex(forkChatId: string, branchedFrom: string, userId: 
         if (seen.has(cid)) break;
         seen.add(cid);
         hops++;
+        const ancChat = await spindle.chats.get(cid, userId);
+        if (!ancChat) break;
         if ((await codexPresence(cid, userId)) === "present") {
           ancestorChatId = cid;
           break;
         }
-        const ancChat = await spindle.chats.get(cid, userId).catch(() => null);
         const ancMeta = ancChat && ancChat.metadata && typeof ancChat.metadata === "object"
           ? (ancChat.metadata as Record<string, unknown>)
           : null;
-        cur = ancMeta && typeof ancMeta["branched_from"] === "string" ? (ancMeta["branched_from"] as string) : null;
+        cur = forkParent(ancMeta, cid);
       }
     }
     if (!ancestorChatId) {
@@ -314,6 +333,13 @@ async function findAncestorBook(
     if (seen.has(chatId)) break;
     seen.add(chatId);
     hops++;
+    let chat: Awaited<ReturnType<typeof spindle.chats.get>>;
+    try {
+      chat = await spindle.chats.get(chatId, userId);
+    } catch {
+      return "fault";
+    }
+    if (!chat) return null;
     let bookId: string | null;
     try {
       bookId = await findBookForChat(chatId, userId);
@@ -321,16 +347,10 @@ async function findAncestorBook(
       return "fault";
     }
     if (bookId) return { chatId, bookId };
-    let chat: Awaited<ReturnType<typeof spindle.chats.get>>;
-    try {
-      chat = await spindle.chats.get(chatId, userId);
-    } catch {
-      return "fault";
-    }
     const meta = chat && chat.metadata && typeof chat.metadata === "object"
       ? (chat.metadata as Record<string, unknown>)
       : null;
-    cur = meta && typeof meta["branched_from"] === "string" ? (meta["branched_from"] as string) : null;
+    cur = forkParent(meta, chatId);
   }
   return null;
 }
