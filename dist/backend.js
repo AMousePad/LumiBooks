@@ -2815,6 +2815,15 @@ var IntlMessageFormat = class IntlMessageFormat {
 };
 // src/locales/en.json
 var en_default = {
+  codexRepair: {
+    title: "Repair references",
+    action: "Repair dangling references",
+    help: "Restore missing characters, locations, and things as name-only records, preserving their relationships and secrets. Restored records start with injection off. No model call or rebuild is needed. Undo restores the previous Codex.",
+    busy: "Repairing Codex references\u2026",
+    unreadable: "Cannot repair references until these files can be read: {files}",
+    success: "References repaired. You can review the restored names in Entities or undo this repair.",
+    noChanges: "No dangling references to repair."
+  },
   backend: {
     regex: {
       searchChanged: "Regex scripts changed while searching. Refresh to try again."
@@ -3172,7 +3181,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         thatIsNotValidJson: "Invalid JSON: {describeError}",
         validationFailed: "Validation failed: {errors0}{extra}",
         savedButCouldNotBeReadSo: "Saved, but couldn''t read {names}. Cross-file checks skipped.",
-        savedWithDanglingReferenceToFixIn: "Saved with {length} dangling reference{length, plural, one {} other {s}}",
+        savedWithDanglingReferenceToFixIn: "Saved with {length} dangling reference{length, plural, one {} other {s}}. Use Codex \u2192 Manage \u2192 Repair dangling references.",
         memoriaSavedJson: "Saved {file}.json",
         memoriaIsClearingTheCodex: "Clearing Codex",
         memoriaCouldnTClearCodexFileTry: "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry.",
@@ -8876,6 +8885,24 @@ function formatDangling(d) {
 }
 function checkIntegrity(bundle) {
   return collectDangling(bundle).map(formatDangling);
+}
+function restoreMissingEntities(bundle) {
+  const changed = new Set;
+  for (const { ref } of collectDangling(bundle)) {
+    if (!isEntityRef(ref))
+      continue;
+    const namespace = ref.split(":")[0];
+    const file = namespace === "char" ? "characters" : namespace === "loc" ? "locations" : "things";
+    if (bundle[file].entities.some((entity) => entity.id === ref))
+      continue;
+    bundle[file].entities.push({ id: ref, name: ref.slice(ref.indexOf(":") + 1).replace(/_/g, " "), noInject: true });
+    changed.add(file);
+  }
+  for (const file of ["knowledge", "timeline"]) {
+    if (repairDanglingRefs(bundle, new Set([file])).length)
+      changed.add(file);
+  }
+  return [...changed];
 }
 function newDangling(bundle, tolerate) {
   const used = new Map;
@@ -16013,13 +16040,15 @@ var UNDO_DIR = "codex-undo";
 function undoPath(chatId) {
   return `${UNDO_DIR}/${chatId}.json`;
 }
-async function snapshotCodexForUndo(chatId, userId, reason) {
+async function snapshotCodexForUndo(chatId, userId, reason, required = false) {
   try {
     const backup = await buildCodexBackup(chatId, userId);
     const cursor = await loadCursor(chatId, userId).catch(() => null);
     const snap = { ...backup, reason, ...cursor ? { cursor } : {} };
     await spindle.userStorage.setJson(undoPath(chatId), snap, { indent: 0, userId });
   } catch (err) {
+    if (required)
+      throw err;
     warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
   }
 }
@@ -17356,6 +17385,25 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   } finally {
     clearBusy(userId, chatId, "codex");
   }
+}
+
+// src/backend/codex/repair.ts
+async function repairCodexReferences(chatId, userId, fallbackMode) {
+  const cursor = await loadCursor(chatId, userId);
+  const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: cursor.relationsTableMode ?? fallbackMode });
+  if (problems.length)
+    throw new Error(t("codexRepair.unreadable", { files: problems.map((p) => `${p.file}.json`).join(", ") }));
+  const changed = restoreMissingEntities(bundle);
+  const remaining = checkIntegrity(bundle);
+  if (remaining.length)
+    throw new Error(remaining.join(`
+`));
+  if (!changed.length)
+    return [];
+  await snapshotCodexForUndo(chatId, userId, "repair references", true);
+  for (const file of changed)
+    await saveCodexFile(chatId, file, bundle[file], userId);
+  return changed;
 }
 
 // src/backend/rebase.ts
@@ -19063,6 +19111,30 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
+        break;
+      }
+      case "codex_repair_references": {
+        if (!setBusy(userId, msg.chatId, "codex", t("codexRepair.busy")))
+          break;
+        try {
+          const settings = await loadSettings(userId);
+          const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+          if (!profile)
+            break;
+          const changed = await repairCodexReferences(msg.chatId, userId, profile.codexRelationsTable);
+          if (changed.length) {
+            invalidateCodexInjectionCache(msg.chatId);
+            await publishCodexPool(msg.chatId, userId, profile, changed, "edit");
+            await syncCodexEntries(msg.chatId, userId, profile.codexRelationsTable);
+          }
+          await notify(userId, "success", changed.length ? t("codexRepair.success") : t("codexRepair.noChanges"));
+        } finally {
+          invalidateCodexInjectionCache(msg.chatId);
+          clearBusy(userId, msg.chatId, "codex");
+          const files = await readCodexFilesRaw(msg.chatId, userId);
+          send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+          await pushState(userId, msg.chatId);
+        }
         break;
       }
       case "codex_tidy": {

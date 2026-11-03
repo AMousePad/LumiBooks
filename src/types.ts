@@ -247,6 +247,7 @@ export type FrontendToBackend =
   | { type: "codex_reset"; chatId: string }
   | { type: "codex_rebuild"; chatId: string; mode?: "slow" | "fast" | "ultra" }
   | { type: "codex_tidy"; chatId: string; files?: string[]; target: import("./codex-tidy").CodexTidyTarget }
+  | { type: "codex_repair_references"; chatId: string }
   | { type: "codex_rebuild_files"; chatId: string; files: string[] }
   | { type: "codex_clear_stale"; chatId: string }
   | { type: "codex_refresh"; chatId: string }

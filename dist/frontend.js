@@ -2814,6 +2814,15 @@ var IntlMessageFormat = class IntlMessageFormat {
 };
 // src/locales/en.json
 var en_default = {
+  codexRepair: {
+    title: "Repair references",
+    action: "Repair dangling references",
+    help: "Restore missing characters, locations, and things as name-only records, preserving their relationships and secrets. Restored records start with injection off. No model call or rebuild is needed. Undo restores the previous Codex.",
+    busy: "Repairing Codex references…",
+    unreadable: "Cannot repair references until these files can be read: {files}",
+    success: "References repaired. You can review the restored names in Entities or undo this repair.",
+    noChanges: "No dangling references to repair."
+  },
   backend: {
     regex: {
       searchChanged: "Regex scripts changed while searching. Refresh to try again."
@@ -3171,7 +3180,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         thatIsNotValidJson: "Invalid JSON: {describeError}",
         validationFailed: "Validation failed: {errors0}{extra}",
         savedButCouldNotBeReadSo: "Saved, but couldn''t read {names}. Cross-file checks skipped.",
-        savedWithDanglingReferenceToFixIn: "Saved with {length} dangling reference{length, plural, one {} other {s}}",
+        savedWithDanglingReferenceToFixIn: "Saved with {length} dangling reference{length, plural, one {} other {s}}. Use Codex → Manage → Repair dangling references.",
         memoriaSavedJson: "Saved {file}.json",
         memoriaIsClearingTheCodex: "Clearing Codex",
         memoriaCouldnTClearCodexFileTry: "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry.",
@@ -14398,6 +14407,12 @@ function renderManage(host, state, ctx, send) {
   const profile = state.activeProfile;
   const busy = state.busy.some((b) => b.kind === "codex" && b.chatId === chatId);
   const sources = state.codexSources;
+  const repair = section(t("codexRepair.title"));
+  repair.body.appendChild(textNode(t("codexRepair.help"), "lmb-help"));
+  repair.body.appendChild(makeButton(t("codexRepair.action"), () => send({ type: "codex_repair_references", chatId }), {
+    disabled: busy || !state.codexExists
+  }));
+  host.appendChild(repair.wrap);
   const known = sources.some((s) => s.chatId === local.codexSourceId);
   if (!known)
     local.codexSourceId = "";

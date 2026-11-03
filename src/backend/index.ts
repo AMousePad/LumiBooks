@@ -98,6 +98,7 @@ import {
 import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { repairCodexReferences } from "./codex/repair";
 import { shortErrorText } from "./pipeline";
 import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
@@ -1555,6 +1556,29 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const rebuilt = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files: rebuilt, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
+        break;
+      }
+
+      case "codex_repair_references": {
+        if (!setBusy(userId, msg.chatId, "codex", tr("codexRepair.busy"))) break;
+        try {
+          const settings = await loadSettings(userId);
+          const profile = settings.profiles.find(p => p.id === settings.activeProfileId);
+          if (!profile) break;
+          const changed = await repairCodexReferences(msg.chatId, userId, profile.codexRelationsTable);
+          if (changed.length) {
+            invalidateCodexInjectionCache(msg.chatId);
+            await publishCodexPool(msg.chatId, userId, profile, changed, "edit");
+            await syncCodexEntries(msg.chatId, userId, profile.codexRelationsTable);
+          }
+          await notify(userId, "success", changed.length ? tr("codexRepair.success") : tr("codexRepair.noChanges"));
+        } finally {
+          invalidateCodexInjectionCache(msg.chatId);
+          clearBusy(userId, msg.chatId, "codex");
+          const files = await readCodexFilesRaw(msg.chatId, userId);
+          send({ type: "codex_files", chatId: msg.chatId, files, revision: getCodexRevision(msg.chatId) }, userId);
+          await pushState(userId, msg.chatId);
+        }
         break;
       }
 

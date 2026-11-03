@@ -106,13 +106,14 @@ interface CodexUndoSnapshot extends CodexBackup, CodexUndoInfo {
 
 /** Snapshot the codex before a run so a bad pass can be rolled back. Best
  * effort: a snapshot failure must never block the run it precedes. */
-export async function snapshotCodexForUndo(chatId: string, userId: string, reason: string): Promise<void> {
+export async function snapshotCodexForUndo(chatId: string, userId: string, reason: string, required = false): Promise<void> {
   try {
     const backup = await buildCodexBackup(chatId, userId);
     const cursor = await loadCursor(chatId, userId).catch(() => null);
     const snap: CodexUndoSnapshot = { ...backup, reason, ...(cursor ? { cursor } : {}) };
     await spindle.userStorage.setJson(undoPath(chatId), snap, { indent: 0, userId });
   } catch (err) {
+    if (required) throw err;
     warn(`codex undo snapshot failed for ${chatId.slice(0, 8)}: ${describeError(err)}`);
   }
 }

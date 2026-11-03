@@ -1,4 +1,13 @@
 {
+  "codexRepair": {
+    "title": "Repair references",
+    "action": "Repair dangling references",
+    "help": "Restore missing characters, locations, and things as name-only records, preserving their relationships and secrets. Restored records start with injection off. No model call or rebuild is needed. Undo restores the previous Codex.",
+    "busy": "Repairing Codex references…",
+    "unreadable": "Cannot repair references until these files can be read: {files}",
+    "success": "References repaired. You can review the restored names in Entities or undo this repair.",
+    "noChanges": "No dangling references to repair."
+  },
   "backend": {
     "regex": {
       "searchChanged": "Regex scripts changed while searching. Refresh to try again."
@@ -342,7 +351,7 @@
         "thatIsNotValidJson": "Invalid JSON: {describeError}",
         "validationFailed": "Validation failed: {errors0}{extra}",
         "savedButCouldNotBeReadSo": "Saved, but couldn''t read {names}. Cross-file checks skipped.",
-        "savedWithDanglingReferenceToFixIn": "Saved with {length} dangling reference{length, plural, one {} other {s}}",
+        "savedWithDanglingReferenceToFixIn": "Saved with {length} dangling reference{length, plural, one {} other {s}}. Use Codex → Manage → Repair dangling references.",
         "memoriaSavedJson": "Saved {file}.json",
         "memoriaIsClearingTheCodex": "Clearing Codex",
         "memoriaCouldnTClearCodexFileTry": "Couldn''t clear {length} Codex file{length, plural, one {} other {s}}. Retry.",

@@ -706,7 +706,7 @@ export interface DanglingRef {
   file: CodexFileKey;
 }
 
-function collectDangling(bundle: CodexBundle): DanglingRef[] {
+export function collectDangling(bundle: CodexBundle): DanglingRef[] {
   const ids = collectEntityIds(bundle);
   const out: DanglingRef[] = [];
   const check = (ref: string, path: string, file: CodexFileKey): void => {
@@ -748,6 +748,25 @@ function formatDangling(d: DanglingRef): string {
  */
 export function checkIntegrity(bundle: CodexBundle): string[] {
   return collectDangling(bundle).map(formatDangling);
+}
+
+/** Restore only the identity already named by a missing link. Never invent
+ * story facts or delete the relationship/secret that contains the reference. */
+export function restoreMissingEntities(bundle: CodexBundle): CodexFileKey[] {
+  const changed = new Set<CodexFileKey>();
+  for (const { ref } of collectDangling(bundle)) {
+    if (!isEntityRef(ref)) continue;
+    const namespace = ref.split(":")[0];
+    const file = namespace === "char" ? "characters" : namespace === "loc" ? "locations" : "things";
+    if (bundle[file].entities.some((entity) => entity.id === ref)) continue;
+    bundle[file].entities.push({ id: ref, name: ref.slice(ref.indexOf(":") + 1).replace(/_/g, " "), noInject: true });
+    changed.add(file);
+  }
+  // Old free-text fields can contain malformed IDs. They support plain names.
+  for (const file of ["knowledge", "timeline"] as const) {
+    if (repairDanglingRefs(bundle, new Set([file])).length) changed.add(file);
+  }
+  return [...changed];
 }
 
 /**
