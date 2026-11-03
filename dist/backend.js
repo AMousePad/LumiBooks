@@ -9144,6 +9144,26 @@ async function saveCursor(chatId, cursor, userId) {
   };
   await spindle.userStorage.setJson(cursorPath(chatId), trimmed, { indent: 0, userId });
 }
+async function refreshCodexExclusions(chatId, userId, messages) {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  return withCursorLock(chatId, userId, async () => {
+    const cursor = await loadCursor(chatId, userId);
+    let changed = false;
+    for (const record of cursor.consumedSigs) {
+      const live = byId.get(record.id);
+      if (!live)
+        continue;
+      const excluded = live.metadata?.lmb_excluded === true;
+      if (record.excluded === true === excluded)
+        continue;
+      record.excluded = excluded;
+      changed = true;
+    }
+    if (changed)
+      await saveCursor(chatId, cursor, userId);
+    return cursor;
+  });
+}
 async function readJsonFileRaw(path, userId) {
   let exists;
   try {
@@ -9295,7 +9315,7 @@ async function inheritCodex(fromChatId, toChatId, userId, remapId, reconcileUnti
       const mapped = remapId(rec.id);
       if (!mapped)
         break;
-      sigs.push({ id: mapped, sig: rec.sig });
+      sigs.push({ ...rec, id: mapped });
     }
     const mappedLast = cursor.lastMsgId ? remapId(cursor.lastMsgId) : null;
     const mappedPrefix = cursor.prefixMsgId ? remapId(cursor.prefixMsgId) : null;
@@ -16285,9 +16305,16 @@ async function ensureCodexEntriesSynced(chatId, userId, profile) {
 }
 async function planRun(chatId, userId, lagUnit, lagValue) {
   const messages = await spindle.chat.getMessages(chatId);
-  const cursor = await loadCursor(chatId, userId);
+  const cursor = await refreshCodexExclusions(chatId, userId, messages);
   const byId = new Map(messages.map((m) => [m.id, m]));
   const posById = new Map(messages.map((m, i) => [m.id, i]));
+  const removedExclusions = new Set(cursor.consumedSigs.filter((rec) => rec.excluded && !byId.has(rec.id)).map((rec) => rec.id));
+  if (removedExclusions.size) {
+    cursor.consumedSigs = cursor.consumedSigs.filter((rec) => !removedExclusions.has(rec.id));
+    if (cursor.lastMsgId && removedExclusions.has(cursor.lastMsgId)) {
+      cursor.lastMsgId = cursor.consumedSigs.slice().reverse().find((rec) => byId.has(rec.id))?.id ?? cursor.prefixMsgId;
+    }
+  }
   const consumedBeforeRewind = cursor.consumedSigs;
   let reconcile = cursor.pendingReconcile;
   let divergedAt = -1;
@@ -16615,7 +16642,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
   }
   for (let i = plan.startPos;i <= lastIdx; i++) {
     const m = plan.messages[i];
-    plan.cursor.consumedSigs.push({ id: m.id, sig: msgSig(m.role, m.content || "") });
+    plan.cursor.consumedSigs.push({ id: m.id, sig: msgSig(m.role, m.content || ""), excluded: isExcluded(m) });
   }
   plan.cursor.lastMsgId = plan.messages[lastIdx].id;
   const reconcileUntilPos = plan.cursor.reconcileUntilMsgId ? plan.messages.findIndex((m) => m.id === plan.cursor.reconcileUntilMsgId) : -1;
@@ -16632,6 +16659,11 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     if (liveCursor) {
       plan.cursor.fileStates = liveCursor.fileStates;
       plan.cursor.frozenAtRuns = liveCursor.frozenAtRuns;
+      const liveExclusions = new Map(liveCursor.consumedSigs.map((rec) => [rec.id, rec.excluded]));
+      for (const rec of plan.cursor.consumedSigs) {
+        if (liveExclusions.has(rec.id))
+          rec.excluded = liveExclusions.get(rec.id);
+      }
     }
     plan.cursor.relationsTableMode = profile.codexRelationsTable;
     plan.cursor.lastRunAt = Date.now();
@@ -19030,10 +19062,13 @@ spindle.onFrontendMessage(async (raw, userId) => {
           } else {
             delete next["lmb_excluded"];
           }
-          await spindle.chat.updateMessage(msg.chatId, id, { metadata: next, skipChunkRebuild: true }).catch((err) => {
+          await spindle.chat.updateMessage(msg.chatId, id, { metadata: next, skipChunkRebuild: true }).then(() => {
+            m.metadata = next;
+          }).catch((err) => {
             warn(`set_message_excluded: updateMessage failed for ${id}: ${describeError(err)}`);
           });
         }
+        await refreshCodexExclusions(msg.chatId, userId, messages);
         if (hideToUnhide.length > 0) {
           await unhideCoveredMessages(msg.chatId, hideToUnhide, userId).catch(() => {});
         }

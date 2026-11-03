@@ -95,7 +95,7 @@ import {
   runCodexTidy,
   setCodexFileState,
 } from "./codex/index";
-import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock } from "./codex/store";
+import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { repairCodexReferences } from "./codex/repair";
@@ -1249,10 +1249,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
           } else {
             delete next["lmb_excluded"];
           }
-          await spindle.chat.updateMessage(msg.chatId, id, { metadata: next, skipChunkRebuild: true }).catch((err) => {
+          await spindle.chat.updateMessage(msg.chatId, id, { metadata: next, skipChunkRebuild: true }).then(() => { m.metadata = next; }).catch((err) => {
             warn(`set_message_excluded: updateMessage failed for ${id}: ${describeError(err)}`);
           });
         }
+        await refreshCodexExclusions(msg.chatId, userId, messages);
         if (hideToUnhide.length > 0) {
           await unhideCoveredMessages(msg.chatId, hideToUnhide, userId).catch(() => {});
         }

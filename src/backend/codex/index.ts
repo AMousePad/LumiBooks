@@ -10,7 +10,7 @@ import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars, p
 import type { ChatMessage } from "../coverage";
 import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../coverage";
 import type { CodexCursor, CodexFileState } from "./store";
-import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock } from "./store";
+import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./store";
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
 import { CodexContextError, CodexValidationError, ToolProtocolError, codexMaxInputTokens, resolveCodexConnection, runCodexAgent } from "./agent";
 import {
@@ -191,9 +191,17 @@ interface PlannedRun {
  */
 async function planRun(chatId: string, userId: string, lagUnit: "messages" | "tokens", lagValue: number): Promise<PlannedRun> {
   const messages = await spindle.chat.getMessages(chatId);
-  const cursor = await loadCursor(chatId, userId);
+  const cursor = await refreshCodexExclusions(chatId, userId, messages);
   const byId = new Map(messages.map((m) => [m.id, m] as const));
   const posById = new Map(messages.map((m, i) => [m.id, i] as const));
+
+  const removedExclusions = new Set(cursor.consumedSigs.filter(rec => rec.excluded && !byId.has(rec.id)).map(rec => rec.id));
+  if (removedExclusions.size) {
+    cursor.consumedSigs = cursor.consumedSigs.filter(rec => !removedExclusions.has(rec.id));
+    if (cursor.lastMsgId && removedExclusions.has(cursor.lastMsgId)) {
+      cursor.lastMsgId = cursor.consumedSigs.slice().reverse().find(rec => byId.has(rec.id))?.id ?? cursor.prefixMsgId;
+    }
+  }
 
   // Kept before the rewind slices consumedSigs: used to resolve startPos to a
   // still-live anchor when the chosen anchor id was itself deleted.
@@ -628,7 +636,7 @@ async function runChunk(
   // Consume the full positional range so skipped empty messages don't linger.
   for (let i = plan.startPos; i <= lastIdx; i++) {
     const m = plan.messages[i]!;
-    plan.cursor.consumedSigs.push({ id: m.id, sig: msgSig(m.role, m.content || "") });
+    plan.cursor.consumedSigs.push({ id: m.id, sig: msgSig(m.role, m.content || ""), excluded: isExcluded(m) });
   }
   plan.cursor.lastMsgId = plan.messages[lastIdx]!.id;
   const reconcileUntilPos = plan.cursor.reconcileUntilMsgId
@@ -650,6 +658,10 @@ async function runChunk(
     if (liveCursor) {
       plan.cursor.fileStates = liveCursor.fileStates;
       plan.cursor.frozenAtRuns = liveCursor.frozenAtRuns;
+      const liveExclusions = new Map(liveCursor.consumedSigs.map(rec => [rec.id, rec.excluded]));
+      for (const rec of plan.cursor.consumedSigs) {
+        if (liveExclusions.has(rec.id)) rec.excluded = liveExclusions.get(rec.id);
+      }
     }
     plan.cursor.relationsTableMode = profile.codexRelationsTable;
     plan.cursor.lastRunAt = Date.now();
