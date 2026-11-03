@@ -750,21 +750,32 @@ export function checkIntegrity(bundle: CodexBundle): string[] {
   return collectDangling(bundle).map(formatDangling);
 }
 
-/** Restore only the identity already named by a missing link. Never invent
- * story facts or delete the relationship/secret that contains the reference. */
-export function restoreMissingEntities(bundle: CodexBundle): CodexFileKey[] {
+/** Deleted entities stay deleted. Only structural links are removed; prose,
+ * events, and knowledge facts remain. A deletion save can limit cleanup to
+ * the IDs it actually removed, leaving unrelated problems for explicit repair. */
+export function pruneDanglingReferences(bundle: CodexBundle, only?: ReadonlySet<string>): CodexFileKey[] {
+  const ids = collectEntityIds(bundle);
   const changed = new Set<CodexFileKey>();
-  for (const { ref } of collectDangling(bundle)) {
-    if (!isEntityRef(ref)) continue;
-    const namespace = ref.split(":")[0];
-    const file = namespace === "char" ? "characters" : namespace === "loc" ? "locations" : "things";
-    if (bundle[file].entities.some((entity) => entity.id === ref)) continue;
-    bundle[file].entities.push({ id: ref, name: ref.slice(ref.indexOf(":") + 1).replace(/_/g, " "), noInject: true });
+  const missing = (ref: string): boolean => looksLikeEntityRef(ref) && !ids.has(ref) && (!only || only.has(ref));
+  const keep = (ref: string, file: CodexFileKey): boolean => {
+    if (!missing(ref)) return true;
     changed.add(file);
+    return false;
+  };
+  bundle.relations.relations = bundle.relations.relations.filter(relation => {
+    if (relation.type === "pair") return keep(relation.a, "relations") && keep(relation.b, "relations");
+    relation.members = relation.members.filter(ref => keep(ref, "relations"));
+    if (relation.roles) relation.roles = Object.fromEntries(Object.entries(relation.roles).filter(([ref]) => keep(ref, "relations")));
+    return relation.members.length >= 2;
+  });
+  for (const item of bundle.knowledge.items) {
+    if (item.knownBy) item.knownBy = item.knownBy.filter(ref => keep(ref, "knowledge"));
+    if (item.hiddenFrom) item.hiddenFrom = item.hiddenFrom.filter(ref => keep(ref, "knowledge"));
+    if (item.falseBeliefs) item.falseBeliefs = item.falseBeliefs.filter(belief => keep(belief.who, "knowledge"));
   }
-  // Old free-text fields can contain malformed IDs. They support plain names.
-  for (const file of ["knowledge", "timeline"] as const) {
-    if (repairDanglingRefs(bundle, new Set([file])).length) changed.add(file);
+  for (const event of bundle.timeline.events) {
+    if (event.participants) event.participants = event.participants.filter(ref => keep(ref, "timeline"));
+    if (event.where && !keep(event.where, "timeline")) delete event.where;
   }
   return [...changed];
 }

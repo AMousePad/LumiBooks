@@ -210,7 +210,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     if (seen.has(record)) continue;
     // A model dropping or renaming a record must not delete a user's prose.
     const edited = mergeLorebookEdits(e.raw as unknown as Record<string, unknown>, e.meta.applied ?? {}, e.meta, { disabled: false, vectorOnly: false });
-    if (Object.keys(edited.state.overrides ?? {}).length) {
+    if (!cursor.discardedRecords?.includes(record) && Object.keys(edited.state.overrides ?? {}).length) {
       const constrained = mergeLorebookEdits(e.raw as unknown as Record<string, unknown>, {
         ...e.meta.applied, ...codexEntryPlacement(profile, e.raw.constant),
       }, e.meta, { disabled: disabledFor(e.meta.file), vectorOnly: profile.codexActivationMode === "vector_only" });

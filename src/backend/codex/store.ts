@@ -33,6 +33,8 @@ export type CodexFileState = "on" | "noInject" | "frozen";
 
 export interface CodexCursor {
   version: 1;
+  /** Explicit deletion overrides preservation of hand-edited lorebook orphans. */
+  discardedRecords?: string[];
   /** Id of the last consumed chat message, null before the first run. */
   lastMsgId: string | null;
   consumedSigs: ConsumedSig[];
@@ -153,6 +155,8 @@ export function normalizeCursor(raw: Partial<CodexCursor>): CodexCursor {
   }
   return {
     version: 1,
+    ...(Array.isArray(raw.discardedRecords) && raw.discardedRecords.length
+      ? { discardedRecords: [...new Set(raw.discardedRecords.filter((record): record is string => typeof record === "string"))] } : {}),
     lastMsgId: typeof raw.lastMsgId === "string" && raw.lastMsgId ? raw.lastMsgId : null,
     consumedSigs: Array.isArray(raw.consumedSigs)
       ? raw.consumedSigs.filter(

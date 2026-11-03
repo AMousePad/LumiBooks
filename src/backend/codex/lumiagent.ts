@@ -12,7 +12,7 @@ const SURFACE = "lumi_books.codex";
 const manifest = {
   extension: { id: "lumi_books", name: "LumiBooks" },
   surfaces: [{ id: SURFACE, label: "Codex lorebook records", scope: "global",
-    description: "Editable Codex records grouped by chat. Edit content, key, keysecondary, constant, vectorized, disabled, position, depth, or role. Changes survive Memoria updates. For vector-only recall set constant=false, vectorized=true, key=[], keysecondary=[]. Avoid broad keywords and participant names shared by many records. Set repair_references=true on any record to repair its chat with Undo, or reset_overrides=true to resume generated fields on that record." }],
+    description: "Editable Codex records grouped by chat. Edit content, key, keysecondary, constant, vectorized, disabled, position, depth, or role. Changes survive Memoria updates. For vector-only recall set constant=false, vectorized=true, key=[], keysecondary=[]. Avoid broad keywords and participant names shared by many records. Set repair_references=true on any record to remove dangling links to deleted entities in its chat, with Undo. Deleted entities are not recreated. Set reset_overrides=true to resume generated fields on that record." }],
 };
 
 export async function handleLumiAgentCodex(request: Record<string, unknown>, changed: (userId: string, chatId: string) => void): Promise<unknown> {

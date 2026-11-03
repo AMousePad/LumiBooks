@@ -36,9 +36,10 @@ export async function runCodexFixScenarios(h: {
       timeline: JSON.stringify({ events: [{ when: "Now", event: "TIMELINE_FIX_MARKER" }] }),
     } } }, "codex_files");
   const repaired = await response({ type: "codex_repair_references", chatId }, "codex_files");
-  assert(JSON.parse(repaired.files.characters).entities.some((e: any) => e.id === "char:bob" && e.noInject));
-  assert.equal(JSON.parse(repaired.files.relations).relations.length, 1);
-  pass("reference repair preserves relationships and restores missing names through the real worker");
+  assert(!JSON.parse(repaired.files.characters).entities.some((e: any) => e.id === "char:bob"));
+  assert.equal(JSON.parse(repaired.files.relations).relations.length, 0);
+  assert(JSON.parse(repaired.files.timeline).events.some((e: any) => e.event === "TIMELINE_FIX_MARKER"));
+  pass("reference repair removes dangling links while keeping deleted entities absent and preserving timeline events");
   const bookId = (await api(`/api/v1/chats/${chatId}`)).metadata.lumibooks_codex_book_id;
   assert((await api(`/api/v1/world-books/${bookId}`)).name.includes("Synthetic integration character - Codex fixes"));
   pass("created Codex book title includes the actual character and chat names");
@@ -66,6 +67,19 @@ export async function runCodexFixScenarios(h: {
   await response({ type: "codex_write_file", chatId, file: "characters", content: JSON.stringify({ entities: [{ id: "char:alice", name: "Alice", description: "Generated change" }, { id: "char:bob", name: "Bob", noInject: true }] }) }, "codex_files");
   assert.equal((await entries()).find((e: any) => e.id === alice.id).content, "USER_LOREBOOK_CORRECTION");
   assert.deepEqual((await entries()).find((e: any) => e.id === alice.id).key, ["specific fact"]);
+  await response({ type: "codex_write_file", chatId, file: "relations", content: JSON.stringify({ relations: [{ type: "pair", a: "char:alice", b: "char:bob", kind: "friend", state: "close" }] }) }, "codex_files");
+  await response({ type: "codex_write_file", chatId, file: "knowledge", content: JSON.stringify({ items: [{ fact: "KEEP_KNOWLEDGE_FACT", knownBy: ["char:alice", "char:bob"] }] }) }, "codex_files");
+  const bob = (await entries()).find((entry: any) => entry.comment === "[Codex] Character: Bob");
+  await api(`/api/v1/world-books/${bookId}/entries/${bob.id}`, "PUT", { content: "Edited Bob still must be deleted", disabled: false });
+  const deleted = await response({ type: "codex_write_file", chatId, file: "characters", content: JSON.stringify({ entities: [{ id: "char:alice", name: "Alice", description: "Generated change" }] }) }, "codex_files");
+  assert.equal(JSON.parse(deleted.files.relations).relations.length, 0);
+  assert.deepEqual(JSON.parse(deleted.files.knowledge).items[0].knownBy, ["char:alice"]);
+  assert.equal(JSON.parse(deleted.files.knowledge).items[0].fact, "KEEP_KNOWLEDGE_FACT");
+  assert(!(await entries()).some((entry: any) => entry.comment === "[Codex] Character: Bob"));
+  const undone = await response({ type: "codex_undo", chatId }, "codex_files");
+  assert(JSON.parse(undone.files.characters).entities.some((e: any) => e.id === "char:bob"));
+  assert.equal(JSON.parse(undone.files.relations).relations.length, 1);
+  pass("deleting a Codex entity automatically removes its references and Undo restores the entity with its links");
   const vectorState = await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector_only" } });
   assert.equal(vectorState.codexInjectedTokens, 0);
   assert((await entries()).every((e: any) => !e.constant && e.vectorized && e.key.length === 0 && e.keysecondary.length === 0));

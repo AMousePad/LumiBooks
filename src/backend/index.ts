@@ -98,7 +98,7 @@ import {
 import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
-import { repairCodexReferences } from "./codex/repair";
+import { repairCodexReferences, saveCodexEdit } from "./codex/repair";
 import { registerLumiAgentCodex } from "./codex/lumiagent";
 import { applyLessonDelivery } from "./lessons";
 import { shortErrorText } from "./pipeline";
@@ -1444,65 +1444,71 @@ spindle.onFrontendMessage(async (raw, userId) => {
           send({ type: "error", text: tr("backend.index.messages.unknownCodexFile", { file: msg.file }) }, userId);
           break;
         }
-        if (getBusy(userId).some((b) => b.kind === "codex" && b.chatId === msg.chatId)) {
+        if (!setBusy(userId, msg.chatId, "codex", tr("codexRepair.saving"))) {
           await notify(userId, "warn", tr("backend.index.messages.memoriaIsUpdatingTheCodexSaveAgain"));
           break;
         }
-        const cur = await loadSettings(userId);
-        const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
-        const profileMode = profile ? profile.codexRelationsTable : true;
-        // Hand-saves validate against the DISK mode so the file stays
-        // consistent with its siblings. Overwriting a non-null recorded mode
-        // here would cancel a pending migration and brick the old-mode files.
-        const cursor = await loadCursor(msg.chatId, userId);
-        const relationsTable = cursor.relationsTableMode ?? profileMode;
-        let parsed: unknown;
+        let files: Record<string, string>;
         try {
-          parsed = JSON.parse(msg.content);
-        } catch (err) {
-          await notify(userId, "error", tr("backend.index.messages.thatIsNotValidJson", { describeError: describeError(err) }));
-          break;
-        }
-        const result = validateCodexFile(msg.file, parsed, { relationsTable });
-        if (!result.ok) {
-          const extra = result.errors.length > 1 ? tr("backend.index.extra.more", { length1: result.errors.length - 1 }) : "";
-          await notify(userId, "error", tr("backend.index.messages.validationFailed", { errors0: result.errors[0], extra: extra }));
-          break;
-        }
-        await saveCodexFile(msg.chatId, msg.file, result.value, userId);
-        invalidateCodexInjectionCache(msg.chatId);
-        // A hand-seeded codex must count as existing: injection and status key
-        // off the cursor.
-        await withCursorLock(msg.chatId, userId, async () => {
-          const cur = await loadCursor(msg.chatId, userId);
-          if (cur.relationsTableMode === null) {
-            cur.relationsTableMode = relationsTable;
-            await saveCursor(msg.chatId, cur, userId);
+          const cur = await loadSettings(userId);
+          const profile = cur.profiles.find((p) => p.id === cur.activeProfileId);
+          const profileMode = profile ? profile.codexRelationsTable : true;
+          // Hand-saves validate against the DISK mode so the file stays
+          // consistent with its siblings. Overwriting a non-null recorded mode
+          // here would cancel a pending migration and brick the old-mode files.
+          const cursor = await loadCursor(msg.chatId, userId);
+          const relationsTable = cursor.relationsTableMode ?? profileMode;
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(msg.content);
+          } catch (err) {
+            await notify(userId, "error", tr("backend.index.messages.thatIsNotValidJson", { describeError: describeError(err) }));
+            break;
           }
-        });
-        if (profile) await publishCodexPool(msg.chatId, userId, profile, [msg.file], "edit");
-        try {
-          await syncCodexEntries(msg.chatId, userId, relationsTable);
-        } catch (err) {
-          warn(`codex_write_file entry sync failed: ${describeError(err)}`);
-          await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
-        }
-        const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
-        if (problems.length > 0) {
-          // A dangling count computed against a bundle missing corrupt siblings
-          // would blame references whose targets are fine on disk. Point at the
-          // real culprit instead.
-          const names = problems.map((p) => `${p.file}.json`).join(", ");
-          await notify(userId, "warn", tr("backend.index.messages.savedButCouldNotBeReadSo", { names: names }));
-        } else {
-          const dangling = checkIntegrity(bundle);
-          if (dangling.length > 0) {
-            await notify(userId, "warn", tr("backend.index.messages.savedWithDanglingReferenceToFixIn", { length: dangling.length }));
+          const result = validateCodexFile(msg.file, parsed, { relationsTable });
+          if (!result.ok) {
+            const extra = result.errors.length > 1 ? tr("backend.index.extra.more", { length1: result.errors.length - 1 }) : "";
+            await notify(userId, "error", tr("backend.index.messages.validationFailed", { errors0: result.errors[0], extra: extra }));
+            break;
+          }
+          const changedFiles = await saveCodexEdit(msg.chatId, userId, msg.file, result.value, relationsTable);
+          invalidateCodexInjectionCache(msg.chatId);
+          // A hand-seeded codex must count as existing: injection and status key
+          // off the cursor.
+          await withCursorLock(msg.chatId, userId, async () => {
+            const cur = await loadCursor(msg.chatId, userId);
+            if (cur.relationsTableMode === null) {
+              cur.relationsTableMode = relationsTable;
+              await saveCursor(msg.chatId, cur, userId);
+            }
+          });
+          if (profile) await publishCodexPool(msg.chatId, userId, profile, changedFiles, "edit");
+          try {
+            await syncCodexEntries(msg.chatId, userId, relationsTable);
+          } catch (err) {
+            warn(`codex_write_file entry sync failed: ${describeError(err)}`);
+            await notify(userId, "error", tr("backend.index.messages.memoriaCouldnTSyncTheCodexTo", { shortErrorText: shortErrorText(err) }));
+          }
+          const { bundle, problems } = await loadCodex(msg.chatId, userId, { relationsTable });
+          if (problems.length > 0) {
+            // A dangling count computed against a bundle missing corrupt siblings
+            // would blame references whose targets are fine on disk. Point at the
+            // real culprit instead.
+            const names = problems.map((p) => `${p.file}.json`).join(", ");
+            await notify(userId, "warn", tr("backend.index.messages.savedButCouldNotBeReadSo", { names: names }));
           } else {
-            await notify(userId, "success", tr("backend.index.messages.memoriaSavedJson", { file: msg.file }));
+            const dangling = checkIntegrity(bundle);
+            if (dangling.length > 0) {
+              await notify(userId, "warn", tr("backend.index.messages.savedWithDanglingReferenceToFixIn", { length: dangling.length }));
+            } else {
+              await notify(userId, "success", tr("backend.index.messages.memoriaSavedJson", { file: msg.file }));
+            }
           }
+          files = await readCodexFilesRaw(msg.chatId, userId);
+        } finally {
+          invalidateCodexInjectionCache(msg.chatId);
+          clearBusy(userId, msg.chatId, "codex");
         }
-        const files = await readCodexFilesRaw(msg.chatId, userId);
         send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq, revision: getCodexRevision(msg.chatId) }, userId);
         await pushState(userId, msg.chatId);
         break;
