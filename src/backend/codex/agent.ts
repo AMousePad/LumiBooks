@@ -1,4 +1,5 @@
 import { t as tr } from "../../i18n";
+import { readCodexLorebookEdits } from "./sync";
 import { diagnosticErrorReason, recordDiagnostic } from "../diagnostics";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
@@ -660,9 +661,9 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   // the user message carries codex JSON and raw story text that must never be
   // macro-expanded.
   const system = await resolveSystemMacros(buildCodexSystemPrompt(promptCtx), chatId, userId);
-  const userText = opts.userTextOverride ?? buildCodexUserMessage(
+  const userText = (opts.userTextOverride ?? buildCodexUserMessage(
     promptCtx, opts.bundle, opts.chunk, opts.chunkLabel, opts.chunkFirstIndex, opts.notes, opts.lore, opts.storySoFar,
-  );
+  )) + await readCodexLorebookEdits(chatId, userId).catch(() => "");
   const maxInput = codexMaxInputTokens(profile);
   const promptTokens = approximateTokensFromChars(system.length + userText.length);
   if (promptTokens > maxInput) throw new CodexContextError(promptTokens, maxInput);

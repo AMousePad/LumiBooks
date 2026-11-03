@@ -99,6 +99,7 @@ import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, 
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
 import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { repairCodexReferences } from "./codex/repair";
+import { registerLumiAgentCodex } from "./codex/lumiagent";
 import { shortErrorText } from "./pipeline";
 import { CODEX_FILE_KEYS, checkIntegrity, isCodexFileKey, validateCodexFile } from "./codex/schema";
 import { registerForkAnomalyCallback } from "./fork";
@@ -1779,4 +1780,8 @@ registerForkAnomalyCallback((userId, text) => {
 });
 
 registerHookEndpoints();
+registerLumiAgentCodex((userId, chatId) => {
+  invalidateCodexInjectionCache(chatId);
+  void pushState(userId, chatId);
+});
 info("LumiBooks loaded.");

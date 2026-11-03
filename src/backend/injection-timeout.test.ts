@@ -90,6 +90,7 @@ globalWithSpindle.spindle = {
   },
   onFrontendMessage(_handler: unknown): void {},
   rpcPool: {
+    handle() {},
     sync(..._args: unknown[]): void {},
   },
   log: {

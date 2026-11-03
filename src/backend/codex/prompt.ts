@@ -480,6 +480,7 @@ function relationLine(r: CodexRelation, names: Map<string, string>): string {
 export interface CodexRecordRender {
   /** Stable identity of the record among this chat's synced entries. */
   record: string;
+  legacyRecord?: string;
   file: CodexFileKey;
   comment: string;
   content: string;
@@ -609,8 +610,10 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
   }
 
   for (const w of bundle.world.entries) {
+    const legacyRecord = recordKey("world", w.topic, taken);
     out.push({
-      record: recordKey("world", w.topic, taken),
+      record: w.rid ? `world:${w.rid}` : legacyRecord,
+      legacyRecord,
       file: "world",
       comment: `[Codex] World: ${w.topic}`,
       content: `[Story Bible - World rules: ${w.topic}]\n- ${w.topic}: ${w.facts.join(" | ")}`,
@@ -628,18 +631,15 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       bits.push(`${resolveRefName(names, b.who)} wrongly believes: ${b.believes}`);
     }
     if (k.note) bits.push(k.note);
-    // Only ref-shaped participants become activation keys, prose would be junk keys.
-    const participants = [
-      ...(k.knownBy ?? []),
-      ...(k.hiddenFrom ?? []),
-      ...(k.falseBeliefs ?? []).map((b) => b.who),
-    ].filter((r) => ENTITY_REF_HEAD.test(r)).map((r) => resolveRefName(names, r));
+    // Participant names recur across secrets and make unrelated facts fire together.
+    const legacyRecord = recordKey("know", k.fact, taken);
     out.push({
-      record: recordKey("know", k.fact, taken),
+      record: k.rid ? `know:${k.rid}` : legacyRecord,
+      legacyRecord,
       file: "knowledge",
       comment: `[Codex] Secret: ${k.fact.slice(0, 60)}`,
       content: `[Story Bible - Who knows what]\n- ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
-      keys: uniqKeys([...participants, ...(k.keywords ?? [])]),
+      keys: uniqKeys(k.keywords ?? []),
       constant: false,
       disabled: false,
     });

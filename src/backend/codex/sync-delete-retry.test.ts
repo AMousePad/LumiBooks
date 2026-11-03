@@ -43,6 +43,7 @@ globalWithSpindle.spindle = {
   },
   sendToFrontend(): void {},
   userStorage: {
+    async setJson(): Promise<void> {},
     async exists(): Promise<boolean> {
       return false;
     },

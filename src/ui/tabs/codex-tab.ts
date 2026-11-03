@@ -742,6 +742,9 @@ function renderManage(
     disabled: busy || !state.codexExists,
   }));
   host.appendChild(repair.wrap);
+  const lorebook = section(tr("codexLorebook.title"));
+  lorebook.body.appendChild(textNode(tr("codexLorebook.help"), "lmb-help"));
+  host.appendChild(lorebook.wrap);
 
   const known = sources.some((s) => s.chatId === local.codexSourceId);
   if (!known) local.codexSourceId = "";

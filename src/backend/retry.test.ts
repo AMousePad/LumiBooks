@@ -20,7 +20,7 @@ beforeEach(async () => {
  entries = []; calls = 0; serial = 0; profile = makeDefaultProfile("higher", "test");
  profile.autoCreateArc = false; profile.retryCount = 0;
  (globalThis as any).spindle = {
-  log: { info() {}, warn: console.warn, error: console.error }, rpcPool: { sync() {} },
+  log: { info() {}, warn: console.warn, error: console.error }, rpcPool: { sync() {}, handle() {} },
   userStorage: { async setJson() {}, async getJson() { return settings(); } },
   chat: { async getMessages() { return []; } },
   chats: { async get() { return { id: chatId, metadata: { lumibooks_book_id: bookId, chat_world_book_ids: [bookId] } }; }, async update() {} },

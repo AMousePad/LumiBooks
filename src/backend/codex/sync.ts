@@ -15,15 +15,16 @@ import { codexPresence, loadCodex, loadCursor } from "./store";
 import { ensureCodexBookForChat, findCodexBookForChat, invalidateBookCache, listAllEntries } from "../world-book";
 import { describeError, warn } from "../runtime";
 import { recordDiagnostic } from "../diagnostics";
+import { mergeLorebookEdits, type LorebookEditState } from "./lorebook-edits";
 
 /** Identity payload stored on every synced entry. */
-interface CodexEntryMeta {
+interface CodexEntryMeta extends LorebookEditState {
   chatId: string;
   record: string;
   file: CodexFileKey;
 }
 
-function readEntryMeta(entry: WorldBookEntryDTO): CodexEntryMeta | null {
+export function readEntryMeta(entry: WorldBookEntryDTO): CodexEntryMeta | null {
   const ext = (entry.extensions || {}) as Record<string, unknown>;
   const raw = ext[CODEX_ENTRY_EXTENSION_KEY];
   if (!raw || typeof raw !== "object") return null;
@@ -34,7 +35,7 @@ function readEntryMeta(entry: WorldBookEntryDTO): CodexEntryMeta | null {
     ? (v.file as CodexFileKey)
     : null;
   if (!file) return null;
-  return { chatId: v.chatId, record: v.record, file };
+  return { chatId: v.chatId, record: v.record, file, applied: v.applied, overrides: v.overrides };
 }
 
 /** Serialize sync and wipe per chat: a run finishing while a hand-save lands
@@ -50,12 +51,6 @@ function withSyncLock<T>(userId: string, chatId: string, fn: () => Promise<T>): 
     if (syncChain.get(key) === guarded) syncChain.delete(key);
   });
   return tail;
-}
-
-function sameKeys(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
 }
 
 const DELETE_ATTEMPTS = 6;
@@ -95,8 +90,7 @@ async function listSyncedEntries(bookId: string, chatId: string, userId: string)
  * Mirror the codex JSON into per-record lorebook entries in the chat's book:
  * keyword-triggered entries for entities (relations folded in), world topics,
  * and knowledge items, plus constant entries for timeline and threads. The
- * JSON stays the source of truth; entries are recreated from it on every sync,
- * so hand edits to the entries themselves do not survive.
+ * Edited lorebook fields remain authoritative across generated updates.
  *
  * A codex with any unreadable file does not sync at all: records embed data
  * across files, so a partial bundle would erase the broken file's
@@ -141,6 +135,10 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   }
 
   const existing = await listSyncedEntries(bookId, chatId, userId);
+  const manifestPath = `codex/${chatId}/lorebook-sync.json`;
+  const manifest = await spindle.userStorage.getJson<{ bookId: string; records: string[]; suppressed: string[] }>(manifestPath, { userId });
+  const suppressed = new Set(manifest?.bookId === bookId ? manifest.suppressed ?? [] : []);
+  const previousRecords = new Set(manifest?.bookId === bookId ? manifest.records ?? [] : []);
   const byRecord = new Map<string, { raw: WorldBookEntryDTO; meta: CodexEntryMeta }>();
   const deleteDeadline = Date.now() + DELETE_RETRY_BUDGET_MS;
   let failedDeletes = 0;
@@ -161,19 +159,22 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     seen.add(rec.record);
     const disabled = disabledFor(rec.file) || rec.disabled;
     const placement = codexEntryPlacement(profile, rec.constant);
-    const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file };
-    const cur = byRecord.get(rec.record);
+    const cur = byRecord.get(rec.record) ?? (rec.legacyRecord ? byRecord.get(rec.legacyRecord) : undefined);
+    if (!cur && (previousRecords.has(rec.record) || (rec.legacyRecord && previousRecords.has(rec.legacyRecord)))) suppressed.add(rec.record);
+    if (!cur && suppressed.has(rec.record)) continue;
+    if (cur) seen.add(cur.meta.record);
+    const generated = { content: rec.content, comment: rec.comment, disabled, ...placement,
+      key: profile.codexActivationMode === "vector_only" ? [] : rec.keys, keysecondary: [] };
+    const { fields, state } = mergeLorebookEdits((cur?.raw ?? generated) as unknown as Record<string, unknown>, generated, cur?.meta ?? {}, {
+      disabled, vectorOnly: profile.codexActivationMode === "vector_only",
+    });
+    const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file, ...state };
     if (!cur) {
       try {
         await spindle.world_books.entries.create(
           bookId,
           {
-            content: rec.content,
-            comment: rec.comment,
-            disabled,
-            ...placement,
-            key: rec.keys,
-            keysecondary: [],
+            ...fields as typeof generated,
             extensions: { [CODEX_ENTRY_EXTENSION_KEY]: meta },
           },
           userId,
@@ -184,28 +185,15 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       }
       continue;
     }
-    const changed =
-      cur.raw.content !== rec.content
-      || (cur.raw.comment || "") !== rec.comment
-      || cur.raw.constant !== placement.constant
-      || (cur.raw.vectorized ?? false) !== placement.vectorized
-      || cur.raw.position !== placement.position
-      || cur.raw.depth !== placement.depth
-      || cur.raw.role !== placement.role
-      || cur.raw.disabled !== disabled
-      || !sameKeys(cur.raw.key ?? [], rec.keys)
-      || cur.meta.file !== rec.file;
+    const changed = Object.entries(fields).some(([key, value]) => JSON.stringify((cur.raw as unknown as Record<string, unknown>)[key]) !== JSON.stringify(value))
+      || JSON.stringify(cur.meta) !== JSON.stringify(meta);
     if (!changed) continue;
     const ext = (cur.raw.extensions || {}) as Record<string, unknown>;
     try {
       await spindle.world_books.entries.update(
         cur.raw.id,
         {
-          content: rec.content,
-          comment: rec.comment,
-          disabled,
-          ...placement,
-          key: rec.keys,
+          ...fields,
           extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta },
         },
         userId,
@@ -218,6 +206,17 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
 
   for (const [record, e] of byRecord) {
     if (seen.has(record)) continue;
+    // A model dropping or renaming a record must not delete a user's prose.
+    const edited = mergeLorebookEdits(e.raw as unknown as Record<string, unknown>, e.meta.applied ?? {}, e.meta, { disabled: false, vectorOnly: false });
+    if (Object.keys(edited.state.overrides ?? {}).length) {
+      const constrained = mergeLorebookEdits(e.raw as unknown as Record<string, unknown>, {
+        ...e.meta.applied, ...codexEntryPlacement(profile, e.raw.constant),
+      }, e.meta, { disabled: disabledFor(e.meta.file), vectorOnly: profile.codexActivationMode === "vector_only" });
+      await spindle.world_books.entries.update(e.raw.id, { ...constrained.fields,
+        extensions: { ...e.raw.extensions, [CODEX_ENTRY_EXTENSION_KEY]: { ...e.meta, ...constrained.state } },
+      }, userId);
+      continue;
+    }
     await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failedDeletes++;
       warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`);
@@ -228,6 +227,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       tr("backend.codex.sync.doSync.outdatedCodexEntrCouldNotBeRemoved", { failedDeletes: failedDeletes }),
     );
   }
+  await spindle.userStorage.setJson(manifestPath, { bookId, records: desired.map(r => r.record), suppressed: [...suppressed] }, { userId });
   void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
     numbers: { entries: desired.length },
     flags: { vector: profile.codexActivationMode === "vector", constant: profile.codexActivationMode === "always" } });
@@ -239,6 +239,7 @@ export function wipeCodexEntries(chatId: string, userId: string): Promise<void> 
 }
 
 async function doWipe(chatId: string, userId: string): Promise<void> {
+  await spindle.userStorage.setJson(`codex/${chatId}/lorebook-sync.json`, { bookId: "", records: [], suppressed: [] }, { userId });
   const bookId = await findCodexBookForChat(chatId, userId);
   if (!bookId) return;
   const existing = await listSyncedEntries(bookId, chatId, userId);
@@ -255,11 +256,22 @@ async function doWipe(chatId: string, userId: string): Promise<void> {
   }
 }
 
+export async function readCodexLorebookEdits(chatId: string, userId: string): Promise<string> {
+  const bookId = await findCodexBookForChat(chatId, userId);
+  if (!bookId) return "";
+  const edits: string[] = [];
+  for (const { raw, meta } of await listSyncedEntries(bookId, chatId, userId)) {
+    const manual = typeof meta.overrides?.content === "string" || (meta.applied?.content !== undefined && raw.content !== meta.applied.content);
+    if (manual) edits.push(`[${meta.record}]\n${raw.content}`);
+  }
+  return edits.length ? `\n\n${tr("codexLorebook.prompt")}\n${edits.join("\n\n")}` : "";
+}
+
 export type { CodexRecordRender };
 
 /** Host lorebook position 4 uses history depth; zero follows the last turn. */
 export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
-  return { ...activationFlags(profile.codexActivationMode, constant),
+  return { ...(profile.codexActivationMode === "vector_only" ? { constant: false, vectorized: true } : activationFlags(profile.codexActivationMode, constant)),
     position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
     role: "system" };

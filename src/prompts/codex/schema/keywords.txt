@@ -12,8 +12,9 @@ Rules:
 - Concrete nouns tied to THIS record: places, objects, epithets, events.
 - Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
   A record that matches everything is a record that means nothing.
-- The record's own name, aliases, and topic (and a knowledge item's participants)
-  match automatically - never repeat them as keywords.
+- The record's own name, aliases, and topic match automatically - never repeat
+  them as keywords. Knowledge participants do NOT automatically activate secrets.
+  Give each secret specific keywords about its fact, not everyone who knows it.
 - Never list other characters, other locations, or the whole cast: those records
   carry their own keywords and will retrieve themselves.
 - No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
@@ -21,4 +22,4 @@ Rules:
 
 Keywords are for FINDING the record, never for storing what it says. Every fact
 belongs in the record's own fields, written out in full.
-timeline.json and threads.json need no keywords, they are always in the prompt.
+timeline.json and threads.json need no keywords. Their retrieval mode is user-controlled.

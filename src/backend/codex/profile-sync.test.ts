@@ -60,6 +60,79 @@ beforeEach(async () => {
 });
 afterAll(() => { (globalThis as any).spindle = original; });
 
+test("lorebook edits survive model updates, profile changes, and stable row renames", async () => {
+  const { syncCodexEntries } = await import("./sync");
+  data.set(`codex/${chat}/world.json`, { entries: [{ rid: "r1", topic: "Weather", facts: ["Snow"] }] });
+  await syncCodexEntries(chat, user);
+  const weather = entries.find(e => e.extensions.lumibooks_codex.file === "world");
+  weather.content = "User correction: clear skies";
+  weather.key = ["winter weather"];
+  weather.keysecondary = ["mountain"];
+  weather.selective = true;
+  weather.extensions.other = { keep: true };
+  data.set(`codex/${chat}/world.json`, { entries: [{ rid: "r1", topic: "Mountain weather", facts: ["Rain"] }] });
+  profile.codexInjectionDepth = 7;
+  profile.codexInjectionPosition = "depth";
+  await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
+  await syncCodexEntries(chat, user);
+  expect(weather.content).toBe("User correction: clear skies");
+  expect(weather.key).toEqual(["winter weather"]);
+  expect(weather.keysecondary).toEqual(["mountain"]);
+  expect(weather.selective).toBe(true);
+  expect(weather.extensions.other).toEqual({ keep: true });
+  expect(weather.depth).toBe(7);
+  expect(weather.comment).toContain("Mountain weather");
+  expect(entries.filter(e => e.extensions.lumibooks_codex.file === "world")).toHaveLength(1);
+  await syncCodexEntries(chat, user);
+  expect(weather.content).toBe("User correction: clear skies");
+});
+
+test("vector-only removes every keyword and constant path, including edited and orphaned records", async () => {
+  const { syncCodexEntries } = await import("./sync");
+  data.set(`codex/${chat}/timeline.json`, { events: [{ when: "now", event: "A snowfall" }] });
+  await syncCodexEntries(chat, user);
+  const weather = entries.find(e => e.extensions.lumibooks_codex.file === "world");
+  weather.content = "User-owned weather";
+  weather.constant = true;
+  weather.key = ["everyone"];
+  await syncCodexEntries(chat, user);
+  data.set(`codex/${chat}/world.json`, { entries: [] });
+  profile.codexActivationMode = "vector_only";
+  await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
+  await syncCodexEntries(chat, user);
+  expect(entries.every(e => !e.constant && e.vectorized && e.key.length === 0 && e.keysecondary.length === 0)).toBe(true);
+  expect(entries.some(e => e.content === "User-owned weather")).toBe(true);
+});
+
+test("deleting a synced lorebook record does not recreate it on subsequent updates", async () => {
+  const { syncCodexEntries } = await import("./sync");
+  await syncCodexEntries(chat, user);
+  entries = entries.filter(e => e.extensions.lumibooks_codex.file !== "world");
+  await syncCodexEntries(chat, user);
+  await syncCodexEntries(chat, user);
+  expect(entries.some(e => e.extensions.lumibooks_codex.file === "world")).toBe(false);
+});
+
+test("LumiAgent can read and fix the Codex through validated lorebook fields", async () => {
+  const { syncCodexEntries } = await import("./sync");
+  const { handleLumiAgentCodex } = await import("./lumiagent");
+  const host = (globalThis as any).spindle;
+  const create = host.world_books.entries.create;
+  host.world_books.entries.create = async (bookId: string, value: any) => { const entry = await create(bookId, value); entry.world_book_id = bookId; return entry; };
+  host.world_books.entries.get = async (id: string) => entries.find(e => e.id === id) ?? null;
+  await syncCodexEntries(chat, user);
+  const itemId = entries[0].id;
+  const request = { userId: user, surfaceId: "lumi_books.codex", itemId, field: "key" };
+  expect(await handleLumiAgentCodex({ ...request, op: "write_field", value: ["specific term"] }, () => {})).toEqual({ ok: true });
+  expect((await handleLumiAgentCodex({ ...request, op: "read_item" }, () => {}) as any).value).toEqual(["specific term"]);
+  await expect(handleLumiAgentCodex({ ...request, op: "write_field", value: "bad keywords" }, () => {})).rejects.toThrow("string array");
+  await expect(handleLumiAgentCodex({ ...request, op: "write_field", field: "extensions", value: {} }, () => {})).rejects.toThrow("Unknown Codex field");
+  await handleLumiAgentCodex({ ...request, op: "write_field", field: "reset_overrides", value: true }, () => {});
+  expect(entries[0].key).not.toEqual(["specific term"]);
+  host.chats.get = async () => null;
+  await expect(handleLumiAgentCodex({ ...request, op: "read_item" }, () => {})).rejects.toThrow("not found");
+});
+
 test("recall modes survive record edits and preserve IDs, keywords and disabled files", async () => {
   const { syncCodexEntries } = await import("./sync");
   const ids = new Map<string, string>();

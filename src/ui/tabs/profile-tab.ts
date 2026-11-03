@@ -118,10 +118,19 @@ export function renderCodexSettings(
     tr("ui.tabs.profileTab.renderCodexSettings.yourActivatedLorebookEntriesRideEveryCodex");
   fields.appendChild(loreHint);
 
-  fields.appendChild(activationControl(tr("ui.tabs.profileTab.renderCodexSettings.codexRecall"), profile.codexActivationMode,
-    (codexActivationMode) => patch({ codexActivationMode })));
+  fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexRecall"), select({
+    value: profile.codexActivationMode,
+    options: [
+      { value: "always", label: tr("ui.activationControl.activationControl.always") },
+      { value: "keywords", label: tr("ui.activationControl.activationControl.keywords") },
+      { value: "vector", label: tr("ui.activationControl.activationControl.vectorKeywords") },
+      { value: "vector_only", label: tr("codexLorebook.vectorOnly") },
+    ],
+    onChange: value => patch({ codexActivationMode: value as LMBProfile["codexActivationMode"] }),
+  })));
   fields.appendChild(textNode(tr("ui.tabs.profileTab.renderCodexSettings.theActiveProfileSetsRecallForEnabled"), "lmb-field-hint"));
   if (profile.codexActivationMode === "vector") fields.appendChild(vectorSetupHint());
+  if (profile.codexActivationMode === "vector_only") fields.appendChild(textNode(tr("codexLorebook.vectorHelp"), "lmb-field-hint"));
   fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
     value: profile.codexInjectionPosition,
     options: [{ value: "lorebook", label: tr("ui.tabs.profileTab.renderCodexSettings.lorebookBefore") }, { value: "depth", label: tr("ui.tabs.profileTab.renderCodexSettings.atHistoryDepth") }, { value: "after_history", label: tr("ui.tabs.profileTab.renderCodexSettings.afterChatHistory") }],
