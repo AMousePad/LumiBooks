@@ -51,6 +51,12 @@ chapter unit tests exhaust all 63 nonempty selections across two small ghosts
 and a raw tail, with previews and deletion failures, and exercise competing
 preview saves and ghost-promotion races.
 
+Use `--codex-fixes-only` for reference repair, character-prefixed book names,
+editable lorebooks, the permission-checked LumiAgent bridge, vector-only
+activation without embeddings, excluded-message deletion, missing inheritance,
+and idempotent tutorial completion across worker restarts. The vector suite
+also checks semantic retrieval with empty keyword lists in vector-only mode.
+
 Success exits zero and writes `report.json`, including tested revisions, bundle
 hashes, scenario results, duration, and diagnostics counters. A failure exits
 nonzero and writes synthetic request/state evidence to `failure.json`. Artifacts

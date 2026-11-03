@@ -549,7 +549,7 @@ function recordKey(prefix: string, raw: string, taken: Set<string>): string {
  * The codex as retrievable records: one per entity (its relation lines folded
  * in, both directions), one per world topic, one per knowledge item, plus one
  * constant record each for timeline and threads. This is the source shape for
- * the lorebook sync - keys come from names/aliases/participants plus the
+ * the lorebook sync - keys come from names/aliases/topics plus the
  * record's own agent-written keywords.
  */
 export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptions): CodexRecordRender[] {

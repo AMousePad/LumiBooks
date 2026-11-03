@@ -612,7 +612,7 @@ export function bookNameFor(chatName: string | null | undefined, chatId: string,
   return `${WORLD_BOOK_NAME_PREFIX} - ${character ? `${character} - ` : ""}${suffix}`;
 }
 
-/** The codex mirror book: managed wholesale by sync, hence the loud name. */
+/** The Codex has a separate editable lorebook from the summary shelf. */
 export function codexBookNameFor(chatName: string | null | undefined, chatId: string, characterName?: string): string {
   const cleanName = (chatName ?? "").trim();
   const character = characterName?.trim().slice(0, 60);

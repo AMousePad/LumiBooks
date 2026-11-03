@@ -93,6 +93,15 @@ export async function runVectorScenarios(h: {
   assert(assembled.includes("DRAGON_RECORD_UPDATED") && !assembled.includes("DRAGON_RECORD_MARKER"));
   pass("editing a Codex record keeps its entry ID and vector setting and replaces stale indexed content");
 
+  await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector_only" } });
+  await api(`/api/v1/embeddings/world-books/${bookId}/reindex`, "POST", {});
+  await until("vector-only Codex indexing", entries, (list) => list.filter((e: any) => !e.disabled).every((e: any) => e.vector_index_status === "indexed"));
+  assert((await entries()).every((e: any) => !e.constant && e.vectorized && e.key.length === 0));
+  assembled = await prompt();
+  assert(assembled.includes("DRAGON_RECORD_UPDATED"));
+  assert(!assembled.includes("TIMELINE_RECORD_MARKER") && !assembled.includes("THREAD_RECORD_MARKER"));
+  pass("vector-only retrieves a semantic match with empty keyword lists and keeps unrelated timeline and threads out");
+
   for (const mode of ["always", "keywords", "vector"] as const) {
     await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: mode } }, (s) => s.activeProfile.codexActivationMode === mode);
     rows = await entries();

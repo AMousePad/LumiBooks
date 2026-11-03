@@ -111,6 +111,11 @@ test("deleting a synced lorebook record does not recreate it on subsequent updat
   await syncCodexEntries(chat, user);
   await syncCodexEntries(chat, user);
   expect(entries.some(e => e.extensions.lumibooks_codex.file === "world")).toBe(false);
+  data.set(`codex/${chat}/world.json`, { entries: [] });
+  await syncCodexEntries(chat, user);
+  data.set(`codex/${chat}/world.json`, { entries: [{ topic: "A new record", facts: ["A new fact"] }] });
+  await syncCodexEntries(chat, user);
+  expect(entries.some(e => e.content.includes("A new fact"))).toBe(true);
 });
 
 test("LumiAgent can read and fix the Codex through validated lorebook fields", async () => {
@@ -246,6 +251,7 @@ test("category switches refresh injection counts without invalidating cached fil
   invalidateCodexInjectionCache(chat);
   const revision = getCodexRevision(chat);
   const content = structuredClone(data.get(`codex/${chat}/world.json`));
+  await (await import("./sync")).syncCodexEntries(chat, user);
   expect((await getCodexTokenCounts(chat, user, profile)).constant).toBeGreaterThan(0);
   await setCodexFileState(chat, user, "world", "noInject");
   expect(getCodexRevision(chat)).toBe(revision);

@@ -29,7 +29,7 @@ import {
   type CodexRunNotes,
 } from "./prompt";
 import { loadSettings } from "../storage";
-import { syncCodexEntries, wipeCodexEntries } from "./sync";
+import { syncCodexEntries, wipeCodexEntries, readEntryMeta } from "./sync";
 import { snapshotCodexForUndo } from "./backup";
 import {
   AbortedSummarizerError,
@@ -39,7 +39,7 @@ import {
   type DryRunAssembly,
 } from "../summarizer";
 import { abortBusy, appendStreamText, clearBusy, drainChapterBacklog, getBusy, maybeRunArcCheck, registerAborter, setBusy, shortErrorText, updateProgressNumbers } from "../pipeline";
-import { findBookForChat, listAllEntries, listLmbEntries, type LMBEntry } from "../world-book";
+import { findBookForChat, findCodexBookForChat, listAllEntries, listLmbEntries, type LMBEntry } from "../world-book";
 import { publishCodexSnapshot, publishCodexUpdated, publishCodexWiped, type CodexChangeReason } from "../hooks";
 import { forkCodexPending, forkShelfPending } from "../fork";
 import { describeError, warn } from "../runtime";
@@ -1116,7 +1116,7 @@ async function maybeReconcileSweep(chatId: string, profile: LMBProfile, userId: 
 const INJECTION_CACHE_TTL_MS = 60_000;
 const INJECTION_CACHE_CAP = 200;
 const injectionTextCache = new Map<string, { at: number; text: string | null }>();
-const fileTokensCache = new Map<string, { at: number; userId: string; forceConstant: boolean; counts: CodexTokenCounts }>();
+const fileTokensCache = new Map<string, { at: number; userId: string; activationMode: LMBProfile["codexActivationMode"]; counts: CodexTokenCounts }>();
 const tokenCountEpochs = new Map<string, number>();
 
 /** Model changes do not change Codex prose, but they do change its token cost. */
@@ -1156,17 +1156,28 @@ export function invalidateCodexInjectionCache(chatId?: string, contentChanged = 
 export async function getCodexTokenCounts(chatId: string, userId: string, profile: LMBProfile): Promise<CodexTokenCounts> {
   const epoch = tokenCountEpochs.get(userId) ?? 0;
   const cached = fileTokensCache.get(chatId);
-  if (cached && cached.userId === userId && cached.forceConstant === (profile.codexActivationMode === "always") && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
+  if (cached && cached.userId === userId && cached.activationMode === profile.codexActivationMode && Date.now() - cached.at < INJECTION_CACHE_TTL_MS) return cached.counts;
   let counts: CodexTokenCounts = { files: {}, constant: 0, approximate: false };
   if ((await codexPresence(chatId, userId)) === "present") {
     const cursor = await loadCursor(chatId, userId);
     const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: cursor.relationsTableMode ?? profile.codexRelationsTable });
     counts = await measureCodexTokens(bundle, userId, cursor.fileStates, (profile.codexActivationMode === "always"));
+    if (profile.codexActivationMode === "vector_only") counts.constant = 0;
+    const bookId = await findCodexBookForChat(chatId, userId);
+    if (bookId) {
+      counts.constant = 0;
+      for (const entry of await listAllEntries(bookId, userId)) {
+        if (readEntryMeta(entry)?.chatId !== chatId || entry.disabled || !entry.constant) continue;
+        const count = await countCodexText(entry.content, userId);
+        counts.constant += count.tokens;
+        counts.approximate ||= count.approximate;
+      }
+    }
     counts.approximate ||= problems.length > 0;
   }
   // An in-flight count from the previous model must not repopulate the cache.
   if (epoch === (tokenCountEpochs.get(userId) ?? 0)) {
-    fileTokensCache.set(chatId, { at: Date.now(), userId, forceConstant: (profile.codexActivationMode === "always"), counts });
+    fileTokensCache.set(chatId, { at: Date.now(), userId, activationMode: profile.codexActivationMode, counts });
   }
   while (fileTokensCache.size > INJECTION_CACHE_CAP) {
     const oldest = fileTokensCache.keys().next().value as string | undefined;

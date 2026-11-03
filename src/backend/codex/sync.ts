@@ -136,7 +136,9 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
 
   const existing = await listSyncedEntries(bookId, chatId, userId);
   const manifestPath = `codex/${chatId}/lorebook-sync.json`;
-  const manifest = await spindle.userStorage.getJson<{ bookId: string; records: string[]; suppressed: string[] }>(manifestPath, { userId });
+  const manifest = await spindle.userStorage.exists(manifestPath, userId)
+    ? await spindle.userStorage.getJson<{ bookId: string; records: string[]; suppressed: string[] }>(manifestPath, { userId })
+    : null;
   const suppressed = new Set(manifest?.bookId === bookId ? manifest.suppressed ?? [] : []);
   const previousRecords = new Set(manifest?.bookId === bookId ? manifest.records ?? [] : []);
   const byRecord = new Map<string, { raw: WorldBookEntryDTO; meta: CodexEntryMeta }>();
@@ -227,7 +229,8 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       tr("backend.codex.sync.doSync.outdatedCodexEntrCouldNotBeRemoved", { failedDeletes: failedDeletes }),
     );
   }
-  await spindle.userStorage.setJson(manifestPath, { bookId, records: desired.map(r => r.record), suppressed: [...suppressed] }, { userId });
+  const records = desired.map(r => r.record);
+  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)) }, { userId });
   void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
     numbers: { entries: desired.length },
     flags: { vector: profile.codexActivationMode === "vector", constant: profile.codexActivationMode === "always" } });
