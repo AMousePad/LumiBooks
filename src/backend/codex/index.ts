@@ -1,7 +1,9 @@
 import { t as tr } from "../../i18n";
 import { resolveTidyTarget, type CodexTidyTarget } from "../../codex-tidy";
-import { countCodexText, measureCodexTokens, type CodexTokenCounts } from "./tokens";
-import { frozenCodexFiles } from "./prompt";
+import { countCodexText, measureCodexFullness, measureCodexTokens, type CodexTokenCounts } from "./tokens";
+import { frozenCodexFiles, renderCodexRecords } from "./prompt";
+import { advanceRecordStats } from "./limits";
+import { alignCacheFileStates } from "./cache-states";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
@@ -10,7 +12,7 @@ import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, approximateTokensFromChars, p
 import type { ChatMessage } from "../coverage";
 import { buildCoverage, isExcluded, liveEndPosition, sumApproxTokens } from "../coverage";
 import type { CodexCursor, CodexFileState } from "./store";
-import { codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./store";
+import { applyCodexFileState, codexExists, codexPresence, emptyCursor, loadCodex, loadCursor, msgSig, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./store";
 import { CODEX_FILE_KEYS, bundleIsEmpty, emptyCodexFile, isCodexFileKey, type CodexBundle, type CodexFileKey, type CodexFileValue } from "./schema";
 import { CodexContextError, CodexValidationError, ToolProtocolError, codexMaxInputTokens, resolveCodexConnection, runCodexAgent } from "./agent";
 import {
@@ -134,10 +136,18 @@ function windowReached(compressible: ChatMessage[], profile: LMBProfile): boolea
   return false;
 }
 
+/** Chats whose Codex run must not reach the lorebook until their window commits. */
+const heldSyncs = new Set<string>();
+
+function recordContents(bundle: CodexBundle): Map<string, string> {
+  return new Map(renderCodexRecords(bundle, { includeRelations: true }).map((record) => [record.record, record.content]));
+}
+
 /** Sync wrapper for codex mutation paths: a failed entry sync must not fail
  * the run that already persisted its files and cursor, but it must be heard -
  * a silently stale lorebook mirror defeats the whole feature. */
 async function syncEntriesGuarded(chatId: string, userId: string, relationsTableFallback?: boolean): Promise<void> {
+  if (heldSyncs.has(`${userId}::${chatId}`)) return;
   try {
     await syncCodexEntries(chatId, userId, relationsTableFallback);
   } catch (err) {
@@ -190,6 +200,7 @@ interface PlannedRun {
  * included, since exclusion governs compression, not tracking.
  */
 async function planRun(chatId: string, userId: string, lagUnit: "messages" | "tokens", lagValue: number): Promise<PlannedRun> {
+  await alignCacheFileStates(chatId, userId, (await loadSettings(userId)).cacheFriendly);
   const messages = await spindle.chat.getMessages(chatId);
   const cursor = await refreshCodexExclusions(chatId, userId, messages);
   const byId = new Map(messages.map((m) => [m.id, m] as const));
@@ -459,13 +470,14 @@ export async function dryRunCodex(
   if (frozenFiles.size === CODEX_FILE_KEYS.length) {
     throw new Error(tr("backend.codex.index.dryRunCodex.everyCodexRecordIsFrozenUnfreezeOne"));
   }
+  const fullness = await measureCodexFullness(bundle, userId, plan.cursor.fileStates, profile.codexTokenLimits);
   const notes: CodexRunNotes = {
     reconcile: plan.reconcile,
     migrateToTable: prevMode === false && profile.codexRelationsTable,
     migrateToInline: prevMode === true && !profile.codexRelationsTable,
     loadProblems: problems.map((p) => `${p.file}.json`),
   };
-  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+  const promptCtx = { ...makeCodexPromptCtx(profile, settings.customPresets, frozenFiles), fullness };
 
   const posById = new Map(plan.messages.map((m, i) => [m.id, i] as const));
   const firstIdx = posById.get(chunk[0]!.id) ?? 0;
@@ -572,6 +584,8 @@ async function runChunk(
   };
   const settings = await loadSettings(userId);
   const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+  promptCtx.fullness = await measureCodexFullness(bundle, userId, plan.cursor.fileStates, profile.codexTokenLimits);
+  const contentsBefore = recordContents(bundle);
   // A frozen file the migration must rewrite would deadlock the gates below
   // with a generic error every run; fail actionably instead.
   if (notes.migrateToTable || notes.migrateToInline) {
@@ -607,7 +621,8 @@ async function runChunk(
     notes,
     lore,
     storySoFar,
-    timelineAppendOnly: !notes.reconcile,
+    // A full timeline is asked to shrink, which the append-only gate would reject.
+    timelineAppendOnly: !notes.reconcile && !promptCtx.fullness.some((item) => item.file === "timeline"),
     ...(buildUserText ? { userTextOverride: buildUserText(promptCtx, bundle, notes, chunkLabel, lore) } : {}),
     progressBase: progress,
     externalSignal,
@@ -649,6 +664,10 @@ async function runChunk(
     plan.cursor.reconcileUntilMsgId = null;
   }
   invalidateCodexInjectionCache(chatId);
+  const saved = await loadCodex(chatId, userId, { relationsTable: profile.codexRelationsTable });
+  if (saved.problems.length === 0) {
+    plan.cursor.recordStats = advanceRecordStats(plan.cursor.recordStats, contentsBefore, recordContents(saved.bundle), plan.cursor.runs + 1);
+  }
   // File switches are user-owned and can flip mid-chunk: re-read them at save time.
   await withCursorLock(chatId, userId, async () => {
     const liveCursor = await loadCursor(chatId, userId).catch((err) => {
@@ -730,6 +749,26 @@ async function drain(
   } finally {
     clearBusy(userId, chatId, "codex");
   }
+}
+
+/** Read everything past the lag now, holding the lorebook for the window's commit. */
+export async function drainCodexForCacheWindow(chatId: string, userId: string, profile: LMBProfile): Promise<void> {
+  const key = `${userId}::${chatId}`;
+  heldSyncs.add(key);
+  try {
+    await snapshotCodexForUndo(chatId, userId, tr("backend.codex.index.maybeRunCodex.automaticUpdate"));
+    await drain(chatId, userId, profile, profile.codexLagValue, false, true);
+  } finally {
+    heldSyncs.delete(key);
+  }
+}
+
+export function reportCodexWindowFailure(userId: string, chatId: string, err: unknown): void {
+  if (err instanceof AbortedSummarizerError) {
+    cb?.onToast(userId, "info", tr("backend.codex.index.maybeRunCodex.memoriaClosesTheCodexForNow"));
+    return;
+  }
+  reportCodexFailure(userId, chatId, "update", err);
 }
 
 /** Auto trigger: runs after each generation when enough backlog has built up. */
@@ -1301,20 +1340,7 @@ export async function setCodexFileState(
 ): Promise<void> {
   await withCursorLock(chatId, userId, async () => {
     const cursor = await loadCursor(chatId, userId);
-    const prevState = cursor.fileStates[file] ?? "on";
-    if (state === "on") delete cursor.fileStates[file];
-    else cursor.fileStates[file] = state;
-    if (state === "frozen") {
-      cursor.frozenAtRuns[file] = cursor.runs;
-      cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
-    } else {
-      // Leaving frozen after missed runs flags the file for a catch-up pass.
-      const at = cursor.frozenAtRuns[file];
-      if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
-        cursor.refreshPending.push(file);
-      }
-      delete cursor.frozenAtRuns[file];
-    }
+    applyCodexFileState(cursor, file, state);
     await saveCursor(chatId, cursor, userId);
   });
   invalidateCodexInjectionCache(chatId, false);

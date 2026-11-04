@@ -649,7 +649,7 @@ async function runCodexAgentInner(opts: CodexAgentOptions): Promise<CodexRunResu
   const skipPhrase = useTools ? "call codex_skip" : 'name them in "skip"';
   const donePhrase = useTools ? "Then call codex_done." : 'Set "done": true once everything is accounted for.';
   const coverage = new Set<CodexFileKey>(
-    (opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k)),
+    (opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k) && (k !== "relations" || promptCtx.relationsTable)),
   );
   // Headroom for one round per file plus the nudges a stalling model needs.
   // A model that batches never reaches any of them.

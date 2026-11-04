@@ -217,7 +217,7 @@ export function renderCodexTabLock(host: HTMLElement, send?: (m: FrontendToBacke
 
   wrap.appendChild(codexSealCard(
     tr("ui.lessons.seal.renderCodexTabLock.theKnowledgeCodex"),
-    tr("ui.lessons.seal.renderCodexTabLock.aStoryBibleAnAgentKeepsFor"),
+    tr("ui.lessons.seal.renderCodexTabLock.aCodexAnAgentKeepsFor"),
     send,
   ));
   host.appendChild(wrap);

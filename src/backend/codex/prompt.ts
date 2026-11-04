@@ -5,6 +5,7 @@ import { fillPrompt } from "../../prompts/fill";
 import { codexTemplateText, type CodexTemplateKey } from "../../prompts/codex/registry";
 import type { ChatMessage } from "../coverage";
 import { findPresetText, renderTranscript } from "../summarizer";
+import type { CodexFullness } from "./limits";
 
 /**
  * Everything a prompt builder needs to know about this run: which files the
@@ -20,6 +21,8 @@ export interface CodexPromptCtx {
   sequential: boolean;
   directives: string;
   overrides: Partial<Record<CodexTemplateKey, string>>;
+  /** Categories past the fullness threshold; update passes ask the agent to shrink them. */
+  fullness?: readonly CodexFullness[];
 }
 
 function tpl(ctx: CodexPromptCtx, key: CodexTemplateKey): string {
@@ -167,6 +170,12 @@ function specialNotes(bundle: CodexBundle, notes: CodexRunNotes, ctx: CodexPromp
   return special.length ? special.join("\n\n") : null;
 }
 
+function updateClosing(ctx: CodexPromptCtx): string[] {
+  const full = (ctx.fullness ?? []).filter((item) => ctx.activeFiles.has(item.file))
+    .map((item) => fillPrompt(tpl(ctx, "note_codex_full"), { CATEGORY: item.file, PERCENT: String(item.percent) }));
+  return [tpl(ctx, "pass_update"), ...full];
+}
+
 /** The <<CURRENT CODEX>> dump, active files only. */
 function currentCodexParts(bundle: CodexBundle, ctx: CodexPromptCtx): string[] {
   const parts: string[] = ["<<CURRENT CODEX>>"];
@@ -205,7 +214,7 @@ export function buildCodexUserMessage(
   parts.push(`<<NEW STORY TURNS (${chunkLabel}) - the new material to encode>>`);
   // Header numbers carry the chunk's global offset so they agree with the label.
   parts.push(renderTranscript(chunk, true, chunkFirstIndex));
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join("\n\n");
 }
 
@@ -224,7 +233,7 @@ export function buildCodexSummaryCatchupMessage(
   parts.push(...currentCodexParts(bundle, ctx));
   parts.push(`<<STORY (${chunkLabel}, compressed)>>`);
   parts.push(blocks.join("\n\n"));
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join("\n\n");
 }
 
@@ -258,7 +267,7 @@ export function buildCodexUltraMessage(
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join("\n\n");
 }
 
@@ -397,7 +406,7 @@ export function buildCodexTidyMessage(
 ): string {
   const parts: string[] = [];
   parts.push(tpl(ctx, "pass_tidy"));
-  if (budget) parts.push(`COMPACTION BUDGET: The target files currently render to ${budget.current} tokens. Rewrite them to a combined size of at most ${budget.modelTarget} tokens of rendered story-bible prose (not JSON syntax or thinking). This includes a 10% margin below the user's ${budget.limit}-token limit. ${budget.callsLeft} model calls remain. If a previous attempt is still too large, compress further now; do not skip merely because you already tidied it. Preserve locked content and plot-relevant facts. Return all target files together and finish in this response.`);
+  if (budget) parts.push(`COMPACTION BUDGET: The target files currently render to ${budget.current} tokens. Rewrite them to a combined size of at most ${budget.modelTarget} tokens of rendered Codex prose (not JSON syntax or thinking). This includes a 10% margin below the user's ${budget.limit}-token limit. ${budget.callsLeft} model calls remain. If a previous attempt is still too large, compress further now; do not skip merely because you already tidied it. Preserve locked content and plot-relevant facts. Return all target files together and finish in this response.`);
   const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
     parts.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
@@ -577,7 +586,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
         record: recordKey("ent", e.id, taken),
         file: fileKey,
         comment: `[Codex] ${label}: ${e.name}`,
-        content: `[Story Bible - ${label}: ${e.name}]\n${lines.join("\n")}`,
+        content: `[Codex - ${label}: ${e.name}]\n${lines.join("\n")}`,
         keys: uniqKeys([e.name, ...(e.aliases ?? []), ...(e.keywords ?? [])]),
         constant: false,
         disabled: e.noInject === true,
@@ -600,7 +609,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
         record: "rel:unlinked",
         file: "relations",
         comment: "[Codex] Relations (unlinked)",
-        content: `[Story Bible - Relations]\n${orphans.map((r) => relationLine(r, names)).join("\n")}`,
+        content: `[Codex - Relations]\n${orphans.map((r) => relationLine(r, names)).join("\n")}`,
         keys: uniqKeys(endpointNames),
         constant: false,
         disabled: false,
@@ -616,7 +625,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       legacyRecord,
       file: "world",
       comment: `[Codex] World: ${w.topic}`,
-      content: `[Story Bible - World rules: ${w.topic}]\n- ${w.topic}: ${w.facts.join(" | ")}`,
+      content: `[Codex - World rules: ${w.topic}]\n- ${w.topic}: ${w.facts.join(" | ")}`,
       keys: uniqKeys([w.topic, ...(w.keywords ?? [])]),
       constant: false,
       disabled: false,
@@ -638,7 +647,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       legacyRecord,
       file: "knowledge",
       comment: `[Codex] Secret: ${k.fact.slice(0, 60)}`,
-      content: `[Story Bible - Who knows what]\n- ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
+      content: `[Codex - Who knows what]\n- ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
       keys: uniqKeys(k.keywords ?? []),
       constant: false,
       disabled: false,
@@ -651,7 +660,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       record: "timeline",
       file: "timeline",
       comment: "[Codex] Timeline",
-      content: `[Story Bible - current story state]\n${sections.timeline}`,
+      content: `[Codex - current story state]\n${sections.timeline}`,
       keys: [],
       constant: true,
       disabled: false,
@@ -662,7 +671,7 @@ export function renderCodexRecords(bundle: CodexBundle, opts: RenderRecordsOptio
       record: "threads",
       file: "threads",
       comment: "[Codex] Threads",
-      content: `[Story Bible - current story state]\n${sections.threads}`,
+      content: `[Codex - current story state]\n${sections.threads}`,
       keys: [],
       constant: true,
       disabled: false,

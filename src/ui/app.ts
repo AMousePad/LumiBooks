@@ -4,7 +4,8 @@ import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend } from "../types";
 import { ICON_SVG, STYLES } from "./styles";
 import { makeButton, preserveScroll, scrollPaneTop, showToast } from "./components";
-import { closeCodexCatchupModal, showCodexToolsHintModal, showDryRunModal } from "./modals";
+import { closeCodexCatchupModal, confirmCacheBreak, showCodexToolsHintModal, showDryRunModal } from "./modals";
+import { CACHE_BREAKING_ACTIONS } from "../shared";
 import { deliverStreamText, renderHomeTab, resetHomeTabLocal, tryUpdateBusyLabelsInPlace } from "./tabs/home-tab";
 import { deliverPromptBreakdown } from "./prompt-breakdown";
 import { deliverRegexScriptsPage, resetRegexPicker } from "./regex-picker";
@@ -120,6 +121,13 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
 
   const send = (msg: FrontendToBackend) => {
     if (lessonOutbox.enqueue(msg)) return;
+    if (lastState?.settings.cacheFriendly && CACHE_BREAKING_ACTIONS.has(msg.type)) {
+      void confirmCacheBreak(ctx).then((confirmed) => { if (confirmed) deliver(msg); });
+      return;
+    }
+    deliver(msg);
+  };
+  const deliver = (msg: FrontendToBackend) => {
     if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean") diagnostics.setEnabled(!msg.patch.localLogsDisabled);
     if (msg.type === "diagnostics_clear") diagnostics.clear();
     else if (msg.type === "diagnostics_export") diagnostics.flush();

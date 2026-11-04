@@ -46,6 +46,16 @@
 - **Custom prompts** - Save your own and switch profiles freely.
 - **Regex hooks** - Outgoing regex runs on the prompt before Memoria reads. Incoming regex runs on the output after Memoria writes.
 
+## Cache Friendly mode
+
+Turn this on in the Home tab under Actions. It requires the LumiCache extension and a finished Codex course. Chapters and the Codex then change the prompt together once per window, so your prompt cache only breaks at that moment. Your Summary window and lag stay as they are, and the Codex always uses them. The Codex keeps entities, lore, and secrets as constant entries, and timeline, threads, and the Relations Table stay off. Turning the mode off restores your settings.
+
+Each Codex category has its own token limit in Tuning, 10,000 by default. Above 75% the update prompt asks the model to shrink that category. Above 100% the least updated entries are cut until it fits, and the 6 largest always stay.
+
+## Small context windows
+
+When a prompt reaches 90% of your context, or the host clips history, I permanently lower the active profile once: all summary lags by 30%, summary targets by 33%, and Codex token limits by 33%. You can turn this off under Tuning, Everywhere.
+
 ## Installation
 
 LumiBooks installs as a Lumiverse extension. Lumiverse must be at version **1.1.6 or later.**

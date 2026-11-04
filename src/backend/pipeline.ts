@@ -1658,6 +1658,16 @@ export async function promoteGhostChapters(
   });
 }
 
+/** True when a ghost's whole span has aged past the injection lag. */
+export async function hasPromotableGhost(chatId: string, profile: LMBProfile, userId: string): Promise<boolean> {
+  const entries = await listLmbEntries(chatId, userId, true);
+  const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled && e.meta.msgIds.length > 0);
+  if (ghosts.length === 0) return false;
+  const messages = await spindle.chat.getMessages(chatId);
+  const pastLag = new Set(trimLagFromTail(messages, profile).map((m) => m.id));
+  return ghosts.some((g) => g.meta.msgIds.every((id) => pastLag.has(id)));
+}
+
 /**
  * When extra-context mode is switched off with ghosts pending: promote what
  * already earned it, delete the rest. Leaving them would double-summarize

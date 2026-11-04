@@ -10,7 +10,7 @@ This is what knowledge Codex solves.
 
 ## What it is
 
-The Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
+The Codex is a story record for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
 
 - **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).
 - **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.
@@ -21,7 +21,7 @@ The Codex is a story bible for chats. As your story grows, an agent reads every 
 
 ## Why these records?
 
-These are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
+These are either proven failure modes or a mechanism shown to improve long-form coherence. A Codex must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
 
 Some things other trackers keep were left out on purpose:
 

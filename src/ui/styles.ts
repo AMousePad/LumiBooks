@@ -26,7 +26,7 @@ export const STYLES = `
 /* ---------------------------------------------------------------- tokens */
 /* Toasts, modal overlays, and Lumiverse-hosted modal forms mount on
    document.body, outside .lmb-root - tokens are declared on each mount root. */
-.lmb-root, .lmb-toast-stack, .lmb-preview-overlay, .lmb-modal-form {
+.lmb-root, .lmb-toast-stack, .lmb-preview-overlay, .lmb-modal-form, .lmb-lock-tip {
   --lmb-display-font: "Marcellus", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --lmb-body-font: "Josefin Sans", var(--lumiverse-font-family, -apple-system, "Segoe UI", sans-serif);
   --lmb-mono-font: var(--lumiverse-font-mono, ui-monospace, "Cascadia Mono", "Consolas", monospace);
@@ -441,27 +441,28 @@ export const STYLES = `
 }
 .lmb-tile-sub { font-size: 10.5px; color: var(--lmb-ink-dim); }
 
-/* Story Bible tiles: clickable record cards that cycle inject/freeze state. */
-.lmb-bible-tile { cursor: pointer; user-select: none; }
-.lmb-bible-tile:hover { border-color: var(--lmb-frame-strong); }
+/* Codex tiles: clickable record cards that cycle inject/freeze state. */
+.lmb-codex-tile { cursor: pointer; user-select: none; }
+.lmb-codex-tile:hover { border-color: var(--lmb-frame-strong); }
 .lmb-tile-state {
   font-size: 9.5px;
   letter-spacing: 0.04em;
   color: var(--lmb-ink-dim);
   margin-top: 1px;
 }
-.lmb-bible-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
-.lmb-bible-tile.noInject { border-style: dashed; }
-.lmb-bible-tile.frozen {
+.lmb-codex-tile.locked { cursor: not-allowed; }
+.lmb-codex-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.noInject { border-style: dashed; }
+.lmb-codex-tile.frozen {
   border-style: dashed;
   opacity: 0.7;
   background:
     repeating-linear-gradient(45deg, rgba(128, 128, 128, 0.06) 0 4px, transparent 4px 9px),
     var(--lmb-fill);
 }
-.lmb-bible-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
-.lmb-bible-tile.stale { border-color: var(--lmb-warning-frame); }
-.lmb-bible-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
+.lmb-codex-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.stale { border-color: var(--lmb-warning-frame); }
+.lmb-codex-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
 .lmb-tile-tools { margin-top: 5px; display: flex; gap: 5px; }
 
 /* --------------------------------------------------------- coverage spine */
@@ -1534,6 +1535,10 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 }
 
 .lmb-greyed { opacity: 0.35; pointer-events: none; filter: saturate(0.5); }
+.lmb-field-hint a { color: inherit; text-decoration: underline; }
+.lmb-cache-locked { opacity: 0.35; filter: saturate(0.5); }
+.lmb-cache-locked, .lmb-cache-locked * { cursor: not-allowed; }
+.lmb-lock-tip { position: fixed; z-index: 100000; max-width: min(320px, calc(100vw - 16px)); transform: translateY(calc(-100% - 6px)); padding: 6px 10px; border: 1px solid var(--lmb-frame-strong); border-radius: 6px; background: var(--lcs-glass-bg, rgba(18, 16, 28, 0.55)); backdrop-filter: blur(12px); color: var(--lmb-ink); font-size: 12px; pointer-events: none; }
 
 /* ------------------------------------------------------- sampler switch */
 /* Large two-way toggle on the Model pane: summary samplers vs codex

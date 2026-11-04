@@ -38,6 +38,7 @@ import noteMigrateInlineTxt from "./notes/migrate-inline.txt";
 import noteRepairTxt from "./notes/repair.txt";
 import noteLockedTxt from "./notes/locked.txt";
 import noteLockedFieldsTxt from "./notes/locked-fields.txt";
+import noteCodexFullTxt from "./notes/codex-full.txt";
 
 /** The directives block is preset-driven (Tuning -> Prompts -> Codex), not an
  * override, so it lives outside the template list. */
@@ -71,7 +72,8 @@ export type CodexTemplateKey =
   | "note_migrate_inline"
   | "note_repair"
   | "note_locked"
-  | "note_locked_fields";
+  | "note_locked_fields"
+  | "note_codex_full";
 
 export type CodexTemplateGroup = "File schemas" | "Write protocol" | "Pass instructions" | "Run notes";
 
@@ -328,6 +330,17 @@ export const CODEX_TEMPLATES: readonly CodexTemplateDef[] = [
     howTo: tr("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
     vars: [{ token: "{{IDS}}", meaning: tr("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
     defaultText: noteLockedFieldsTxt,
+  },
+  {
+    key: "note_codex_full",
+    label: tr("prompts.codex.registry.codexTemplates.codexFillingUp"),
+    group: "Run notes",
+    howTo: tr("prompts.codex.registry.codexTemplates.appendedToUpdatesWhenACategoryIsOver"),
+    vars: [
+      { token: "{{CATEGORY}}", meaning: tr("prompts.codex.registry.codexTemplates.theCategoryThatIsFillingUp") },
+      { token: "{{PERCENT}}", meaning: tr("prompts.codex.registry.codexTemplates.howFullThatCategoryIs") },
+    ],
+    defaultText: noteCodexFullTxt,
   },
 ] as const;
 

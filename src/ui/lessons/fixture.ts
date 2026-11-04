@@ -330,7 +330,7 @@ const VARIANTS: Record<string, VariantSpec> = {
   // The exact state after the do-beat files chapter #3. The explanation
   // steps pin this so navigation order can never change what they show.
   "filing-after": { total: 160, chapters: [CH[0]!, CH[1]!, CH[2]!] },
-  pills: { total: 124, chapters: [CH[0]!, CH[1]!, CH[2]!] },
+  pills: { total: 104, chapters: [CH[0]!, CH[1]!, CH[2]!] },
   desk: { total: 165, chapters: [CH[0]!, CH[1]!, CH[2]!, CH[3]!, CH[4]!], arcs: [ARC1], ghost: true, busy: true, failure: true },
   shelf: { total: 165, chapters: [CH[0]!, CH[1]!, CH[2]!, CH[3]!, CH[4]!], arcs: [ARC1], ghost: true },
   compose: { total: 140, chapters: [CH[0]!, CH[1]!], excluded: [100, 101, 102] },
@@ -420,6 +420,7 @@ export function buildFixture(variant: string): FrontendState {
     codexRootOriginName: null,
     codexTokensApproximate: true,
     codexInjectedTokens: spec.codex ? 940 : 0,
+    lumiCacheAvailable: false,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],
     codexRefreshPending: [],

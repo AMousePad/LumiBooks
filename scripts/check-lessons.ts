@@ -198,8 +198,8 @@ for (const course of courses) {
 
 console.log("fixtures:");
 const pills = buildFixture("pills");
-if (pills.coverage.lagSatisfied && !pills.coverage.windowAvailable && pills.coverage.uncoveredMessages === 70) {
-  ok("pills: 70 uncovered, lag ready, window building (B3 premise)");
+if (pills.coverage.lagSatisfied && !pills.coverage.windowAvailable && pills.coverage.uncoveredMessages === 50) {
+  ok("pills: 50 uncovered, lag ready, window building (B3 premise)");
 } else {
   fail(
     `pills: uncovered=${pills.coverage.uncoveredMessages} lag=${pills.coverage.lagSatisfied} window=${pills.coverage.windowAvailable}, B3 premise broken`,
@@ -233,8 +233,8 @@ else fail("codex-noinject: premise broken");
 console.log("defaults taught by lessons:");
 const prof = makeDefaultProfile("check", "check");
 const taught: [string, number, number][] = [
-  ["chapter lag 65", prof.lagValue, 65],
-  ["chapter window 18", prof.windowValue, 18],
+  ["chapter lag 40", prof.lagValue, 40],
+  ["chapter window 20", prof.windowValue, 20],
   ["chapter ratio 15%", prof.chapterTargetPercent, 15],
   ["codex lag 6", prof.codexLagValue, 6],
   ["codex window 20", prof.codexWindowValue, 20],

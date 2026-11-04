@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import { normalizeEntryMeta, TIER_NAMES, type SummaryTier } from "../../shared";
 import type { ArcView, FrontendState } from "../../types";
+import { activationControl } from "../activation-control";
+import { applyCacheLocks } from "../components";
 import { buildFixture } from "../lessons/fixture";
 import { renderBooksTab, resetBooksTabLocal, setBooksSubtab } from "./books-tab";
 import { renderHomeTab, resetHomeTabLocal } from "./home-tab";
@@ -33,25 +35,40 @@ class Element {
   get firstElementChild(): Element | null { return this.children[0] ?? null; }
   get textContent(): string { return this.text + this.children.map((c) => c.textContent).join(""); }
   set textContent(value: string) { this.text = value; this.children = []; }
-  classList = { add: (name: string) => { this.className += ` ${name}`; }, toggle: (_name: string, _force?: boolean) => {} };
+  classList = { add: (name: string) => { this.className += ` ${name}`; }, remove: (..._names: string[]) => {}, toggle: (_name: string, _force?: boolean) => {} };
   appendChild(child: Element): Element { child.parentElement = this; this.children.push(child); return child; }
   append(...children: Element[]): void { children.forEach((c) => this.appendChild(c)); }
   replaceChildren(...children: Element[]): void { this.children = []; this.text = ""; this.append(...children); }
   setAttribute(name: string, value: string): void { this.attributes[name] = value; }
   querySelectorAll(selector: string): Element[] {
+    if (selector === "[data-cache-locked]") return this.children.flatMap(walk).filter((node) => node.dataset.cacheLocked);
     const tags = selector.split(",").map((tag) => tag.trim());
     return this.children.flatMap(walk).filter((node) => tags.includes(node.tagName));
   }
   addEventListener(name: string, listener: (event: { preventDefault(): void }) => void): void {
     this.listeners.set(name, [...(this.listeners.get(name) ?? []), listener]);
   }
-  dispatch(name: string): void { this.listeners.get(name)?.forEach((fn) => fn({ preventDefault() {} })); }
+  dispatch(name: string): void {
+    let stopped = false, prevented = false;
+    const event = { type: name, target: this, preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } };
+    for (const owner of [...this.ancestors().reverse(), this]) {
+      owner.listeners.get(name)?.forEach((fn) => { if (!stopped) fn(event); });
+      if (stopped) break;
+    }
+    this.lastPrevented = prevented;
+  }
+  lastPrevented = false;
+  private ancestors(): Element[] { return this.parentElement ? [this.parentElement, ...this.parentElement.ancestors()] : []; }
+  closest(_selector: string): Element | null { return this.dataset.cacheLocked ? this : this.parentElement?.closest(_selector) ?? null; }
+  getBoundingClientRect() { return { left: 0, top: 0 }; }
+  remove(): void { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((c) => c !== this); }
   focus(): void {}
 }
 
 const walk = (root: Element): Element[] => [root, ...root.children.flatMap(walk)];
 const dom = {
   document: {
+    body: new Element("body"),
     createElement: (tag: string) => new Element(tag),
     createTextNode: (text: string) => { const node = new Element("#text"); node.textContent = text; return node; },
     createTreeWalker: (root: Element) => {
@@ -333,6 +350,25 @@ test("Codex window and lag controls keep distinct data bindings after text extra
   expect(patches).toEqual([{ codexWindowValue: 32 }, { codexWindowUnit: "tokens" }, { codexLagValue: 9 }, { codexLagUnit: "tokens" }]);
 });
 
+test("Codex recall uses the Summary radio control with an extra Vector only mode", () => {
+  const host = new Element("host"), patches: any[] = [];
+  renderCodexSettings(host as unknown as HTMLElement, state(), makeDefaultProfile("p", "Test"), patch => patches.push(patch));
+  const group = walk(host).find(node => node.className === "lmb-activation")!;
+  const radios = walk(group).filter(node => node.tagName === "input");
+  expect(radios.map(node => node.value)).toEqual(["always", "keywords", "vector", "vector_only"]);
+  expect(radios.filter(node => node.checked).map(node => node.value)).toEqual(["keywords"]);
+  expect(group.dataset.cacheLocked).toBe("Cache Friendly mode controls this setting.");
+  const only = radios[3]!;
+  only.checked = true; only.dispatch("change");
+  expect(patches).toEqual([{ codexActivationMode: "vector_only" }]);
+});
+
+test("Summary recall keeps its three modes", () => {
+  const modes: unknown[] = [];
+  const group = activationControl("Recall", "always", mode => modes.push(mode)) as unknown as Element;
+  expect(walk(group).filter(node => node.tagName === "input").map(node => node.value)).toEqual(["always", "keywords", "vector"]);
+});
+
 test("manual summary import visibility follows its status flag rather than English copy", () => {
   const host = new Element("host");
   const panel = createSummaryTransferPanel(host as unknown as HTMLElement, () => {});
@@ -397,6 +433,80 @@ test("Home counts active rooted summaries and omits compacted summaries and ghos
   const labels = walk(host).filter((n) => n.className === "lmb-breakdown-label").map((n) => n.textContent);
   expect(labels).toContain("Arcs (7)");
   expect(labels).toContain("Chapters (7)");
+});
+
+test("Home offers Cache Friendly mode under Actions, and explains when it is blocked", () => {
+  const data = state(), sent: any[] = [];
+  data.activeChatId = "cache-chat";
+  data.lessons.codex.status = "done";
+  const toggle = (host: Element) => walk(host).find(n => n.tagName === "input" && n.type === "checkbox" && n.parentElement?.textContent.includes("Cache Friendly mode"))!;
+  const blocked = new Element("host");
+  data.lumiCacheAvailable = false;
+  renderHomeTab(blocked as any, data, {} as any, msg => sent.push(msg));
+  expect(toggle(blocked).disabled).toBe(true);
+  expect(blocked.textContent).toContain("LumiCache Extension required for this option. Find Here.");
+  expect((walk(blocked).find(n => n.tagName === "a" && n.textContent === "Find Here.") as any)?.href).toBe("https://github.com/AMousePad/LumiCache");
+  const ready = new Element("host");
+  data.lumiCacheAvailable = true;
+  renderHomeTab(ready as any, data, {} as any, msg => sent.push(msg));
+  const input = toggle(ready);
+  expect(input.disabled).toBe(false);
+  input.checked = true; input.dispatch("change");
+  expect(sent.filter(msg => msg.type === "cache_friendly_set")).toEqual([{ type: "cache_friendly_set", enabled: true, chatId: "cache-chat" }]);
+  const about = new Element("host");
+  renderAboutTab(about as any, data, () => {});
+  expect(about.textContent).not.toContain("Cache Friendly mode");
+});
+
+test("Cache Friendly mode locks only the Codex tiles it owns", () => {
+  resetCodexTabLocal();
+  const data = state(), host = new Element("host"), sent: any[] = [];
+  data.activeChatId = "cache-tiles";
+  data.lessons.codex.status = "done";
+  data.activeProfile.codexEnabled = true;
+  data.settings.cacheFriendly = true;
+  renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+  deliverCodexFiles(data.activeChatId, {}, data.codexRevision);
+  renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+  const tile = (id: string) => walk(host).find(n => n.dataset.lesson === `codex.tile.${id}`)!;
+  for (const id of ["timeline", "threads", "relations"]) {
+    expect(tile(id).className).toContain("locked");
+    tile(id).dispatch("click");
+  }
+  expect(sent.filter(msg => msg.type === "codex_set_file_state")).toEqual([]);
+  expect(tile("timeline").textContent).toContain("Disabled in Cache Friendly Mode");
+  expect(dom.document.body.children.at(-1)?.textContent).toBe("Disabled in Cache Friendly Mode");
+  for (const subtab of ["relations", "timeline", "threads"]) {
+    setCodexSubtab(subtab);
+    renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+    expect(walk(host).find(n => n.className === "lmb-pane")!.textContent).toBe("Disabled in Cache Friendly Mode");
+  }
+  setCodexSubtab("overview");
+  renderCodexTab(host as any, data, {} as any, msg => sent.push(msg));
+  expect(tile("lore").className).not.toContain("locked");
+  tile("lore").dispatch("click");
+  expect(sent.filter(msg => msg.type === "codex_set_file_state").map(msg => msg.file)).toEqual(["world"]);
+});
+
+test("locked settings refuse the attempt and pop up why, with its own text for the Codex window", () => {
+  const host = new Element("host"), patches: any[] = [];
+  renderCodexSettings(host as any, state(), makeDefaultProfile("p", "Test"), patch => patches.push(patch));
+  applyCacheLocks(host as any, true);
+  const body = dom.document.body;
+  const windowGroup = walk(host).find(n => n.dataset.lesson === "tuning.codex.window")!;
+  const lagGroup = walk(host).find(n => n.dataset.lesson === "tuning.codex.lag")!;
+  for (const group of [windowGroup, lagGroup]) {
+    const unit = walk(group).find(n => n.tagName === "select")!;
+    unit.dispatch("click");
+    expect(unit.lastPrevented).toBe(true);
+    expect(body.children.at(-1)?.textContent).toBe("Matches Chapter Summary Window in Cache Friendly Mode.");
+  }
+  const recall = walk(host).find(n => n.className.startsWith("lmb-activation"))!;
+  const radio = walk(recall).find(n => n.tagName === "input")!;
+  radio.dispatch("click");
+  expect(radio.lastPrevented).toBe(true);
+  expect(body.children.at(-1)?.textContent).toBe("Cache Friendly mode controls this setting.");
+  expect(patches).toEqual([]);
 });
 
 test("prompt replies update a rerendered panel and cannot overwrite a newer chat", async () => {

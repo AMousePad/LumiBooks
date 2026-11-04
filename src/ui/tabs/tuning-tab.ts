@@ -3,7 +3,7 @@ import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile } from "../../shared";
 import { codexLessonGated } from "../../shared";
-import { checkbox, lessonMark, makeSubtabs, scrollPaneTop, section } from "../components";
+import { applyCacheLocks, cacheLocked, checkbox, lessonMark, makeSubtabs, scrollPaneTop, section } from "../components";
 import { renderCodexPaneLock } from "../lessons/seal";
 import {
   renderSummarySettings,
@@ -110,6 +110,7 @@ export function renderTuningTab(
         } else {
           renderCodexSettings(body, state, profile, patch);
         }
+        applyCacheLocks(body, state.settings.cacheFriendly);
       };
       for (const o of options) {
         const btn = document.createElement("button");
@@ -154,8 +155,15 @@ function renderGlobalSettings(
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId }),
   }));
 
-  sec.body.appendChild(lessonMark(activationControl(tr("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode,
-    (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), tr("ui.activationControl.activationControl.constant")), "tuning.every.constant"));
+  sec.body.appendChild(checkbox({
+    checked: state.settings.contextRelief,
+    label: tr("ui.tabs.tuningTab.renderGlobalSettings.contextRelief"),
+    hint: tr("ui.tabs.tuningTab.renderGlobalSettings.contextReliefHint"),
+    onChange: (v) => send({ type: "save_settings", patch: { contextRelief: v }, chatId: state.activeChatId }),
+  }));
+
+  sec.body.appendChild(cacheLocked(lessonMark(activationControl(tr("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode,
+    (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), tr("ui.activationControl.activationControl.constant")), "tuning.every.constant")));
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
   hint.textContent = tr("ui.tabs.tuningTab.renderGlobalSettings.appliesToExistingAndFutureChapterAnd");

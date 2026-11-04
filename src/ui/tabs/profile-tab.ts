@@ -2,7 +2,7 @@ import { t as tr } from "../../i18n";
 import { HIGHER_TIERS, TIER_NAMES, type HigherTierSettings } from "../../shared";
 import type { FrontendState, FrontendToBackend } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
-import { CODEX_SAMPLER_DEFAULTS, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
+import { CODEX_FILE_KEYS, CODEX_SAMPLER_DEFAULTS, CODEX_TOKEN_LIMIT_DEFAULT, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
 const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", tr("ui.tabs.profileTab.profileDefaults.defaults"));
 // Token-mode blank-field fallbacks for the codex cadence: the shared defaults
@@ -19,6 +19,7 @@ import {
   section,
   select,
   textNode,
+  cacheLocked,
 } from "../components";
 import { promptForString } from "../modals";
 import { activationControl, vectorSetupHint } from "../activation-control";
@@ -34,12 +35,13 @@ export function renderCodexSettings(
 ): void {
   void state;
   const sec = section(tr("ui.tabs.profileTab.sec.knowledgeCodex"));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexEnabled, label: tr("ui.tabs.profileTab.renderCodexSettings.enableCodex"),
     onChange: (codexEnabled) => patch({ codexEnabled }),
-  }), "tuning.codex.enabled"));
+  }), "tuning.codex.enabled")));
 
   const updating = section(tr("ui.tabs.profileTab.updating.codexUpdating"));
+  cacheLocked(updating.body);
   const lag = document.createElement("div");
   for (const kind of ["window", "lag"] as const) {
     const label = kind === "window" ? tr("ui.tabs.profileTab.renderCodexSettings.window") : tr("ui.tabs.profileTab.renderCodexSettings.lag");
@@ -50,6 +52,7 @@ export function renderCodexSettings(
       : unit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue;
     const group = kind === "lag" ? lag : document.createElement("div");
     group.className = "lmb-collapsible-body";
+    cacheLocked(group, tr("ui.components.cacheLockedWindow"));
     if (kind === "window") lessonMark(group, "tuning.codex.window");
     else lessonMark(group, "tuning.codex.lag");
     group.append(
@@ -76,7 +79,7 @@ export function renderCodexSettings(
     })), "tuning.codex.breakpoint"));
     updating.body.appendChild(textNode(tr("ui.tabs.profileTab.renderCodexSettings.runsWhenEitherTheWindowOrThis"), "lmb-field-hint"));
   }
-  appendAutomationControls(updating.body, lag, !profile.codexManualOnly,
+  appendAutomationControls(updating.body, lag, !profile.codexManualOnly, false,
     (enabled) => patch({ codexManualOnly: !enabled }));
   sec.body.appendChild(updating.wrap);
 
@@ -118,24 +121,16 @@ export function renderCodexSettings(
     tr("ui.tabs.profileTab.renderCodexSettings.yourActivatedLorebookEntriesRideEveryCodex");
   fields.appendChild(loreHint);
 
-  fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexRecall"), select({
-    value: profile.codexActivationMode,
-    options: [
-      { value: "always", label: tr("ui.activationControl.activationControl.always") },
-      { value: "keywords", label: tr("ui.activationControl.activationControl.keywords") },
-      { value: "vector", label: tr("ui.activationControl.activationControl.vectorKeywords") },
-      { value: "vector_only", label: tr("codexLorebook.vectorOnly") },
-    ],
-    onChange: value => patch({ codexActivationMode: value as LMBProfile["codexActivationMode"] }),
-  })));
+  fields.appendChild(cacheLocked(activationControl(tr("ui.tabs.profileTab.renderCodexSettings.codexRecall"), profile.codexActivationMode,
+    (codexActivationMode) => patch({ codexActivationMode }), undefined, [["vector_only", tr("codexLorebook.vectorOnly")]])));
   fields.appendChild(textNode(tr("ui.tabs.profileTab.renderCodexSettings.theActiveProfileSetsRecallForEnabled"), "lmb-field-hint"));
   if (profile.codexActivationMode === "vector") fields.appendChild(vectorSetupHint());
   if (profile.codexActivationMode === "vector_only") fields.appendChild(textNode(tr("codexLorebook.vectorHelp"), "lmb-field-hint"));
-  fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
+  fields.appendChild(cacheLocked(labelled(tr("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
     value: profile.codexInjectionPosition,
     options: [{ value: "lorebook", label: tr("ui.tabs.profileTab.renderCodexSettings.lorebookBefore") }, { value: "depth", label: tr("ui.tabs.profileTab.renderCodexSettings.atHistoryDepth") }, { value: "after_history", label: tr("ui.tabs.profileTab.renderCodexSettings.afterChatHistory") }],
     onChange: (v) => patch({ codexInjectionPosition: v as LMBProfile["codexInjectionPosition"] }),
-  })));
+  }))));
   if (profile.codexInjectionPosition === "depth") fields.appendChild(labelled(tr("ui.tabs.profileTab.renderCodexSettings.depthFromNewestTurn"), numberInput({
     value: profile.codexInjectionDepth, min: 0, max: 10000,
     onBlur: (v) => patch({ codexInjectionDepth: v ?? 4 }),
@@ -145,12 +140,12 @@ export function renderCodexSettings(
   placementHint.textContent = tr("ui.tabs.profileTab.renderCodexSettings.summariesReplaceTheirSourceHistoryInPlace");
   fields.appendChild(placementHint);
 
-  fields.appendChild(lessonMark(checkbox({
+  fields.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: tr("ui.tabs.profileTab.renderCodexSettings.relationsTable"),
     hint: tr("ui.tabs.profileTab.renderCodexSettings.tracksConnectionsBetweenEntitiesAsOneShared"),
     onChange: (v) => patch({ codexRelationsTable: v }),
-  }), "tuning.codex.relations"));
+  }), "tuning.codex.relations")));
 
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexThorough,
@@ -159,12 +154,12 @@ export function renderCodexSettings(
     onChange: (v) => patch({ codexThorough: v }),
   }), "tuning.codex.thorough"));
 
-  fields.appendChild(lessonMark(checkbox({
+  fields.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexExtraContext,
     label: tr("ui.tabs.profileTab.renderCodexSettings.extraContextMode"),
     hint: tr("ui.tabs.profileTab.renderCodexSettings.summarizesChaptersEarlyAtTheCodexLag"),
     onChange: (v) => patch({ codexExtraContext: v }),
-  }), "tuning.codex.extra"));
+  }), "tuning.codex.extra")));
 
   const soFarFields = document.createElement("div");
   soFarFields.className = profile.codexExtraContext ? "" : "lmb-greyed";
@@ -182,6 +177,20 @@ export function renderCodexSettings(
   soFarHint.textContent = tr("ui.tabs.profileTab.renderCodexSettings.howManyRecentChapterSummariesExtraContext");
   soFarFields.appendChild(soFarHint);
   fields.appendChild(soFarFields);
+
+  const limits = section(tr("ui.tabs.profileTab.tokenLimits.title"));
+  limits.body.appendChild(textNode(tr("ui.tabs.profileTab.tokenLimits.help"), "lmb-field-hint"));
+  const limitGrid = document.createElement("div");
+  limitGrid.className = "lmb-grid-2";
+  for (const file of CODEX_FILE_KEYS) {
+    limitGrid.appendChild(labelled(tr("ui.tabs.profileTab.tokenLimits.category", { file }), numberInput({
+      value: profile.codexTokenLimits[file], min: 0, max: 1000000, step: 500,
+      defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
+      onBlur: (v) => patch({ codexTokenLimits: { ...profile.codexTokenLimits, [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } }),
+    })));
+  }
+  limits.body.appendChild(limitGrid);
+  fields.appendChild(limits.wrap);
 
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";
@@ -369,10 +378,10 @@ function summaryTierSection(title: string, tier: number): ReturnType<typeof sect
 export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.summarySettings"));
   sec.body.appendChild(textNode(tr("ui.tabs.profileTab.renderSummarySettings.windowLagAndCompressionSettingsForEach"), "lmb-help"));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.autoCreate, label: tr("ui.tabs.profileTab.renderSummarySettings.runAutomation"),
     onChange: (autoCreate) => patch({ autoCreate }),
-  }), "tuning.auto"));
+  }), "tuning.auto")));
 
   for (const tier of [1, 2, ...HIGHER_TIERS] as const) {
     const name = TIER_NAMES[tier - 1]!;
@@ -449,7 +458,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
     }
     appendCompressionTarget(card.body, profile, tier, patch);
     const enabled = tier === 1 ? profile.autoCreateChapter : tier === 2 ? profile.autoCreateArc : profile.higherTiers[tier].enabled;
-    appendAutomationControls(card.body, lag, enabled, (enabled) => {
+    appendAutomationControls(card.body, lag, enabled, tier === 1, (enabled) => {
       if (tier === 1) patch({ autoCreateChapter: enabled });
       else if (tier === 2) patch({ autoCreateArc: enabled });
       else patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], enabled } } });
@@ -459,7 +468,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
   host.appendChild(sec.wrap);
 }
 
-function appendAutomationControls(host: HTMLElement, lag: HTMLElement, enabled: boolean, onChange: (enabled: boolean) => void): void {
+function appendAutomationControls(host: HTMLElement, lag: HTMLElement, enabled: boolean, modeOwned: boolean, onChange: (enabled: boolean) => void): void {
   const controls = [...lag.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")]
     .map((input) => ({ input, disabled: input.disabled }));
   const update = (enabled: boolean) => {
@@ -467,10 +476,11 @@ function appendAutomationControls(host: HTMLElement, lag: HTMLElement, enabled: 
     for (const { input, disabled } of controls) input.disabled = !enabled || disabled;
   };
   update(enabled);
-  host.append(checkbox({ checked: enabled, label: tr("ui.tabs.profileTab.appendAutomationControls.automate"), onChange: (enabled) => {
+  const toggle = checkbox({ checked: enabled, label: tr("ui.tabs.profileTab.appendAutomationControls.automate"), onChange: (enabled) => {
     update(enabled);
     onChange(enabled);
-  } }), lag);
+  } });
+  host.append(modeOwned ? cacheLocked(toggle) : toggle, lag);
 }
 
 function appendCompressionTarget(host: HTMLElement, profile: LMBProfile, tier: 1 | 2 | 3 | 4 | 5 | 6 | 7, patch: (p: Partial<LMBProfile>) => void): void {
@@ -798,11 +808,11 @@ export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p
     hint: tr("ui.tabs.profileTab.renderBehavior.greysOutCoveredMessagesInTheChat"),
     onChange: (v) => patch({ hideCoveredMessages: v }),
   }));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.showMemoryPreviews,
     label: tr("ui.tabs.profileTab.renderBehavior.previewBeforeSaving"),
     hint: tr("ui.tabs.profileTab.renderBehavior.memoriaStagesNewChaptersAndArcsIn"),
     onChange: (v) => patch({ showMemoryPreviews: v }),
-  }), "tuning.behavior.preview"));
+  }), "tuning.behavior.preview")));
   host.appendChild(sec.wrap);
 }

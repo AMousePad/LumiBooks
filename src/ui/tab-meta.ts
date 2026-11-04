@@ -20,7 +20,7 @@ export const APP_TABS: { key: AppTabKey; label: string; icon: string }[] = [
   {
     key: "codex",
     label: tr("ui.tabMeta.appTabs.codex"),
-    // Compass rose diamond: the story bible.
+    // Compass rose diamond: the Codex.
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l10 10-10 10L2 12z"/><path d="M12 7.5l4.5 4.5-4.5 4.5L7.5 12z"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>`,
   },
   {

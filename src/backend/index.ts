@@ -6,13 +6,14 @@ import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../
 import { isExtraCategory, presetKeyFor, presetKeyPatch } from "../prompts/categories";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
+import { contextIsFull, relieveContext, rememberContextStats, takeContextStats, type ContextStats } from "./context-relief";
 import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
 import type { FrontendToBackend } from "../types";
-import { CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, makeDefaultProfile, normalizeProfile, normalizeCustomPreset } from "../shared";
+import { CACHE_BREAKING_ACTIONS, cacheFriendlyFileLocked, CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, enterCacheFriendly, leaveCacheFriendly, makeDefaultProfile, normalizeProfile, normalizeCustomPreset } from "../shared";
 import {
   debug,
   describeError,
@@ -97,7 +98,9 @@ import {
 } from "./codex/index";
 import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
-import { syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { codexActivationCuts, registerCodexCutWarning, syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { filedMessageChanged, lumiCacheAvailable, runCacheFriendlyWindow } from "./cache-friendly";
+import { bumpCacheEpoch } from "./hooks";
 import { repairCodexReferences, saveCodexEdit } from "./codex/repair";
 import { registerLumiAgentCodex } from "./codex/lumiagent";
 import { applyLessonDelivery } from "./lessons";
@@ -222,6 +225,28 @@ registerCodexCallbacks({
   },
 });
 
+registerCodexCutWarning((userId) => {
+  void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
+});
+
+/** Warn when the set grows, not every turn the same entries stay cut. */
+const activationCutsSeen = new Map<string, Set<string>>();
+
+function warnOnNewActivationCuts(userId: string, chatId: string, cut: string[]): void {
+  const key = `${userId}::${chatId}`;
+  const seen = activationCutsSeen.get(key);
+  if (cut.some((id) => !seen?.has(id))) void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
+  if (activationCutsSeen.size > 500) activationCutsSeen.clear();
+  activationCutsSeen.set(key, new Set(cut));
+}
+
+async function warnIfFiledMessageChanged(chatId: string, messageId: string | undefined, userId: string, deleted: boolean): Promise<void> {
+  if (!messageId || !(await loadSettings(userId)).cacheFriendly) return;
+  if (await filedMessageChanged(chatId, messageId, userId, deleted)) {
+    await notify(userId, "warn", tr("backend.cacheFriendly.filedMessageChanged"));
+  }
+}
+
 /** Host kills the world-info handler at 10s and discards the whole vote. */
 const CODEX_GATE_TIMEOUT_MS = 9000;
 
@@ -242,11 +267,12 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
     const userId = ctx.userId ?? resolveUserId(ctx.chatId);
     if (userId) {
       let gateTimer: ReturnType<typeof setTimeout> | undefined;
-      const gate = (async (): Promise<boolean> => {
+      const gate = (async (): Promise<{ off: boolean; cut: string[] }> => {
         const settings = await loadSettings(userId);
         const rawProfile = settings.profiles.find((p) => p.id === settings.activeProfileId) ?? null;
         const profile = rawProfile ? effectiveProfile(rawProfile, await ensureLessons(userId)) : null;
-        return !settings.enabled || !profile || !profile.codexEnabled;
+        if (!settings.enabled || !profile || !profile.codexEnabled) return { off: true, cut: [] };
+        return { off: false, cut: codexActivationCuts(ctx.entries, ctx.messages, (ctx as { activationSettings?: { globalScanDepth: number | null } }).activationSettings?.globalScanDepth ?? null, profile) };
       })();
       gate.catch(() => {});
       const deadline = new Promise<"timeout">((resolve) => {
@@ -256,8 +282,11 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
         const off = await Promise.race([gate, deadline]);
         if (off === "timeout") {
           warn("world-info codex gate timed out, leaving codex entries active this turn");
-        } else if (off) {
+        } else if (off.off) {
           disabledIds.push(...codexIds);
+        } else {
+          disabledIds.push(...off.cut);
+          warnOnNewActivationCuts(userId, ctx.chatId, off.cut);
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
@@ -344,19 +373,48 @@ spindle.on("MESSAGE_SENT", async (payload: unknown, hostUserId?: string) => {
   void recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
 });
 
+const onHostEvent = spindle.on as unknown as (event: string, handler: (payload: unknown) => void) => void;
+onHostEvent("GENERATION_IN_PROGRESS", (payload) => {
+  const p = payload as { generationId?: string; contextClipStats?: ContextStats };
+  rememberContextStats(p?.generationId, p?.contextClipStats);
+});
+spindle.on("GENERATION_STOPPED", (payload: { generationId?: string }) => { takeContextStats(payload?.generationId); });
+
 spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => {
-  const p = payload as { chatId?: string; error?: string };
+  const p = payload as { chatId?: string; error?: string; generationId?: string; usage?: { prompt_tokens?: number } };
+  const contextStats = takeContextStats(p?.generationId);
   if (!p?.chatId || p.error) return;
   const userId = hostUserId ?? resolveUserId(p.chatId);
   if (!userId) return;
   rememberChatUser(p.chatId, userId);
   await ensureUserFolders(userId).catch(() => {});
-  const settings = await loadSettings(userId).catch(() => null);
+  let settings = await loadSettings(userId).catch(() => null);
   if (!settings?.enabled) return;
-  const rawProfile = settings.profiles.find((x) => x.id === settings.activeProfileId);
+  if (contextIsFull(contextStats, p.usage?.prompt_tokens)) {
+    try {
+      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text));
+      if (relieved) {
+        settings = relieved;
+        await syncProfileSettings(userId);
+        await pushState(userId, p.chatId);
+      }
+    } catch (err) {
+      warn(`context relief failed: ${describeError(err)}`);
+      void notify(userId, "error", tr("backend.contextRelief.failed", { error: shortErrorText(err) }));
+    }
+  }
+  const activeSettings = settings;
+  const rawProfile = activeSettings.profiles.find((x) => x.id === activeSettings.activeProfileId);
   if (!rawProfile) return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
+  if (settings.cacheFriendly && profile.codexEnabled) {
+    await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
+      warn(`cache friendly window failed: ${describeError(err)}`);
+      void notify(userId, "error", tr("backend.cacheFriendly.windowFailed", { error: shortErrorText(err) }));
+    });
+    return;
+  }
   await maybeRunPipeline(p.chatId, profile, settings, userId).catch((err) => {
     warn(`pipeline failed: ${describeError(err)}`);
   });
@@ -384,7 +442,16 @@ spindle.on("MESSAGE_DELETED", async (payload: unknown, hostUserId?: string) => {
   rememberChatUser(p.chatId, userId);
   void recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "removed" });
   invalidateBookCache(userId, p.chatId);
+  await warnIfFiledMessageChanged(p.chatId, p.messageId, userId, true).catch((err) => warn(`filed message check failed: ${describeError(err)}`));
   await pushState(userId, p.chatId);
+});
+
+spindle.on("MESSAGE_EDITED", async (payload: unknown, hostUserId?: string) => {
+  const p = payload as { chatId?: string; message?: { id?: string } };
+  if (!p?.chatId) return;
+  const userId = hostUserId ?? resolveUserId(p.chatId);
+  if (!userId) return;
+  await warnIfFiledMessageChanged(p.chatId, p.message?.id, userId, false).catch((err) => warn(`filed message check failed: ${describeError(err)}`));
 });
 
 spindle.on("WORLD_BOOK_ENTRY_DELETED", async (payload: unknown, hostUserId?: string) => {
@@ -582,6 +649,31 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await pushState(userId, msg.chatId);
         break;
 
+      case "cache_friendly_set": {
+        const current = await loadSettings(userId);
+        if (msg.enabled === current.cacheFriendly) break;
+        if (msg.enabled) {
+          if (codexGated(await ensureLessons(userId))) {
+            await notify(userId, "warn", tr("backend.cacheFriendly.finishCodexCourse"));
+            break;
+          }
+          if (!(await lumiCacheAvailable())) {
+            await notify(userId, "error", tr("backend.cacheFriendly.needsLumiCache"));
+            break;
+          }
+        }
+        await mutateSettings(userId, (cur) => msg.enabled
+          ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map(enterCacheFriendly) }
+          : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
+        const { failed } = await applySummaryActivation(userId);
+        if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));
+        await syncProfileSettings(userId);
+        if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
+        if (msg.enabled) await notify(userId, "info", tr("backend.cacheFriendly.enabledCost"));
+        await pushState(userId, msg.chatId);
+        break;
+      }
+
       case "save_settings":
         await patchSettings(userId, msg.patch);
         if ("profiles" in msg.patch || "activeProfileId" in msg.patch) await syncProfileSettings(userId);
@@ -645,7 +737,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
         }
-        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth"].some((key) => key in incoming)) {
+        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => key in incoming)) {
           await syncProfileSettings(userId);
         }
         // The effective-mode off transition (extra toggle OR codex disable)
@@ -1510,6 +1602,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           clearBusy(userId, msg.chatId, "codex");
         }
         send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq, revision: getCodexRevision(msg.chatId) }, userId);
+        if ((await loadSettings(userId)).cacheFriendly) await notify(userId, "warn", tr("backend.cacheFriendly.handEditBreaksCache"));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -1665,6 +1758,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
         let profile: ReturnType<typeof normalizeProfile> = null;
         try {
           const cur = await loadSettings(userId);
+          if (cur.cacheFriendly && cacheFriendlyFileLocked(msg.file)) {
+            throw new Error(tr("backend.cacheFriendly.fileLocked"));
+          }
           profile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? null;
           await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
         } catch (err) {
@@ -1761,6 +1857,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       default:
         debug(userId, `unknown frontend msg type`, (msg as { type?: string }).type);
     }
+    if (CACHE_BREAKING_ACTIONS.has(msg.type) && "chatId" in msg && msg.chatId && (await loadSettings(userId)).cacheFriendly) bumpCacheEpoch(msg.chatId);
     recordFrontendAction(userId, msg, "finished");
   } catch (err) {
     recordFrontendAction(userId, msg, "failed");

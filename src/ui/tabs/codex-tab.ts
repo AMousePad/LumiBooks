@@ -11,12 +11,13 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import type { FrontendState, FrontendToBackend } from "../../types";
-import { CODEX_FILE_KEYS, codexLessonGated, type CodexFileKey } from "../../shared";
+import { CODEX_FILE_KEYS, cacheFriendlyFileLocked, codexLessonGated, type CodexFileKey } from "../../shared";
 import {
   formatTokens,
   lessonMark,
   makeButton,
   makeSubtabs,
+  showLockTip,
   pill,
   preserveScroll,
   relativeTime,
@@ -487,6 +488,10 @@ export function renderCodexTab(
 
   const drawPane = (): void => {
     paneHost.replaceChildren();
+    if (state.settings.cacheFriendly && cacheFriendlyFileLocked(local.subtab as CodexFileKey)) {
+      paneHost.appendChild(textNode(tr("ui.tabs.codexTab.cacheFriendlyDisabled"), "lmb-empty"));
+      return;
+    }
     switch (local.subtab) {
       case "entities": renderEntities(paneHost, parsed, state, ctx, send); break;
       case "relations": renderRelations(paneHost, parsed, state, ctx, send); break;
@@ -516,15 +521,15 @@ function matches(q: string, ...bits: (string | string[] | undefined)[]): boolean
 /* ------------------------------------------------------------- overview */
 
 // One tile per file, labelled to match the section tabs above.
-const BIBLE_TILES: { id: string; label: string; files: CodexFileKey[] }[] = [
-  { id: "characters", label: tr("ui.tabs.codexTab.bibleTiles.characters"), files: ["characters"] },
-  { id: "locations", label: tr("ui.tabs.codexTab.bibleTiles.locations"), files: ["locations"] },
-  { id: "things", label: tr("ui.tabs.codexTab.bibleTiles.things"), files: ["things"] },
-  { id: "relations", label: tr("ui.tabs.codexTab.bibleTiles.relations"), files: ["relations"] },
-  { id: "timeline", label: tr("ui.tabs.codexTab.bibleTiles.timeline"), files: ["timeline"] },
-  { id: "threads", label: tr("ui.tabs.codexTab.bibleTiles.threads"), files: ["threads"] },
-  { id: "lore", label: tr("ui.tabs.codexTab.bibleTiles.lore"), files: ["world"] },
-  { id: "secrets", label: tr("ui.tabs.codexTab.bibleTiles.secrets"), files: ["knowledge"] },
+const CODEX_TILES: { id: string; label: string; files: CodexFileKey[] }[] = [
+  { id: "characters", label: tr("ui.tabs.codexTab.codexTiles.characters"), files: ["characters"] },
+  { id: "locations", label: tr("ui.tabs.codexTab.codexTiles.locations"), files: ["locations"] },
+  { id: "things", label: tr("ui.tabs.codexTab.codexTiles.things"), files: ["things"] },
+  { id: "relations", label: tr("ui.tabs.codexTab.codexTiles.relations"), files: ["relations"] },
+  { id: "timeline", label: tr("ui.tabs.codexTab.codexTiles.timeline"), files: ["timeline"] },
+  { id: "threads", label: tr("ui.tabs.codexTab.codexTiles.threads"), files: ["threads"] },
+  { id: "lore", label: tr("ui.tabs.codexTab.codexTiles.lore"), files: ["world"] },
+  { id: "secrets", label: tr("ui.tabs.codexTab.codexTiles.secrets"), files: ["knowledge"] },
 ];
 
 type FileState = "on" | "noInject" | "frozen";
@@ -599,7 +604,7 @@ function renderOverview(
 ): void {
   const chatId = state.activeChatId!;
   const profile = state.activeProfile;
-  const sec = section(tr("ui.tabs.codexTab.sec.storyBible"));
+  const sec = section(tr("ui.tabs.codexTab.sec.codex"));
 
   const bits: string[] = [];
   bits.push(state.codexExists ? tr("ui.tabs.codexTab.renderOverview.codexOnFile") : tr("ui.tabs.codexTab.renderOverview.noCodexYet"));
@@ -635,8 +640,8 @@ function renderOverview(
     const tiles = document.createElement("div");
     tiles.className = "lmb-tiles";
     lessonMark(tiles, "codex.tiles");
-    for (const def of BIBLE_TILES) {
-      tiles.appendChild(renderBibleTile(def, shownParsed, state, ctx, send, busy));
+    for (const def of CODEX_TILES) {
+      tiles.appendChild(renderCodexTile(def, shownParsed, state, ctx, send, busy));
     }
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
@@ -667,7 +672,7 @@ function renderOverview(
           title: tr("ui.tabs.codexTab.renderOverview.onePassRebuildsJustTheReEnabled"),
         }),
         makeButton(tr("ui.tabs.codexTab.renderOverview.rebuildInstead"), async () => {
-          const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
+          const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheCodexAnd"));
           if (ok) requestCodexRebuild(state, chatId, send);
         }, {
           small: true,
@@ -815,11 +820,11 @@ function renderManage(
   lessonMark(dangerRow, "codex.manage.startover");
   dangerRow.append(
     makeButton(tr("ui.tabs.codexTab.renderManage.rebuildCodex"), async () => {
-      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
+      const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.rebuildTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseTheCodexAnd"));
       if (ok) requestCodexRebuild(state, chatId, send);
     }, {
       disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-      title: tr("ui.tabs.codexTab.renderManage.wipeAndRegenerateTheWholeStoryBible"),
+      title: tr("ui.tabs.codexTab.renderManage.wipeAndRegenerateTheWholeCodex"),
     }),
     makeButton(tr("ui.tabs.codexTab.renderManage.wipeCodex"), async () => {
       const ok = await confirmDelete(ctx, tr("ui.tabs.codexTab.ok.wipeTheCodex"), tr("ui.tabs.codexTab.ok.memoriaWillEraseEveryCodexRecordFor"));
@@ -863,7 +868,7 @@ export function downloadCodexBackup(filename: string, content: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function renderBibleTile(
+function renderCodexTile(
   def: { id: string; label: string; files: CodexFileKey[] },
   parsed: ParsedCodex,
   state: FrontendState,
@@ -882,9 +887,9 @@ function renderBibleTile(
     : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
 
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-bible-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-codex-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
   lessonMark(tile, `codex.tile.${def.id}`);
-  tile.title = tr("ui.tabs.codexTab.renderBibleTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: (stale) ? "yes" : "no", choice2: (needsCatchup) ? "yes" : "no" });
+  tile.title = tr("ui.tabs.codexTab.renderCodexTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: (stale) ? "yes" : "no", choice2: (needsCatchup) ? "yes" : "no" });
 
   const v = document.createElement("div");
   v.className = "lmb-tile-value";
@@ -894,10 +899,10 @@ function renderBibleTile(
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = tr("ui.tabs.codexTab.renderBibleTile.tokens", { choice: (state.codexTokensApproximate) ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  s.textContent = tr("ui.tabs.codexTab.renderCodexTile.tokens", { choice: (state.codexTokensApproximate) ? "yes" : "no", formatTokens: formatTokens(tokens) });
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
-  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
+  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;
   tile.append(v, l, s, stateLine);
 
   const tools = document.createElement("div");
@@ -944,13 +949,25 @@ function renderBibleTile(
   tools.appendChild(purgeBtn);
   tile.appendChild(tools);
 
+  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
+  const disabledText = tr("ui.tabs.codexTab.cacheFriendlyDisabled");
+  if (locked) {
+    tile.classList.add("locked");
+    tile.title = disabledText;
+    stateLine.textContent = disabledText;
+    tools.remove();
+  }
   tile.addEventListener("click", () => {
+    if (locked) {
+      showLockTip(tile, disabledText);
+      return;
+    }
     cycleTileState(def, st, state, send);
     st = tileState(state, def.files);
     tile.classList.remove("on", "noInject", "frozen");
     tile.classList.add(st);
-    tile.title = tr("ui.tabs.codexTab.renderBibleTile.clickToCycle2", { tileStateLabelSt: TILE_STATE_LABEL[st] });
-    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
+    tile.title = tr("ui.tabs.codexTab.renderCodexTile.clickToCycle2", { tileStateLabelSt: TILE_STATE_LABEL[st] });
+    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;
     tidyBtn.disabled = !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists);
     rebuildBtn.disabled = busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled;
     purgeBtn.disabled = busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0;

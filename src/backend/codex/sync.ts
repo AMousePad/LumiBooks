@@ -5,8 +5,8 @@ import type { LMBProfile } from "../../shared";
 import { listCodexChatIds, setCodexOrphaned } from "./store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
-import type { WorldBookEntryDTO } from "lumiverse-spindle-types";
-import { CODEX_ENTRY_EXTENSION_KEY } from "../../shared";
+import type { WorldBookEntryDTO, WorldInfoInterceptorEntryDTO } from "lumiverse-spindle-types";
+import { CODEX_ENTRY_EXTENSION_KEY, approximateTokensFromChars } from "../../shared";
 import type { CodexFileKey } from "./schema";
 import { CODEX_FILE_KEYS } from "./schema";
 import type { CodexRecordRender } from "./prompt";
@@ -16,15 +16,22 @@ import { ensureCodexBookForChat, findCodexBookForChat, invalidateBookCache, list
 import { describeError, warn } from "../runtime";
 import { recordDiagnostic } from "../diagnostics";
 import { mergeLorebookEdits, type LorebookEditState } from "./lorebook-edits";
+import { countCodexText } from "./tokens";
+import { selectCodexCuts, type CutCandidate } from "./limits";
+import { alignCacheFileStates } from "./cache-states";
+import { bumpCacheEpoch } from "../hooks";
 
 /** Identity payload stored on every synced entry. */
 interface CodexEntryMeta extends LorebookEditState {
   chatId: string;
   record: string;
   file: CodexFileKey;
+  /** Update history, read by the activation hook without extra storage calls. */
+  updates?: number;
+  born?: number;
 }
 
-export function readEntryMeta(entry: WorldBookEntryDTO): CodexEntryMeta | null {
+export function readEntryMeta(entry: Pick<WorldBookEntryDTO, "extensions">): CodexEntryMeta | null {
   const ext = (entry.extensions || {}) as Record<string, unknown>;
   const raw = ext[CODEX_ENTRY_EXTENSION_KEY];
   if (!raw || typeof raw !== "object") return null;
@@ -35,7 +42,29 @@ export function readEntryMeta(entry: WorldBookEntryDTO): CodexEntryMeta | null {
     ? (v.file as CodexFileKey)
     : null;
   if (!file) return null;
-  return { chatId: v.chatId, record: v.record, file, applied: v.applied, overrides: v.overrides };
+  return { chatId: v.chatId, record: v.record, file, applied: v.applied, overrides: v.overrides,
+    ...(typeof v.updates === "number" ? { updates: v.updates } : {}), ...(typeof v.born === "number" ? { born: v.born } : {}) };
+}
+
+let cutWarning: ((userId: string, chatId: string) => void) | null = null;
+export function registerCodexCutWarning(warning: (userId: string, chatId: string) => void): void {
+  cutWarning = warning;
+}
+
+async function cutCandidates(
+  desired: readonly CodexRecordRender[],
+  stats: Record<string, { updates: number; born: number }>,
+  disabledFor: (file: CodexFileKey) => boolean,
+  userId: string,
+): Promise<CutCandidate[]> {
+  const out: CutCandidate[] = [];
+  for (const [index, rec] of desired.entries()) {
+    if (rec.disabled || disabledFor(rec.file)) continue;
+    const stat = stats[rec.record];
+    out.push({ id: rec.record, file: rec.file, index, tokens: (await countCodexText(rec.content, userId)).tokens,
+      updates: stat?.updates ?? 0, born: stat?.born ?? 0 });
+  }
+  return out;
 }
 
 /** Serialize sync and wipe per chat: a run finishing while a hand-save lands
@@ -107,6 +136,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   }
   const settings = await loadSettings(userId);
   const profile = settings.profiles.find((p) => p.id === settings.activeProfileId)!;
+  await alignCacheFileStates(chatId, userId, settings.cacheFriendly);
   const cursor = await loadCursor(chatId, userId);
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
@@ -137,7 +167,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const existing = await listSyncedEntries(bookId, chatId, userId);
   const manifestPath = `codex/${chatId}/lorebook-sync.json`;
   const manifest = await spindle.userStorage.exists(manifestPath, userId)
-    ? await spindle.userStorage.getJson<{ bookId: string; records: string[]; suppressed: string[] }>(manifestPath, { userId })
+    ? await spindle.userStorage.getJson<{ bookId: string; records: string[]; suppressed: string[]; cut?: string[] }>(manifestPath, { userId })
     : null;
   const suppressed = new Set(manifest?.bookId === bookId ? manifest.suppressed ?? [] : []);
   const previousRecords = new Set(manifest?.bookId === bookId ? manifest.records ?? [] : []);
@@ -156,21 +186,30 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     });
   }
 
+  const cuts = profile.codexActivationMode === "always"
+    ? selectCodexCuts(await cutCandidates(desired, cursor.recordStats, disabledFor, userId), profile.codexTokenLimits)
+    : new Set<string>();
   const seen = new Set<string>();
-  for (const rec of desired) {
+  let wrote = false;
+  for (const [index, rec] of desired.entries()) {
     seen.add(rec.record);
-    const disabled = disabledFor(rec.file) || rec.disabled;
+    const disabled = disabledFor(rec.file) || rec.disabled || cuts.has(rec.record);
     const placement = codexEntryPlacement(profile, rec.constant);
     const cur = byRecord.get(rec.record) ?? (rec.legacyRecord ? byRecord.get(rec.legacyRecord) : undefined);
     if (!cur && (previousRecords.has(rec.record) || (rec.legacyRecord && previousRecords.has(rec.legacyRecord)))) suppressed.add(rec.record);
     if (!cur && suppressed.has(rec.record)) continue;
     if (cur) seen.add(cur.meta.record);
+    // Unique order values keep the host's sort from depending on its list order.
     const generated = { content: rec.content, comment: rec.comment, disabled, ...placement,
+      ...(settings.cacheFriendly ? { order_value: index } : {}),
       key: profile.codexActivationMode === "vector_only" ? [] : rec.keys, keysecondary: [] };
     const { fields, state } = mergeLorebookEdits((cur?.raw ?? generated) as unknown as Record<string, unknown>, generated, cur?.meta ?? {}, {
       disabled, vectorOnly: profile.codexActivationMode === "vector_only",
+      // Hand edits must not reintroduce per-turn activation or moving placement.
+      ...(settings.cacheFriendly ? { pinned: placement } : {}),
     });
-    const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file, ...state };
+    const stat = cursor.recordStats[rec.record];
+    const meta: CodexEntryMeta = { chatId, record: rec.record, file: rec.file, ...state, ...(stat ? { updates: stat.updates, born: stat.born } : {}) };
     if (!cur) {
       try {
         await spindle.world_books.entries.create(
@@ -181,6 +220,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
           },
           userId,
         );
+        wrote = true;
       } catch (err) {
         warn(`codex sync: failed to create entry for ${rec.record}: ${describeError(err)}`);
         throw err;
@@ -200,6 +240,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
         },
         userId,
       );
+      wrote = true;
     } catch (err) {
       warn(`codex sync: failed to update entry for ${rec.record}: ${describeError(err)}`);
       throw err;
@@ -219,6 +260,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       }, userId);
       continue;
     }
+    wrote = true;
     await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failedDeletes++;
       warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`);
@@ -230,7 +272,11 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     );
   }
   const records = desired.map(r => r.record);
-  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)) }, { userId });
+  const cut = [...cuts].sort();
+  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)), cut }, { userId });
+  const previousCut = new Set(manifest?.cut ?? []);
+  if (cut.some((record) => !previousCut.has(record))) cutWarning?.(userId, chatId);
+  if (wrote && settings.cacheFriendly) bumpCacheEpoch(chatId);
   void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
     numbers: { entries: desired.length },
     flags: { vector: profile.codexActivationMode === "vector", constant: profile.codexActivationMode === "always" } });
@@ -271,6 +317,26 @@ export async function readCodexLorebookEdits(chatId: string, userId: string): Pr
 }
 
 export type { CodexRecordRender };
+
+/** The host has no post-activation hook, so substring matching stands in for its keywords. */
+export function codexActivationCuts(
+  entries: readonly WorldInfoInterceptorEntryDTO[],
+  messages: readonly { content: string }[],
+  scanDepth: number | null,
+  profile: LMBProfile,
+): string[] {
+  if (profile.codexActivationMode === "always") return [];
+  const scan = (scanDepth && scanDepth > 0 ? messages.slice(-scanDepth) : messages).map((message) => message.content).join("\n").toLowerCase();
+  const items: CutCandidate[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const meta = entry.disabled ? null : readEntryMeta(entry);
+    if (!meta) continue;
+    const predicted = entry.constant || entry.key.length === 0 || entry.key.some((key) => scan.includes(key.toLowerCase()));
+    if (!predicted) continue;
+    items.push({ id: entry.id, file: meta.file, index, tokens: approximateTokensFromChars(entry.content.length), updates: meta.updates ?? 0, born: meta.born ?? 0 });
+  }
+  return [...selectCodexCuts(items, profile.codexTokenLimits)];
+}
 
 /** Host lorebook position 4 uses history depth; zero follows the last turn. */
 export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {

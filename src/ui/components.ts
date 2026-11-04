@@ -116,14 +116,59 @@ export interface CheckboxOpts {
   checked: boolean;
   label: string;
   hint?: string;
+  disabled?: boolean;
   onChange?: (checked: boolean) => void;
 }
+/** Marks a control Cache Friendly mode owns. The Tuning tab locks marked controls. */
+export function cacheLocked<T extends HTMLElement>(el: T, message = tr("ui.components.cacheLocked")): T {
+  el.dataset.cacheLocked = message;
+  return el;
+}
+
+let lockTip: HTMLElement | null = null;
+let lockTipTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function showLockTip(anchor: HTMLElement, text: string): void {
+  lockTip?.remove();
+  clearTimeout(lockTipTimer);
+  const tip = document.createElement("div");
+  tip.className = "lmb-lock-tip";
+  tip.textContent = text;
+  const rect = anchor.getBoundingClientRect();
+  tip.style.left = `${Math.max(8, rect.left)}px`;
+  tip.style.top = `${rect.top}px`;
+  document.body.appendChild(tip);
+  lockTip = tip;
+  lockTipTimer = setTimeout(() => { tip.remove(); if (lockTip === tip) lockTip = null; }, 2500);
+}
+
+/** Inert controls get no events, so these stay live and refuse each attempt. */
+function refuseLocked(event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.type !== "click") return;
+  const target = event.target as HTMLElement;
+  const message = target.closest<HTMLElement>("[data-cache-locked]")?.dataset.cacheLocked;
+  if (message) showLockTip(target, message);
+}
+
+export function applyCacheLocks(host: HTMLElement, cacheFriendly: boolean): void {
+  if (!cacheFriendly) return;
+  for (const el of host.querySelectorAll<HTMLElement>("[data-cache-locked]")) {
+    el.classList.add("lmb-cache-locked");
+    el.title = el.dataset.cacheLocked!;
+    for (const type of ["mousedown", "click", "keydown"]) el.addEventListener(type, refuseLocked, true);
+    for (const control of el.querySelectorAll<HTMLElement>("input, select, textarea, button")) control.tabIndex = -1;
+  }
+}
+
 export function checkbox(opts: CheckboxOpts): HTMLLabelElement {
   const label = document.createElement("label");
   label.className = "lmb-check";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = opts.checked;
+  if (opts.disabled) input.disabled = true;
   const body = document.createElement("div");
   body.className = "lmb-check-body";
   const lbl = document.createElement("div");

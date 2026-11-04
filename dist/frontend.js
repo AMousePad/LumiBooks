@@ -3618,6 +3618,22 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       doEnsureCodexBookForChat: {
         chatNotFoundForUser: "Chat {chatId} not found for user"
       }
+    },
+    cacheFriendly: {
+      codexPartiallyCut: "Codex is too big and was partially cut! Please manually trim, tidy, or raise codex token limit in settings.",
+      filedMessageChanged: "That message is already filed, so this change will break the cache on a later update.",
+      codexMissedThisWindow: "The Codex missed this window and will catch up on the next one.",
+      windowFailed: "Cache Friendly update failed with {error}.",
+      finishCodexCourse: "Finish the Codex course before you turn on Cache Friendly mode.",
+      needsLumiCache: "Cache Friendly mode needs the LumiCache extension to be enabled.",
+      enabledCost: "Cache Friendly mode is on, and the next update may also catch up older messages and move relations into entities.",
+      fileLocked: "Cache Friendly mode controls this Codex category.",
+      handEditBreaksCache: "Your Codex edit will break the cache on your next message."
+    },
+    contextRelief: {
+      applied: "Your prompt is using over 90% of your context, so I permanently lowered summary lag, summary size, and Codex limits on this profile.",
+      advice: "Your context window looks small, so consider turning off larger Codex features like timeline, lore, and relations to save context.",
+      failed: "I could not lower your settings for a full context window: {error}"
     }
   },
   codexTidy: {
@@ -3699,7 +3715,11 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           theLockedEntityIds: "the locked entity ids",
           lockedFields: "Locked fields",
           prependedWhenIndividualFieldsAreLockedOn: 'Identifies locked fields. The agent sees "Locked, do not edit" in place of their values. The app restores those values on writes.',
-          theEntitiesCarryingLockedFields: "the entities carrying locked fields"
+          theEntitiesCarryingLockedFields: "the entities carrying locked fields",
+          codexFillingUp: "Codex filling up",
+          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 75% of its token limit, once per category.",
+          theCategoryThatIsFillingUp: "The category that is filling up",
+          howFullThatCategoryIs: "How full that category is, as a whole number"
         },
         schemaHowtoTail: "Keep the JSON structure consistent with the validator or writes will fail. Guidance can be reworded."
       }
@@ -3811,7 +3831,9 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       },
       formatTokens: {
         thousands: "{value}k"
-      }
+      },
+      cacheLocked: "Cache Friendly mode controls this setting.",
+      cacheLockedWindow: "Matches Chapter Summary Window in Cache Friendly Mode."
     },
     continuity: {
       sec: {
@@ -3837,18 +3859,18 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           thisPracticeStoryHasPlentyOfOld: "This practice story has plenty of old messages ready to compact into summaries. Press the File chapter button and watch what happens.",
           boomTheStoryIsNowMoreCompact: "BOOM💣. The story is now more compact, the new summary chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
           importantThereSAutomationTooNowYou: `IMPORTANT. There''s automation too! Now you may ask the very important question of: when do I summarize on my own?? And I''ll graciously answer that very important question! That depends on exactly about TWO 2️⃣ settings. Consider: Uncompressed messages are large, but hold detailed info so we don''t want to compress them right away right? Therefore, first setting is what I call the "lag", 65 by default. This represents the number of most recent messages we leave uncompressed always! 🗿`,
-          theSecondSettingIsTheWindowWe: `The second setting is the "window" 🪟. We don''t want to summarize every single message individually, instead we probably want toi summarize like, 18, into one chapter! Turns out 18 is the default, what a coincidence! Once 18 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`,
+          theSecondSettingIsTheWindowWe: `The second setting is the "window" 🪟. We don''t want to summarize every single message individually, instead we probably want to summarize like, 20, into one chapter! Turns out 20 is the default, what a coincidence! Once 20 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`,
           theDefaultValuesAreMadeFor200k: "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size. But I do reccomend keeping context at 200k. Unless you''re living in 2028 when LLMs are long context GODS (presumably).",
           fileAllFilesChaptersUntilTheLag: '"File all" files chapters until the lag is reached. Bind arc takes my oldest chapters and compresses them into one smaller summary called an arc. When work is waiting to be done, a little pill appears here telling you how much.',
           everythingIFileIsStoredInA: "Everything I file is stored in a lorebook created just for this chat, named after it. It appears the first time a chapter is filed.",
           normallyYouNeverNeedTheseButtonsWith: "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I''m busy or you switched me off >:(",
-          "70OldMessagesLag65Window18": "70 old messages · lag 65 · window 18",
+          "70OldMessagesLag65Window18": "50 old messages · lag 40 · window 20",
           thesePillsSayLagReadyButWindow: "These pills say lag ready but window building, and I''m not filing. Why not?",
           theLagHasNotFilledUpYet: "The lag has not filled up yet",
           theChatHasNoLorebookYet: "The chat has no lorebook yet",
-          "70MessagesMinusThe65ProtectedBy": "70 messages minus the 65 protected by the lag leaves only 5, and a chapter needs 18",
+          "70MessagesMinusThe65ProtectedBy": "50 messages minus the 40 protected by the lag leaves only 10, and a chapter needs 20",
           aChapterCanOnlyBeFiledAfter: "A chapter can only be filed after an arc exists",
-          theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 70 minus 65 is 5, short of 18. This is also when I''d notify you that your story needs more messages if you click file~",
+          theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 50 minus 40 is 10, short of 20. This is also when I''d notify you that your story needs more messages if you click file~",
           theDesk: "The desk",
           thisColoredBarIsTheSpineA: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the Codex, that''s my second course (it''s really cool).",
           clickAnyColoredBlockAndILl: "Click any colored block and I''ll jump you straight to that chapter or arc on my shelf 🐰. Handy when you want to check what I wrote about a scene.",
@@ -3934,22 +3956,22 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           arcsCanBuildAutomaticallyAfterEnoughChapters: "Arcs can build automatically after enough chapters pile up, just like how chapters build after enough messages pile up.",
           andThisIsTheAutomationSettingI: "And this is the automation setting I talked about earlier too! Codex has its own, but do my second, shorter course for that one.",
           contextIsJustHowManyPreviousChapters: "Context is just how many previous chapters I read each time for, well, context. Some other boring stuff...",
-          windowTokens18: "Window · tokens · 18",
-          youSwitchTheWindowUnitFromMessages: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
-          chaptersOfAbout18MessagesSameAs: "Chapters of about 18 messages, same as before",
+          windowTokens18: "Window · tokens · 20",
+          youSwitchTheWindowUnitFromMessages: "You switch the window unit from messages to tokens, but leave the value at 20. What did you just ask me for?",
+          chaptersOfAbout18MessagesSameAs: "Chapters of about 20 messages, same as before",
           idk: "Idk",
-          youAskedMeToConvert18Messages: "You asked me to convert 18 messages into tokens",
-          chaptersWillAutomaticallyFileAfterOnly18: "Chapters will automatically file after only ~18 tokens of story, about one sentence each. Uh oh. ",
+          youAskedMeToConvert18Messages: "You asked me to convert 20 messages into tokens",
+          chaptersWillAutomaticallyFileAfterOnly18: "Chapters will automatically file after only ~20 tokens of story, about one sentence each. Uh oh. ",
           theUnitChangesWhatTheNumberMeans: "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands",
           lag10Messages: "Lag · 10 messages",
-          youLowerTheLagFrom65Down: "You lower the lag from 65 down to 10. What changes?",
+          youLowerTheLagFrom65Down: "You lower the lag from 40 down to 10. What changes?",
           iStartSummarizingMuchCloserToThe: "I start summarizing much closer to the present, only your 10 newest messages stay untouched",
           chaptersGetBigger: "Chapters get bigger",
           nothingUntilTheWindowAlsoChanges: "Nothing until the window also changes",
           iGoBackAndReSummarizeOld: "I go back and re-summarize old chapters",
           aSmallLagSavesMoreSpaceBut: "A small lag saves more space but summarizes your recent scenes sooner. Keep it just big enough for quality writing without hallucination.",
           window40TargetPercent4: "Window · 40 · Target percent · 4",
-          youSetTheWindowTo40And: "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
+          youSetTheWindowTo40And: "You set the window to 40 and Target percent to 4% (defaults are 20 and 15%). What do your chapters become?",
           chaptersBecomeSmallerAndTheyCover40: "Chapters become smaller, and they cover 40 messages each.",
           chaptersBecomeSmallerAndMoreFrequent: "Chapters become smaller and more frequent",
           theSameTheRatioOnlyAffectsArcs: "The same, the ratio only affects arcs",
@@ -3979,7 +4001,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       contentCodex: {
         courseCodex: {
           theArchivistSCodex: "The Archivist''s Codex",
-          whyAStoryBible: "Why a story bible",
+          whyACodex: "Why a Codex",
           summaryChaptersAreAGoodOutlineBut: "Summary chapters are a good outline. But if you compress a story enough you''ll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
           beholdTheKnowledgeCodexLetSWalk: "BEHOLD the Knowledge Codex 😎. Let''s walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
           thereItIs: "There it is.",
@@ -4035,14 +4057,14 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           theAgentAlwaysStartsFromTheCurrent: "The agent always starts from the current records, so your corrections are canon it preserves. Freezing is only for stopping updates entirely.",
           tapGraph: "Tap Graph.",
           thereSYourWebARealStory: "There''s your web. A real story will look much more complex.",
-          thisIsTheWebForThisSmall: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
+          thisIsTheWebForThisSmall: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the Codex: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
           theAgentAndItsDials: "The agent and its dials",
           lastStopMyRulesOpenTheTuning: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           myDials: "My dials.",
           myCodexSettingsLiveHereByDefault: "My Codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
-          codexLag65: "Codex lag · 65",
-          youRaiseTheCodexLagFrom6: "You raise the Codex lag from 6 up to 65, same as the chapter lag. What changes?",
-          theBibleAlwaysRuns65MessagesBehind: "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
+          codexLag65: "Codex lag · 40",
+          youRaiseTheCodexLagFrom6: "You raise the Codex lag from 6 up to 40, same as the chapter lag. What changes?",
+          theCodexAlwaysRuns65MessagesBehind: "The Codex always runs ~40 messages behind, which may be too far behind for what you want!",
           nothingTheLagOnlyAffectsChapters: "Nothing, the lag only affects chapters",
           theCodexGetsCheaperWithNoDownside: "The Codex gets cheaper with no downside",
           theAgentRunsMoreOften: "The agent runs more often",
@@ -4066,7 +4088,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           practiceIsOverThisIsYourReal: "Practice is over, this is your real archive. Walk to your own Codex pane: the Tuning tab, then Settings, then its Codex side.",
           alreadyThereGood: "Already there. Good.",
           flipEnableCodexOnTheDefaultSettings: "Flip Enable Codex on. The default settings below suit most chats.",
-          enabledFromNowOnIKeepYour: "Enabled! From now on I keep your story bible current after every message.",
+          enabledFromNowOnIKeepYour: "Enabled! From now on I keep your Codex current after every message.",
           homeHasAnUpdateCodexButtonNow: "Home has an Update Codex button now. Let''s go find it. Tap Home.",
           pressItAndILlReadThis: "Press it and I''ll read this chat right away, or skip and I''ll do it later!",
           readingWatchTheBusyRowOnHome: "Reading! Watch the busy row on Home if you want to see me think.",
@@ -4436,7 +4458,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         renderCodexTabLock: {
           example: "example",
           theKnowledgeCodex: "The Knowledge Codex",
-          aStoryBibleAnAgentKeepsFor: "A story bible an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
+          aCodexAnAgentKeepsFor: "A Codex an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
         },
         renderCodexPaneLock: {
           sealedUntilTheLesson: "Sealed until the lesson",
@@ -4464,7 +4486,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       requestCodexRebuild: {
         rebuildTheCodex: "Rebuild the Codex",
-        memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
+        memoriaWillEraseTheCodexAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
       },
       requestCodexTidy: {
         tidyCodexToATargetSize: "Tidy Codex to a target size",
@@ -4542,6 +4564,11 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       promptForString: {
         cancel: "Cancel",
         ok: "OK"
+      },
+      cacheBreak: {
+        title: "Break the prompt cache?",
+        message: "Cache Friendly mode is on. This changes the saved story context, so your next message pays for a full cache rewrite.",
+        confirm: "Continue"
       }
     },
     promptBreakdown: {
@@ -4815,6 +4842,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         entryFallback: "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} {id}"
       },
       codexTab: {
+        cacheFriendlyDisabled: "Disabled in Cache Friendly Mode",
         deliverCodexFileState: {
           couldnTSaveThisCategorySSetting: "Couldn''t save this category''s setting: {error}"
         },
@@ -4845,7 +4873,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         sec: {
           knowledgeCodex: "Knowledge Codex",
-          storyBible: "Story Bible",
+          codex: "Codex",
           entities: "Entities",
           relations: "Relations",
           timeline: "Timeline",
@@ -4854,7 +4882,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         search: {
           searchThisSection: "Search this section..."
         },
-        bibleTiles: {
+        codexTiles: {
           characters: "Characters",
           locations: "Locations",
           things: "Things",
@@ -4908,7 +4936,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         ok: {
           rebuildTheCodex: "Rebuild the Codex?",
-          memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
+          memoriaWillEraseTheCodexAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
           undoTheLastCodexChange: "Undo the last Codex change?",
           memoriaWillRollTheCodexBackTo: "Restores the snapshot before {codexUndoReasonUpdate} {codexUndoAt}. Later changes are lost.",
           importACodexFile: "Import a Codex file?",
@@ -4943,7 +4971,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           replaceThisChatSCodexFromAn: "Replace this chat''s Codex from an exported file",
           rebuildReReadsTheWholeChatFrom: "Rebuild clears and rereads the chat. Wipe leaves the Codex empty until the next update.",
           rebuildCodex: "Rebuild Codex",
-          wipeAndRegenerateTheWholeStoryBible: "Clear Codex and regenerate from the start",
+          wipeAndRegenerateTheWholeCodex: "Clear Codex and regenerate from the start",
           wipeCodex: "Wipe Codex"
         },
         files: {
@@ -4955,7 +4983,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         restoreBackup: {
           memoriaCouldnTReadThatBackupFile: "Couldn''t read the backup file"
         },
-        renderBibleTile: {
+        renderCodexTile: {
           clickToCycle: "{tileStateLabelSt}{choice, select, yes { · missed updates while frozen} other {}}{choice2, select, yes { · waiting for the catch-up pass} other {}} - click to cycle",
           tokens: "{choice, select, yes {~} other {}}{formatTokens} tokens",
           stale: " · stale",
@@ -5327,7 +5355,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           msgsUncompressed: "{uncoveredMessages} msgs uncompressed",
           recentMessagesStillInThePromptAt: "Messages still in context, waiting for summary window and lag",
           codex: "Codex",
-          messagesTheStoryBibleHasNotRead: "Messages not yet indexed by the Codex",
+          messagesTheCodexHasNotRead: "Messages not yet indexed by the Codex",
           offEnableInTuning: "off, enable in Tuning",
           memoriaHasNoConnectionToWriteWith: "No connection available. Add a connection in Lumiverse.",
           pickAConnectionInTheTuningTab: "Select a connection in Tuning."
@@ -5376,6 +5404,14 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           tokens: "{tokenCountOutput} tokens",
           save: "Save",
           discard: "Discard"
+        },
+        cacheFriendly: {
+          toggle: "Cache Friendly mode",
+          hint: "Enable to have LumiBooks be optimized for cache friendly setups! This changes Summary and Codex to co-update at the same time, and has the Codex only track entities, lore, and secrets as constant entries, with a maximum default capacity of 10k tokens for each (LLM managed). Caching can reduce your LLM costs 10x!",
+          needsLumiCache: "LumiCache Extension required for this option.",
+          findHere: "Find Here.",
+          needsCourse: "Finish the Codex course to use this mode.",
+          lumiCacheMissing: "LumiCache is not running, so unplanned prompt changes are not being watched."
         },
         renderActions: {
           lagReady: "lag ready",
@@ -5595,6 +5631,11 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           greysOutCoveredMessagesInTheChat: "Greys out covered messages in chat. Summary coverage applies either way.",
           previewBeforeSaving: "Preview before saving",
           memoriaStagesNewChaptersAndArcsIn: "Review chapters and arcs in Home > Pending previews before saving."
+        },
+        tokenLimits: {
+          title: "Codex token limits",
+          help: "The most tokens each category may inject. Past 75% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
+          category: "{file}"
         }
       },
       promptsTab: {
@@ -5744,7 +5785,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           summaryRecall: "Summary recall",
           appliesToExistingAndFutureChapterAnd: "Applies to existing and future summaries across chats. Summary coverage stays unchanged. Keyword and vector modes include matching summaries; vector recall falls back to keywords if no recent text is visible.",
           lorebookNamesFollowChatNames: "Lorebook names follow chat names",
-          turnOffToRenameYourBooksAnd: "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync."
+          turnOffToRenameYourBooksAnd: "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync.",
+          contextRelief: "Shrink when context runs out",
+          contextReliefHint: "When a prompt reaches 90% of your context, lower all summary lags by 30%, and summary targets and Codex token limits by 33%. This runs once per profile and stays until you change the values."
         }
       }
     },
@@ -5770,7 +5813,7 @@ This is what knowledge Codex solves.
 
 ## What it is
 
-The Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
+The Codex is a story record for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
 
 - **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).
 - **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.
@@ -5781,7 +5824,7 @@ The Codex is a story bible for chats. As your story grows, an agent reads every 
 
 ## Why these records?
 
-These are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
+These are either proven failure modes or a mechanism shown to improve long-form coherence. A Codex must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
 
 Some things other trackers keep were left out on purpose:
 
@@ -6738,7 +6781,7 @@ var STYLES = `
 /* ---------------------------------------------------------------- tokens */
 /* Toasts, modal overlays, and Lumiverse-hosted modal forms mount on
    document.body, outside .lmb-root - tokens are declared on each mount root. */
-.lmb-root, .lmb-toast-stack, .lmb-preview-overlay, .lmb-modal-form {
+.lmb-root, .lmb-toast-stack, .lmb-preview-overlay, .lmb-modal-form, .lmb-lock-tip {
   --lmb-display-font: "Marcellus", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --lmb-body-font: "Josefin Sans", var(--lumiverse-font-family, -apple-system, "Segoe UI", sans-serif);
   --lmb-mono-font: var(--lumiverse-font-mono, ui-monospace, "Cascadia Mono", "Consolas", monospace);
@@ -7153,27 +7196,28 @@ var STYLES = `
 }
 .lmb-tile-sub { font-size: 10.5px; color: var(--lmb-ink-dim); }
 
-/* Story Bible tiles: clickable record cards that cycle inject/freeze state. */
-.lmb-bible-tile { cursor: pointer; user-select: none; }
-.lmb-bible-tile:hover { border-color: var(--lmb-frame-strong); }
+/* Codex tiles: clickable record cards that cycle inject/freeze state. */
+.lmb-codex-tile { cursor: pointer; user-select: none; }
+.lmb-codex-tile:hover { border-color: var(--lmb-frame-strong); }
 .lmb-tile-state {
   font-size: 9.5px;
   letter-spacing: 0.04em;
   color: var(--lmb-ink-dim);
   margin-top: 1px;
 }
-.lmb-bible-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
-.lmb-bible-tile.noInject { border-style: dashed; }
-.lmb-bible-tile.frozen {
+.lmb-codex-tile.locked { cursor: not-allowed; }
+.lmb-codex-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.noInject { border-style: dashed; }
+.lmb-codex-tile.frozen {
   border-style: dashed;
   opacity: 0.7;
   background:
     repeating-linear-gradient(45deg, rgba(128, 128, 128, 0.06) 0 4px, transparent 4px 9px),
     var(--lmb-fill);
 }
-.lmb-bible-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
-.lmb-bible-tile.stale { border-color: var(--lmb-warning-frame); }
-.lmb-bible-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
+.lmb-codex-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.stale { border-color: var(--lmb-warning-frame); }
+.lmb-codex-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
 .lmb-tile-tools { margin-top: 5px; display: flex; gap: 5px; }
 
 /* --------------------------------------------------------- coverage spine */
@@ -8246,6 +8290,10 @@ input.lmb-input[type="number"]::-webkit-inner-spin-button { opacity: 0.6; }
 }
 
 .lmb-greyed { opacity: 0.35; pointer-events: none; filter: saturate(0.5); }
+.lmb-field-hint a { color: inherit; text-decoration: underline; }
+.lmb-cache-locked { opacity: 0.35; filter: saturate(0.5); }
+.lmb-cache-locked, .lmb-cache-locked * { cursor: not-allowed; }
+.lmb-lock-tip { position: fixed; z-index: 100000; max-width: min(320px, calc(100vw - 16px)); transform: translateY(calc(-100% - 6px)); padding: 6px 10px; border: 1px solid var(--lmb-frame-strong); border-radius: 6px; background: var(--lcs-glass-bg, rgba(18, 16, 28, 0.55)); backdrop-filter: blur(12px); color: var(--lmb-ink); font-size: 12px; pointer-events: none; }
 
 /* ------------------------------------------------------- sampler switch */
 /* Large two-way toggle on the Model pane: summary samplers vs codex
@@ -8976,12 +9024,59 @@ function select(opts) {
     el.addEventListener("change", () => opts.onChange?.(el.value));
   return el;
 }
+function cacheLocked(el, message = t("ui.components.cacheLocked")) {
+  el.dataset.cacheLocked = message;
+  return el;
+}
+var lockTip = null;
+var lockTipTimer;
+function showLockTip(anchor, text) {
+  lockTip?.remove();
+  clearTimeout(lockTipTimer);
+  const tip = document.createElement("div");
+  tip.className = "lmb-lock-tip";
+  tip.textContent = text;
+  const rect = anchor.getBoundingClientRect();
+  tip.style.left = `${Math.max(8, rect.left)}px`;
+  tip.style.top = `${rect.top}px`;
+  document.body.appendChild(tip);
+  lockTip = tip;
+  lockTipTimer = setTimeout(() => {
+    tip.remove();
+    if (lockTip === tip)
+      lockTip = null;
+  }, 2500);
+}
+function refuseLocked(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.type !== "click")
+    return;
+  const target = event.target;
+  const message = target.closest("[data-cache-locked]")?.dataset.cacheLocked;
+  if (message)
+    showLockTip(target, message);
+}
+function applyCacheLocks(host, cacheFriendly) {
+  if (!cacheFriendly)
+    return;
+  for (const el of host.querySelectorAll("[data-cache-locked]")) {
+    el.classList.add("lmb-cache-locked");
+    el.title = el.dataset.cacheLocked;
+    for (const type of ["mousedown", "click", "keydown"])
+      el.addEventListener(type, refuseLocked, true);
+    for (const control of el.querySelectorAll("input, select, textarea, button"))
+      control.tabIndex = -1;
+  }
+}
 function checkbox(opts) {
   const label = document.createElement("label");
   label.className = "lmb-check";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = opts.checked;
+  if (opts.disabled)
+    input.disabled = true;
   const body = document.createElement("div");
   body.className = "lmb-check-body";
   const lbl = document.createElement("div");
@@ -9278,7 +9373,7 @@ function showToast(tone, text) {
 }
 
 // src/prompts/codex/directives.txt
-var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story bible of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
+var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story record of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
 
 For normal updates, you see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
@@ -9627,6 +9722,9 @@ var locked_default = "LOCKED: the user owns these entities, do NOT set or drop t
 var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.
 `;
 
+// src/prompts/codex/notes/codex-full.txt
+var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 30-50%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
+
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;
 var SCHEMA_HOWTO_TAIL = t("prompts.codex.registry.schemaHowtoTail");
@@ -9865,6 +9963,17 @@ var CODEX_TEMPLATES = [
     howTo: t("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
     vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
     defaultText: locked_fields_default
+  },
+  {
+    key: "note_codex_full",
+    label: t("prompts.codex.registry.codexTemplates.codexFillingUp"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.appendedToUpdatesWhenACategoryIsOver"),
+    vars: [
+      { token: "{{CATEGORY}}", meaning: t("prompts.codex.registry.codexTemplates.theCategoryThatIsFillingUp") },
+      { token: "{{PERCENT}}", meaning: t("prompts.codex.registry.codexTemplates.howFullThatCategoryIs") }
+    ],
+    defaultText: codex_full_default
   }
 ];
 var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
@@ -9881,6 +9990,7 @@ var CODEX_FILE_KEYS = [
   "world",
   "knowledge"
 ];
+var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
 var STORAGE_VERSION = 7;
 var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
 var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
@@ -9934,9 +10044,9 @@ function makeDefaultProfile(id, name) {
     id,
     name,
     lagUnit: "messages",
-    lagValue: 65,
+    lagValue: 40,
     windowUnit: "messages",
-    windowValue: 18,
+    windowValue: 20,
     chapterTargetUnit: "percent",
     chapterTargetPercent: 15,
     chapterTargetTokens: 800,
@@ -9992,7 +10102,9 @@ function makeDefaultProfile(id, name) {
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
     codexWriteMode: "batch",
-    codexPresetKey: "codex_default"
+    codexPresetKey: "codex_default",
+    codexTokenLimits: defaultCodexTokenLimits(),
+    contextReliefApplied: false
   };
 }
 var DEFAULT_SETTINGS = {
@@ -10006,8 +10118,46 @@ var DEFAULT_SETTINGS = {
   summaryActivationMode: "always",
   followChatNames: true,
   showAutomationToasts: true,
-  suppressToolCallingPrompt: false
+  suppressToolCallingPrompt: false,
+  contextRelief: true,
+  cacheFriendly: false,
+  cacheFriendlySummaryMode: null
 };
+var CACHE_BREAKING_ACTIONS = new Set([
+  "create_chapter",
+  "create_chapter_range",
+  "create_all_chapters",
+  "create_arc",
+  "create_arc_from",
+  "create_all_arcs",
+  "create_higher_from",
+  "create_higher_auto",
+  "create_volume_from",
+  "retry_last_failure",
+  "delete_entry",
+  "release_entry",
+  "regenerate_entry",
+  "update_entry",
+  "rebase_root",
+  "rebuild_root",
+  "detach_root",
+  "codex_update_now",
+  "codex_reset",
+  "codex_rebuild",
+  "codex_tidy",
+  "codex_repair_references",
+  "codex_rebuild_files",
+  "codex_refresh",
+  "codex_restore",
+  "codex_undo",
+  "codex_adopt",
+  "summary_import"
+]);
+var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
+var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
+function defaultCodexTokenLimits() {
+  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
+}
 var LESSON_CHAT_PREFIX = "lesson:";
 function emptyLessonCourse() {
   return {
@@ -10087,7 +10237,7 @@ function requestCodexRebuild(state, chatId, send) {
   const { booksWarning, autoBooks } = codexCatchupWarnings(state);
   showCodexCatchupModal({
     title: t("ui.modals.requestCodexRebuild.rebuildTheCodex"),
-    lead: t("ui.modals.requestCodexRebuild.memoriaWillEraseTheStoryBibleAnd", { total, passes }),
+    lead: t("ui.modals.requestCodexRebuild.memoriaWillEraseTheCodexAnd", { total, passes }),
     booksWarning,
     autoBooks,
     onPick: (mode) => send({ type: "codex_rebuild", chatId, mode })
@@ -10395,6 +10545,21 @@ function openEditModal(ctx, title, fields, onSave) {
     handle.dismiss();
   }, { primary: true }));
   form.appendChild(actions);
+}
+async function confirmCacheBreak(ctx) {
+  const message = t("ui.modals.cacheBreak.message");
+  try {
+    const r = await ctx.ui.showConfirm({
+      title: t("ui.modals.cacheBreak.title"),
+      message,
+      variant: "warning",
+      confirmLabel: t("ui.modals.cacheBreak.confirm"),
+      cancelLabel: t("ui.modals.r.cancel")
+    });
+    return !!r.confirmed;
+  } catch {
+    return window.confirm(message);
+  }
 }
 async function confirmDelete(ctx, title, message) {
   try {
@@ -10739,7 +10904,7 @@ function renderCodexTabLock(host, send) {
   }
   preview.appendChild(tiles);
   wrap.appendChild(preview);
-  wrap.appendChild(codexSealCard(t("ui.lessons.seal.renderCodexTabLock.theKnowledgeCodex"), t("ui.lessons.seal.renderCodexTabLock.aStoryBibleAnAgentKeepsFor"), send));
+  wrap.appendChild(codexSealCard(t("ui.lessons.seal.renderCodexTabLock.theKnowledgeCodex"), t("ui.lessons.seal.renderCodexTabLock.aCodexAnAgentKeepsFor"), send));
   host.appendChild(wrap);
 }
 function renderCodexPaneLock(host) {
@@ -11402,13 +11567,13 @@ function renderOverview(host, state, send) {
   tiles.appendChild(shelfTile);
   if (codexLessonGated(state.lessons)) {
     const locked = statTile("\uD83D\uDD12", t("ui.tabs.homeTab.locked.codex"), t("ui.tabs.homeTab.locked.takeALesson"), t("ui.tabs.homeTab.locked.theKnowledgeCodexUnlocksAfterMemoriaS"));
-    locked.classList.add("lmb-bible-tile");
+    locked.classList.add("lmb-codex-tile");
     locked.addEventListener("click", () => requestLesson({ course: "codex", mode: "lesson" }));
     tiles.appendChild(lessonMark(locked, "home.tile.codex"));
   } else if (state.activeProfile.codexEnabled || state.codexExists) {
     const value = state.codexBacklog > 0 ? String(state.codexBacklog) : "✓";
     const subText = state.codexBacklog > 0 ? state.activeProfile.codexManualOnly ? t("ui.tabs.homeTab.subText.msgsUnindexedManualOnly") : t("ui.tabs.homeTab.subText.msgsUnindexed") : state.codexLastRunAt ? t("ui.tabs.homeTab.subText.updated", { codexLastRunAt: relativeTime(state.codexLastRunAt) }) : t("ui.tabs.homeTab.subText.noCodexYet");
-    tiles.appendChild(statTile(value, t("ui.tabs.homeTab.renderOverview.codex"), subText, t("ui.tabs.homeTab.renderOverview.messagesTheStoryBibleHasNotRead")));
+    tiles.appendChild(statTile(value, t("ui.tabs.homeTab.renderOverview.codex"), subText, t("ui.tabs.homeTab.renderOverview.messagesTheCodexHasNotRead")));
   } else {
     tiles.appendChild(statTile("—", t("ui.tabs.homeTab.renderOverview.codex"), t("ui.tabs.homeTab.renderOverview.offEnableInTuning")));
   }
@@ -11624,7 +11789,34 @@ function renderActions(host, state, send) {
     shelfRow.appendChild(tag);
   }
   sec.body.appendChild(shelfRow);
+  if (!chatId.startsWith(LESSON_CHAT_PREFIX))
+    renderCacheFriendly(sec.body, state, send);
   host.appendChild(sec.wrap);
+}
+var LUMICACHE_URL = "https://github.com/AMousePad/LumiCache";
+function renderCacheFriendly(host, state, send) {
+  const on = state.settings.cacheFriendly;
+  const gated = codexLessonGated(state.lessons);
+  host.appendChild(checkbox({
+    checked: on,
+    disabled: !on && (!state.lumiCacheAvailable || gated),
+    label: t("ui.tabs.homeTab.cacheFriendly.toggle"),
+    hint: t("ui.tabs.homeTab.cacheFriendly.hint"),
+    onChange: (enabled) => send({ type: "cache_friendly_set", enabled, chatId: state.activeChatId })
+  }));
+  if (!on && !state.lumiCacheAvailable) {
+    const tip = textNode(`${t("ui.tabs.homeTab.cacheFriendly.needsLumiCache")} `, "lmb-field-hint");
+    const link = document.createElement("a");
+    link.href = LUMICACHE_URL;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = t("ui.tabs.homeTab.cacheFriendly.findHere");
+    tip.appendChild(link);
+    host.appendChild(tip);
+  } else if (!on && gated)
+    host.appendChild(textNode(t("ui.tabs.homeTab.cacheFriendly.needsCourse"), "lmb-field-hint"));
+  if (on && !state.lumiCacheAvailable)
+    host.appendChild(textNode(t("ui.tabs.homeTab.cacheFriendly.lumiCacheMissing"), "lmb-field-hint"));
 }
 function addRow(grid, label, value) {
   const l = document.createElement("div");
@@ -14331,6 +14523,10 @@ function renderCodexTab(host, state, ctx, send) {
   host.appendChild(paneHost);
   const drawPane = () => {
     paneHost.replaceChildren();
+    if (state.settings.cacheFriendly && cacheFriendlyFileLocked(local.subtab)) {
+      paneHost.appendChild(textNode(t("ui.tabs.codexTab.cacheFriendlyDisabled"), "lmb-empty"));
+      return;
+    }
     switch (local.subtab) {
       case "entities":
         renderEntities(paneHost, parsed, state, ctx, send);
@@ -14371,15 +14567,15 @@ function matches(q, ...bits) {
   }
   return false;
 }
-var BIBLE_TILES = [
-  { id: "characters", label: t("ui.tabs.codexTab.bibleTiles.characters"), files: ["characters"] },
-  { id: "locations", label: t("ui.tabs.codexTab.bibleTiles.locations"), files: ["locations"] },
-  { id: "things", label: t("ui.tabs.codexTab.bibleTiles.things"), files: ["things"] },
-  { id: "relations", label: t("ui.tabs.codexTab.bibleTiles.relations"), files: ["relations"] },
-  { id: "timeline", label: t("ui.tabs.codexTab.bibleTiles.timeline"), files: ["timeline"] },
-  { id: "threads", label: t("ui.tabs.codexTab.bibleTiles.threads"), files: ["threads"] },
-  { id: "lore", label: t("ui.tabs.codexTab.bibleTiles.lore"), files: ["world"] },
-  { id: "secrets", label: t("ui.tabs.codexTab.bibleTiles.secrets"), files: ["knowledge"] }
+var CODEX_TILES = [
+  { id: "characters", label: t("ui.tabs.codexTab.codexTiles.characters"), files: ["characters"] },
+  { id: "locations", label: t("ui.tabs.codexTab.codexTiles.locations"), files: ["locations"] },
+  { id: "things", label: t("ui.tabs.codexTab.codexTiles.things"), files: ["things"] },
+  { id: "relations", label: t("ui.tabs.codexTab.codexTiles.relations"), files: ["relations"] },
+  { id: "timeline", label: t("ui.tabs.codexTab.codexTiles.timeline"), files: ["timeline"] },
+  { id: "threads", label: t("ui.tabs.codexTab.codexTiles.threads"), files: ["threads"] },
+  { id: "lore", label: t("ui.tabs.codexTab.codexTiles.lore"), files: ["world"] },
+  { id: "secrets", label: t("ui.tabs.codexTab.codexTiles.secrets"), files: ["knowledge"] }
 ];
 function emptyParsedCodex() {
   return {
@@ -14456,7 +14652,7 @@ var TILE_STATE_LABEL = {
 function renderOverview2(host, state, ctx, send, parsed) {
   const chatId = state.activeChatId;
   const profile = state.activeProfile;
-  const sec = section(t("ui.tabs.codexTab.sec.storyBible"));
+  const sec = section(t("ui.tabs.codexTab.sec.codex"));
   const bits = [];
   bits.push(state.codexExists ? t("ui.tabs.codexTab.renderOverview.codexOnFile") : t("ui.tabs.codexTab.renderOverview.noCodexYet"));
   bits.push(t("ui.tabs.codexTab.renderOverview.messageUnindexed", { codexBacklog: state.codexBacklog }));
@@ -14483,8 +14679,8 @@ function renderOverview2(host, state, ctx, send, parsed) {
     const tiles = document.createElement("div");
     tiles.className = "lmb-tiles";
     lessonMark(tiles, "codex.tiles");
-    for (const def of BIBLE_TILES) {
-      tiles.appendChild(renderBibleTile(def, shownParsed, state, ctx, send, busy));
+    for (const def of CODEX_TILES) {
+      tiles.appendChild(renderCodexTile(def, shownParsed, state, ctx, send, busy));
     }
     sec.body.appendChild(tiles);
     if (!state.codexExists) {
@@ -14507,7 +14703,7 @@ function renderOverview2(host, state, ctx, send, parsed) {
         disabled: busy || !state.settings.enabled || !profile.codexEnabled,
         title: t("ui.tabs.codexTab.renderOverview.onePassRebuildsJustTheReEnabled")
       }), makeButton(t("ui.tabs.codexTab.renderOverview.rebuildInstead"), async () => {
-        const ok = await confirmDelete(ctx, t("ui.tabs.codexTab.ok.rebuildTheCodex"), t("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
+        const ok = await confirmDelete(ctx, t("ui.tabs.codexTab.ok.rebuildTheCodex"), t("ui.tabs.codexTab.ok.memoriaWillEraseTheCodexAnd"));
         if (ok)
           requestCodexRebuild(state, chatId, send);
       }, {
@@ -14614,12 +14810,12 @@ function renderManage(host, state, ctx, send) {
   dangerRow.className = "lmb-actions";
   lessonMark(dangerRow, "codex.manage.startover");
   dangerRow.append(makeButton(t("ui.tabs.codexTab.renderManage.rebuildCodex"), async () => {
-    const ok = await confirmDelete(ctx, t("ui.tabs.codexTab.ok.rebuildTheCodex"), t("ui.tabs.codexTab.ok.memoriaWillEraseTheStoryBibleAnd"));
+    const ok = await confirmDelete(ctx, t("ui.tabs.codexTab.ok.rebuildTheCodex"), t("ui.tabs.codexTab.ok.memoriaWillEraseTheCodexAnd"));
     if (ok)
       requestCodexRebuild(state, chatId, send);
   }, {
     disabled: busy || !state.settings.enabled || !profile.codexEnabled,
-    title: t("ui.tabs.codexTab.renderManage.wipeAndRegenerateTheWholeStoryBible")
+    title: t("ui.tabs.codexTab.renderManage.wipeAndRegenerateTheWholeCodex")
   }), makeButton(t("ui.tabs.codexTab.renderManage.wipeCodex"), async () => {
     const ok = await confirmDelete(ctx, t("ui.tabs.codexTab.ok.wipeTheCodex"), t("ui.tabs.codexTab.ok.memoriaWillEraseEveryCodexRecordFor"));
     if (ok)
@@ -14653,16 +14849,16 @@ function downloadCodexBackup(filename, content) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function renderBibleTile(def, parsed, state, ctx, send, busy) {
+function renderCodexTile(def, parsed, state, ctx, send, busy) {
   const chatId = state.activeChatId;
   let st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
   const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
   const tokens = state.codexFileTokens ? def.files.reduce((acc, f) => acc + (state.codexFileTokens[f] ?? 0), 0) : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-bible-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-codex-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
   lessonMark(tile, `codex.tile.${def.id}`);
-  tile.title = t("ui.tabs.codexTab.renderBibleTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: stale ? "yes" : "no", choice2: needsCatchup ? "yes" : "no" });
+  tile.title = t("ui.tabs.codexTab.renderCodexTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: stale ? "yes" : "no", choice2: needsCatchup ? "yes" : "no" });
   const v = document.createElement("div");
   v.className = "lmb-tile-value";
   v.textContent = String(tileCount(parsed, def.id));
@@ -14671,10 +14867,10 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = t("ui.tabs.codexTab.renderBibleTile.tokens", { choice: state.codexTokensApproximate ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  s.textContent = t("ui.tabs.codexTab.renderCodexTile.tokens", { choice: state.codexTokensApproximate ? "yes" : "no", formatTokens: formatTokens(tokens) });
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
-  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? t("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? t("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
+  stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? t("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? t("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;
   tile.append(v, l, s, stateLine);
   const tools = document.createElement("div");
   tools.className = "lmb-tile-tools";
@@ -14719,13 +14915,25 @@ function renderBibleTile(def, parsed, state, ctx, send, busy) {
   purgeBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(purgeBtn);
   tile.appendChild(tools);
+  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
+  const disabledText = t("ui.tabs.codexTab.cacheFriendlyDisabled");
+  if (locked) {
+    tile.classList.add("locked");
+    tile.title = disabledText;
+    stateLine.textContent = disabledText;
+    tools.remove();
+  }
   tile.addEventListener("click", () => {
+    if (locked) {
+      showLockTip(tile, disabledText);
+      return;
+    }
     cycleTileState(def, st, state, send);
     st = tileState(state, def.files);
     tile.classList.remove("on", "noInject", "frozen");
     tile.classList.add(st);
-    tile.title = t("ui.tabs.codexTab.renderBibleTile.clickToCycle2", { tileStateLabelSt: TILE_STATE_LABEL[st] });
-    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? t("ui.tabs.codexTab.renderBibleTile.stale") : ""}${needsCatchup ? t("ui.tabs.codexTab.renderBibleTile.needsCatchUp") : ""}`;
+    tile.title = t("ui.tabs.codexTab.renderCodexTile.clickToCycle2", { tileStateLabelSt: TILE_STATE_LABEL[st] });
+    stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? t("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? t("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;
     tidyBtn.disabled = !busy && (st === "frozen" || !state.settings.enabled || !state.activeProfile.codexEnabled || !state.codexExists);
     rebuildBtn.disabled = busy || st === "frozen" || !state.codexExists || !state.settings.enabled || !state.activeProfile.codexEnabled;
     purgeBtn.disabled = busy || st === "frozen" || !state.codexExists || tileCount(parsed, def.id) === 0;
@@ -16451,7 +16659,7 @@ function renderSecrets(host, parsed, state, ctx, send) {
 
 // src/ui/activation-control.ts
 var nextGroup = 0;
-function activationControl(label, value, onChange, alwaysLabel = t("ui.activationControl.activationControl.always")) {
+function activationControl(label, value, onChange, alwaysLabel = t("ui.activationControl.activationControl.always"), extra = []) {
   const group = document.createElement("fieldset");
   group.className = "lmb-activation";
   const legend = document.createElement("legend");
@@ -16460,7 +16668,8 @@ function activationControl(label, value, onChange, alwaysLabel = t("ui.activatio
   const row = document.createElement("div");
   row.className = "lmb-activation-options";
   const name = `lmb-activation-${++nextGroup}`;
-  for (const [mode, title] of [["always", alwaysLabel], ["keywords", t("ui.activationControl.activationControl.keywords")], ["vector", t("ui.activationControl.activationControl.vectorKeywords")]]) {
+  const base = [["always", alwaysLabel], ["keywords", t("ui.activationControl.activationControl.keywords")], ["vector", t("ui.activationControl.activationControl.vectorKeywords")]];
+  for (const [mode, title] of [...base, ...extra]) {
     const option = document.createElement("label");
     const input = document.createElement("input");
     input.type = "radio";
@@ -16487,12 +16696,13 @@ var CODEX_LAG_TOKENS_DEFAULT = 2000;
 var CODEX_WINDOW_TOKENS_DEFAULT = 8000;
 function renderCodexSettings(host, state, profile, patch) {
   const sec = section(t("ui.tabs.profileTab.sec.knowledgeCodex"));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexEnabled,
     label: t("ui.tabs.profileTab.renderCodexSettings.enableCodex"),
     onChange: (codexEnabled) => patch({ codexEnabled })
-  }), "tuning.codex.enabled"));
+  }), "tuning.codex.enabled")));
   const updating = section(t("ui.tabs.profileTab.updating.codexUpdating"));
+  cacheLocked(updating.body);
   const lag = document.createElement("div");
   for (const kind of ["window", "lag"]) {
     const label = kind === "window" ? t("ui.tabs.profileTab.renderCodexSettings.window") : t("ui.tabs.profileTab.renderCodexSettings.lag");
@@ -16501,6 +16711,7 @@ function renderCodexSettings(host, state, profile, patch) {
     const fallback = kind === "window" ? unit === "tokens" ? CODEX_WINDOW_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexWindowValue : unit === "tokens" ? CODEX_LAG_TOKENS_DEFAULT : PROFILE_DEFAULTS.codexLagValue;
     const group = kind === "lag" ? lag : document.createElement("div");
     group.className = "lmb-collapsible-body";
+    cacheLocked(group, t("ui.components.cacheLockedWindow"));
     if (kind === "window")
       lessonMark(group, "tuning.codex.window");
     else
@@ -16534,7 +16745,7 @@ function renderCodexSettings(host, state, profile, patch) {
     })), "tuning.codex.breakpoint"));
     updating.body.appendChild(textNode(t("ui.tabs.profileTab.renderCodexSettings.runsWhenEitherTheWindowOrThis"), "lmb-field-hint"));
   }
-  appendAutomationControls(updating.body, lag, !profile.codexManualOnly, (enabled) => patch({ codexManualOnly: !enabled }));
+  appendAutomationControls(updating.body, lag, !profile.codexManualOnly, false, (enabled) => patch({ codexManualOnly: !enabled }));
   sec.body.appendChild(updating.wrap);
   const fields = document.createElement("div");
   fields.className = "lmb-collapsible-body";
@@ -16568,26 +16779,17 @@ function renderCodexSettings(host, state, profile, patch) {
   loreHint.className = "lmb-field-hint";
   loreHint.textContent = t("ui.tabs.profileTab.renderCodexSettings.yourActivatedLorebookEntriesRideEveryCodex");
   fields.appendChild(loreHint);
-  fields.appendChild(labelled(t("ui.tabs.profileTab.renderCodexSettings.codexRecall"), select({
-    value: profile.codexActivationMode,
-    options: [
-      { value: "always", label: t("ui.activationControl.activationControl.always") },
-      { value: "keywords", label: t("ui.activationControl.activationControl.keywords") },
-      { value: "vector", label: t("ui.activationControl.activationControl.vectorKeywords") },
-      { value: "vector_only", label: t("codexLorebook.vectorOnly") }
-    ],
-    onChange: (value) => patch({ codexActivationMode: value })
-  })));
+  fields.appendChild(cacheLocked(activationControl(t("ui.tabs.profileTab.renderCodexSettings.codexRecall"), profile.codexActivationMode, (codexActivationMode) => patch({ codexActivationMode }), undefined, [["vector_only", t("codexLorebook.vectorOnly")]])));
   fields.appendChild(textNode(t("ui.tabs.profileTab.renderCodexSettings.theActiveProfileSetsRecallForEnabled"), "lmb-field-hint"));
   if (profile.codexActivationMode === "vector")
     fields.appendChild(vectorSetupHint());
   if (profile.codexActivationMode === "vector_only")
     fields.appendChild(textNode(t("codexLorebook.vectorHelp"), "lmb-field-hint"));
-  fields.appendChild(labelled(t("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
+  fields.appendChild(cacheLocked(labelled(t("ui.tabs.profileTab.renderCodexSettings.codexPlacement"), select({
     value: profile.codexInjectionPosition,
     options: [{ value: "lorebook", label: t("ui.tabs.profileTab.renderCodexSettings.lorebookBefore") }, { value: "depth", label: t("ui.tabs.profileTab.renderCodexSettings.atHistoryDepth") }, { value: "after_history", label: t("ui.tabs.profileTab.renderCodexSettings.afterChatHistory") }],
     onChange: (v) => patch({ codexInjectionPosition: v })
-  })));
+  }))));
   if (profile.codexInjectionPosition === "depth")
     fields.appendChild(labelled(t("ui.tabs.profileTab.renderCodexSettings.depthFromNewestTurn"), numberInput({
       value: profile.codexInjectionDepth,
@@ -16599,24 +16801,24 @@ function renderCodexSettings(host, state, profile, patch) {
   placementHint.className = "lmb-help";
   placementHint.textContent = t("ui.tabs.profileTab.renderCodexSettings.summariesReplaceTheirSourceHistoryInPlace");
   fields.appendChild(placementHint);
-  fields.appendChild(lessonMark(checkbox({
+  fields.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexRelationsTable,
     label: t("ui.tabs.profileTab.renderCodexSettings.relationsTable"),
     hint: t("ui.tabs.profileTab.renderCodexSettings.tracksConnectionsBetweenEntitiesAsOneShared"),
     onChange: (v) => patch({ codexRelationsTable: v })
-  }), "tuning.codex.relations"));
+  }), "tuning.codex.relations")));
   fields.appendChild(lessonMark(checkbox({
     checked: profile.codexThorough,
     label: t("ui.tabs.profileTab.renderCodexSettings.thoroughMode"),
     hint: t("ui.tabs.profileTab.renderCodexSettings.spendsOneExtraVerificationRoundPerUpdate"),
     onChange: (v) => patch({ codexThorough: v })
   }), "tuning.codex.thorough"));
-  fields.appendChild(lessonMark(checkbox({
+  fields.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.codexExtraContext,
     label: t("ui.tabs.profileTab.renderCodexSettings.extraContextMode"),
     hint: t("ui.tabs.profileTab.renderCodexSettings.summarizesChaptersEarlyAtTheCodexLag"),
     onChange: (v) => patch({ codexExtraContext: v })
-  }), "tuning.codex.extra"));
+  }), "tuning.codex.extra")));
   const soFarFields = document.createElement("div");
   soFarFields.className = profile.codexExtraContext ? "" : "lmb-greyed";
   soFarFields.appendChild(labelled(t("ui.tabs.profileTab.renderCodexSettings.chaptersProvided"), numberInput({
@@ -16631,6 +16833,22 @@ function renderCodexSettings(host, state, profile, patch) {
   soFarHint.textContent = t("ui.tabs.profileTab.renderCodexSettings.howManyRecentChapterSummariesExtraContext");
   soFarFields.appendChild(soFarHint);
   fields.appendChild(soFarFields);
+  const limits = section(t("ui.tabs.profileTab.tokenLimits.title"));
+  limits.body.appendChild(textNode(t("ui.tabs.profileTab.tokenLimits.help"), "lmb-field-hint"));
+  const limitGrid = document.createElement("div");
+  limitGrid.className = "lmb-grid-2";
+  for (const file of CODEX_FILE_KEYS) {
+    limitGrid.appendChild(labelled(t("ui.tabs.profileTab.tokenLimits.category", { file }), numberInput({
+      value: profile.codexTokenLimits[file],
+      min: 0,
+      max: 1e6,
+      step: 500,
+      defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
+      onBlur: (v) => patch({ codexTokenLimits: { ...profile.codexTokenLimits, [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } })
+    })));
+  }
+  limits.body.appendChild(limitGrid);
+  fields.appendChild(limits.wrap);
   const modelHint = document.createElement("div");
   modelHint.className = "lmb-field-hint";
   modelHint.textContent = t("ui.tabs.profileTab.renderCodexSettings.theCodexAgentSConnectionAndSamplers");
@@ -16780,11 +16998,11 @@ function summaryTierSection(title, tier) {
 function renderSummarySettings(host, profile, patch) {
   const sec = section(t("ui.tabs.profileTab.sec.summarySettings"));
   sec.body.appendChild(textNode(t("ui.tabs.profileTab.renderSummarySettings.windowLagAndCompressionSettingsForEach"), "lmb-help"));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.autoCreate,
     label: t("ui.tabs.profileTab.renderSummarySettings.runAutomation"),
     onChange: (autoCreate) => patch({ autoCreate })
-  }), "tuning.auto"));
+  }), "tuning.auto")));
   for (const tier of [1, 2, ...HIGHER_TIERS]) {
     const name = TIER_NAMES[tier - 1];
     const card = summaryTierSection(tier === 1 ? t("ui.tabs.profileTab.card.chapterFiling") : t("ui.tabs.profileTab.card.binding", { name }), tier);
@@ -16876,7 +17094,7 @@ function renderSummarySettings(host, profile, patch) {
     }
     appendCompressionTarget(card.body, profile, tier, patch);
     const enabled = tier === 1 ? profile.autoCreateChapter : tier === 2 ? profile.autoCreateArc : profile.higherTiers[tier].enabled;
-    appendAutomationControls(card.body, lag, enabled, (enabled) => {
+    appendAutomationControls(card.body, lag, enabled, tier === 1, (enabled) => {
       if (tier === 1)
         patch({ autoCreateChapter: enabled });
       else if (tier === 2)
@@ -16888,7 +17106,7 @@ function renderSummarySettings(host, profile, patch) {
   }
   host.appendChild(sec.wrap);
 }
-function appendAutomationControls(host, lag, enabled, onChange) {
+function appendAutomationControls(host, lag, enabled, modeOwned, onChange) {
   const controls = [...lag.querySelectorAll("input, select")].map((input) => ({ input, disabled: input.disabled }));
   const update = (enabled) => {
     lag.classList.toggle("lmb-greyed", !enabled);
@@ -16896,10 +17114,11 @@ function appendAutomationControls(host, lag, enabled, onChange) {
       input.disabled = !enabled || disabled;
   };
   update(enabled);
-  host.append(checkbox({ checked: enabled, label: t("ui.tabs.profileTab.appendAutomationControls.automate"), onChange: (enabled) => {
+  const toggle = checkbox({ checked: enabled, label: t("ui.tabs.profileTab.appendAutomationControls.automate"), onChange: (enabled) => {
     update(enabled);
     onChange(enabled);
-  } }), lag);
+  } });
+  host.append(modeOwned ? cacheLocked(toggle) : toggle, lag);
 }
 function appendCompressionTarget(host, profile, tier, patch) {
   const prefix = tier === 1 ? "chapter" : tier === 2 ? "arc" : "volume";
@@ -17198,12 +17417,12 @@ function renderBehavior(host, profile, patch) {
     hint: t("ui.tabs.profileTab.renderBehavior.greysOutCoveredMessagesInTheChat"),
     onChange: (v) => patch({ hideCoveredMessages: v })
   }));
-  sec.body.appendChild(lessonMark(checkbox({
+  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
     checked: profile.showMemoryPreviews,
     label: t("ui.tabs.profileTab.renderBehavior.previewBeforeSaving"),
     hint: t("ui.tabs.profileTab.renderBehavior.memoriaStagesNewChaptersAndArcsIn"),
     onChange: (v) => patch({ showMemoryPreviews: v })
-  }), "tuning.behavior.preview"));
+  }), "tuning.behavior.preview")));
   host.appendChild(sec.wrap);
 }
 
@@ -17866,6 +18085,7 @@ function renderTuningTab(host, state, ctx, send) {
         } else {
           renderCodexSettings(body, state, profile, patch);
         }
+        applyCacheLocks(body, state.settings.cacheFriendly);
       };
       for (const o of options) {
         const btn = document.createElement("button");
@@ -17902,7 +18122,13 @@ function renderGlobalSettings(host, state, send) {
     hint: t("ui.tabs.tuningTab.renderGlobalSettings.whenOffMemoriaSBackgroundRunsStay"),
     onChange: (v) => send({ type: "save_settings", patch: { showAutomationToasts: v }, chatId: state.activeChatId })
   }));
-  sec.body.appendChild(lessonMark(activationControl(t("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode, (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), t("ui.activationControl.activationControl.constant")), "tuning.every.constant"));
+  sec.body.appendChild(checkbox({
+    checked: state.settings.contextRelief,
+    label: t("ui.tabs.tuningTab.renderGlobalSettings.contextRelief"),
+    hint: t("ui.tabs.tuningTab.renderGlobalSettings.contextReliefHint"),
+    onChange: (v) => send({ type: "save_settings", patch: { contextRelief: v }, chatId: state.activeChatId })
+  }));
+  sec.body.appendChild(cacheLocked(lessonMark(activationControl(t("ui.tabs.tuningTab.renderGlobalSettings.summaryRecall"), state.settings.summaryActivationMode, (mode) => send({ type: "set_summary_activation", mode, chatId: state.activeChatId }), t("ui.activationControl.activationControl.constant")), "tuning.every.constant")));
   const hint = document.createElement("div");
   hint.className = "lmb-field-hint";
   hint.textContent = t("ui.tabs.tuningTab.renderGlobalSettings.appliesToExistingAndFutureChapterAnd");
@@ -18479,7 +18705,7 @@ var COURSE_BOOKS = {
             variant: "tuning",
             patch: (s) => {
               s.activeProfile.windowUnit = "tokens";
-              s.activeProfile.windowValue = 18;
+              s.activeProfile.windowValue = 20;
             }
           },
           prep: () => {
@@ -18656,7 +18882,7 @@ var COURSE_CODEX = {
   sections: [
     {
       id: "s1",
-      title: t("ui.lessons.contentCodex.courseCodex.whyAStoryBible"),
+      title: t("ui.lessons.contentCodex.courseCodex.whyACodex"),
       steps: [
         {
           kind: "say",
@@ -18953,7 +19179,7 @@ var COURSE_CODEX = {
           fixture: {
             variant: "codex",
             patch: (s) => {
-              s.activeProfile.codexLagValue = 65;
+              s.activeProfile.codexLagValue = 40;
             }
           },
           prep: () => setTuningSubtab("codex"),
@@ -18961,7 +19187,7 @@ var COURSE_CODEX = {
           chip: t("ui.lessons.contentCodex.courseCodex.codexLag65"),
           text: t("ui.lessons.contentCodex.courseCodex.youRaiseTheCodexLagFrom6"),
           options: [
-            { text: t("ui.lessons.contentCodex.courseCodex.theBibleAlwaysRuns65MessagesBehind"), correct: true },
+            { text: t("ui.lessons.contentCodex.courseCodex.theCodexAlwaysRuns65MessagesBehind"), correct: true },
             { text: t("ui.lessons.contentCodex.courseCodex.nothingTheLagOnlyAffectsChapters") },
             { text: t("ui.lessons.contentCodex.courseCodex.theCodexGetsCheaperWithNoDownside") },
             { text: t("ui.lessons.contentCodex.courseCodex.theAgentRunsMoreOften") }
@@ -19883,7 +20109,7 @@ function booksLessons() {
 var VARIANTS = {
   filing: { total: 160, chapters: [CH[0], CH[1]] },
   "filing-after": { total: 160, chapters: [CH[0], CH[1], CH[2]] },
-  pills: { total: 124, chapters: [CH[0], CH[1], CH[2]] },
+  pills: { total: 104, chapters: [CH[0], CH[1], CH[2]] },
   desk: { total: 165, chapters: [CH[0], CH[1], CH[2], CH[3], CH[4]], arcs: [ARC1], ghost: true, busy: true, failure: true },
   shelf: { total: 165, chapters: [CH[0], CH[1], CH[2], CH[3], CH[4]], arcs: [ARC1], ghost: true },
   compose: { total: 140, chapters: [CH[0], CH[1]], excluded: [100, 101, 102] },
@@ -19972,6 +20198,7 @@ function buildFixture(variant) {
     codexRootOriginName: null,
     codexTokensApproximate: true,
     codexInjectedTokens: spec.codex ? 940 : 0,
+    lumiCacheAvailable: false,
     codexFileStates: spec.codexFileStates ?? {},
     codexStaleFiles: spec.codexStale ?? [],
     codexRefreshPending: [],
@@ -21706,6 +21933,16 @@ function setupApp(ctx, diagnostics, setContext) {
   const send = (msg) => {
     if (lessonOutbox.enqueue(msg))
       return;
+    if (lastState?.settings.cacheFriendly && CACHE_BREAKING_ACTIONS.has(msg.type)) {
+      confirmCacheBreak(ctx).then((confirmed) => {
+        if (confirmed)
+          deliver(msg);
+      });
+      return;
+    }
+    deliver(msg);
+  };
+  const deliver = (msg) => {
     if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean")
       diagnostics.setEnabled(!msg.patch.localLogsDisabled);
     if (msg.type === "diagnostics_clear")

@@ -3619,6 +3619,22 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       doEnsureCodexBookForChat: {
         chatNotFoundForUser: "Chat {chatId} not found for user"
       }
+    },
+    cacheFriendly: {
+      codexPartiallyCut: "Codex is too big and was partially cut! Please manually trim, tidy, or raise codex token limit in settings.",
+      filedMessageChanged: "That message is already filed, so this change will break the cache on a later update.",
+      codexMissedThisWindow: "The Codex missed this window and will catch up on the next one.",
+      windowFailed: "Cache Friendly update failed with {error}.",
+      finishCodexCourse: "Finish the Codex course before you turn on Cache Friendly mode.",
+      needsLumiCache: "Cache Friendly mode needs the LumiCache extension to be enabled.",
+      enabledCost: "Cache Friendly mode is on, and the next update may also catch up older messages and move relations into entities.",
+      fileLocked: "Cache Friendly mode controls this Codex category.",
+      handEditBreaksCache: "Your Codex edit will break the cache on your next message."
+    },
+    contextRelief: {
+      applied: "Your prompt is using over 90% of your context, so I permanently lowered summary lag, summary size, and Codex limits on this profile.",
+      advice: "Your context window looks small, so consider turning off larger Codex features like timeline, lore, and relations to save context.",
+      failed: "I could not lower your settings for a full context window: {error}"
     }
   },
   codexTidy: {
@@ -3700,7 +3716,11 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           theLockedEntityIds: "the locked entity ids",
           lockedFields: "Locked fields",
           prependedWhenIndividualFieldsAreLockedOn: 'Identifies locked fields. The agent sees "Locked, do not edit" in place of their values. The app restores those values on writes.',
-          theEntitiesCarryingLockedFields: "the entities carrying locked fields"
+          theEntitiesCarryingLockedFields: "the entities carrying locked fields",
+          codexFillingUp: "Codex filling up",
+          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 75% of its token limit, once per category.",
+          theCategoryThatIsFillingUp: "The category that is filling up",
+          howFullThatCategoryIs: "How full that category is, as a whole number"
         },
         schemaHowtoTail: "Keep the JSON structure consistent with the validator or writes will fail. Guidance can be reworded."
       }
@@ -3812,7 +3832,9 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       },
       formatTokens: {
         thousands: "{value}k"
-      }
+      },
+      cacheLocked: "Cache Friendly mode controls this setting.",
+      cacheLockedWindow: "Matches Chapter Summary Window in Cache Friendly Mode."
     },
     continuity: {
       sec: {
@@ -3838,18 +3860,18 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           thisPracticeStoryHasPlentyOfOld: "This practice story has plenty of old messages ready to compact into summaries. Press the File chapter button and watch what happens.",
           boomTheStoryIsNowMoreCompact: "BOOM\uD83D\uDCA3. The story is now more compact, the new summary chapter is on my shelf, and this colored bar changed shape, because those messages now exist as a summary.",
           importantThereSAutomationTooNowYou: `IMPORTANT. There''s automation too! Now you may ask the very important question of: when do I summarize on my own?? And I''ll graciously answer that very important question! That depends on exactly about TWO 2\uFE0F\u20E3 settings. Consider: Uncompressed messages are large, but hold detailed info so we don''t want to compress them right away right? Therefore, first setting is what I call the "lag", 65 by default. This represents the number of most recent messages we leave uncompressed always! \uD83D\uDDFF`,
-          theSecondSettingIsTheWindowWe: `The second setting is the "window" \uD83E\uDE9F. We don''t want to summarize every single message individually, instead we probably want toi summarize like, 18, into one chapter! Turns out 18 is the default, what a coincidence! Once 18 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`,
+          theSecondSettingIsTheWindowWe: `The second setting is the "window" \uD83E\uDE9F. We don''t want to summarize every single message individually, instead we probably want to summarize like, 20, into one chapter! Turns out 20 is the default, what a coincidence! Once 20 old messages have piled up behind your lag, these two "pills" both say "ready", and I begin summarizing a chapter!`,
           theDefaultValuesAreMadeFor200k: "The default values are made for 200k context chats. Adjust the lag and window to your liking, depending on your context, and your message size. But I do reccomend keeping context at 200k. Unless you''re living in 2028 when LLMs are long context GODS (presumably).",
           fileAllFilesChaptersUntilTheLag: '"File all" files chapters until the lag is reached. Bind arc takes my oldest chapters and compresses them into one smaller summary called an arc. When work is waiting to be done, a little pill appears here telling you how much.',
           everythingIFileIsStoredInA: "Everything I file is stored in a lorebook created just for this chat, named after it. It appears the first time a chapter is filed.",
           normallyYouNeverNeedTheseButtonsWith: "Normally you never need these buttons with automation on, I do all of this myself after each message. If a button looks dead, the small text under it says why, usually that I''m busy or you switched me off >:(",
-          "70OldMessagesLag65Window18": "70 old messages \xB7 lag 65 \xB7 window 18",
+          "70OldMessagesLag65Window18": "50 old messages \xB7 lag 40 \xB7 window 20",
           thesePillsSayLagReadyButWindow: "These pills say lag ready but window building, and I''m not filing. Why not?",
           theLagHasNotFilledUpYet: "The lag has not filled up yet",
           theChatHasNoLorebookYet: "The chat has no lorebook yet",
-          "70MessagesMinusThe65ProtectedBy": "70 messages minus the 65 protected by the lag leaves only 5, and a chapter needs 18",
+          "70MessagesMinusThe65ProtectedBy": "50 messages minus the 40 protected by the lag leaves only 10, and a chapter needs 20",
           aChapterCanOnlyBeFiledAfter: "A chapter can only be filed after an arc exists",
-          theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 70 minus 65 is 5, short of 18. This is also when I''d notify you that your story needs more messages if you click file~",
+          theWindowOnlyCountsMessagesOlderThan: "The window only counts messages older than the lag. 50 minus 40 is 10, short of 20. This is also when I''d notify you that your story needs more messages if you click file~",
           theDesk: "The desk",
           thisColoredBarIsTheSpineA: "This colored bar is the spine, a map of your whole chat. Each block is a stretch of story, sized by how much prompt it costs. The pale block at the front is the Codex, that''s my second course (it''s really cool).",
           clickAnyColoredBlockAndILl: "Click any colored block and I''ll jump you straight to that chapter or arc on my shelf \uD83D\uDC30. Handy when you want to check what I wrote about a scene.",
@@ -3935,22 +3957,22 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           arcsCanBuildAutomaticallyAfterEnoughChapters: "Arcs can build automatically after enough chapters pile up, just like how chapters build after enough messages pile up.",
           andThisIsTheAutomationSettingI: "And this is the automation setting I talked about earlier too! Codex has its own, but do my second, shorter course for that one.",
           contextIsJustHowManyPreviousChapters: "Context is just how many previous chapters I read each time for, well, context. Some other boring stuff...",
-          windowTokens18: "Window \xB7 tokens \xB7 18",
-          youSwitchTheWindowUnitFromMessages: "You switch the window unit from messages to tokens, but leave the value at 18. What did you just ask me for?",
-          chaptersOfAbout18MessagesSameAs: "Chapters of about 18 messages, same as before",
+          windowTokens18: "Window \xB7 tokens \xB7 20",
+          youSwitchTheWindowUnitFromMessages: "You switch the window unit from messages to tokens, but leave the value at 20. What did you just ask me for?",
+          chaptersOfAbout18MessagesSameAs: "Chapters of about 20 messages, same as before",
           idk: "Idk",
-          youAskedMeToConvert18Messages: "You asked me to convert 18 messages into tokens",
-          chaptersWillAutomaticallyFileAfterOnly18: "Chapters will automatically file after only ~18 tokens of story, about one sentence each. Uh oh. ",
+          youAskedMeToConvert18Messages: "You asked me to convert 20 messages into tokens",
+          chaptersWillAutomaticallyFileAfterOnly18: "Chapters will automatically file after only ~20 tokens of story, about one sentence each. Uh oh. ",
           theUnitChangesWhatTheNumberMeans: "The unit changes what the number means. Tokens are little word-pieces, one message is hundreds of them, so token windows want values in the thousands",
           lag10Messages: "Lag \xB7 10 messages",
-          youLowerTheLagFrom65Down: "You lower the lag from 65 down to 10. What changes?",
+          youLowerTheLagFrom65Down: "You lower the lag from 40 down to 10. What changes?",
           iStartSummarizingMuchCloserToThe: "I start summarizing much closer to the present, only your 10 newest messages stay untouched",
           chaptersGetBigger: "Chapters get bigger",
           nothingUntilTheWindowAlsoChanges: "Nothing until the window also changes",
           iGoBackAndReSummarizeOld: "I go back and re-summarize old chapters",
           aSmallLagSavesMoreSpaceBut: "A small lag saves more space but summarizes your recent scenes sooner. Keep it just big enough for quality writing without hallucination.",
           window40TargetPercent4: "Window \xB7 40 \xB7 Target percent \xB7 4",
-          youSetTheWindowTo40And: "You set the window to 40 and Target percent to 4% (defaults are 18 and 15%). What do your chapters become?",
+          youSetTheWindowTo40And: "You set the window to 40 and Target percent to 4% (defaults are 20 and 15%). What do your chapters become?",
           chaptersBecomeSmallerAndTheyCover40: "Chapters become smaller, and they cover 40 messages each.",
           chaptersBecomeSmallerAndMoreFrequent: "Chapters become smaller and more frequent",
           theSameTheRatioOnlyAffectsArcs: "The same, the ratio only affects arcs",
@@ -3980,7 +4002,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       contentCodex: {
         courseCodex: {
           theArchivistSCodex: "The Archivist''s Codex",
-          whyAStoryBible: "Why a story bible",
+          whyACodex: "Why a Codex",
           summaryChaptersAreAGoodOutlineBut: "Summary chapters are a good outline. But if you compress a story enough you''ll start losing information, like secrets, location details, and specific object info. This means that somehow, we must separately track the important parts of the story as we compress it.",
           beholdTheKnowledgeCodexLetSWalk: "BEHOLD the Knowledge Codex \uD83D\uDE0E. Let''s walk though a practice one for a little murder mystery to help you understand it. Tap the Codex tab up top.",
           thereItIs: "There it is.",
@@ -4036,14 +4058,14 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           theAgentAlwaysStartsFromTheCurrent: "The agent always starts from the current records, so your corrections are canon it preserves. Freezing is only for stopping updates entirely.",
           tapGraph: "Tap Graph.",
           thereSYourWebARealStory: "There''s your web. A real story will look much more complex.",
-          thisIsTheWebForThisSmall: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the bible: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
+          thisIsTheWebForThisSmall: "This is the web for this small demo. If you tap a line, the relationship description will be under the graph, tap a diamond to open that entity''s sheet, and drag nodes around freely. The remaining panes hold the rest of the Codex: Timeline keeps dated events, Threads tracks open storylines, Lore holds world rules, and Secrets holds the who-knows-what. Browse them any time.",
           theAgentAndItsDials: "The agent and its dials",
           lastStopMyRulesOpenTheTuning: "Last stop, my rules. Open the Tuning tab, its Settings pane, then the Codex side.",
           myDials: "My dials.",
           myCodexSettingsLiveHereByDefault: "My Codex settings live here. By default, I lag by 6 messages, then read 20 per update.",
-          codexLag65: "Codex lag \xB7 65",
-          youRaiseTheCodexLagFrom6: "You raise the Codex lag from 6 up to 65, same as the chapter lag. What changes?",
-          theBibleAlwaysRuns65MessagesBehind: "The bible always runs ~65 messages behind, which may be too far behind for what you want!",
+          codexLag65: "Codex lag \xB7 40",
+          youRaiseTheCodexLagFrom6: "You raise the Codex lag from 6 up to 40, same as the chapter lag. What changes?",
+          theCodexAlwaysRuns65MessagesBehind: "The Codex always runs ~40 messages behind, which may be too far behind for what you want!",
           nothingTheLagOnlyAffectsChapters: "Nothing, the lag only affects chapters",
           theCodexGetsCheaperWithNoDownside: "The Codex gets cheaper with no downside",
           theAgentRunsMoreOften: "The agent runs more often",
@@ -4067,7 +4089,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           practiceIsOverThisIsYourReal: "Practice is over, this is your real archive. Walk to your own Codex pane: the Tuning tab, then Settings, then its Codex side.",
           alreadyThereGood: "Already there. Good.",
           flipEnableCodexOnTheDefaultSettings: "Flip Enable Codex on. The default settings below suit most chats.",
-          enabledFromNowOnIKeepYour: "Enabled! From now on I keep your story bible current after every message.",
+          enabledFromNowOnIKeepYour: "Enabled! From now on I keep your Codex current after every message.",
           homeHasAnUpdateCodexButtonNow: "Home has an Update Codex button now. Let''s go find it. Tap Home.",
           pressItAndILlReadThis: "Press it and I''ll read this chat right away, or skip and I''ll do it later!",
           readingWatchTheBusyRowOnHome: "Reading! Watch the busy row on Home if you want to see me think.",
@@ -4437,7 +4459,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         renderCodexTabLock: {
           example: "example",
           theKnowledgeCodex: "The Knowledge Codex",
-          aStoryBibleAnAgentKeepsFor: "A story bible an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
+          aCodexAnAgentKeepsFor: "A Codex an agent keeps for you: characters, relations, timeline, threads, secrets. Take the lesson first to use this module."
         },
         renderCodexPaneLock: {
           sealedUntilTheLesson: "Sealed until the lesson",
@@ -4465,7 +4487,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       },
       requestCodexRebuild: {
         rebuildTheCodex: "Rebuild the Codex",
-        memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
+        memoriaWillEraseTheCodexAnd: "Clears the Codex and rereads {total} messages (~{passes} slow passes). Choose a rebuild mode."
       },
       requestCodexTidy: {
         tidyCodexToATargetSize: "Tidy Codex to a target size",
@@ -4543,6 +4565,11 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
       promptForString: {
         cancel: "Cancel",
         ok: "OK"
+      },
+      cacheBreak: {
+        title: "Break the prompt cache?",
+        message: "Cache Friendly mode is on. This changes the saved story context, so your next message pays for a full cache rewrite.",
+        confirm: "Continue"
       }
     },
     promptBreakdown: {
@@ -4816,6 +4843,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         entryFallback: "{kind, select, chapter {chapter} arc {arc} volume {volume} series {series} saga {saga} library {library} universe {universe} codex {Codex} other {{kind}}} {id}"
       },
       codexTab: {
+        cacheFriendlyDisabled: "Disabled in Cache Friendly Mode",
         deliverCodexFileState: {
           couldnTSaveThisCategorySSetting: "Couldn''t save this category''s setting: {error}"
         },
@@ -4846,7 +4874,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         sec: {
           knowledgeCodex: "Knowledge Codex",
-          storyBible: "Story Bible",
+          codex: "Codex",
           entities: "Entities",
           relations: "Relations",
           timeline: "Timeline",
@@ -4855,7 +4883,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         search: {
           searchThisSection: "Search this section..."
         },
-        bibleTiles: {
+        codexTiles: {
           characters: "Characters",
           locations: "Locations",
           things: "Things",
@@ -4909,7 +4937,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         ok: {
           rebuildTheCodex: "Rebuild the Codex?",
-          memoriaWillEraseTheStoryBibleAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
+          memoriaWillEraseTheCodexAnd: "Clears the Codex and rereads the chat. Choose a speed next.",
           undoTheLastCodexChange: "Undo the last Codex change?",
           memoriaWillRollTheCodexBackTo: "Restores the snapshot before {codexUndoReasonUpdate} {codexUndoAt}. Later changes are lost.",
           importACodexFile: "Import a Codex file?",
@@ -4944,7 +4972,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           replaceThisChatSCodexFromAn: "Replace this chat''s Codex from an exported file",
           rebuildReReadsTheWholeChatFrom: "Rebuild clears and rereads the chat. Wipe leaves the Codex empty until the next update.",
           rebuildCodex: "Rebuild Codex",
-          wipeAndRegenerateTheWholeStoryBible: "Clear Codex and regenerate from the start",
+          wipeAndRegenerateTheWholeCodex: "Clear Codex and regenerate from the start",
           wipeCodex: "Wipe Codex"
         },
         files: {
@@ -4956,7 +4984,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         restoreBackup: {
           memoriaCouldnTReadThatBackupFile: "Couldn''t read the backup file"
         },
-        renderBibleTile: {
+        renderCodexTile: {
           clickToCycle: "{tileStateLabelSt}{choice, select, yes { \xB7 missed updates while frozen} other {}}{choice2, select, yes { \xB7 waiting for the catch-up pass} other {}} - click to cycle",
           tokens: "{choice, select, yes {~} other {}}{formatTokens} tokens",
           stale: " \xB7 stale",
@@ -5328,7 +5356,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           msgsUncompressed: "{uncoveredMessages} msgs uncompressed",
           recentMessagesStillInThePromptAt: "Messages still in context, waiting for summary window and lag",
           codex: "Codex",
-          messagesTheStoryBibleHasNotRead: "Messages not yet indexed by the Codex",
+          messagesTheCodexHasNotRead: "Messages not yet indexed by the Codex",
           offEnableInTuning: "off, enable in Tuning",
           memoriaHasNoConnectionToWriteWith: "No connection available. Add a connection in Lumiverse.",
           pickAConnectionInTheTuningTab: "Select a connection in Tuning."
@@ -5377,6 +5405,14 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           tokens: "{tokenCountOutput} tokens",
           save: "Save",
           discard: "Discard"
+        },
+        cacheFriendly: {
+          toggle: "Cache Friendly mode",
+          hint: "Enable to have LumiBooks be optimized for cache friendly setups! This changes Summary and Codex to co-update at the same time, and has the Codex only track entities, lore, and secrets as constant entries, with a maximum default capacity of 10k tokens for each (LLM managed). Caching can reduce your LLM costs 10x!",
+          needsLumiCache: "LumiCache Extension required for this option.",
+          findHere: "Find Here.",
+          needsCourse: "Finish the Codex course to use this mode.",
+          lumiCacheMissing: "LumiCache is not running, so unplanned prompt changes are not being watched."
         },
         renderActions: {
           lagReady: "lag ready",
@@ -5596,6 +5632,11 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           greysOutCoveredMessagesInTheChat: "Greys out covered messages in chat. Summary coverage applies either way.",
           previewBeforeSaving: "Preview before saving",
           memoriaStagesNewChaptersAndArcsIn: "Review chapters and arcs in Home > Pending previews before saving."
+        },
+        tokenLimits: {
+          title: "Codex token limits",
+          help: "The most tokens each category may inject. Past 75% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
+          category: "{file}"
         }
       },
       promptsTab: {
@@ -5745,7 +5786,9 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           summaryRecall: "Summary recall",
           appliesToExistingAndFutureChapterAnd: "Applies to existing and future summaries across chats. Summary coverage stays unchanged. Keyword and vector modes include matching summaries; vector recall falls back to keywords if no recent text is visible.",
           lorebookNamesFollowChatNames: "Lorebook names follow chat names",
-          turnOffToRenameYourBooksAnd: "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync."
+          turnOffToRenameYourBooksAnd: "Turn off to rename Books and Codex lorebooks in Lumiverse. Turn on to restore chat-based names at the next sync.",
+          contextRelief: "Shrink when context runs out",
+          contextReliefHint: "When a prompt reaches 90% of your context, lower all summary lags by 30%, and summary targets and Codex token limits by 33%. This runs once per profile and stays until you change the values."
         }
       }
     },
@@ -5771,7 +5814,7 @@ This is what knowledge Codex solves.
 
 ## What it is
 
-The Codex is a story bible for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
+The Codex is a story record for chats. As your story grows, an agent reads every new turn, and updates a small set of records:
 
 - **Characters, Locations, and Things.** Entity sheets are the backbone of most story systems, from hierarchical screenwriting to structured story generation ([Dramatron](https://arxiv.org/pdf/2209.14958), [Narrative Planning](https://arxiv.org/pdf/1401.3841), [Decomposed Screenwriting](https://arxiv.org/html/2510.23163v1)).
 - **Relationships.** A shared table that describes the relationships and trajectories between entities. Research on narrative knowledge graphs shows relations must be tracked as they evolve rather than as static snapshots ([Iyyer et al., NAACL 2016](https://aclanthology.org/N16-1180/), [Narrative Graph](https://www.researchgate.net/publication/370272383_Narrative_Graph_Telling_Evolving_Stories_Based_on_Event-centric_Temporal_Knowledge_Graph), [Relation Clustering](https://www.researchgate.net/publication/346475960_Relation_Clustering_in_Narrative_Knowledge_Graphs)). This table is optional as it is difficult for some models to maintain.
@@ -5782,7 +5825,7 @@ The Codex is a story bible for chats. As your story grows, an agent reads every 
 
 ## Why these records?
 
-These are either proven failure modes or a mechanism shown to improve long-form coherence. A story bible must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
+These are either proven failure modes or a mechanism shown to improve long-form coherence. A Codex must be functional and minimal while maintaining the high information content that is prone to being compressed and lost. ([Generative Agents](https://arxiv.org/abs/2304.03442), [MemGPT](https://arxiv.org/abs/2310.08560), [MemoryBank, AAAI 2024](https://arxiv.org/abs/2305.10250)).
 
 Some things other trackers keep were left out on purpose:
 
@@ -5898,7 +5941,7 @@ function createTranslator(locale = DEFAULT_LOCALE, catalogs = {}) {
 var t = createTranslator();
 
 // src/prompts/codex/directives.txt
-var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story bible of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
+var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story record of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
 
 For normal updates, you see a WINDOW, not the whole story:
 - The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
@@ -6247,6 +6290,9 @@ var locked_default = "LOCKED: the user owns these entities, do NOT set or drop t
 var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.
 `;
 
+// src/prompts/codex/notes/codex-full.txt
+var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 30-50%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
+
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;
 var SCHEMA_HOWTO_TAIL = t("prompts.codex.registry.schemaHowtoTail");
@@ -6485,6 +6531,17 @@ var CODEX_TEMPLATES = [
     howTo: t("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
     vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
     defaultText: locked_fields_default
+  },
+  {
+    key: "note_codex_full",
+    label: t("prompts.codex.registry.codexTemplates.codexFillingUp"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.appendedToUpdatesWhenACategoryIsOver"),
+    vars: [
+      { token: "{{CATEGORY}}", meaning: t("prompts.codex.registry.codexTemplates.theCategoryThatIsFillingUp") },
+      { token: "{{PERCENT}}", meaning: t("prompts.codex.registry.codexTemplates.howFullThatCategoryIs") }
+    ],
+    defaultText: codex_full_default
   }
 ];
 var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
@@ -6520,6 +6577,7 @@ var CODEX_FILE_KEYS = [
   "world",
   "knowledge"
 ];
+var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
 var STORAGE_VERSION = 7;
@@ -6601,9 +6659,9 @@ function makeDefaultProfile(id, name) {
     id,
     name,
     lagUnit: "messages",
-    lagValue: 65,
+    lagValue: 40,
     windowUnit: "messages",
-    windowValue: 18,
+    windowValue: 20,
     chapterTargetUnit: "percent",
     chapterTargetPercent: 15,
     chapterTargetTokens: 800,
@@ -6659,7 +6717,9 @@ function makeDefaultProfile(id, name) {
     codexSamplers: { ...DEFAULT_SAMPLERS },
     codexUseTools: false,
     codexWriteMode: "batch",
-    codexPresetKey: "codex_default"
+    codexPresetKey: "codex_default",
+    codexTokenLimits: defaultCodexTokenLimits(),
+    contextReliefApplied: false
   };
 }
 var DEFAULT_SETTINGS = {
@@ -6673,7 +6733,10 @@ var DEFAULT_SETTINGS = {
   summaryActivationMode: "always",
   followChatNames: true,
   showAutomationToasts: true,
-  suppressToolCallingPrompt: false
+  suppressToolCallingPrompt: false,
+  contextRelief: true,
+  cacheFriendly: false,
+  cacheFriendlySummaryMode: null
 };
 function diskVersionFor(raw) {
   const v = raw && typeof raw === "object" ? raw : {};
@@ -6682,10 +6745,13 @@ function diskVersionFor(raw) {
 function normalizeSettings(raw) {
   const fallback = DEFAULT_SETTINGS;
   const v = raw && typeof raw === "object" ? raw : {};
+  const cacheFriendly = v.cacheFriendly === true;
   const profilesRaw = Array.isArray(v.profiles) ? v.profiles : fallback.profiles;
-  const profiles = profilesRaw.map((p) => normalizeProfile(p)).filter((p) => !!p);
-  if (profiles.length === 0)
-    profiles.push(makeDefaultProfile("default", t("shared.normalizeSettings.default")));
+  const profiles = profilesRaw.map((p) => normalizeProfile(p)).filter((p) => !!p).map((p) => cacheFriendly ? applyCacheFriendly(p) : p);
+  if (profiles.length === 0) {
+    const profile = makeDefaultProfile("default", t("shared.normalizeSettings.default"));
+    profiles.push(cacheFriendly ? applyCacheFriendly(profile) : profile);
+  }
   const activeProfileId = typeof v.activeProfileId === "string" && profiles.some((p) => p.id === v.activeProfileId) ? v.activeProfileId : profiles[0].id;
   const customPresets = Array.isArray(v.customPresets) ? v.customPresets.map(normalizeCustomPreset).filter((p) => !!p) : [];
   return {
@@ -6696,11 +6762,128 @@ function normalizeSettings(raw) {
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
-    summaryActivationMode: normalizeActivationMode(v.summaryActivationMode, v.forceConstantEntries === false ? "keywords" : "always"),
+    summaryActivationMode: cacheFriendly ? "always" : normalizeActivationMode(v.summaryActivationMode, v.forceConstantEntries === false ? "keywords" : "always"),
     followChatNames: v.followChatNames !== false,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
-    suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt
+    suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt,
+    contextRelief: v.contextRelief !== false,
+    cacheFriendly,
+    cacheFriendlySummaryMode: v.cacheFriendlySummaryMode === null || v.cacheFriendlySummaryMode === undefined ? null : normalizeActivationMode(v.cacheFriendlySummaryMode, "always")
   };
+}
+var CACHE_BREAKING_ACTIONS = new Set([
+  "create_chapter",
+  "create_chapter_range",
+  "create_all_chapters",
+  "create_arc",
+  "create_arc_from",
+  "create_all_arcs",
+  "create_higher_from",
+  "create_higher_auto",
+  "create_volume_from",
+  "retry_last_failure",
+  "delete_entry",
+  "release_entry",
+  "regenerate_entry",
+  "update_entry",
+  "rebase_root",
+  "rebuild_root",
+  "detach_root",
+  "codex_update_now",
+  "codex_reset",
+  "codex_rebuild",
+  "codex_tidy",
+  "codex_repair_references",
+  "codex_rebuild_files",
+  "codex_refresh",
+  "codex_restore",
+  "codex_undo",
+  "codex_adopt",
+  "summary_import"
+]);
+var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
+var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
+function defaultCodexTokenLimits() {
+  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
+}
+function normalizeCodexTokenLimits(raw) {
+  const limits = defaultCodexTokenLimits();
+  if (!raw || typeof raw !== "object")
+    return limits;
+  for (const key of CODEX_FILE_KEYS)
+    limits[key] = clampInt(raw[key], 0, 1e6, limits[key]);
+  return limits;
+}
+var CACHE_FRIENDLY_FORCED_KEYS = [
+  "autoCreate",
+  "autoCreateChapter",
+  "showMemoryPreviews",
+  "codexEnabled",
+  "codexManualOnly",
+  "codexExtraContext",
+  "codexRelationsTable",
+  "codexActivationMode",
+  "codexInjectionPosition",
+  "codexWindowUnit",
+  "codexWindowValue",
+  "codexLagUnit",
+  "codexLagValue"
+];
+function applyCacheFriendly(profile) {
+  return {
+    ...profile,
+    autoCreate: true,
+    autoCreateChapter: true,
+    showMemoryPreviews: false,
+    codexEnabled: true,
+    codexManualOnly: false,
+    codexExtraContext: true,
+    codexRelationsTable: false,
+    codexActivationMode: "always",
+    codexInjectionPosition: "lorebook",
+    codexWindowUnit: profile.windowUnit,
+    codexWindowValue: profile.windowValue,
+    codexLagUnit: profile.lagUnit,
+    codexLagValue: profile.lagValue
+  };
+}
+function enterCacheFriendly(profile) {
+  const cacheFriendlySnapshot = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, profile[key]]));
+  return applyCacheFriendly({ ...profile, cacheFriendlySnapshot });
+}
+function leaveCacheFriendly(profile) {
+  const { cacheFriendlySnapshot, ...rest } = profile;
+  const defaults = makeDefaultProfile(profile.id, profile.name);
+  const fallback = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, defaults[key]]));
+  return { ...rest, ...cacheFriendlySnapshot ?? fallback };
+}
+var CONTEXT_RELIEF_THRESHOLD = 0.9;
+var CONTEXT_RELIEF_LAG = 0.7;
+var CONTEXT_RELIEF_TARGET = 0.67;
+var shrink = (value, factor, floor = 0) => value <= floor ? value : Math.max(floor, Math.round(value * factor));
+function applyContextRelief(profile) {
+  const lag = (value) => shrink(value, CONTEXT_RELIEF_LAG);
+  const percent = (value, floor) => shrink(value, CONTEXT_RELIEF_TARGET, floor);
+  const tokens = (value) => shrink(value, CONTEXT_RELIEF_TARGET, 50);
+  const relieved = {
+    ...profile,
+    contextReliefApplied: true,
+    lagValue: lag(profile.lagValue),
+    arcLagChapters: lag(profile.arcLagChapters),
+    arcLagTokens: lag(profile.arcLagTokens),
+    chapterTargetPercent: percent(profile.chapterTargetPercent, 2),
+    chapterTargetTokens: tokens(profile.chapterTargetTokens),
+    arcTargetPercent: percent(profile.arcTargetPercent, 5),
+    arcTargetTokens: tokens(profile.arcTargetTokens),
+    volumeTargetPercent: percent(profile.volumeTargetPercent, 5),
+    volumeTargetTokens: tokens(profile.volumeTargetTokens),
+    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => {
+      const value = profile.higherTiers[tier];
+      return [tier, { ...value, lag: lag(value.lag), targetPercent: percent(value.targetPercent, 5), targetTokens: tokens(value.targetTokens) }];
+    })),
+    codexTokenLimits: Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, shrink(profile.codexTokenLimits[key], CONTEXT_RELIEF_TARGET)]))
+  };
+  return profile.cacheFriendlySnapshot ? applyCacheFriendly(relieved) : relieved;
 }
 function normalizeProfile(raw) {
   if (!raw || typeof raw !== "object")
@@ -6777,7 +6960,10 @@ function normalizeProfile(raw) {
     codexSamplers: normalizeSamplers(v.codexSamplers),
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
     codexWriteMode: v.codexWriteMode === "sequential" ? "sequential" : "batch",
-    codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey
+    codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
+    codexTokenLimits: normalizeCodexTokenLimits(v.codexTokenLimits),
+    contextReliefApplied: v.contextReliefApplied === true,
+    ...v.cacheFriendlySnapshot && typeof v.cacheFriendlySnapshot === "object" ? { cacheFriendlySnapshot: v.cacheFriendlySnapshot } : {}
   };
 }
 function normalizeCodexTemplates(raw) {
@@ -9077,6 +9263,7 @@ function emptyCursor() {
     reconcileUntilMsgId: null,
     relationsTableMode: null,
     rootOrigin: null,
+    recordStats: {},
     lastRunAt: null,
     lastRunStats: null,
     runs: 0,
@@ -9125,6 +9312,17 @@ async function loadCursor(chatId, userId) {
     return emptyCursor();
   return normalizeCursor(raw);
 }
+function normalizeRecordStats(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object")
+    return out;
+  for (const [record, value] of Object.entries(raw)) {
+    const stat = value;
+    if (typeof stat?.updates === "number" && typeof stat.born === "number")
+      out[record] = { updates: stat.updates, born: stat.born };
+  }
+  return out;
+}
 function normalizeCursor(raw) {
   const base = emptyCursor();
   const fileStates = {};
@@ -9154,11 +9352,31 @@ function normalizeCursor(raw) {
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
     relationsTableMode: typeof raw.relationsTableMode === "boolean" ? raw.relationsTableMode : null,
     rootOrigin: typeof raw.rootOrigin === "string" && raw.rootOrigin ? raw.rootOrigin : null,
+    recordStats: normalizeRecordStats(raw.recordStats),
+    ...raw.cacheSavedStates && typeof raw.cacheSavedStates === "object" ? { cacheSavedStates: raw.cacheSavedStates } : {},
     lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : null,
     lastRunStats: normalizeRunStats(raw.lastRunStats),
     runs: typeof raw.runs === "number" && Number.isFinite(raw.runs) ? raw.runs : 0,
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : 0
   };
+}
+function applyCodexFileState(cursor, file, state) {
+  const prevState = cursor.fileStates[file] ?? "on";
+  if (state === "on")
+    delete cursor.fileStates[file];
+  else
+    cursor.fileStates[file] = state;
+  if (state === "frozen") {
+    if (prevState !== "frozen" || typeof cursor.frozenAtRuns[file] !== "number")
+      cursor.frozenAtRuns[file] = cursor.runs;
+    cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
+    return;
+  }
+  const at = cursor.frozenAtRuns[file];
+  if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
+    cursor.refreshPending.push(file);
+  }
+  delete cursor.frozenAtRuns[file];
 }
 async function saveCursor(chatId, cursor, userId) {
   const overflow = cursor.consumedSigs.length - SIG_CAP;
@@ -11545,6 +11763,10 @@ function specialNotes(bundle, notes, ctx) {
 
 `) : null;
 }
+function updateClosing(ctx) {
+  const full = (ctx.fullness ?? []).filter((item) => ctx.activeFiles.has(item.file)).map((item) => fillPrompt(tpl(ctx, "note_codex_full"), { CATEGORY: item.file, PERCENT: String(item.percent) }));
+  return [tpl(ctx, "pass_update"), ...full];
+}
 function currentCodexParts(bundle, ctx) {
   const parts = ["<<CURRENT CODEX>>"];
   for (const key of CODEX_FILE_KEYS) {
@@ -11572,7 +11794,7 @@ ${storySoFar}`);
   parts.push(...currentCodexParts(bundle, ctx));
   parts.push(`<<NEW STORY TURNS (${chunkLabel}) - the new material to encode>>`);
   parts.push(renderTranscript(chunk, true, chunkFirstIndex));
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join(`
 
 `);
@@ -11588,7 +11810,7 @@ function buildCodexSummaryCatchupMessage(ctx, bundle, blocks, chunkLabel, notes)
   parts.push(blocks.join(`
 
 `));
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join(`
 
 `);
@@ -11615,7 +11837,7 @@ ${books.join(`
     parts.push("<<NEWEST STORY TURNS (raw)>>");
     parts.push(tailTranscript);
   }
-  parts.push(tpl(ctx, "pass_update"));
+  parts.push(...updateClosing(ctx));
   return parts.join(`
 
 `);
@@ -11721,7 +11943,7 @@ function buildCodexTidyMessage(ctx, bundle, targets, budget) {
   const parts = [];
   parts.push(tpl(ctx, "pass_tidy"));
   if (budget)
-    parts.push(`COMPACTION BUDGET: The target files currently render to ${budget.current} tokens. Rewrite them to a combined size of at most ${budget.modelTarget} tokens of rendered story-bible prose (not JSON syntax or thinking). This includes a 10% margin below the user's ${budget.limit}-token limit. ${budget.callsLeft} model calls remain. If a previous attempt is still too large, compress further now; do not skip merely because you already tidied it. Preserve locked content and plot-relevant facts. Return all target files together and finish in this response.`);
+    parts.push(`COMPACTION BUDGET: The target files currently render to ${budget.current} tokens. Rewrite them to a combined size of at most ${budget.modelTarget} tokens of rendered Codex prose (not JSON syntax or thinking). This includes a 10% margin below the user's ${budget.limit}-token limit. ${budget.callsLeft} model calls remain. If a previous attempt is still too large, compress further now; do not skip merely because you already tidied it. Preserve locked content and plot-relevant facts. Return all target files together and finish in this response.`);
   const locked = lockedEntityIds(bundle, ctx);
   if (locked.length) {
     parts.push(fillPrompt(tpl(ctx, "note_locked"), { IDS: locked.join(", ") }));
@@ -11854,7 +12076,7 @@ function renderCodexRecords(bundle, opts) {
         record: recordKey("ent", e.id, taken),
         file: fileKey,
         comment: `[Codex] ${label}: ${e.name}`,
-        content: `[Story Bible - ${label}: ${e.name}]
+        content: `[Codex - ${label}: ${e.name}]
 ${lines.join(`
 `)}`,
         keys: uniqKeys([e.name, ...e.aliases ?? [], ...e.keywords ?? []]),
@@ -11874,7 +12096,7 @@ ${lines.join(`
         record: "rel:unlinked",
         file: "relations",
         comment: "[Codex] Relations (unlinked)",
-        content: `[Story Bible - Relations]
+        content: `[Codex - Relations]
 ${orphans.map((r) => relationLine(r, names)).join(`
 `)}`,
         keys: uniqKeys(endpointNames),
@@ -11891,7 +12113,7 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       legacyRecord,
       file: "world",
       comment: `[Codex] World: ${w.topic}`,
-      content: `[Story Bible - World rules: ${w.topic}]
+      content: `[Codex - World rules: ${w.topic}]
 - ${w.topic}: ${w.facts.join(" | ")}`,
       keys: uniqKeys([w.topic, ...w.keywords ?? []]),
       constant: false,
@@ -11915,7 +12137,7 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       legacyRecord,
       file: "knowledge",
       comment: `[Codex] Secret: ${k.fact.slice(0, 60)}`,
-      content: `[Story Bible - Who knows what]
+      content: `[Codex - Who knows what]
 - ${k.fact}${bits.length ? ` (${bits.join("; ")})` : ""}`,
       keys: uniqKeys(k.keywords ?? []),
       constant: false,
@@ -11928,7 +12150,7 @@ ${orphans.map((r) => relationLine(r, names)).join(`
       record: "timeline",
       file: "timeline",
       comment: "[Codex] Timeline",
-      content: `[Story Bible - current story state]
+      content: `[Codex - current story state]
 ${sections.timeline}`,
       keys: [],
       constant: true,
@@ -11940,7 +12162,7 @@ ${sections.timeline}`,
       record: "threads",
       file: "threads",
       comment: "[Codex] Threads",
-      content: `[Story Bible - current story state]
+      content: `[Codex - current story state]
 ${sections.threads}`,
       keys: [],
       constant: true,
@@ -12072,7 +12294,209 @@ function mergeLorebookEdits(raw, generated, previous, constraints) {
     fields.disabled = true;
   if (constraints.vectorOnly)
     Object.assign(fields, { constant: false, vectorized: true, key: [], keysecondary: [] });
+  if (constraints.pinned)
+    Object.assign(fields, constraints.pinned);
   return { fields, state: { applied: fields, overrides } };
+}
+
+// src/backend/codex/limits.ts
+var CODEX_FULL_PERCENT = 75;
+var NEVER_CUT_LARGEST = 6;
+function selectCodexCuts(items, limits) {
+  const cuts = new Set;
+  for (const file of CODEX_FILE_KEYS) {
+    const limit = limits[file];
+    if (limit <= 0)
+      continue;
+    const group = items.filter((item) => item.file === file);
+    let total = group.reduce((sum, item) => sum + item.tokens, 0);
+    if (total <= limit)
+      continue;
+    const spared = new Set([...group].sort((a, b) => b.tokens - a.tokens || b.index - a.index).slice(0, NEVER_CUT_LARGEST));
+    const order = group.filter((item) => !spared.has(item)).sort((a, b) => a.updates - b.updates || a.born - b.born || a.index - b.index);
+    for (const item of order) {
+      if (total <= limit)
+        break;
+      cuts.add(item.id);
+      total -= item.tokens;
+    }
+  }
+  return cuts;
+}
+function codexFullness(tokens, limits) {
+  const out = [];
+  for (const file of CODEX_FILE_KEYS) {
+    const limit = limits[file];
+    const used = tokens[file] ?? 0;
+    if (limit <= 0 || used * 100 <= limit * CODEX_FULL_PERCENT)
+      continue;
+    out.push({ file, percent: Math.round(used * 100 / limit) });
+  }
+  return out;
+}
+function advanceRecordStats(stats, before, after, run) {
+  const next = {};
+  for (const [record, content] of after) {
+    const known = stats[record];
+    if (!before.has(record))
+      next[record] = known ?? { updates: 0, born: run };
+    else
+      next[record] = { updates: (known?.updates ?? 0) + (before.get(record) === content ? 0 : 1), born: known?.born ?? 0 };
+  }
+  return next;
+}
+
+// src/backend/codex/tokens.ts
+async function countCodexText(text, userId) {
+  if (!text)
+    return { tokens: 0, approximate: false };
+  try {
+    const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
+    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0)
+      throw new Error(t("backend.codex.tokens.countCodexText.invalidTokenCount"));
+    return { tokens: result.total_tokens, approximate: result.approximate };
+  } catch {
+    return { tokens: approximateTokensFromChars(text.length), approximate: true };
+  }
+}
+async function measureCodexFullness(bundle, userId, fileStates, limits) {
+  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
+  const tokens = {};
+  for (const record of renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles })) {
+    if (disabledFiles.has(record.file) || record.disabled)
+      continue;
+    tokens[record.file] = (tokens[record.file] ?? 0) + (await countCodexText(record.content, userId)).tokens;
+  }
+  return codexFullness(tokens, limits);
+}
+async function measureCodexTokens(bundle, userId, fileStates = {}, forceConstant = false) {
+  const sections = renderCodexFileSections(bundle);
+  const counts = { files: {}, constant: 0, approximate: false };
+  for (const key of CODEX_FILE_KEYS) {
+    const count = await countCodexText(sections[key], userId);
+    counts.files[key] = count.tokens;
+    counts.approximate ||= count.approximate;
+  }
+  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
+  const records = renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles });
+  for (const record of records) {
+    if (disabledFiles.has(record.file) || record.disabled || !(forceConstant || record.constant))
+      continue;
+    const count = await countCodexText(record.content, userId);
+    counts.constant += count.tokens;
+    counts.approximate ||= count.approximate;
+  }
+  return counts;
+}
+
+// src/backend/codex/cache-states.ts
+var MANAGED = [...CACHE_FRIENDLY_FROZEN_FILES, "relations"];
+var wanted = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) ? "frozen" : "on";
+async function alignCacheFileStates(chatId, userId, on) {
+  await withCursorLock(chatId, userId, async () => {
+    const cursor = await loadCursor(chatId, userId);
+    if (!on) {
+      if (!cursor.cacheSavedStates)
+        return;
+      for (const file of MANAGED)
+        applyCodexFileState(cursor, file, cursor.cacheSavedStates[file] ?? "on");
+      delete cursor.cacheSavedStates;
+      await saveCursor(chatId, cursor, userId);
+      return;
+    }
+    const current = (file) => cursor.fileStates[file] ?? "on";
+    if (cursor.cacheSavedStates && MANAGED.every((file) => current(file) === wanted(file)))
+      return;
+    if (!cursor.cacheSavedStates) {
+      cursor.cacheSavedStates = Object.fromEntries(MANAGED.filter((file) => current(file) !== "on").map((file) => [file, current(file)]));
+    }
+    for (const file of MANAGED)
+      applyCodexFileState(cursor, file, wanted(file));
+    await saveCursor(chatId, cursor, userId);
+  });
+}
+
+// src/backend/hooks.ts
+var CHAPTER_KEY = `${EXTENSION_ID}.latest_chapter`;
+var ARC_KEY = `${EXTENSION_ID}.latest_arc`;
+var VOLUME_KEY = `${EXTENSION_ID}.latest_volume`;
+var CODEX_UPDATED_KEY = `${EXTENSION_ID}.codex_updated`;
+var codexEndpoint = (chatId) => `${EXTENSION_ID}.codex.${chatId}`;
+var registered = false;
+function bumpCacheEpoch(chatId) {
+  try {
+    spindle.rpcPool?.sync?.(`cache_epoch.${chatId}`, { epoch: `${Date.now()}` }, { requires: [] });
+  } catch (err) {
+    warn(`cache epoch publish failed: ${describeError(err)}`);
+  }
+}
+function registerHookEndpoints() {
+  if (registered)
+    return;
+  registered = true;
+  try {
+    spindle.rpcPool?.sync?.(CHAPTER_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(ARC_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(VOLUME_KEY, null, { requires: [] });
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, null, { requires: [] });
+  } catch (err) {
+    warn(`rpcPool unavailable: ${describeError(err)}`);
+  }
+}
+function publishCodexSnapshot(chatId, snapshot, rendered) {
+  try {
+    spindle.rpcPool?.sync?.(codexEndpoint(chatId), snapshot, { requires: [] });
+    spindle.rpcPool?.sync?.(`${codexEndpoint(chatId)}.rendered`, rendered, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex snapshot: ${describeError(err)}`);
+  }
+}
+function publishCodexUpdated(event) {
+  try {
+    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, { ...event, updatedAt: Date.now() }, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish codex_updated: ${describeError(err)}`);
+  }
+}
+function publishCodexWiped(chatId, userId) {
+  publishCodexSnapshot(chatId, null, null);
+  publishCodexUpdated({ chatId, userId, changedFiles: [...CODEX_FILE_KEYS], reason: "wipe" });
+}
+function publishChapterCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(CHAPTER_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish chapter_created: ${describeError(err)}`);
+  }
+}
+function publishArcCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(ARC_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish arc_created: ${describeError(err)}`);
+  }
+}
+function publishVolumeCreated(userId, event) {
+  const payload = {
+    ...event,
+    createdAt: Date.now(),
+    userId
+  };
+  try {
+    spindle.rpcPool?.sync?.(VOLUME_KEY, payload, { requires: [] });
+  } catch (err) {
+    warn(`failed to publish volume_created: ${describeError(err)}`);
+  }
 }
 
 // src/backend/codex/sync.ts
@@ -12089,7 +12513,36 @@ function readEntryMeta(entry) {
   const file = typeof v.file === "string" && CODEX_FILE_KEYS.includes(v.file) ? v.file : null;
   if (!file)
     return null;
-  return { chatId: v.chatId, record: v.record, file, applied: v.applied, overrides: v.overrides };
+  return {
+    chatId: v.chatId,
+    record: v.record,
+    file,
+    applied: v.applied,
+    overrides: v.overrides,
+    ...typeof v.updates === "number" ? { updates: v.updates } : {},
+    ...typeof v.born === "number" ? { born: v.born } : {}
+  };
+}
+var cutWarning = null;
+function registerCodexCutWarning(warning) {
+  cutWarning = warning;
+}
+async function cutCandidates(desired, stats, disabledFor, userId) {
+  const out = [];
+  for (const [index, rec] of desired.entries()) {
+    if (rec.disabled || disabledFor(rec.file))
+      continue;
+    const stat = stats[rec.record];
+    out.push({
+      id: rec.record,
+      file: rec.file,
+      index,
+      tokens: (await countCodexText(rec.content, userId)).tokens,
+      updates: stat?.updates ?? 0,
+      born: stat?.born ?? 0
+    });
+  }
+  return out;
 }
 var syncChain = new Map;
 function withSyncLock(userId, chatId, fn) {
@@ -12146,6 +12599,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
   }
   const settings = await loadSettings(userId);
   const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  await alignCacheFileStates(chatId, userId, settings.cacheFriendly);
   const cursor = await loadCursor(chatId, userId);
   const diskMode = cursor.relationsTableMode ?? relationsTableFallback;
   const { bundle, problems } = await loadCodex(chatId, userId, { relationsTable: diskMode });
@@ -12189,10 +12643,12 @@ async function doSync(chatId, userId, relationsTableFallback) {
       warn(`codex sync: failed to delete duplicate entry ${e.raw.id}: ${describeError(err)}`);
     });
   }
+  const cuts = profile.codexActivationMode === "always" ? selectCodexCuts(await cutCandidates(desired, cursor.recordStats, disabledFor, userId), profile.codexTokenLimits) : new Set;
   const seen = new Set;
-  for (const rec of desired) {
+  let wrote = false;
+  for (const [index, rec] of desired.entries()) {
     seen.add(rec.record);
-    const disabled = disabledFor(rec.file) || rec.disabled;
+    const disabled = disabledFor(rec.file) || rec.disabled || cuts.has(rec.record);
     const placement = codexEntryPlacement(profile, rec.constant);
     const cur = byRecord.get(rec.record) ?? (rec.legacyRecord ? byRecord.get(rec.legacyRecord) : undefined);
     if (!cur && (previousRecords.has(rec.record) || rec.legacyRecord && previousRecords.has(rec.legacyRecord)))
@@ -12206,20 +12662,24 @@ async function doSync(chatId, userId, relationsTableFallback) {
       comment: rec.comment,
       disabled,
       ...placement,
+      ...settings.cacheFriendly ? { order_value: index } : {},
       key: profile.codexActivationMode === "vector_only" ? [] : rec.keys,
       keysecondary: []
     };
     const { fields, state } = mergeLorebookEdits(cur?.raw ?? generated, generated, cur?.meta ?? {}, {
       disabled,
-      vectorOnly: profile.codexActivationMode === "vector_only"
+      vectorOnly: profile.codexActivationMode === "vector_only",
+      ...settings.cacheFriendly ? { pinned: placement } : {}
     });
-    const meta = { chatId, record: rec.record, file: rec.file, ...state };
+    const stat = cursor.recordStats[rec.record];
+    const meta = { chatId, record: rec.record, file: rec.file, ...state, ...stat ? { updates: stat.updates, born: stat.born } : {} };
     if (!cur) {
       try {
         await spindle.world_books.entries.create(bookId, {
           ...fields,
           extensions: { [CODEX_ENTRY_EXTENSION_KEY]: meta }
         }, userId);
+        wrote = true;
       } catch (err) {
         warn(`codex sync: failed to create entry for ${rec.record}: ${describeError(err)}`);
         throw err;
@@ -12235,6 +12695,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
         ...fields,
         extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta }
       }, userId);
+      wrote = true;
     } catch (err) {
       warn(`codex sync: failed to update entry for ${rec.record}: ${describeError(err)}`);
       throw err;
@@ -12255,6 +12716,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
       }, userId);
       continue;
     }
+    wrote = true;
     await deleteSyncedEntry(e.raw.id, userId, deleteDeadline).catch((err) => {
       failedDeletes++;
       warn(`codex sync: failed to delete stale entry ${e.raw.id} (${record}): ${describeError(err)}`);
@@ -12264,7 +12726,13 @@ async function doSync(chatId, userId, relationsTableFallback) {
     throw new Error(t("backend.codex.sync.doSync.outdatedCodexEntrCouldNotBeRemoved", { failedDeletes }));
   }
   const records = desired.map((r) => r.record);
-  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter((record) => records.includes(record)) }, { userId });
+  const cut = [...cuts].sort();
+  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter((record) => records.includes(record)), cut }, { userId });
+  const previousCut = new Set(manifest?.cut ?? []);
+  if (cut.some((record) => !previousCut.has(record)))
+    cutWarning?.(userId, chatId);
+  if (wrote && settings.cacheFriendly)
+    bumpCacheEpoch(chatId);
   recordDiagnostic(userId, {
     event: "codex",
     chatId,
@@ -12311,6 +12779,23 @@ ${t("codexLorebook.prompt")}
 ${edits.join(`
 
 `)}` : "";
+}
+function codexActivationCuts(entries, messages, scanDepth, profile) {
+  if (profile.codexActivationMode === "always")
+    return [];
+  const scan = (scanDepth && scanDepth > 0 ? messages.slice(-scanDepth) : messages).map((message) => message.content).join(`
+`).toLowerCase();
+  const items = [];
+  for (const [index, entry] of entries.entries()) {
+    const meta = entry.disabled ? null : readEntryMeta(entry);
+    if (!meta)
+      continue;
+    const predicted = entry.constant || entry.key.length === 0 || entry.key.some((key) => scan.includes(key.toLowerCase()));
+    if (!predicted)
+      continue;
+    items.push({ id: entry.id, file: meta.file, index, tokens: approximateTokensFromChars(entry.content.length), updates: meta.updates ?? 0, born: meta.born ?? 0 });
+  }
+  return [...selectCodexCuts(items, profile.codexTokenLimits)];
 }
 function codexEntryPlacement(profile, constant) {
   return {
@@ -12434,82 +12919,6 @@ function countBindingBacklog(entries, tier, rule) {
     const used = new Set(batch.map((e) => e.raw.id));
     remaining = remaining.filter((e) => !used.has(e.raw.id));
     count++;
-  }
-}
-
-// src/backend/hooks.ts
-var CHAPTER_KEY = `${EXTENSION_ID}.latest_chapter`;
-var ARC_KEY = `${EXTENSION_ID}.latest_arc`;
-var VOLUME_KEY = `${EXTENSION_ID}.latest_volume`;
-var CODEX_UPDATED_KEY = `${EXTENSION_ID}.codex_updated`;
-var codexEndpoint = (chatId) => `${EXTENSION_ID}.codex.${chatId}`;
-var registered = false;
-function registerHookEndpoints() {
-  if (registered)
-    return;
-  registered = true;
-  try {
-    spindle.rpcPool?.sync?.(CHAPTER_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(ARC_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(VOLUME_KEY, null, { requires: [] });
-    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, null, { requires: [] });
-  } catch (err) {
-    warn(`rpcPool unavailable: ${describeError(err)}`);
-  }
-}
-function publishCodexSnapshot(chatId, snapshot, rendered) {
-  try {
-    spindle.rpcPool?.sync?.(codexEndpoint(chatId), snapshot, { requires: [] });
-    spindle.rpcPool?.sync?.(`${codexEndpoint(chatId)}.rendered`, rendered, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish codex snapshot: ${describeError(err)}`);
-  }
-}
-function publishCodexUpdated(event) {
-  try {
-    spindle.rpcPool?.sync?.(CODEX_UPDATED_KEY, { ...event, updatedAt: Date.now() }, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish codex_updated: ${describeError(err)}`);
-  }
-}
-function publishCodexWiped(chatId, userId) {
-  publishCodexSnapshot(chatId, null, null);
-  publishCodexUpdated({ chatId, userId, changedFiles: [...CODEX_FILE_KEYS], reason: "wipe" });
-}
-function publishChapterCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(CHAPTER_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish chapter_created: ${describeError(err)}`);
-  }
-}
-function publishArcCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(ARC_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish arc_created: ${describeError(err)}`);
-  }
-}
-function publishVolumeCreated(userId, event) {
-  const payload = {
-    ...event,
-    createdAt: Date.now(),
-    userId
-  };
-  try {
-    spindle.rpcPool?.sync?.(VOLUME_KEY, payload, { requires: [] });
-  } catch (err) {
-    warn(`failed to publish volume_created: ${describeError(err)}`);
   }
 }
 
@@ -14046,6 +14455,15 @@ async function promoteGhostChapters(chatId, profile, userId, automation = false)
     return promoted.length;
   });
 }
+async function hasPromotableGhost(chatId, profile, userId) {
+  const entries = await listLmbEntries(chatId, userId, true);
+  const ghosts = entries.filter((e) => e.meta.tier === 1 && e.meta.ghost === true && e.raw.disabled && e.meta.msgIds.length > 0);
+  if (ghosts.length === 0)
+    return false;
+  const messages = await spindle.chat.getMessages(chatId);
+  const pastLag = new Set(trimLagFromTail(messages, profile).map((m) => m.id));
+  return ghosts.some((g) => g.meta.msgIds.every((id) => pastLag.has(id)));
+}
 async function cleanupGhostsAfterModeOff(chatId, profile, userId) {
   const entries = await listLmbEntries(chatId, userId);
   if (!entries.some((e) => e.meta.tier === 1 && e.meta.ghost === true))
@@ -15035,6 +15453,46 @@ async function runSummaryTransfer(userId, chatId, request) {
   }
 }
 
+// src/backend/context-relief.ts
+var statsByGeneration = new Map;
+function rememberContextStats(generationId, stats) {
+  if (generationId && stats)
+    statsByGeneration.set(generationId, stats);
+}
+function takeContextStats(generationId) {
+  if (!generationId)
+    return;
+  const stats = statsByGeneration.get(generationId);
+  statsByGeneration.delete(generationId);
+  return stats;
+}
+function contextIsFull(stats, promptTokens) {
+  if (!stats?.enabled || !stats.maxContext || stats.maxContext <= 0)
+    return false;
+  if ((stats.messagesDropped ?? 0) > 0)
+    return true;
+  const assembled = (stats.fixedTokens ?? 0) + (stats.chatHistoryTokensAfter ?? 0);
+  return Math.max(promptTokens ?? 0, assembled) / stats.maxContext >= CONTEXT_RELIEF_THRESHOLD;
+}
+async function relieveContext(userId, warn) {
+  const needed = (settings) => settings.contextRelief && settings.profiles.some((p) => p.id === settings.activeProfileId && !p.contextReliefApplied);
+  if (!needed(await loadSettings(userId)))
+    return null;
+  let applied = false;
+  const next = await mutateSettings(userId, (current) => {
+    if (!needed(current))
+      return current;
+    applied = true;
+    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? applyContextRelief(p) : p) };
+  });
+  if (!applied)
+    return null;
+  warn(t("backend.contextRelief.applied"));
+  if (!next.cacheFriendly)
+    warn(t("backend.contextRelief.advice"));
+  return next;
+}
+
 // src/backend/injection.ts
 var injectionAnomalyCb = null;
 function registerInjectionAnomalyCallback(cb) {
@@ -15277,39 +15735,6 @@ function resolveTidyTarget(currentTokens, target) {
   if (limit < 1)
     throw new Error(t("codexTidy.resolveTidyTarget.theTargetMustBeAtLeastOne"));
   return { limit, modelTarget: Math.max(1, Math.floor(limit * 0.9)) };
-}
-
-// src/backend/codex/tokens.ts
-async function countCodexText(text, userId) {
-  if (!text)
-    return { tokens: 0, approximate: false };
-  try {
-    const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
-    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0)
-      throw new Error(t("backend.codex.tokens.countCodexText.invalidTokenCount"));
-    return { tokens: result.total_tokens, approximate: result.approximate };
-  } catch {
-    return { tokens: approximateTokensFromChars(text.length), approximate: true };
-  }
-}
-async function measureCodexTokens(bundle, userId, fileStates = {}, forceConstant = false) {
-  const sections = renderCodexFileSections(bundle);
-  const counts = { files: {}, constant: 0, approximate: false };
-  for (const key of CODEX_FILE_KEYS) {
-    const count = await countCodexText(sections[key], userId);
-    counts.files[key] = count.tokens;
-    counts.approximate ||= count.approximate;
-  }
-  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
-  const records = renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles });
-  for (const record of records) {
-    if (disabledFiles.has(record.file) || record.disabled || !(forceConstant || record.constant))
-      continue;
-    const count = await countCodexText(record.content, userId);
-    counts.constant += count.tokens;
-    counts.approximate ||= count.approximate;
-  }
-  return counts;
 }
 
 // src/backend/codex/agent.ts
@@ -15758,7 +16183,7 @@ async function runCodexAgentInner(opts) {
   const sequential = promptCtx.sequential;
   const skipPhrase = useTools ? "call codex_skip" : 'name them in "skip"';
   const donePhrase = useTools ? "Then call codex_done." : 'Set "done": true once everything is accounted for.';
-  const coverage = new Set((opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k)));
+  const coverage = new Set((opts.coverageFiles ?? [...promptCtx.activeFiles]).filter((k) => promptCtx.activeFiles.has(k) && (k !== "relations" || promptCtx.relationsTable)));
   const maxRounds = Math.min(coverage.size + COVERAGE_NUDGES + (profile.codexThorough ? 4 : 3), opts.callBudget?.remaining ?? Infinity);
   const writable = new Set(opts.writableFiles ?? promptCtx.activeFiles);
   const tools = useTools ? codexTools([...promptCtx.activeFiles].filter((k) => writable.has(k)), sequential) : null;
@@ -16337,7 +16762,13 @@ function windowReached(compressible, profile) {
     return true;
   return false;
 }
+var heldSyncs = new Set;
+function recordContents(bundle) {
+  return new Map(renderCodexRecords(bundle, { includeRelations: true }).map((record) => [record.record, record.content]));
+}
 async function syncEntriesGuarded(chatId, userId, relationsTableFallback) {
+  if (heldSyncs.has(`${userId}::${chatId}`))
+    return;
   try {
     await syncCodexEntries(chatId, userId, relationsTableFallback);
   } catch (err) {
@@ -16365,6 +16796,7 @@ async function ensureCodexEntriesSynced(chatId, userId, profile) {
   }
 }
 async function planRun(chatId, userId, lagUnit, lagValue) {
+  await alignCacheFileStates(chatId, userId, (await loadSettings(userId)).cacheFriendly);
   const messages = await spindle.chat.getMessages(chatId);
   const cursor = await refreshCodexExclusions(chatId, userId, messages);
   const byId = new Map(messages.map((m) => [m.id, m]));
@@ -16568,13 +17000,14 @@ async function dryRunCodex(chatId, profile, settings, userId) {
   if (frozenFiles.size === CODEX_FILE_KEYS.length) {
     throw new Error(t("backend.codex.index.dryRunCodex.everyCodexRecordIsFrozenUnfreezeOne"));
   }
+  const fullness = await measureCodexFullness(bundle, userId, plan.cursor.fileStates, profile.codexTokenLimits);
   const notes = {
     reconcile: plan.reconcile,
     migrateToTable: prevMode === false && profile.codexRelationsTable,
     migrateToInline: prevMode === true && !profile.codexRelationsTable,
     loadProblems: problems.map((p) => `${p.file}.json`)
   };
-  const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+  const promptCtx = { ...makeCodexPromptCtx(profile, settings.customPresets, frozenFiles), fullness };
   const posById = new Map(plan.messages.map((m, i) => [m.id, i]));
   const firstIdx = posById.get(chunk[0].id) ?? 0;
   const lastIdx = posById.get(chunk[chunk.length - 1].id) ?? firstIdx;
@@ -16658,6 +17091,8 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
   };
   const settings = await loadSettings(userId);
   const promptCtx = makeCodexPromptCtx(profile, settings.customPresets, frozenFiles);
+  promptCtx.fullness = await measureCodexFullness(bundle, userId, plan.cursor.fileStates, profile.codexTokenLimits);
+  const contentsBefore = recordContents(bundle);
   if (notes.migrateToTable || notes.migrateToInline) {
     const blocked = ["characters", "locations", "things", "relations"].filter((k) => frozenFiles.has(k));
     if (blocked.length) {
@@ -16686,7 +17121,7 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     notes,
     lore,
     storySoFar,
-    timelineAppendOnly: !notes.reconcile,
+    timelineAppendOnly: !notes.reconcile && !promptCtx.fullness.some((item) => item.file === "timeline"),
     ...buildUserText ? { userTextOverride: buildUserText(promptCtx, bundle, notes, chunkLabel, lore) } : {},
     progressBase: progress,
     externalSignal,
@@ -16712,6 +17147,10 @@ async function runChunk(chatId, userId, profile, plan, chunk, automation, extern
     plan.cursor.reconcileUntilMsgId = null;
   }
   invalidateCodexInjectionCache(chatId);
+  const saved = await loadCodex(chatId, userId, { relationsTable: profile.codexRelationsTable });
+  if (saved.problems.length === 0) {
+    plan.cursor.recordStats = advanceRecordStats(plan.cursor.recordStats, contentsBefore, recordContents(saved.bundle), plan.cursor.runs + 1);
+  }
   await withCursorLock(chatId, userId, async () => {
     const liveCursor = await loadCursor(chatId, userId).catch((err) => {
       warn(`codex: live cursor re-read failed before save: ${describeError(err)}`);
@@ -16780,6 +17219,23 @@ async function drain(chatId, userId, profile, lagValue, requireWindow, automatio
   } finally {
     clearBusy(userId, chatId, "codex");
   }
+}
+async function drainCodexForCacheWindow(chatId, userId, profile) {
+  const key = `${userId}::${chatId}`;
+  heldSyncs.add(key);
+  try {
+    await snapshotCodexForUndo(chatId, userId, t("backend.codex.index.maybeRunCodex.automaticUpdate"));
+    await drain(chatId, userId, profile, profile.codexLagValue, false, true);
+  } finally {
+    heldSyncs.delete(key);
+  }
+}
+function reportCodexWindowFailure(userId, chatId, err) {
+  if (err instanceof AbortedSummarizerError) {
+    cb2?.onToast(userId, "info", t("backend.codex.index.maybeRunCodex.memoriaClosesTheCodexForNow"));
+    return;
+  }
+  reportCodexFailure(userId, chatId, "update", err);
 }
 async function maybeRunCodex(chatId, profile, settings, userId) {
   if (!settings.enabled || !profile.codexEnabled)
@@ -17250,21 +17706,7 @@ async function getCodexPanelState(chatId, userId) {
 async function setCodexFileState(chatId, userId, file, state, relationsTableFallback) {
   await withCursorLock(chatId, userId, async () => {
     const cursor = await loadCursor(chatId, userId);
-    const prevState = cursor.fileStates[file] ?? "on";
-    if (state === "on")
-      delete cursor.fileStates[file];
-    else
-      cursor.fileStates[file] = state;
-    if (state === "frozen") {
-      cursor.frozenAtRuns[file] = cursor.runs;
-      cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
-    } else {
-      const at = cursor.frozenAtRuns[file];
-      if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
-        cursor.refreshPending.push(file);
-      }
-      delete cursor.frozenAtRuns[file];
-    }
+    applyCodexFileState(cursor, file, state);
     await saveCursor(chatId, cursor, userId);
   });
   invalidateCodexInjectionCache(chatId, false);
@@ -17590,6 +18032,71 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   } finally {
     clearBusy(userId, chatId, "codex");
   }
+}
+
+// src/backend/cache-friendly.ts
+var LUMICACHE_STATUS = "lumicache.status";
+async function lumiCacheAvailable() {
+  if (!spindle.rpcPool?.read)
+    return false;
+  try {
+    await spindle.rpcPool.read(LUMICACHE_STATUS);
+    return true;
+  } catch (err) {
+    if (/not registered/i.test(describeError(err)))
+      return false;
+    throw err;
+  }
+}
+var running = new Set;
+async function bindingCount(chatId, userId) {
+  return (await listLmbEntries(chatId, userId, true)).filter((entry) => entry.meta.tier >= 2).length;
+}
+async function runCacheFriendlyWindow(chatId, profile, settings, userId, onToast) {
+  const key = `${userId}::${chatId}`;
+  if (running.has(key))
+    return;
+  running.add(key);
+  try {
+    await ensureForkAdoption(chatId, userId);
+    if (await forkShelfPending(chatId, userId) || await forkCodexPending(chatId, userId))
+      return;
+    await ensureCodexEntriesSynced(chatId, userId, profile);
+    await sweepStaleGhosts(chatId, userId);
+    await drainGhostBacklog(chatId, profile, settings, userId, true);
+    if (!await hasPromotableGhost(chatId, profile, userId))
+      return;
+    try {
+      await drainCodexForCacheWindow(chatId, userId, profile);
+    } catch (err) {
+      warn(`cache window codex run failed: ${describeError(err)}`);
+      reportCodexWindowFailure(userId, chatId, err);
+      onToast("warn", t("backend.cacheFriendly.codexMissedThisWindow"));
+    }
+    await promoteGhostChapters(chatId, profile, userId, true);
+    await syncCodexEntries(chatId, userId, profile.codexRelationsTable);
+    bumpCacheEpoch(chatId);
+    const before = await bindingCount(chatId, userId);
+    await maybeRunArcCheck(chatId, profile, settings, userId, true);
+    if (await bindingCount(chatId, userId) !== before)
+      bumpCacheEpoch(chatId);
+  } finally {
+    running.delete(key);
+  }
+}
+async function filedMessageChanged(chatId, messageId, userId, deleted) {
+  const cursor = await loadCursor(chatId, userId);
+  const consumed = cursor.consumedSigs.find((record) => record.id === messageId);
+  if (deleted) {
+    if (consumed)
+      return true;
+    const entries = await listLmbEntries(chatId, userId);
+    return entries.some((entry) => entry.meta.ghost !== true && entry.meta.msgIds.includes(messageId));
+  }
+  if (!consumed)
+    return false;
+  const live = (await spindle.chat.getMessages(chatId)).find((message) => message.id === messageId);
+  return !!live && msgSig(live.role, live.content || "") !== consumed.sig;
 }
 
 // src/backend/codex/repair.ts
@@ -17939,6 +18446,10 @@ async function buildState(userId, requestedChatId) {
     entryCount: c.entryCount
   }));
   const resolved = await resolveConnection(activeProfile, userId).catch(() => null);
+  const lumiCache = await lumiCacheAvailable().catch((err) => {
+    warn(`LumiCache status read failed: ${describeError(err)}`);
+    return false;
+  });
   const baseState = {
     userId,
     activeChatId: null,
@@ -17994,7 +18505,8 @@ async function buildState(userId, requestedChatId) {
     codexFileTokens: {},
     codexTokensApproximate: true,
     codexRevision: 0,
-    lessons
+    lessons,
+    lumiCacheAvailable: lumiCache
   };
   if (!chat)
     return baseState;
@@ -18239,6 +18751,26 @@ registerCodexCallbacks({
     })();
   }
 });
+registerCodexCutWarning((userId) => {
+  notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
+});
+var activationCutsSeen = new Map;
+function warnOnNewActivationCuts(userId, chatId, cut) {
+  const key = `${userId}::${chatId}`;
+  const seen = activationCutsSeen.get(key);
+  if (cut.some((id) => !seen?.has(id)))
+    notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
+  if (activationCutsSeen.size > 500)
+    activationCutsSeen.clear();
+  activationCutsSeen.set(key, new Set(cut));
+}
+async function warnIfFiledMessageChanged(chatId, messageId, userId, deleted) {
+  if (!messageId || !(await loadSettings(userId)).cacheFriendly)
+    return;
+  if (await filedMessageChanged(chatId, messageId, userId, deleted)) {
+    await notify(userId, "warn", t("backend.cacheFriendly.filedMessageChanged"));
+  }
+}
 var CODEX_GATE_TIMEOUT_MS = 9000;
 spindle.registerWorldInfoInterceptor(async (ctx) => {
   const lmbIds = [];
@@ -18262,7 +18794,9 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
         const settings = await loadSettings(userId);
         const rawProfile = settings.profiles.find((p) => p.id === settings.activeProfileId) ?? null;
         const profile = rawProfile ? effectiveProfile(rawProfile, await ensureLessons(userId)) : null;
-        return !settings.enabled || !profile || !profile.codexEnabled;
+        if (!settings.enabled || !profile || !profile.codexEnabled)
+          return { off: true, cut: [] };
+        return { off: false, cut: codexActivationCuts(ctx.entries, ctx.messages, ctx.activationSettings?.globalScanDepth ?? null, profile) };
       })();
       gate.catch(() => {});
       const deadline = new Promise((resolve) => {
@@ -18272,8 +18806,11 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
         const off = await Promise.race([gate, deadline]);
         if (off === "timeout") {
           warn("world-info codex gate timed out, leaving codex entries active this turn");
-        } else if (off) {
+        } else if (off.off) {
           disabledIds.push(...codexIds);
+        } else {
+          disabledIds.push(...off.cut);
+          warnOnNewActivationCuts(userId, ctx.chatId, off.cut);
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
@@ -18339,8 +18876,17 @@ spindle.on("MESSAGE_SENT", async (payload, hostUserId) => {
   rememberChatUser(p.chatId, userId);
   recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
 });
+var onHostEvent = spindle.on;
+onHostEvent("GENERATION_IN_PROGRESS", (payload) => {
+  const p = payload;
+  rememberContextStats(p?.generationId, p?.contextClipStats);
+});
+spindle.on("GENERATION_STOPPED", (payload) => {
+  takeContextStats(payload?.generationId);
+});
 spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
   const p = payload;
+  const contextStats = takeContextStats(p?.generationId);
   if (!p?.chatId || p.error)
     return;
   const userId = hostUserId ?? resolveUserId(p.chatId);
@@ -18348,14 +18894,35 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
     return;
   rememberChatUser(p.chatId, userId);
   await ensureUserFolders(userId).catch(() => {});
-  const settings = await loadSettings(userId).catch(() => null);
+  let settings = await loadSettings(userId).catch(() => null);
   if (!settings?.enabled)
     return;
-  const rawProfile = settings.profiles.find((x) => x.id === settings.activeProfileId);
+  if (contextIsFull(contextStats, p.usage?.prompt_tokens)) {
+    try {
+      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text));
+      if (relieved) {
+        settings = relieved;
+        await syncProfileSettings(userId);
+        await pushState(userId, p.chatId);
+      }
+    } catch (err) {
+      warn(`context relief failed: ${describeError(err)}`);
+      notify(userId, "error", t("backend.contextRelief.failed", { error: shortErrorText(err) }));
+    }
+  }
+  const activeSettings = settings;
+  const rawProfile = activeSettings.profiles.find((x) => x.id === activeSettings.activeProfileId);
   if (!rawProfile)
     return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
+  if (settings.cacheFriendly && profile.codexEnabled) {
+    await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
+      warn(`cache friendly window failed: ${describeError(err)}`);
+      notify(userId, "error", t("backend.cacheFriendly.windowFailed", { error: shortErrorText(err) }));
+    });
+    return;
+  }
   await maybeRunPipeline(p.chatId, profile, settings, userId).catch((err) => {
     warn(`pipeline failed: ${describeError(err)}`);
   });
@@ -18385,7 +18952,17 @@ spindle.on("MESSAGE_DELETED", async (payload, hostUserId) => {
   rememberChatUser(p.chatId, userId);
   recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "removed" });
   invalidateBookCache(userId, p.chatId);
+  await warnIfFiledMessageChanged(p.chatId, p.messageId, userId, true).catch((err) => warn(`filed message check failed: ${describeError(err)}`));
   await pushState(userId, p.chatId);
+});
+spindle.on("MESSAGE_EDITED", async (payload, hostUserId) => {
+  const p = payload;
+  if (!p?.chatId)
+    return;
+  const userId = hostUserId ?? resolveUserId(p.chatId);
+  if (!userId)
+    return;
+  await warnIfFiledMessageChanged(p.chatId, p.message?.id, userId, false).catch((err) => warn(`filed message check failed: ${describeError(err)}`));
 });
 spindle.on("WORLD_BOOK_ENTRY_DELETED", async (payload, hostUserId) => {
   if (!hostUserId)
@@ -18560,6 +19137,32 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await resumeActiveSummaryBinding(userId, msg.chatId);
         await pushState(userId, msg.chatId);
         break;
+      case "cache_friendly_set": {
+        const current = await loadSettings(userId);
+        if (msg.enabled === current.cacheFriendly)
+          break;
+        if (msg.enabled) {
+          if (codexGated(await ensureLessons(userId))) {
+            await notify(userId, "warn", t("backend.cacheFriendly.finishCodexCourse"));
+            break;
+          }
+          if (!await lumiCacheAvailable()) {
+            await notify(userId, "error", t("backend.cacheFriendly.needsLumiCache"));
+            break;
+          }
+        }
+        await mutateSettings(userId, (cur) => msg.enabled ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map(enterCacheFriendly) } : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
+        const { failed } = await applySummaryActivation(userId);
+        if (failed)
+          await notify(userId, "warn", t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }));
+        await syncProfileSettings(userId);
+        if (msg.chatId)
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
+        if (msg.enabled)
+          await notify(userId, "info", t("backend.cacheFriendly.enabledCost"));
+        await pushState(userId, msg.chatId);
+        break;
+      }
       case "save_settings":
         await patchSettings(userId, msg.patch);
         if ("profiles" in msg.patch || "activeProfileId" in msg.patch)
@@ -18620,7 +19223,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             warn(`hideCoveredMessages re-sync failed: ${describeError(err)}`);
           }
         }
-        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth"].some((key) => (key in incoming))) {
+        if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => (key in incoming))) {
           await syncProfileSettings(userId);
         }
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
@@ -19446,6 +20049,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           clearBusy(userId, msg.chatId, "codex");
         }
         send({ type: "codex_files", chatId: msg.chatId, files, savedFile: msg.file, savedSeq: msg.seq, revision: getCodexRevision(msg.chatId) }, userId);
+        if ((await loadSettings(userId)).cacheFriendly)
+          await notify(userId, "warn", t("backend.cacheFriendly.handEditBreaksCache"));
         await pushState(userId, msg.chatId);
         break;
       }
@@ -19599,6 +20204,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
         let profile = null;
         try {
           const cur = await loadSettings(userId);
+          if (cur.cacheFriendly && cacheFriendlyFileLocked(msg.file)) {
+            throw new Error(t("backend.cacheFriendly.fileLocked"));
+          }
           profile = cur.profiles.find((p) => p.id === cur.activeProfileId) ?? null;
           await setCodexFileState(msg.chatId, userId, msg.file, msg.state, profile?.codexRelationsTable);
         } catch (err) {
@@ -19679,6 +20287,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
       default:
         debug(userId, `unknown frontend msg type`, msg.type);
     }
+    if (CACHE_BREAKING_ACTIONS.has(msg.type) && "chatId" in msg && msg.chatId && (await loadSettings(userId)).cacheFriendly)
+      bumpCacheEpoch(msg.chatId);
     recordFrontendAction(userId, msg, "finished");
   } catch (err) {
     recordFrontendAction(userId, msg, "failed");

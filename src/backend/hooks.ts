@@ -70,6 +70,15 @@ const codexEndpoint = (chatId: string): string => `${EXTENSION_ID}.codex.${chatI
 
 let registered = false;
 
+/** LumiCache reads this per chat, so a planned prompt change does not read as an accident. */
+export function bumpCacheEpoch(chatId: string): void {
+  try {
+    spindle.rpcPool?.sync?.(`cache_epoch.${chatId}`, { epoch: `${Date.now()}` }, { requires: [] });
+  } catch (err) {
+    warn(`cache epoch publish failed: ${describeError(err)}`);
+  }
+}
+
 export function registerHookEndpoints(): void {
   if (registered) return;
   registered = true;

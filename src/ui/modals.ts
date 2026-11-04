@@ -56,7 +56,7 @@ export function requestCodexRebuild(
   const { booksWarning, autoBooks } = codexCatchupWarnings(state);
   showCodexCatchupModal({
     title: tr("ui.modals.requestCodexRebuild.rebuildTheCodex"),
-    lead: tr("ui.modals.requestCodexRebuild.memoriaWillEraseTheStoryBibleAnd", { total: total, passes: passes }),
+    lead: tr("ui.modals.requestCodexRebuild.memoriaWillEraseTheCodexAnd", { total: total, passes: passes }),
     booksWarning,
     autoBooks,
     onPick: (mode) => send({ type: "codex_rebuild", chatId, mode }),
@@ -402,6 +402,22 @@ export function openEditModal(
     }, { primary: true }),
   );
   form.appendChild(actions);
+}
+
+export async function confirmCacheBreak(ctx: SpindleFrontendContext): Promise<boolean> {
+  const message = tr("ui.modals.cacheBreak.message");
+  try {
+    const r = await ctx.ui.showConfirm({
+      title: tr("ui.modals.cacheBreak.title"),
+      message,
+      variant: "warning",
+      confirmLabel: tr("ui.modals.cacheBreak.confirm"),
+      cancelLabel: tr("ui.modals.r.cancel"),
+    });
+    return !!r.confirmed;
+  } catch {
+    return window.confirm(message);
+  }
 }
 
 export async function confirmDelete(

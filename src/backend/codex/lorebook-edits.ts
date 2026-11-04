@@ -4,7 +4,7 @@ export const EDITABLE_CODEX_FIELDS = ["content", "comment", "key", "keysecondary
 export type EntryFields = Record<string, unknown>;
 export interface LorebookEditState { applied?: EntryFields; overrides?: EntryFields }
 
-export function mergeLorebookEdits(raw: EntryFields, generated: EntryFields, previous: LorebookEditState, constraints: { disabled: boolean; vectorOnly: boolean }): { fields: EntryFields; state: LorebookEditState } {
+export function mergeLorebookEdits(raw: EntryFields, generated: EntryFields, previous: LorebookEditState, constraints: { disabled: boolean; vectorOnly: boolean; pinned?: EntryFields }): { fields: EntryFields; state: LorebookEditState } {
   const overrides: EntryFields = {};
   for (const field of EDITABLE_CODEX_FIELDS) if (previous.overrides?.[field] !== undefined) overrides[field] = previous.overrides[field];
   for (const field of EDITABLE_CODEX_FIELDS) {
@@ -14,5 +14,6 @@ export function mergeLorebookEdits(raw: EntryFields, generated: EntryFields, pre
   const fields = { ...generated, ...overrides };
   if (constraints.disabled) fields.disabled = true;
   if (constraints.vectorOnly) Object.assign(fields, { constant: false, vectorized: true, key: [], keysecondary: [] });
+  if (constraints.pinned) Object.assign(fields, constraints.pinned);
   return { fields, state: { applied: fields, overrides } };
 }

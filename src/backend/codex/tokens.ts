@@ -4,6 +4,7 @@ import { approximateTokensFromChars } from "../../shared";
 import { CODEX_FILE_KEYS, type CodexBundle, type CodexFileKey } from "./schema";
 import { renderCodexFileSections, renderCodexRecords } from "./prompt";
 import type { CodexFileState } from "./store";
+import { codexFullness, type CodexFullness, type CodexTokenLimits } from "./limits";
 
 export interface CodexTokenCounts {
   files: Record<string, number>;
@@ -23,7 +24,20 @@ export async function countCodexText(text: string, userId: string): Promise<{ to
   }
 }
 
-/** File sizes describe the saved bible; constant cost describes actual lorebook records. */
+/** Injectable tokens per category, the same text the lorebook mirror carries. */
+export async function measureCodexFullness(
+  bundle: CodexBundle, userId: string, fileStates: Partial<Record<CodexFileKey, CodexFileState>>, limits: CodexTokenLimits,
+): Promise<CodexFullness[]> {
+  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
+  const tokens: Partial<Record<CodexFileKey, number>> = {};
+  for (const record of renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles })) {
+    if (disabledFiles.has(record.file) || record.disabled) continue;
+    tokens[record.file] = (tokens[record.file] ?? 0) + (await countCodexText(record.content, userId)).tokens;
+  }
+  return codexFullness(tokens, limits);
+}
+
+/** File sizes describe the saved codex; constant cost describes actual lorebook records. */
 export async function measureCodexTokens(
   bundle: CodexBundle, userId: string, fileStates: Partial<Record<CodexFileKey, CodexFileState>> = {}, forceConstant = false,
 ): Promise<CodexTokenCounts> {

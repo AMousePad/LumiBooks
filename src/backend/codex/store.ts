@@ -4,6 +4,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 import type { CodexBundle, CodexFileKey, CodexFileValue, ValidateOptions } from "./schema";
 import { CODEX_FILE_KEYS, assignMissingRids, emptyBundle, emptyCodexFile, validateCodexFile } from "./schema";
 import { describeError, warn } from "../runtime";
+import type { CodexRecordStat } from "./limits";
 
 const CODEX_DIR = "codex" as const;
 
@@ -61,6 +62,10 @@ export interface CodexCursor {
   relationsTableMode: boolean | null;
   /** Chat this codex was carried over from, mirroring the shelf's root origin. */
   rootOrigin: string | null;
+  /** Per-record update history, used to choose what a token limit cuts. */
+  recordStats: Record<string, CodexRecordStat>;
+  /** File switches Cache Friendly mode replaced; a missing key means "on". */
+  cacheSavedStates?: Record<string, CodexFileState>;
   lastRunAt: number | null;
   lastRunStats: CodexRunStats | null;
   runs: number;
@@ -80,6 +85,7 @@ export function emptyCursor(): CodexCursor {
     reconcileUntilMsgId: null,
     relationsTableMode: null,
     rootOrigin: null,
+    recordStats: {},
     lastRunAt: null,
     lastRunStats: null,
     runs: 0,
@@ -139,6 +145,16 @@ export async function loadCursor(chatId: string, userId: string): Promise<CodexC
   return normalizeCursor(raw);
 }
 
+function normalizeRecordStats(raw: unknown): Record<string, CodexRecordStat> {
+  const out: Record<string, CodexRecordStat> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [record, value] of Object.entries(raw)) {
+    const stat = value as Partial<CodexRecordStat> | null;
+    if (typeof stat?.updates === "number" && typeof stat.born === "number") out[record] = { updates: stat.updates, born: stat.born };
+  }
+  return out;
+}
+
 export function normalizeCursor(raw: Partial<CodexCursor>): CodexCursor {
   const base = emptyCursor();
   const fileStates: Record<string, CodexFileState> = {};
@@ -174,11 +190,30 @@ export function normalizeCursor(raw: Partial<CodexCursor>): CodexCursor {
     reconcileUntilMsgId: typeof raw.reconcileUntilMsgId === "string" && raw.reconcileUntilMsgId ? raw.reconcileUntilMsgId : null,
     relationsTableMode: typeof raw.relationsTableMode === "boolean" ? raw.relationsTableMode : null,
     rootOrigin: typeof raw.rootOrigin === "string" && raw.rootOrigin ? raw.rootOrigin : null,
+    recordStats: normalizeRecordStats(raw.recordStats),
+    ...(raw.cacheSavedStates && typeof raw.cacheSavedStates === "object" ? { cacheSavedStates: raw.cacheSavedStates } : {}),
     lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : null,
     lastRunStats: normalizeRunStats(raw.lastRunStats),
     runs: typeof raw.runs === "number" && Number.isFinite(raw.runs) ? raw.runs : 0,
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : 0,
   };
+}
+
+/** Leaving frozen after missed runs flags the file for a catch-up pass. */
+export function applyCodexFileState(cursor: CodexCursor, file: CodexFileKey, state: CodexFileState): void {
+  const prevState = cursor.fileStates[file] ?? "on";
+  if (state === "on") delete cursor.fileStates[file];
+  else cursor.fileStates[file] = state;
+  if (state === "frozen") {
+    if (prevState !== "frozen" || typeof cursor.frozenAtRuns[file] !== "number") cursor.frozenAtRuns[file] = cursor.runs;
+    cursor.refreshPending = cursor.refreshPending.filter((f) => f !== file);
+    return;
+  }
+  const at = cursor.frozenAtRuns[file];
+  if (prevState === "frozen" && typeof at === "number" && cursor.runs > at && !cursor.refreshPending.includes(file)) {
+    cursor.refreshPending.push(file);
+  }
+  delete cursor.frozenAtRuns[file];
 }
 
 export async function saveCursor(chatId: string, cursor: CodexCursor, userId: string): Promise<void> {

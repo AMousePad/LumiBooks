@@ -25,6 +25,7 @@ export const CODEX_FILE_KEYS: readonly CodexFileKey[] = [
   "world",
   "knowledge",
 ] as const;
+export const CODEX_TOKEN_LIMIT_DEFAULT = 10000;
 export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
 /** Marker for lorebook entries synced from codex records. Distinct from
  * EXTENSION_KEY on purpose: summary entries are host-disabled and re-injected
@@ -179,6 +180,12 @@ export interface LMBProfile {
    * "codex" category preset. The preset carries the directives text plus any
    * per-template overrides, so switching it swaps the whole prompt set. */
   codexPresetKey: string;
+  /** Per-category token cap on injected Codex entries; 0 means no limit. */
+  codexTokenLimits: Record<CodexFileKey, number>;
+  /** Context relief lowers a profile once, then this keeps it from compounding. */
+  contextReliefApplied: boolean;
+  /** Values Cache Friendly mode replaced, restored when it turns off. */
+  cacheFriendlySnapshot?: Partial<LMBProfile>;
 }
 
 export type PresetCategory = SummaryKind | "codex";
@@ -215,6 +222,11 @@ export interface LMBSettings {
   showAutomationToasts: boolean;
   /** "Don't show again" for the tool-calling fallback modal. */
   suppressToolCallingPrompt: boolean;
+  /** Permanently lower the active profile when a prompt nears the context limit. */
+  contextRelief: boolean;
+  cacheFriendly: boolean;
+  /** Summary recall mode to restore when Cache Friendly mode turns off. */
+  cacheFriendlySummaryMode: ActivationMode | null;
 }
 
 export interface LMBEntryMeta {
@@ -266,7 +278,7 @@ export const SAMPLER_DEFAULTS: Readonly<Record<keyof SamplerSet, number>> = {
   presence_penalty: 0,
 };
 
-/** Wire fallbacks for codex agent calls. The codex re-reads the whole bible
+/** Wire fallbacks for codex agent calls. The codex re-reads the whole codex
  * plus a story chunk per pass and rewrites whole files, so both budgets run
  * far past the summarizer's. */
 export const CODEX_SAMPLER_DEFAULTS: Readonly<Record<keyof SamplerSet, number>> = {
@@ -284,9 +296,9 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     id,
     name,
     lagUnit: "messages",
-    lagValue: 65,
+    lagValue: 40,
     windowUnit: "messages",
-    windowValue: 18,
+    windowValue: 20,
     chapterTargetUnit: "percent",
     chapterTargetPercent: 15,
     chapterTargetTokens: 800,
@@ -343,6 +355,8 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexUseTools: false,
     codexWriteMode: "batch",
     codexPresetKey: "codex_default",
+    codexTokenLimits: defaultCodexTokenLimits(),
+    contextReliefApplied: false,
   };
 }
 
@@ -358,6 +372,9 @@ export const DEFAULT_SETTINGS: LMBSettings = {
   followChatNames: true,
   showAutomationToasts: true,
   suppressToolCallingPrompt: false,
+  contextRelief: true,
+  cacheFriendly: false,
+  cacheFriendlySummaryMode: null,
 };
 
 export function diskVersionFor(raw: Partial<LMBSettings> | null | undefined): number {
@@ -368,11 +385,16 @@ export function diskVersionFor(raw: Partial<LMBSettings> | null | undefined): nu
 export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined): LMBSettings {
   const fallback = DEFAULT_SETTINGS;
   const v = raw && typeof raw === "object" ? raw : {};
+  const cacheFriendly = v.cacheFriendly === true;
   const profilesRaw = Array.isArray(v.profiles) ? v.profiles : fallback.profiles;
   const profiles = profilesRaw
     .map((p): LMBProfile | null => normalizeProfile(p))
-    .filter((p): p is LMBProfile => !!p);
-  if (profiles.length === 0) profiles.push(makeDefaultProfile("default", tr("shared.normalizeSettings.default")));
+    .filter((p): p is LMBProfile => !!p)
+    .map((p) => cacheFriendly ? applyCacheFriendly(p) : p);
+  if (profiles.length === 0) {
+    const profile = makeDefaultProfile("default", tr("shared.normalizeSettings.default"));
+    profiles.push(cacheFriendly ? applyCacheFriendly(profile) : profile);
+  }
   const activeProfileId =
     typeof v.activeProfileId === "string" && profiles.some((p) => p.id === v.activeProfileId)
       ? v.activeProfileId
@@ -388,12 +410,109 @@ export function normalizeSettings(raw: Partial<LMBSettings> | null | undefined):
     customPresets,
     debugLog: typeof v.debugLog === "boolean" ? v.debugLog : fallback.debugLog,
     localLogsDisabled: typeof v.localLogsDisabled === "boolean" ? v.localLogsDisabled : fallback.localLogsDisabled,
-    summaryActivationMode: normalizeActivationMode(v.summaryActivationMode,
+    summaryActivationMode: cacheFriendly ? "always" : normalizeActivationMode(v.summaryActivationMode,
       (v as { forceConstantEntries?: boolean }).forceConstantEntries === false ? "keywords" : "always"),
     followChatNames: v.followChatNames !== false,
     showAutomationToasts: typeof v.showAutomationToasts === "boolean" ? v.showAutomationToasts : fallback.showAutomationToasts,
     suppressToolCallingPrompt: typeof v.suppressToolCallingPrompt === "boolean" ? v.suppressToolCallingPrompt : fallback.suppressToolCallingPrompt,
+    contextRelief: v.contextRelief !== false,
+    cacheFriendly,
+    cacheFriendlySummaryMode: v.cacheFriendlySummaryMode === null || v.cacheFriendlySummaryMode === undefined
+      ? null : normalizeActivationMode(v.cacheFriendlySummaryMode, "always"),
   };
+}
+
+/** Hand-run actions that can change the sent prompt, so the mode asks first. */
+export const CACHE_BREAKING_ACTIONS: ReadonlySet<string> = new Set([
+  "create_chapter", "create_chapter_range", "create_all_chapters", "create_arc", "create_arc_from", "create_all_arcs",
+  "create_higher_from", "create_higher_auto", "create_volume_from", "retry_last_failure", "delete_entry", "release_entry",
+  "regenerate_entry", "update_entry", "rebase_root", "rebuild_root", "detach_root",
+  "codex_update_now", "codex_reset", "codex_rebuild", "codex_tidy", "codex_repair_references", "codex_rebuild_files",
+  "codex_refresh", "codex_restore", "codex_undo", "codex_adopt", "summary_import",
+]);
+
+/** Categories Cache Friendly mode stops generating and injecting. */
+export const CACHE_FRIENDLY_FROZEN_FILES: readonly CodexFileKey[] = ["timeline", "threads"];
+export const cacheFriendlyFileLocked = (file: CodexFileKey): boolean => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
+
+function defaultCodexTokenLimits(): Record<CodexFileKey, number> {
+  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT])) as Record<CodexFileKey, number>;
+}
+
+function normalizeCodexTokenLimits(raw: unknown): Record<CodexFileKey, number> {
+  const limits = defaultCodexTokenLimits();
+  if (!raw || typeof raw !== "object") return limits;
+  for (const key of CODEX_FILE_KEYS) limits[key] = clampInt((raw as Record<string, unknown>)[key], 0, 1000000, limits[key]);
+  return limits;
+}
+
+const CACHE_FRIENDLY_FORCED_KEYS = [
+  "autoCreate", "autoCreateChapter", "showMemoryPreviews", "codexEnabled", "codexManualOnly", "codexExtraContext",
+  "codexRelationsTable", "codexActivationMode", "codexInjectionPosition", "codexWindowUnit", "codexWindowValue",
+  "codexLagUnit", "codexLagValue",
+] as const satisfies readonly (keyof LMBProfile)[];
+
+/** Every load and save passes here, so forced values cannot drift while the mode is on. */
+export function applyCacheFriendly(profile: LMBProfile): LMBProfile {
+  return {
+    ...profile,
+    autoCreate: true,
+    autoCreateChapter: true,
+    showMemoryPreviews: false,
+    codexEnabled: true,
+    codexManualOnly: false,
+    codexExtraContext: true,
+    codexRelationsTable: false,
+    codexActivationMode: "always",
+    codexInjectionPosition: "lorebook",
+    codexWindowUnit: profile.windowUnit,
+    codexWindowValue: profile.windowValue,
+    codexLagUnit: profile.lagUnit,
+    codexLagValue: profile.lagValue,
+  };
+}
+
+export function enterCacheFriendly(profile: LMBProfile): LMBProfile {
+  const cacheFriendlySnapshot = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, profile[key]])) as Partial<LMBProfile>;
+  return applyCacheFriendly({ ...profile, cacheFriendlySnapshot });
+}
+
+/** A profile created during the mode has no snapshot and falls back to defaults. */
+export function leaveCacheFriendly(profile: LMBProfile): LMBProfile {
+  const { cacheFriendlySnapshot, ...rest } = profile;
+  const defaults = makeDefaultProfile(profile.id, profile.name);
+  const fallback = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, defaults[key]])) as Partial<LMBProfile>;
+  return { ...rest, ...(cacheFriendlySnapshot ?? fallback) };
+}
+
+export const CONTEXT_RELIEF_THRESHOLD = 0.9;
+const CONTEXT_RELIEF_LAG = 0.7;
+const CONTEXT_RELIEF_TARGET = 0.67;
+const shrink = (value: number, factor: number, floor = 0) => value <= floor ? value : Math.max(floor, Math.round(value * factor));
+
+export function applyContextRelief(profile: LMBProfile): LMBProfile {
+  const lag = (value: number) => shrink(value, CONTEXT_RELIEF_LAG);
+  const percent = (value: number, floor: number) => shrink(value, CONTEXT_RELIEF_TARGET, floor);
+  const tokens = (value: number) => shrink(value, CONTEXT_RELIEF_TARGET, 50);
+  const relieved: LMBProfile = {
+    ...profile,
+    contextReliefApplied: true,
+    lagValue: lag(profile.lagValue),
+    arcLagChapters: lag(profile.arcLagChapters),
+    arcLagTokens: lag(profile.arcLagTokens),
+    chapterTargetPercent: percent(profile.chapterTargetPercent, 2),
+    chapterTargetTokens: tokens(profile.chapterTargetTokens),
+    arcTargetPercent: percent(profile.arcTargetPercent, 5),
+    arcTargetTokens: tokens(profile.arcTargetTokens),
+    volumeTargetPercent: percent(profile.volumeTargetPercent, 5),
+    volumeTargetTokens: tokens(profile.volumeTargetTokens),
+    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => {
+      const value = profile.higherTiers[tier];
+      return [tier, { ...value, lag: lag(value.lag), targetPercent: percent(value.targetPercent, 5), targetTokens: tokens(value.targetTokens) }];
+    })) as LMBProfile["higherTiers"],
+    codexTokenLimits: Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, shrink(profile.codexTokenLimits[key], CONTEXT_RELIEF_TARGET)])) as LMBProfile["codexTokenLimits"],
+  };
+  return profile.cacheFriendlySnapshot ? applyCacheFriendly(relieved) : relieved;
 }
 
 export function normalizeProfile(raw: unknown): LMBProfile | null {
@@ -481,6 +600,9 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexUseTools: typeof v.codexUseTools === "boolean" ? v.codexUseTools : base.codexUseTools,
     codexWriteMode: v.codexWriteMode === "sequential" ? "sequential" : "batch",
     codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
+    codexTokenLimits: normalizeCodexTokenLimits(v.codexTokenLimits),
+    contextReliefApplied: v.contextReliefApplied === true,
+    ...(v.cacheFriendlySnapshot && typeof v.cacheFriendlySnapshot === "object" ? { cacheFriendlySnapshot: v.cacheFriendlySnapshot } : {}),
   };
 }
 
