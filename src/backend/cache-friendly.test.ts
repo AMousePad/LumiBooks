@@ -246,6 +246,18 @@ test("only filed messages count as changed", async () => {
   expect(await filedMessageChanged(chat, "m45", user, true)).toBe(false);
 });
 
+test("the cache mode is published per user, only when it changes", async () => {
+  const rpc = (globalThis as any).spindle.rpcPool, original = rpc.sync, published: [string, unknown][] = [];
+  rpc.sync = (name: string, value: unknown) => { if (name.startsWith("cache_mode.")) published.push([name, value]); };
+  try {
+    const reader = "cache-mode-user";
+    await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
+    await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
+    await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: true }));
+    expect(published).toEqual([[`cache_mode.${reader}`, { cacheFriendly: false }], [`cache_mode.${reader}`, { cacheFriendly: true }]]);
+  } finally { rpc.sync = original; }
+});
+
 test("LumiCache presence reads its endpoint and surfaces other failures", async () => {
   const rpc = (globalThis as any).spindle.rpcPool;
   rpc.read = async () => { throw new Error('Shared RPC endpoint "lumicache.status" is not registered'); };

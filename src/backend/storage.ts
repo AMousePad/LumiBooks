@@ -12,8 +12,22 @@ const writeLocks = new Map<string, Promise<unknown>>();
 const SETTINGS_CACHE_TTL_MS = 2000;
 const settingsCache = new Map<string, { at: number; data: LMBSettings }>();
 
+const publishedCacheMode = new Map<string, boolean>();
+
+/** LumiCache Health reads this to tell whether this user's history is cache friendly. */
+function publishCacheMode(userId: string, cacheFriendly: boolean): void {
+  if (publishedCacheMode.get(userId) === cacheFriendly) return;
+  try {
+    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, { cacheFriendly }, { requires: [] });
+    publishedCacheMode.set(userId, cacheFriendly);
+  } catch (err) {
+    warn(`cache mode publish failed: ${describeError(err)}`);
+  }
+}
+
 function cacheSettings(userId: string, data: LMBSettings): void {
   settingsCache.set(userId, { at: Date.now(), data });
+  publishCacheMode(userId, data.cacheFriendly);
 }
 
 function withSettingsLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
