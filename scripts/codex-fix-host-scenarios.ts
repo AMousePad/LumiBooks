@@ -58,6 +58,14 @@ export async function runCodexFixScenarios(h: {
     return rpc.readSharedRpcEndpoint("lumi_books.phoneline", "lumiagent", manager.getGrantedPermissions);
   };
   assert.equal((await dial({ op: "describe" })).extension.id, "lumi_books");
+    const guide = await dial({ op: "list_items", surfaceId: "lumibooks_docs" });
+    assert.equal(guide.total, guide.items.length); assert(guide.total > 0);
+    for (const topic of guide.items) {
+      const page = await dial({ op: "read_item", surfaceId: "lumibooks_docs", itemId: topic.id });
+      assert.equal(typeof page.value, "string"); assert(page.value.length > 100);
+    }
+    assert.equal((await dial({ op: "write_field", surfaceId: "lumibooks_docs", itemId: "overview", field: "text", value: "changed" })).ok, false);
+    pass("LumiBooks worker serves read-only guide topics without a character or user request");
   const bridgeRequest = { userId: state.userId, surfaceId: "lumi_books.codex", itemId: alice.id, field: "key" };
   assert.deepEqual(await dial({ ...bridgeRequest, op: "write_field", value: ["agent-specific"] }), { ok: true });
   assert.deepEqual((await dial({ ...bridgeRequest, op: "read_item" })).value, ["agent-specific"]);

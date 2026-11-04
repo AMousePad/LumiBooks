@@ -6,20 +6,33 @@ import { listCodexChatIds } from "./store";
 import { readEntryMeta, syncCodexEntries } from "./sync";
 import { repairCodexReferences } from "./repair";
 import { EDITABLE_CODEX_FIELDS } from "./lorebook-edits";
+import { AGENT_DOCS, DOCS_HINT, DOCS_SURFACE } from "../agent-docs";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 const SURFACE = "lumi_books.codex";
 const manifest = {
   extension: { id: "lumi_books", name: "LumiBooks" },
   surfaces: [{ id: SURFACE, label: "Codex lorebook records", scope: "global",
-    description: "Editable Codex records grouped by chat. Edit content, key, keysecondary, constant, vectorized, disabled, position, depth, or role. Changes survive Memoria updates. For vector-only recall set constant=false, vectorized=true, key=[], keysecondary=[]. Avoid broad keywords and participant names shared by many records. Set repair_references=true on any record to remove dangling links to deleted entities in its chat, with Undo. Deleted entities are not recreated. Set reset_overrides=true to resume generated fields on that record." }],
+    description: "Editable Codex lorebook records grouped by chat. Read lumibooks_docs topic agent before editing; user-owned fields survive sync." },
+    { id: DOCS_SURFACE, label: "LumiBooks guide", scope: "global", description: "Read-only LLM docs. list_external for topics; read_external by topic ID. Books, Codex, settings, prompts, cache, transfers and recovery." }],
 };
 
 export async function handleLumiAgentCodex(request: Record<string, unknown>, changed: (userId: string, chatId: string) => void): Promise<unknown> {
   if (request.op === "describe") return manifest;
+  if (request.surfaceId === DOCS_SURFACE) {
+    if (request.op === "list_items") return { items: AGENT_DOCS.map(({ id, label }) => ({ id, label })), total: AGENT_DOCS.length };
+    if (request.op === "read_item") {
+      if (request.field !== undefined && request.field !== "text") throw new Error("Read a whole LumiBooks topic or field text");
+      const topic = AGENT_DOCS.find(topic => topic.id === request.itemId);
+      if (!topic) throw new Error("Unknown LumiBooks topic. List lumibooks_docs first");
+      return { value: topic.text };
+    }
+    if (request.op === "write_field") return { ok: false, error: "LumiBooks documentation is read-only" };
+    throw new Error("Unknown LumiBooks documentation operation");
+  }
   const userId = request.userId;
   if (typeof userId !== "string" || !userId) throw new Error("Missing userId");
-  if (request.op === "system_prompt") return { text: "LumiBooks Codex records are available through lumi_books.codex. Inspect the target chat before editing. Lorebook fields you edit remain authoritative. Repair references without rebuilding via repair_references. Preserve story facts when refining activation keywords." };
+  if (request.op === "system_prompt") return { text: DOCS_HINT };
   if (request.op === "check_read" || request.op === "check_write") return { ok: true };
   if (request.surfaceId !== SURFACE) throw new Error("Unknown Codex surface");
   if (request.op === "list_items") {

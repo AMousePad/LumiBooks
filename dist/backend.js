@@ -7263,8 +7263,20 @@ var warnedNewerForUser = new Set;
 var writeLocks = new Map;
 var SETTINGS_CACHE_TTL_MS = 2000;
 var settingsCache = new Map;
+var publishedCacheMode = new Map;
+function publishCacheMode(userId, cacheFriendly) {
+  if (publishedCacheMode.get(userId) === cacheFriendly)
+    return;
+  try {
+    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, { cacheFriendly }, { requires: [] });
+    publishedCacheMode.set(userId, cacheFriendly);
+  } catch (err) {
+    warn(`cache mode publish failed: ${describeError(err)}`);
+  }
+}
 function cacheSettings(userId, data) {
   settingsCache.set(userId, { at: Date.now(), data });
+  publishCacheMode(userId, data.cacheFriendly);
 }
 function withSettingsLock(userId, fn) {
   const prev = writeLocks.get(userId) ?? Promise.resolve();
@@ -18181,25 +18193,97 @@ async function saveCodexEdit(chatId, userId, file, value, relationsTable) {
   return changed;
 }
 
+// src/backend/agent-docs.ts
+var DOCS_SURFACE = "lumibooks_docs";
+var DOCS_HINT = 'LumiBooks guide: list_external({surface_id:"lumibooks_docs"}), then read_external({surface_id:"lumibooks_docs",item_id:<topic>}). Fetch the relevant topic before advising or editing. Codex records: lumi_books.codex; inspect the target chat first; edited lorebook fields stay authoritative.';
+var AGENT_DOCS = [
+  { id: "overview", label: "Setup, navigation, lessons and scope", text: `LumiBooks preserves long chats with chronological summaries (Books) and structured story facts (Codex). Each chat has managed lorebooks; settings/profiles and lesson progress are per user. Enable the extension, open a chat, choose a writing connection in Tuning > Connection, then configure Books/Codex. Summaries and Codex updates make additional model calls and consume tokens.
+Home: coverage/spine and token breakdown, last actual prompt or Simulate next prompt, readiness, manual filing, pending previews, failures, live output Watch/Hide and Abort. Click spine entries to inspect the shelf. Books: Shelf, manual compression, continuity/transfers and maintenance. Codex: records, relationship views and Manage. Tuning: profiles, Connection, Settings (Books/Codex), Prompts. About/Academy: guides, diagnostics and Memoria's interactive Books/Codex lessons, quizzes, replay/section reset and diploma. Lessons use practice data; the offered skip opens the gated feature but leaves a reminder. Codex runs remain gated until its course is completed or skipped.
+Guide topics are read-only and need no focused character/chat. Only Codex lorebook records are editable via this bridge; other actions below are UI workflows, not LumiAgent tools. Read agent for exact external calls. Never edit coverage IDs, managed metadata or storage paths to simulate a UI action.` },
+  { id: "summaries", label: "Automatic/manual filing, tiers and previews", text: `Books compresses oldest eligible raw history into Chapter; Chapters into Arc; then Volume, Series, Saga, Library, Universe. Higher tiers supersede their source summaries. Lag protects the newest messages/tokens; Window is one filing batch of older eligible content. Both readiness conditions must hold. Summary targets are a percentage of input or fixed output tokens, not guaranteed exact model output.
+Home File chapter files one eligible window; File all drains ready chapters; Bind arc/Bind all consolidate ready Chapters. Books manual picker selects source messages and Compress; arc/volume/higher pickers bind selected active lower-tier entries or ready batches. Automatic Books, Chapter, Arc and higher-tier switches/cadences are in Tuning > Settings > Books. Arcs trigger by chapter count, tokens or manual; higher tiers use entries/tokens, batch, lag and target. Excluded messages are skipped; source gaps/changes are validated at save.
+With memory previews enabled, generated summaries wait on Home: edit title/content then Save, or Discard. Until saved they do not replace history. Retry on a failure retries its original work; inspect whether generation or saving failed. Abort cancels current work; Watch shows output/thinking, not proof it was saved.
+Extra Codex context can prepare staged/ghost Chapters ahead of normal lag. They feed Codex but do not yet cover/hide history; promotion waits for eligibility. Stale ghosts are rebuilt/dropped. Turning that mode off cleans up staging. Manual compression is still allowed with staging off.` },
+  { id: "shelf", label: "Injection, edit, regenerate, release and repair", text: `Saved active summaries replace their covered raw messages at their history position in the assembled prompt. Original messages are retained. Higher tiers replace lower tiers; superseded entries remain on the shelf. Root memories precede this chat's own history. The managed summary world-book entries are host-disabled intentionally: LumiBooks injects them itself; enabling them manually can duplicate content.
+Shelf: inspect tier, source range, title/comment, prose and token counts; edit title/content, regenerate from sources, delete, or Release. Release detaches an entry from LumiBooks and preserves it as an ordinary lorebook entry; it no longer counts as managed coverage. Deleting/releasing adjusts parent/source links and unhides newly uncovered messages. A ghost must be shelved before release. Do not delete lower tiers merely because they are superseded; they support hierarchy/recovery.
+Hide covered messages controls native context visibility; summary recall decides which filed memories enter the prompt. Turning recall to keyword/vector does not unfile or unhide source history, so a non-recalled summary can leave those facts absent. Exclude/include messages through the Books picker for material that should not be summarized.
+Maintenance: Re-hide covered reapplies exclusion flags; Resync visibility releases messages no longer covered. Wipe Books removes the managed shelf and restores uncovered history. Rebuild Books wipes then re-summarizes, costing model calls. Preserve an export before replacement operations. Disable LumiBooks through its own switch for normal visibility cleanup.` },
+  { id: "transfer", label: "Summary import/export, continuity and forks", text: `Books > summary export/import: export active summaries with source-message fingerprints as lorebook JSON; import into the intended chat. Matching raw history can restore coverage. On mismatch, Attempt matching or Let me specify; manual coverage asks how many messages from the start are covered (1-based count; 0 means inherited context only). Inspect source history and exported summary scope before choosing; a wrong endpoint hides unrelated messages. Hide collapses the progress panel, not the operation; reopen it to resolve prompts. Cancel import stops an unresolved import. Import does not invent missing raw history.
+Continuity: Rebase seeds an empty target shelf from another chat's active memories as inherited roots. Rebuild from replaces existing target memories with that source. Detach root removes inherited memories, not local summaries. These are copies, not continuously linked books; source changes do not update the target automatically.
+Native chat forks remap copied message identities and adopt compatible summary/Codex state; avoid editing managed IDs to force compatibility. Check coverage after changed/deleted/swiped history or importing unrelated chats. Codex uses separate Adopt/backup/restore controls (codex_manage), not summary import.
+Exports and diagnostics may contain story text. Summaries are lossy; exporting them is not a raw-chat backup.` },
+  { id: "codex", label: "Records, editing, file states and update modes", text: `Codex files: characters, locations, things (entities); relations; timeline; threads; world (lore); knowledge (secrets/who knows what). It records story developments; character/lore material is reference, not automatically an event that happened. UI provides entity cards, searchable records, relationship graph/table and editable structured files. Preserve entity IDs and typed links; deleting an entity removes structural references/invalid relations while retaining timeline events and knowledge facts. Lorebook text/activation edits stay authoritative across model updates; structured records still drive graph/indexing.
+Each category cycles On (update+inject), No inject (update only), Frozen (neither). Frozen files can become stale. Re-enable and Refresh to catch up missed context; merely clearing a stale marker acknowledges the gap. Entity cards can add/edit/delete records, exclude injection, lock an entire entity or individual fields, and edit typed extra fields (text/number/list/boolean); locks preserve values against model updates. Relations Table is optional; without it relations live on entity sheets.
+Automatic updates obey Codex lag/window (messages/tokens); message windows also trigger at the token breakpoint. Manual-only disables scheduled runs. Update now consumes backlog up to the newest available message. Slow processes regular windows; Fast/Ultra process larger catch-up batches with different context strategies; inspect the mode chooser and budget, since faster reading may lose detail. Tidy compresses existing records; it is not missed-story catch-up.
+Extra context supplies relevant character/lore and story-so-far summaries, with its own lore budget and summary count. Thorough mode requests extra verification. Structured tool calls are opt-in; strict JSON works without them. Batch/sequential changes requested delivery, not which records must be handled.` },
+  { id: "codex_manage", label: "Tidy, rebuild, repair, backup, restore and Undo", text: `Codex > Manage: Update now catches up; Refresh catches up re-enabled stale files; rebuild selected files re-reads story for those categories. Full Rebuild starts the Codex over from available history, while Wipe removes it. Clear stale flags acknowledges missed updates without recovering them. Choose slow/fast/ultra when offered; all model-backed actions cost calls.
+Tidy works on all or selected categories and targets a percentage reduction or fixed tokens; review the resolved target. It rewrites existing records, not the chat. Repair dangling references is deterministic: prune links to missing entities and invalid relationships without rebuilding facts or resetting the reading cursor; deleted entities are not recreated.
+Edit structured JSON through Codex's editor with schema validation; failed saves leave an error. Deleting/excluding entities has reference and injection effects. If the graph and lorebook disagree, check user-owned lorebook overrides before rebuilding.
+Backup exports files and cursor/state; Restore validates and replaces the target Codex. Undo restores the single preceding saved Codex snapshot (check its reason/time), not an unlimited history or raw chat rollback. Adopt copies another chat's Codex into the target as inherited context; inspect target/source before replacing. Keep an external backup before destructive changes, as later actions replace the Undo slot.
+These operations do not repair a Books shelf or raw chat. Busy work is serialized per chat; wait or Abort before editing/rebuilding. A completed model response alone does not prove validation/save succeeded.` },
+  { id: "recall", label: "Summary/Codex recall, placement and token limits", text: `Summary recall is account-wide under Tuning > Settings > Books > Everywhere: Constant (default), Keywords, Vector + keywords. It selects active unsuperseded summaries for in-place injection; filing/coverage stays unchanged. Codex recall is per profile: Always, Keywords (default), Vector + keywords, Vector only. In ordinary Codex modes timeline/threads are constant; Vector only makes every enabled entry semantic-only, clearing constant and keyword paths.
+Vector recall needs a tested embedding connection and lorebook vectorization enabled in Lumiverse. Indexing is queued on mode changes/new edits; Vector + keywords retains keyword matching while vectors are unavailable. Vector only has no fallback. Disabled/no-inject/frozen records stay out. Lumiverse controls retrieval budgets; a token count on the Codex file is not the total activated prompt cost.
+Codex placement: normal lorebook-before, at history depth (0=newest edge), or after history. Summary placement remains at source history positions. Prefer specific keywords/aliases; participant names shared by many secrets over-activate them. User-edited content, keywords and activation fields survive sync; reset_overrides returns a record to generated fields.
+Each Codex category defaults to a 10,000-token injection limit (0=unlimited). Above 75% the update prompt asks for compression; above 100% least-updated/oldest eligible records are omitted from activation until it fits, protecting the six largest. Those six can keep a category over limit; this is not a guarantee of fitting the model context. Inspect the cut warning and reduce content/targets as needed.` },
+  { id: "profiles", label: "Connections, samplers, cadence and global settings", text: `Tuning profile picker: create, copy, rename, select or delete profiles; the active profile is user-wide, not a per-chat model preset. Connection pane has separate Books and Codex connections/sampler overrides. Default/blank connection choices follow the displayed resolved fallback; inspect it before starting expensive work. Controls cover temperature, top-p, top-k, output/input token budgets, frequency/presence penalties. Blank samplers use LumiBooks defaults, not necessarily connection defaults. Provider limits still apply.
+Books Settings: lag/window units+values, Chapter/Arc targets, arc trigger/batch/lag, Volume through Universe enable/batch/lag/targets; auto-filing switches; previous memories context; hide covered messages; preview-before-save; retries; first-token timeout; outgoing/incoming regex hooks. Automation needs a full eligible window outside lag; manual pickers are available for chosen ranges.
+Codex Settings: enable/manual-only, independent lag/window/token breakpoint, lore percentage/token cap (0 token cap=unlimited), story-so-far count, Relations Table, recall/placement/depth, Thorough, Extra context, tool-calling, batch/sequential delivery, per-category token limits. Cache Friendly locks coordinated settings; read cache.
+Everywhere: summary recall, managed lorebook names follow chat names, automation toasts, context relief, diagnostics logging. Turn name-following off before renaming managed books. Reset profile settings restores defaults; inspect scope before accepting. Language follows the extension/host locale; diagnostic and lesson controls are separate from story settings.` },
+  { id: "prompts", label: "Prompt presets, templates, regex and dry runs", text: `Tuning > Prompts has separate Chapter, Arc, Volume, Series, Saga, Library, Universe and Codex categories. Select a built-in or create/edit/save/delete a custom preset. Higher summary tiers without their own selection use Volume's preset. Import STMB preset JSON into Chapter/Arc. Prompt role can be system/user/assistant per category. Keep required placeholders and output schema; the target directive/output parser still constrains results.
+Codex presets hold directives plus per-template overrides for update/verify/tidy/refresh/rebuild/catch-up, schema, protocol and repair notes. Changing the preset swaps that prompt set; blank overrides use built-ins. Strict JSON is default; opt-in tools require a model/route that emits actual tool calls. If it narrates instead, use the offered JSON fallback; suppressing its hint does not add tool support.
+Books outgoing regex transforms Memoria's input before she reads; incoming regex transforms generated text before parsing/saving. Select existing Lumiverse regex scripts and preserve their intended order; bad transforms can break JSON or remove facts. These hooks are not the main chat's display regex.
+Dry run for Chapter/Arc/higher/Codex previews assembled messages and diagnostics without calling the writing model or saving a summary. Home Simulate instead previews the next chat prompt through the host. Neither proves a subsequent model response will validate. Memoria persona and short-comment rules can be customized; they affect narrator/comment behavior, not permission to invent story facts.` },
+  { id: "cache", label: "Cache Friendly coordination and context relief", text: `Home > Actions > Cache Friendly requires LumiCache available and the Codex lesson gate open. It coordinates Chapter promotion and Codex publication at summary windows, preserving your Summary lag/window and making Codex follow them. It forces auto Chapters, Codex+Extra context, no preview staging UI, constant summary/Codex recall and lorebook-before placement; Relations Table is off and timeline/threads frozen. Locked controls reflect these enforced values. Turning it off restores saved pre-mode settings (new profiles fall back to defaults for forced fields).
+Background ghost generation prepares context without injecting it. At a ready window, Codex catches up, Chapters promote, Codex entries sync and a cache epoch allows LumiCache to accept the intentional prefix change. If Codex fails, a warning can accompany Chapter promotion; do not claim both succeeded. Higher-tier binding can publish another epoch. Manual edits/filing/restore may intentionally break the cache and prompt for confirmation. Provider hits remain outside LumiBooks' control; use LumiCache evidence.
+Context relief (Everywhere) detects a prompt at 90% of known context or host history clipping after generation. Once per active profile it permanently reduces summary lags by 30%, summary output targets by 33% and Codex token limits by 33%, with floors; it does not compound each turn. It does not shrink fixed host instructions or guarantee fit. Disable the switch to prevent future automatic adjustment; review changed values manually if restoring them.` },
+  { id: "diagnostics", label: "Failures, recovery, counts and integration hooks", text: `No filing: verify enabled state, writing connection, automation, lag/window readiness, exclusions, busy work and lesson gates. No Codex: enable it, complete/skip its course, check manual-only and backlog. Bad tool output: choose JSON fallback. First-token timeout/retry settings handle provider failures; fix credentials/model/budgets before repeated expensive retries.
+"Summary sources changed": chat/swipe/entry coverage changed after selection/generation; refresh, inspect current sources, reselect and Compress. "Chat history wasn't found": an earlier prompt transform lost history metadata; preserve __isChatHistory/source IDs/indexes through that transform, then inspect the assembled prompt. Do not guess identities by array position. Visibility mismatch: Re-hide covered/Resync visibility. Missing/dangling Codex links: Repair references; a rebuild may overwrite unrelated generated facts.
+Home token breakdown uses the actual last fire when available or explicit simulation; shelf token counts describe saved prose, source tokens describe input, and Codex constant tokens omit conditionally activated entries. Approximate counts and empty/error data are not exact context measurements. Watch/Abort and Retry are on Home; About diagnostics can capture/export/clear local evidence, with debug/local logging switches. Review exports for story content before sharing.
+Extension hooks (not LumiAgent tools): lumi_books.codex.<chatId> parsed snapshot and .rendered text; codex_updated change event; latest_chapter/arc/volume summaries; cache_epoch.<chatId> for LumiCache. Endpoints may be absent until activity, wiped Codex publishes null, and consumers must respect noInject/frozen states. Missing bridge permissions: grant the host-reported characters/chats/world_books permissions on both extensions and refresh discovery.` },
+  { id: "agent", label: "Exact LumiAgent calls and editable fields", text: `Docs: list_external({surface_id:"lumibooks_docs"}); read_external({surface_id:"lumibooks_docs",item_id:<returned topic id>}); field omitted or "text". Fetch only relevant topics. Docs cannot be edited; there is no all-docs auto-injection.
+Codex: list_external({surface_id:"lumi_books.codex"}) returns record IDs with chatId/bookId in brief; select the intended chat explicitly from those results, since this is a global surface. read_external({surface_id:"lumi_books.codex",item_id:<record id>}) reads fields; add field to read just one. Read before edit_external (text replacement) or update_external (whole field value). Use exact discovered IDs, never infer record identity from a name alone.
+Writable fields: content/comment:string; key/keysecondary:string[]; constant/vectorized/disabled:boolean; position/depth:nonnegative integer; role:"system"|"user"|"assistant". Lorebook overrides survive model/profile sync, subject to enforced recall/file-state policy. Preserve story facts when refining text or activation. For vector-only recall set constant=false, vectorized=true, key=[], keysecondary=[]; this requires working host embeddings.
+Controls via update_external: field="repair_references",value=true on any record repairs that record's chat without rebuilding facts and records a Codex Undo snapshot; field="reset_overrides",value=true restores generated fields on that record. Read those control fields first if the tool requires it. Missing/deleted/out-of-book records fail; busy Codex must finish before writes.
+The bridge does not expose settings, summary filing, backups, arbitrary Codex JSON, deletion or a general action dispatcher. Use documented UI workflows for those; do not claim an action ran because its instructions were returned. Mutations follow LumiAgent's normal change-approval handling.` }
+];
+
 // src/backend/codex/lumiagent.ts
 var SURFACE = "lumi_books.codex";
 var manifest = {
   extension: { id: "lumi_books", name: "LumiBooks" },
-  surfaces: [{
-    id: SURFACE,
-    label: "Codex lorebook records",
-    scope: "global",
-    description: "Editable Codex records grouped by chat. Edit content, key, keysecondary, constant, vectorized, disabled, position, depth, or role. Changes survive Memoria updates. For vector-only recall set constant=false, vectorized=true, key=[], keysecondary=[]. Avoid broad keywords and participant names shared by many records. Set repair_references=true on any record to remove dangling links to deleted entities in its chat, with Undo. Deleted entities are not recreated. Set reset_overrides=true to resume generated fields on that record."
-  }]
+  surfaces: [
+    {
+      id: SURFACE,
+      label: "Codex lorebook records",
+      scope: "global",
+      description: "Editable Codex lorebook records grouped by chat. Read lumibooks_docs topic agent before editing; user-owned fields survive sync."
+    },
+    { id: DOCS_SURFACE, label: "LumiBooks guide", scope: "global", description: "Read-only LLM docs. list_external for topics; read_external by topic ID. Books, Codex, settings, prompts, cache, transfers and recovery." }
+  ]
 };
 async function handleLumiAgentCodex(request, changed) {
   if (request.op === "describe")
     return manifest;
+  if (request.surfaceId === DOCS_SURFACE) {
+    if (request.op === "list_items")
+      return { items: AGENT_DOCS.map(({ id, label }) => ({ id, label })), total: AGENT_DOCS.length };
+    if (request.op === "read_item") {
+      if (request.field !== undefined && request.field !== "text")
+        throw new Error("Read a whole LumiBooks topic or field text");
+      const topic = AGENT_DOCS.find((topic) => topic.id === request.itemId);
+      if (!topic)
+        throw new Error("Unknown LumiBooks topic. List lumibooks_docs first");
+      return { value: topic.text };
+    }
+    if (request.op === "write_field")
+      return { ok: false, error: "LumiBooks documentation is read-only" };
+    throw new Error("Unknown LumiBooks documentation operation");
+  }
   const userId = request.userId;
   if (typeof userId !== "string" || !userId)
     throw new Error("Missing userId");
   if (request.op === "system_prompt")
-    return { text: "LumiBooks Codex records are available through lumi_books.codex. Inspect the target chat before editing. Lorebook fields you edit remain authoritative. Repair references without rebuilding via repair_references. Preserve story facts when refining activation keywords." };
+    return { text: DOCS_HINT };
   if (request.op === "check_read" || request.op === "check_write")
     return { ok: true };
   if (request.surfaceId !== SURFACE)
