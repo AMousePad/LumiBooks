@@ -254,7 +254,13 @@ test("the cache mode is published per user, only when it changes", async () => {
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: true }));
-    expect(published).toEqual([[`cache_mode.${reader}`, { cacheFriendly: false }], [`cache_mode.${reader}`, { cacheFriendly: true }]]);
+    const profile = { ...makeDefaultProfile("p", "Test"), codexEnabled: false };
+    await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: true, profiles: [profile], activeProfileId: "p" }));
+    expect(published).toEqual([
+      [`cache_mode.${reader}`, { cacheFriendly: false, codexEnabled: true }],
+      [`cache_mode.${reader}`, { cacheFriendly: true, codexEnabled: true }],
+      [`cache_mode.${reader}`, { cacheFriendly: true, codexEnabled: false }],
+    ]);
   } finally { rpc.sync = original; }
 });
 

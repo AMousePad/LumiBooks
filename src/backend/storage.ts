@@ -12,14 +12,17 @@ const writeLocks = new Map<string, Promise<unknown>>();
 const SETTINGS_CACHE_TTL_MS = 2000;
 const settingsCache = new Map<string, { at: number; data: LMBSettings }>();
 
-const publishedCacheMode = new Map<string, boolean>();
+const publishedCacheMode = new Map<string, string>();
 
-/** LumiCache Health reads this to tell whether this user's history is cache friendly. */
-function publishCacheMode(userId: string, cacheFriendly: boolean): void {
-  if (publishedCacheMode.get(userId) === cacheFriendly) return;
+/** LumiCache reads this to judge the user's history, and treats a change here as a planned prompt change. */
+function publishCacheMode(userId: string, data: LMBSettings): void {
+  const codexEnabled = data.profiles.find((profile) => profile.id === data.activeProfileId)?.codexEnabled !== false;
+  const mode = { cacheFriendly: data.cacheFriendly, codexEnabled };
+  const published = JSON.stringify(mode);
+  if (publishedCacheMode.get(userId) === published) return;
   try {
-    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, { cacheFriendly }, { requires: [] });
-    publishedCacheMode.set(userId, cacheFriendly);
+    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, mode, { requires: [] });
+    publishedCacheMode.set(userId, published);
   } catch (err) {
     warn(`cache mode publish failed: ${describeError(err)}`);
   }
@@ -27,7 +30,7 @@ function publishCacheMode(userId: string, cacheFriendly: boolean): void {
 
 function cacheSettings(userId: string, data: LMBSettings): void {
   settingsCache.set(userId, { at: Date.now(), data });
-  publishCacheMode(userId, data.cacheFriendly);
+  publishCacheMode(userId, data);
 }
 
 function withSettingsLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {

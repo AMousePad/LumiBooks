@@ -7262,19 +7262,22 @@ var writeLocks = new Map;
 var SETTINGS_CACHE_TTL_MS = 2000;
 var settingsCache = new Map;
 var publishedCacheMode = new Map;
-function publishCacheMode(userId, cacheFriendly) {
-  if (publishedCacheMode.get(userId) === cacheFriendly)
+function publishCacheMode(userId, data) {
+  const codexEnabled = data.profiles.find((profile) => profile.id === data.activeProfileId)?.codexEnabled !== false;
+  const mode = { cacheFriendly: data.cacheFriendly, codexEnabled };
+  const published = JSON.stringify(mode);
+  if (publishedCacheMode.get(userId) === published)
     return;
   try {
-    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, { cacheFriendly }, { requires: [] });
-    publishedCacheMode.set(userId, cacheFriendly);
+    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, mode, { requires: [] });
+    publishedCacheMode.set(userId, published);
   } catch (err) {
     warn(`cache mode publish failed: ${describeError(err)}`);
   }
 }
 function cacheSettings(userId, data) {
   settingsCache.set(userId, { at: Date.now(), data });
-  publishCacheMode(userId, data.cacheFriendly);
+  publishCacheMode(userId, data);
 }
 function withSettingsLock(userId, fn) {
   const prev = writeLocks.get(userId) ?? Promise.resolve();
@@ -9667,7 +9670,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.2.0",
+  version: "1.2.1",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
