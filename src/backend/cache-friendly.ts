@@ -7,7 +7,7 @@ import { syncCodexEntries } from "./codex/sync";
 import { loadCursor, msgSig } from "./codex/store";
 import { forkCodexPending, forkShelfPending, ensureForkAdoption } from "./fork";
 import { bumpCacheEpoch } from "./hooks";
-import { drainGhostBacklog, hasPromotableGhost, maybeRunArcCheck, promoteGhostChapters, sweepStaleGhosts } from "./pipeline";
+import { drainGhostBacklog, hasPromotableGhost, maybeRunArcCheck, maybeRunPipeline, promoteGhostChapters, sweepStaleGhosts } from "./pipeline";
 import { describeError, warn } from "./runtime";
 import { listLmbEntries } from "./world-book";
 
@@ -30,6 +30,20 @@ async function bindingCount(chatId: string, userId: string): Promise<number> {
   return (await listLmbEntries(chatId, userId, true)).filter((entry) => entry.meta.tier >= 2).length;
 }
 
+async function liveSummaryIds(chatId: string, userId: string): Promise<string> {
+  return (await listLmbEntries(chatId, userId, true)).filter((entry) => !entry.raw.disabled).map((entry) => entry.raw.id).join();
+}
+
+/** Without the Codex, filing summaries is the only planned prompt change. */
+async function runSummaryWindow(chatId: string, profile: LMBProfile, settings: LMBSettings, userId: string): Promise<void> {
+  const before = await liveSummaryIds(chatId, userId);
+  try {
+    await maybeRunPipeline(chatId, profile, settings, userId);
+  } finally {
+    if (await liveSummaryIds(chatId, userId) !== before) bumpCacheEpoch(chatId);
+  }
+}
+
 /** LLM work runs while nothing visible changes, then promotion and entry sync land together. */
 export async function runCacheFriendlyWindow(
   chatId: string,
@@ -42,6 +56,7 @@ export async function runCacheFriendlyWindow(
   if (running.has(key)) return;
   running.add(key);
   try {
+    if (!profile.codexEnabled) return await runSummaryWindow(chatId, profile, settings, userId);
     await ensureForkAdoption(chatId, userId);
     if (await forkShelfPending(chatId, userId) || await forkCodexPending(chatId, userId)) return;
     await ensureCodexEntriesSynced(chatId, userId, profile);

@@ -3628,6 +3628,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       finishCodexCourse: "Finish the Codex course before you turn on Cache Friendly mode.",
       needsLumiCache: "Cache Friendly mode needs the LumiCache extension to be enabled.",
       enabledCost: "Cache Friendly mode is on, and the next update may also catch up older messages and move relations into entities.",
+      enabledNoCodex: "Cache Friendly mode is on, and the next update may also catch up older messages.",
       fileLocked: "Cache Friendly mode controls this Codex category.",
       handEditBreaksCache: "Your Codex edit will break the cache on your next message."
     },
@@ -6818,7 +6819,6 @@ var CACHE_FRIENDLY_FORCED_KEYS = [
   "autoCreate",
   "autoCreateChapter",
   "showMemoryPreviews",
-  "codexEnabled",
   "codexManualOnly",
   "codexExtraContext",
   "codexRelationsTable",
@@ -6835,7 +6835,6 @@ function applyCacheFriendly(profile) {
     autoCreate: true,
     autoCreateChapter: true,
     showMemoryPreviews: false,
-    codexEnabled: true,
     codexManualOnly: false,
     codexExtraContext: true,
     codexRelationsTable: false,
@@ -6853,9 +6852,8 @@ function enterCacheFriendly(profile) {
 }
 function leaveCacheFriendly(profile) {
   const { cacheFriendlySnapshot, ...rest } = profile;
-  const defaults = makeDefaultProfile(profile.id, profile.name);
-  const fallback = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, defaults[key]]));
-  return { ...rest, ...cacheFriendlySnapshot ?? fallback };
+  const source = cacheFriendlySnapshot ?? makeDefaultProfile(profile.id, profile.name);
+  return { ...rest, ...Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, source[key]])) };
 }
 var CONTEXT_RELIEF_THRESHOLD = 0.9;
 var CONTEXT_RELIEF_LAG = 0.7;
@@ -18064,12 +18062,26 @@ var running = new Set;
 async function bindingCount(chatId, userId) {
   return (await listLmbEntries(chatId, userId, true)).filter((entry) => entry.meta.tier >= 2).length;
 }
+async function liveSummaryIds(chatId, userId) {
+  return (await listLmbEntries(chatId, userId, true)).filter((entry) => !entry.raw.disabled).map((entry) => entry.raw.id).join();
+}
+async function runSummaryWindow(chatId, profile, settings, userId) {
+  const before = await liveSummaryIds(chatId, userId);
+  try {
+    await maybeRunPipeline(chatId, profile, settings, userId);
+  } finally {
+    if (await liveSummaryIds(chatId, userId) !== before)
+      bumpCacheEpoch(chatId);
+  }
+}
 async function runCacheFriendlyWindow(chatId, profile, settings, userId, onToast) {
   const key = `${userId}::${chatId}`;
   if (running.has(key))
     return;
   running.add(key);
   try {
+    if (!profile.codexEnabled)
+      return await runSummaryWindow(chatId, profile, settings, userId);
     await ensureForkAdoption(chatId, userId);
     if (await forkShelfPending(chatId, userId) || await forkCodexPending(chatId, userId))
       return;
@@ -19000,7 +19012,7 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
     return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
-  if (settings.cacheFriendly && profile.codexEnabled) {
+  if (settings.cacheFriendly) {
     await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
       warn(`cache friendly window failed: ${describeError(err)}`);
       notify(userId, "error", t("backend.cacheFriendly.windowFailed", { error: shortErrorText(err) }));
@@ -19242,8 +19254,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         await syncProfileSettings(userId);
         if (msg.chatId)
           await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
-        if (msg.enabled)
-          await notify(userId, "info", t("backend.cacheFriendly.enabledCost"));
+        if (msg.enabled) {
+          const after = await loadSettings(userId);
+          const codexOn = after.profiles.find((p) => p.id === after.activeProfileId)?.codexEnabled;
+          await notify(userId, "info", codexOn ? t("backend.cacheFriendly.enabledCost") : t("backend.cacheFriendly.enabledNoCodex"));
+        }
         await pushState(userId, msg.chatId);
         break;
       }

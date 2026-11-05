@@ -3627,6 +3627,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       finishCodexCourse: "Finish the Codex course before you turn on Cache Friendly mode.",
       needsLumiCache: "Cache Friendly mode needs the LumiCache extension to be enabled.",
       enabledCost: "Cache Friendly mode is on, and the next update may also catch up older messages and move relations into entities.",
+      enabledNoCodex: "Cache Friendly mode is on, and the next update may also catch up older messages.",
       fileLocked: "Cache Friendly mode controls this Codex category.",
       handEditBreaksCache: "Your Codex edit will break the cache on your next message."
     },
@@ -16696,11 +16697,11 @@ var CODEX_LAG_TOKENS_DEFAULT = 2000;
 var CODEX_WINDOW_TOKENS_DEFAULT = 8000;
 function renderCodexSettings(host, state, profile, patch) {
   const sec = section(t("ui.tabs.profileTab.sec.knowledgeCodex"));
-  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
+  sec.body.appendChild(lessonMark(checkbox({
     checked: profile.codexEnabled,
     label: t("ui.tabs.profileTab.renderCodexSettings.enableCodex"),
     onChange: (codexEnabled) => patch({ codexEnabled })
-  }), "tuning.codex.enabled")));
+  }), "tuning.codex.enabled"));
   const updating = section(t("ui.tabs.profileTab.updating.codexUpdating"));
   cacheLocked(updating.body);
   const lag = document.createElement("div");

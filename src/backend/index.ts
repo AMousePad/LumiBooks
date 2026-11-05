@@ -408,7 +408,7 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
   if (!rawProfile) return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
-  if (settings.cacheFriendly && profile.codexEnabled) {
+  if (settings.cacheFriendly) {
     await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
       warn(`cache friendly window failed: ${describeError(err)}`);
       void notify(userId, "error", tr("backend.cacheFriendly.windowFailed", { error: shortErrorText(err) }));
@@ -669,7 +669,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));
         await syncProfileSettings(userId);
         if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
-        if (msg.enabled) await notify(userId, "info", tr("backend.cacheFriendly.enabledCost"));
+        if (msg.enabled) {
+          const after = await loadSettings(userId);
+          const codexOn = after.profiles.find((p) => p.id === after.activeProfileId)?.codexEnabled;
+          await notify(userId, "info", codexOn ? tr("backend.cacheFriendly.enabledCost") : tr("backend.cacheFriendly.enabledNoCodex"));
+        }
         await pushState(userId, msg.chatId);
         break;
       }

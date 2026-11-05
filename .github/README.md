@@ -48,7 +48,7 @@
 
 ## Cache Friendly mode
 
-Turn this on in the Home tab under Actions. It requires the LumiCache extension and a finished Codex course. Chapters and the Codex then change the prompt together once per window, so your prompt cache only breaks at that moment. Your Summary window and lag stay as they are, and the Codex always uses them. The Codex keeps entities, lore, and secrets as constant entries, and timeline, threads, and the Relations Table stay off. Turning the mode off restores your settings.
+Turn this on in the Home tab under Actions. It requires the LumiCache extension and a finished Codex course. Chapters and the Codex then change the prompt together once per window, so your prompt cache only breaks at that moment. Your Summary window and lag stay as they are, and the Codex always uses them. The Codex keeps entities, lore, and secrets as constant entries, and timeline, threads, and the Relations Table stay off. You can turn the Codex off and keep the mode, and then only chapters and arcs change the prompt. Turning the mode off restores your settings.
 
 Each Codex category has its own token limit in Tuning, 10,000 by default. Above 75% the update prompt asks the model to shrink that category. Above 100% the least updated entries are cut until it fits, and the 6 largest always stay.
 

@@ -797,6 +797,7 @@
       "finishCodexCourse": "Finish the Codex course before you turn on Cache Friendly mode.",
       "needsLumiCache": "Cache Friendly mode needs the LumiCache extension to be enabled.",
       "enabledCost": "Cache Friendly mode is on, and the next update may also catch up older messages and move relations into entities.",
+      "enabledNoCodex": "Cache Friendly mode is on, and the next update may also catch up older messages.",
       "fileLocked": "Cache Friendly mode controls this Codex category.",
       "handEditBreaksCache": "Your Codex edit will break the cache on your next message."
     },

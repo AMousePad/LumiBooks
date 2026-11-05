@@ -35,10 +35,10 @@ export function renderCodexSettings(
 ): void {
   void state;
   const sec = section(tr("ui.tabs.profileTab.sec.knowledgeCodex"));
-  sec.body.appendChild(cacheLocked(lessonMark(checkbox({
+  sec.body.appendChild(lessonMark(checkbox({
     checked: profile.codexEnabled, label: tr("ui.tabs.profileTab.renderCodexSettings.enableCodex"),
     onChange: (codexEnabled) => patch({ codexEnabled }),
-  }), "tuning.codex.enabled")));
+  }), "tuning.codex.enabled"));
 
   const updating = section(tr("ui.tabs.profileTab.updating.codexUpdating"));
   cacheLocked(updating.body);

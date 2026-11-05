@@ -447,7 +447,7 @@ function normalizeCodexTokenLimits(raw: unknown): Record<CodexFileKey, number> {
 }
 
 const CACHE_FRIENDLY_FORCED_KEYS = [
-  "autoCreate", "autoCreateChapter", "showMemoryPreviews", "codexEnabled", "codexManualOnly", "codexExtraContext",
+  "autoCreate", "autoCreateChapter", "showMemoryPreviews", "codexManualOnly", "codexExtraContext",
   "codexRelationsTable", "codexActivationMode", "codexInjectionPosition", "codexWindowUnit", "codexWindowValue",
   "codexLagUnit", "codexLagValue",
 ] as const satisfies readonly (keyof LMBProfile)[];
@@ -459,7 +459,6 @@ export function applyCacheFriendly(profile: LMBProfile): LMBProfile {
     autoCreate: true,
     autoCreateChapter: true,
     showMemoryPreviews: false,
-    codexEnabled: true,
     codexManualOnly: false,
     codexExtraContext: true,
     codexRelationsTable: false,
@@ -480,9 +479,9 @@ export function enterCacheFriendly(profile: LMBProfile): LMBProfile {
 /** A profile created during the mode has no snapshot and falls back to defaults. */
 export function leaveCacheFriendly(profile: LMBProfile): LMBProfile {
   const { cacheFriendlySnapshot, ...rest } = profile;
-  const defaults = makeDefaultProfile(profile.id, profile.name);
-  const fallback = Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, defaults[key]])) as Partial<LMBProfile>;
-  return { ...rest, ...(cacheFriendlySnapshot ?? fallback) };
+  const source: Partial<LMBProfile> = cacheFriendlySnapshot ?? makeDefaultProfile(profile.id, profile.name);
+  // Older snapshots also hold codexEnabled, which the user now controls.
+  return { ...rest, ...Object.fromEntries(CACHE_FRIENDLY_FORCED_KEYS.map((key) => [key, source[key]])) as Partial<LMBProfile> };
 }
 
 export const CONTEXT_RELIEF_THRESHOLD = 0.9;
