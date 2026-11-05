@@ -14,6 +14,10 @@ const settingsCache = new Map<string, { at: number; data: LMBSettings }>();
 
 const publishedCacheMode = new Map<string, string>();
 
+/** Endpoint names only allow lowercase, and user IDs can have capitals. LumiCache encodes the same way. */
+export const cacheModeEndpoint = (userId: string): string =>
+  `cache_mode.${Array.from(new TextEncoder().encode(userId), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+
 /** LumiCache reads this to judge the user's history, and treats a change here as a planned prompt change. */
 function publishCacheMode(userId: string, data: LMBSettings): void {
   const codexEnabled = data.profiles.find((profile) => profile.id === data.activeProfileId)?.codexEnabled !== false;
@@ -21,7 +25,7 @@ function publishCacheMode(userId: string, data: LMBSettings): void {
   const published = JSON.stringify(mode);
   if (publishedCacheMode.get(userId) === published) return;
   try {
-    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, mode, { requires: [] });
+    spindle.rpcPool?.sync?.(cacheModeEndpoint(userId), mode, { requires: [] });
     publishedCacheMode.set(userId, published);
   } catch (err) {
     warn(`cache mode publish failed: ${describeError(err)}`);

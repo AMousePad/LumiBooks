@@ -9,7 +9,7 @@ import { emptyCursor, loadCursor } from "./codex/store";
 import { registerCodexCallbacks } from "./codex/index";
 import { filedMessageChanged, lumiCacheAvailable, runCacheFriendlyWindow } from "./cache-friendly";
 import { registerPipelineCallbacks } from "./pipeline";
-import { saveSettings } from "./storage";
+import { cacheModeEndpoint, saveSettings } from "./storage";
 import { invalidateBookCache } from "./world-book";
 
 const original = (globalThis as any).spindle;
@@ -250,16 +250,17 @@ test("the cache mode is published per user, only when it changes", async () => {
   const rpc = (globalThis as any).spindle.rpcPool, original = rpc.sync, published: [string, unknown][] = [];
   rpc.sync = (name: string, value: unknown) => { if (name.startsWith("cache_mode.")) published.push([name, value]); };
   try {
-    const reader = "cache-mode-user";
+    const reader = "92tiaFOy", endpoint = "cache_mode.3932746961464f79";
+    expect(cacheModeEndpoint(reader)).toBe(endpoint);
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: false }));
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: true }));
     const profile = { ...makeDefaultProfile("p", "Test"), codexEnabled: false };
     await saveSettings(reader, normalizeSettings({ ...DEFAULT_SETTINGS, cacheFriendly: true, profiles: [profile], activeProfileId: "p" }));
     expect(published).toEqual([
-      [`cache_mode.${reader}`, { cacheFriendly: false, codexEnabled: true }],
-      [`cache_mode.${reader}`, { cacheFriendly: true, codexEnabled: true }],
-      [`cache_mode.${reader}`, { cacheFriendly: true, codexEnabled: false }],
+      [endpoint, { cacheFriendly: false, codexEnabled: true }],
+      [endpoint, { cacheFriendly: true, codexEnabled: true }],
+      [endpoint, { cacheFriendly: true, codexEnabled: false }],
     ]);
   } finally { rpc.sync = original; }
 });

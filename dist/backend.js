@@ -7262,6 +7262,7 @@ var writeLocks = new Map;
 var SETTINGS_CACHE_TTL_MS = 2000;
 var settingsCache = new Map;
 var publishedCacheMode = new Map;
+var cacheModeEndpoint = (userId) => `cache_mode.${Array.from(new TextEncoder().encode(userId), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 function publishCacheMode(userId, data) {
   const codexEnabled = data.profiles.find((profile) => profile.id === data.activeProfileId)?.codexEnabled !== false;
   const mode = { cacheFriendly: data.cacheFriendly, codexEnabled };
@@ -7269,7 +7270,7 @@ function publishCacheMode(userId, data) {
   if (publishedCacheMode.get(userId) === published)
     return;
   try {
-    spindle.rpcPool?.sync?.(`cache_mode.${userId}`, mode, { requires: [] });
+    spindle.rpcPool?.sync?.(cacheModeEndpoint(userId), mode, { requires: [] });
     publishedCacheMode.set(userId, published);
   } catch (err) {
     warn(`cache mode publish failed: ${describeError(err)}`);
