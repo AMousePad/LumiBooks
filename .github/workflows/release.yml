@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+# A squash-merged PR fires both events, and the second run must see the first run's release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read version from commit message or PR title
+        id: version
+        env:
+          SUBJECT: ${{ github.event_name == 'push' && github.event.head_commit.message || github.event.pull_request.title }}
+        run: |
+          first_line="$(printf '%s\n' "$SUBJECT" | head -n 1)"
+          if [[ "$first_line" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.version.outputs.number != ''
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.merge_commit_sha }}
+
+      - name: Check manifests match
+        if: steps.version.outputs.number != ''
+        env:
+          VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          for file in package.json spindle.json; do
+            found="$(jq -r .version "$file")"
+            if [ "$found" != "$VERSION" ]; then
+              echo "::error file=$file::$file has version $found, expected $VERSION"
+              exit 1
+            fi
+          done
+
+      - name: Create release
+        if: steps.version.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.number }}
+          TARGET: ${{ github.event_name == 'push' && github.sha || github.event.pull_request.merge_commit_sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::$TAG is already released"
+            exit 0
+          fi
+          gh release create "$TAG" --title "$TAG" --target "$TARGET" --generate-notes
