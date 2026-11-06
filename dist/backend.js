@@ -19344,6 +19344,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => (key in incoming))) {
+          await pushState(userId, msg.chatId);
           await syncProfileSettings(userId);
         }
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {

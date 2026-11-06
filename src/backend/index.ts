@@ -751,6 +751,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => key in incoming)) {
+          // Re-syncing every chat takes seconds, so the saved value must reach the UI first.
+          await pushState(userId, msg.chatId);
           await syncProfileSettings(userId);
         }
         // The effective-mode off transition (extra toggle OR codex disable)
