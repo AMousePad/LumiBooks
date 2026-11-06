@@ -6,7 +6,7 @@ import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../
 import { isExtraCategory, presetKeyFor, presetKeyPatch } from "../prompts/categories";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
 import { syncCodexProfiles } from "./codex/sync";
-import { contextIsFull, relieveContext, rememberContextStats, takeContextStats, type ContextStats } from "./context-relief";
+import { contextIsFull, releaseContextRelief, relieveContext, rememberContextStats, takeContextStats, type ContextStats } from "./context-relief";
 import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
@@ -394,9 +394,15 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
   await ensureUserFolders(userId).catch(() => {});
   let settings = await loadSettings(userId).catch(() => null);
   if (!settings?.enabled) return;
+  try {
+    if (await releaseContextRelief(userId, contextStats?.maxContext)) settings = await loadSettings(userId);
+  } catch (err) {
+    warn(`context relief reset failed: ${describeError(err)}`);
+    void notify(userId, "error", tr("backend.contextRelief.failed", { error: shortErrorText(err) }));
+  }
   if (contextIsFull(contextStats, p.usage?.prompt_tokens)) {
     try {
-      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text));
+      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text), contextStats?.maxContext ?? null);
       if (relieved) {
         settings = relieved;
         await syncProfileSettings(userId);

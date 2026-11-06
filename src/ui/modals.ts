@@ -114,7 +114,7 @@ export function requestCodexTidy(
   const body = document.createElement("div");
   body.className = "lmb-preview-modal__body";
   const lead = document.createElement("p");
-  lead.textContent = tr("ui.modals.requestCodexTidy.currentSelectedContentTokensFrozenFilesAre", { choice: (state.codexTokensApproximate) ? "yes" : "no", toLocaleString: current.toLocaleString() });
+  lead.textContent = tr("ui.modals.requestCodexTidy.currentSelectedContentTokensFrozenFilesAre", { choice: (state.codexTokensApproximate) ? "yes" : "no", toLocaleString: state.codexTokensError ? "N/A" : current.toLocaleString() });
   const unitLabel = document.createElement("label");
   unitLabel.textContent = tr("ui.modals.requestCodexTidy.targetUnit");
   const unit = document.createElement("select");

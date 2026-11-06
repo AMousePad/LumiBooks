@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { applyContextRelief, DEFAULT_SETTINGS, enterCacheFriendly, leaveCacheFriendly, makeDefaultProfile, normalizeSettings } from "../shared";
-import { contextIsFull, relieveContext, rememberContextStats, takeContextStats } from "./context-relief";
+import { contextIsFull, releaseContextRelief, relieveContext, rememberContextStats, takeContextStats } from "./context-relief";
 import { loadSettings, saveSettings } from "./storage";
 
 const original = (globalThis as any).spindle;
@@ -116,4 +116,22 @@ test("Cache Friendly mode skips the advice about locked features", async () => {
   const warnings: string[] = [];
   await relieveContext(user, (text) => warnings.push(text));
   expect(warnings).toHaveLength(1);
+});
+
+test("relief stays set for one max context and clears when it changes", async () => {
+  await saveSettings(user, normalizeSettings({ ...DEFAULT_SETTINGS, profiles: [makeDefaultProfile("a", "A")], activeProfileId: "a" }));
+  await relieveContext(user, () => {}, 32000);
+  const active = async () => (await loadSettings(user)).profiles[0]!;
+  expect(await releaseContextRelief(user, 32000)).toBe(false);
+  expect((await active()).contextReliefApplied).toBe(true);
+  expect(await releaseContextRelief(user, 64000)).toBe(true);
+  expect(await active()).toMatchObject({ contextReliefApplied: false, contextReliefMaxContext: null, lagValue: 28 });
+  expect(await relieveContext(user, () => {}, 64000)).not.toBeNull();
+});
+
+test("a flag saved before max context tracking adopts the current max context", async () => {
+  await saveSettings(user, normalizeSettings({ ...DEFAULT_SETTINGS, profiles: [{ ...makeDefaultProfile("a", "A"), contextReliefApplied: true }], activeProfileId: "a" }));
+  expect(await releaseContextRelief(user, 32000)).toBe(false);
+  expect((await loadSettings(user)).profiles[0]).toMatchObject({ contextReliefApplied: true, contextReliefMaxContext: 32000 });
+  expect(await releaseContextRelief(user, 64000)).toBe(true);
 });

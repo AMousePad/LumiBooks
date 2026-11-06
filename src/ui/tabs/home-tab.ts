@@ -648,7 +648,7 @@ function renderBreakdown(state: FrontendState): HTMLElement {
     l.textContent = label;
     const t = document.createElement("span");
     t.className = "lmb-breakdown-tokens";
-    t.textContent = `${approx ? "~" : ""}${formatTokens(tokens)}`;
+    t.textContent = Number.isNaN(tokens) ? tr("ui.tabs.homeTab.renderBreakdown.notAvailable") : `${approx ? "~" : ""}${formatTokens(tokens)}`;
     r.append(swatch, l, t);
     return r;
   };
@@ -676,7 +676,8 @@ function renderBreakdown(state: FrontendState): HTMLElement {
     }
   }
 
-  if (codexTokens > 0) wrap.appendChild(row("codex", tr("ui.tabs.homeTab.renderBreakdown.knowledgeCodexConstantPart"), codexTokens, state.codexTokensApproximate));
+  if (state.codexTokensError) wrap.appendChild(row("codex", tr("ui.tabs.homeTab.renderBreakdown.knowledgeCodexConstantPart"), NaN, false));
+  else if (codexTokens > 0) wrap.appendChild(row("codex", tr("ui.tabs.homeTab.renderBreakdown.knowledgeCodexConstantPart"), codexTokens, state.codexTokensApproximate));
   if (activeVolumes.length) wrap.appendChild(row("volume", tr("ui.tabs.homeTab.renderBreakdown.volumesAndHigher", { length: activeVolumes.length }), volTokens, true));
   if (activeArcs.length) wrap.appendChild(row("arc", tr("ui.tabs.homeTab.renderBreakdown.arcs", { length: activeArcs.length }), arcTokens, true));
   if (activeChapters.length) wrap.appendChild(row("chapter", tr("ui.tabs.homeTab.renderBreakdown.chapters", { length: activeChapters.length }), chapTokens, true));

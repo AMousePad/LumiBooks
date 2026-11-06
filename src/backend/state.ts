@@ -138,6 +138,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexRefreshPending: [],
     codexFileTokens: {},
     codexTokensApproximate: true,
+    codexTokensError: null,
     codexRevision: 0,
     lessons,
     lumiCacheAvailable: lumiCache,
@@ -258,7 +259,12 @@ export async function buildState(userId: string, requestedChatId?: string | null
     ? ((await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim()
       || codexRootOrigin.slice(0, 8))
     : null;
-  const codexCounts = await getCodexTokenCounts(chat.id, userId, codexProfile).catch(() => ({ files: {}, constant: 0, approximate: true }));
+  let codexTokensError: string | null = null;
+  const codexCounts = await getCodexTokenCounts(chat.id, userId, codexProfile).catch((err) => {
+    codexTokensError = describeError(err);
+    warn(`codex token count failed for ${chat.id}: ${codexTokensError}`);
+    return { files: {}, constant: 0, approximate: true };
+  });
   const codexFileTokens = codexCounts.files;
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? codexCounts.constant : 0;
 
@@ -305,6 +311,7 @@ export async function buildState(userId: string, requestedChatId?: string | null
     codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens,
     codexTokensApproximate: codexCounts.approximate,
+    codexTokensError,
     codexRevision: getCodexRevision(chat.id),
   };
 }

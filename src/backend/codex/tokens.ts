@@ -24,7 +24,7 @@ export async function countCodexText(text: string, userId: string): Promise<{ to
   }
 }
 
-/** Injectable tokens per category, the same text the lorebook mirror carries. */
+/** Injectable tokens per category, estimated from length so a run makes no tokenizer calls per record. */
 export async function measureCodexFullness(
   bundle: CodexBundle, userId: string, fileStates: Partial<Record<CodexFileKey, CodexFileState>>, limits: CodexTokenLimits,
 ): Promise<CodexFullness[]> {
@@ -32,7 +32,7 @@ export async function measureCodexFullness(
   const tokens: Partial<Record<CodexFileKey, number>> = {};
   for (const record of renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles })) {
     if (disabledFiles.has(record.file) || record.disabled) continue;
-    tokens[record.file] = (tokens[record.file] ?? 0) + (await countCodexText(record.content, userId)).tokens;
+    tokens[record.file] = (tokens[record.file] ?? 0) + approximateTokensFromChars(record.content.length);
   }
   return codexFullness(tokens, limits);
 }

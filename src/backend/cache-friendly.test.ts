@@ -104,8 +104,8 @@ test("equal history discards the earliest record first", () => {
   expect([...selectCodexCuts(items, limits(605))]).toEqual(["a"]);
 });
 
-test("only categories past 75 percent report as full", () => {
-  expect(codexFullness({ world: 7500, knowledge: 7501, things: 12000 }, limits(10000))).toEqual([{ file: "things", percent: 120 }, { file: "knowledge", percent: 75 }]);
+test("only categories past 85 percent report as full", () => {
+  expect(codexFullness({ world: 8500, knowledge: 8501, things: 12000 }, limits(10000))).toEqual([{ file: "things", percent: 120 }, { file: "knowledge", percent: 85 }]);
   expect(codexFullness({ world: 999999 }, limits(0))).toEqual([]);
 });
 
@@ -204,7 +204,7 @@ test("sync cuts over-limit constant entries, keeps order stable, and warns only 
   const facts = (n: number) => Array.from({ length: n }, (_, i) => ({ topic: `T${i}`, facts: ["x".repeat(i < 6 ? 400 : 100)] }));
   data.set(`codex/${chat}/cursor.json`, { ...emptyCursor(), recordStats: {}, relationsTableMode: false });
   data.set(`codex/${chat}/world.json`, { entries: facts(9) });
-  const profile = mode({ codexTokenLimits: { ...limits(10000), world: 2750 } });
+  const profile = mode({ codexTokenLimits: { ...limits(10000), world: 690 } });
   await useProfile(profile);
   const { registerCodexCutWarning } = await import("./codex/sync");
   const warned: string[] = [];

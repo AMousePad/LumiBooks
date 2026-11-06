@@ -189,6 +189,8 @@ export interface FrontendState {
   codexFileTokens: Record<string, number>;
   /** The host could not provide an exact tokenizer, or content was unreadable. */
   codexTokensApproximate: boolean;
+  /** Why the token counts could not be read; the UI shows N/A instead of 0. */
+  codexTokensError: string | null;
   /** Bumped on every codex mutation; the Codex tab refetches file contents
    * when it moves past the revision its cache was filled from. */
   codexRevision: number;

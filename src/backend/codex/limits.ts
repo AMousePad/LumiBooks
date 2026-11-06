@@ -1,6 +1,6 @@
 import { CODEX_FILE_KEYS, type CodexFileKey } from "../../shared";
 
-export const CODEX_FULL_PERCENT = 75;
+export const CODEX_FULL_PERCENT = 85;
 const NEVER_CUT_LARGEST = 6;
 
 export interface CodexRecordStat {

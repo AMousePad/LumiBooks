@@ -184,6 +184,8 @@ export interface LMBProfile {
   codexTokenLimits: Record<CodexFileKey, number>;
   /** Context relief lowers a profile once, then this keeps it from compounding. */
   contextReliefApplied: boolean;
+  /** Max context when relief applied; a different max context clears the flag. */
+  contextReliefMaxContext: number | null;
   /** Values Cache Friendly mode replaced, restored when it turns off. */
   cacheFriendlySnapshot?: Partial<LMBProfile>;
 }
@@ -357,6 +359,7 @@ export function makeDefaultProfile(id: string, name: string): LMBProfile {
     codexPresetKey: "codex_default",
     codexTokenLimits: defaultCodexTokenLimits(),
     contextReliefApplied: false,
+    contextReliefMaxContext: null,
   };
 }
 
@@ -601,6 +604,7 @@ export function normalizeProfile(raw: unknown): LMBProfile | null {
     codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
     codexTokenLimits: normalizeCodexTokenLimits(v.codexTokenLimits),
     contextReliefApplied: v.contextReliefApplied === true,
+    contextReliefMaxContext: typeof v.contextReliefMaxContext === "number" && v.contextReliefMaxContext > 0 ? v.contextReliefMaxContext : null,
     ...(v.cacheFriendlySnapshot && typeof v.cacheFriendlySnapshot === "object" ? { cacheFriendlySnapshot: v.cacheFriendlySnapshot } : {}),
   };
 }

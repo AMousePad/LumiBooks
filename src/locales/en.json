@@ -888,7 +888,7 @@
           "prependedWhenIndividualFieldsAreLockedOn": "Identifies locked fields. The agent sees \"Locked, do not edit\" in place of their values. The app restores those values on writes.",
           "theEntitiesCarryingLockedFields": "the entities carrying locked fields",
           "codexFillingUp": "Codex filling up",
-          "appendedToUpdatesWhenACategoryIsOver": "Appended to update passes when a category passes 75% of its token limit, once per category.",
+          "appendedToUpdatesWhenACategoryIsOver": "Appended to update passes when a category passes 85% of its token limit, once per category.",
           "theCategoryThatIsFillingUp": "The category that is filling up",
           "howFullThatCategoryIs": "How full that category is, as a whole number"
         },
@@ -2152,6 +2152,8 @@
         "renderCodexTile": {
           "clickToCycle": "{tileStateLabelSt}{choice, select, yes { · missed updates while frozen} other {}}{choice2, select, yes { · waiting for the catch-up pass} other {}} - click to cycle",
           "tokens": "{choice, select, yes {~} other {}}{formatTokens} tokens",
+          "tokensUnavailable": "N/A tokens",
+          "tokensFailed": "Couldn''t count tokens: {error}",
           "stale": " · stale",
           "needsCatchUp": " · needs catch-up",
           "clickToCycle2": "{tileStateLabelSt} - click to cycle"
@@ -2503,6 +2505,7 @@
         },
         "renderBreakdown": {
           "knowledgeCodexConstantPart": "Knowledge Codex (constant part)",
+          "notAvailable": "N/A",
           "volumesAndHigher": "Volumes and higher ({length})",
           "arcs": "Arcs ({length})",
           "chapters": "Chapters ({length})",
@@ -2799,7 +2802,7 @@
         },
         "tokenLimits": {
           "title": "Codex token limits",
-          "help": "The most tokens each category may inject. Past 75% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
+          "help": "The most tokens each category may inject. Past 85% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
           "category": "{file}"
         }
       },

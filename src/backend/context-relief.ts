@@ -26,7 +26,7 @@ export function contextIsFull(stats: ContextStats | undefined, promptTokens: num
 }
 
 /** Returns the updated settings when this call lowered the active profile. */
-export async function relieveContext(userId: string, warn: (text: string) => void): Promise<LMBSettings | null> {
+export async function relieveContext(userId: string, warn: (text: string) => void, maxContext: number | null = null): Promise<LMBSettings | null> {
   const needed = (settings: LMBSettings) => settings.contextRelief
     && settings.profiles.some((p) => p.id === settings.activeProfileId && !p.contextReliefApplied);
   if (!needed(await loadSettings(userId))) return null;
@@ -34,11 +34,30 @@ export async function relieveContext(userId: string, warn: (text: string) => voi
   const next = await mutateSettings(userId, (current) => {
     if (!needed(current)) return current;
     applied = true;
-    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? applyContextRelief(p) : p) };
+    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? { ...applyContextRelief(p), contextReliefMaxContext: maxContext } : p) };
   });
   if (!applied) return null;
   warn(tr("backend.contextRelief.applied"));
   // Cache Friendly mode locks these features, so the advice would point at disabled controls.
   if (!next.cacheFriendly) warn(tr("backend.contextRelief.advice"));
   return next;
+}
+
+/** Relief holds for one max context, so a new max context lets it apply again. Older flags adopt the current one. */
+export async function releaseContextRelief(userId: string, maxContext: number | undefined): Promise<boolean> {
+  if (!maxContext || maxContext <= 0) return false;
+  const stale = (settings: LMBSettings) => settings.profiles.some((p) => p.id === settings.activeProfileId
+    && p.contextReliefApplied && p.contextReliefMaxContext !== maxContext);
+  if (!stale(await loadSettings(userId))) return false;
+  let released = false;
+  await mutateSettings(userId, (current) => {
+    if (!stale(current)) return current;
+    return { ...current, profiles: current.profiles.map((p) => {
+      if (p.id !== current.activeProfileId) return p;
+      if (p.contextReliefMaxContext === null) return { ...p, contextReliefMaxContext: maxContext };
+      released = true;
+      return { ...p, contextReliefApplied: false, contextReliefMaxContext: null };
+    }) };
+  });
+  return released;
 }

@@ -3718,7 +3718,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           prependedWhenIndividualFieldsAreLockedOn: 'Identifies locked fields. The agent sees "Locked, do not edit" in place of their values. The app restores those values on writes.',
           theEntitiesCarryingLockedFields: "the entities carrying locked fields",
           codexFillingUp: "Codex filling up",
-          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 75% of its token limit, once per category.",
+          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 85% of its token limit, once per category.",
           theCategoryThatIsFillingUp: "The category that is filling up",
           howFullThatCategoryIs: "How full that category is, as a whole number"
         },
@@ -4996,6 +4996,8 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         renderCodexTile: {
           clickToCycle: "{tileStateLabelSt}{choice, select, yes { · missed updates while frozen} other {}}{choice2, select, yes { · waiting for the catch-up pass} other {}} - click to cycle",
           tokens: "{choice, select, yes {~} other {}}{formatTokens} tokens",
+          tokensUnavailable: "N/A tokens",
+          tokensFailed: "Couldn''t count tokens: {error}",
           stale: " · stale",
           needsCatchUp: " · needs catch-up",
           clickToCycle2: "{tileStateLabelSt} - click to cycle"
@@ -5347,6 +5349,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderBreakdown: {
           knowledgeCodexConstantPart: "Knowledge Codex (constant part)",
+          notAvailable: "N/A",
           volumesAndHigher: "Volumes and higher ({length})",
           arcs: "Arcs ({length})",
           chapters: "Chapters ({length})",
@@ -5643,7 +5646,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         tokenLimits: {
           title: "Codex token limits",
-          help: "The most tokens each category may inject. Past 75% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
+          help: "The most tokens each category may inject. Past 85% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
           category: "{file}"
         }
       },
@@ -9732,7 +9735,7 @@ var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do no
 `;
 
 // src/prompts/codex/notes/codex-full.txt
-var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 30-50%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
+var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 15-30%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
 
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;
@@ -10113,7 +10116,8 @@ function makeDefaultProfile(id, name) {
     codexWriteMode: "batch",
     codexPresetKey: "codex_default",
     codexTokenLimits: defaultCodexTokenLimits(),
-    contextReliefApplied: false
+    contextReliefApplied: false,
+    contextReliefMaxContext: null
   };
 }
 var DEFAULT_SETTINGS = {
@@ -10304,7 +10308,7 @@ function requestCodexTidy(state, chatId, send, files) {
   const body = document.createElement("div");
   body.className = "lmb-preview-modal__body";
   const lead = document.createElement("p");
-  lead.textContent = t("ui.modals.requestCodexTidy.currentSelectedContentTokensFrozenFilesAre", { choice: state.codexTokensApproximate ? "yes" : "no", toLocaleString: current.toLocaleString() });
+  lead.textContent = t("ui.modals.requestCodexTidy.currentSelectedContentTokensFrozenFilesAre", { choice: state.codexTokensApproximate ? "yes" : "no", toLocaleString: state.codexTokensError ? "N/A" : current.toLocaleString() });
   const unitLabel = document.createElement("label");
   unitLabel.textContent = t("ui.modals.requestCodexTidy.targetUnit");
   const unit = document.createElement("select");
@@ -11544,10 +11548,10 @@ function renderBreakdown(state) {
     const l = document.createElement("span");
     l.className = "lmb-breakdown-label";
     l.textContent = label;
-    const t = document.createElement("span");
-    t.className = "lmb-breakdown-tokens";
-    t.textContent = `${approx ? "~" : ""}${formatTokens(tokens)}`;
-    r.append(swatch, l, t);
+    const t2 = document.createElement("span");
+    t2.className = "lmb-breakdown-tokens";
+    t2.textContent = Number.isNaN(tokens) ? t("ui.tabs.homeTab.renderBreakdown.notAvailable") : `${approx ? "~" : ""}${formatTokens(tokens)}`;
+    r.append(swatch, l, t2);
     return r;
   };
   const activeVolumes = [...state.volumes, ...state.higherBooks].filter((v) => v.active);
@@ -11570,7 +11574,9 @@ function renderBreakdown(state) {
       tailCount++;
     }
   }
-  if (codexTokens > 0)
+  if (state.codexTokensError)
+    wrap.appendChild(row("codex", t("ui.tabs.homeTab.renderBreakdown.knowledgeCodexConstantPart"), NaN, false));
+  else if (codexTokens > 0)
     wrap.appendChild(row("codex", t("ui.tabs.homeTab.renderBreakdown.knowledgeCodexConstantPart"), codexTokens, state.codexTokensApproximate));
   if (activeVolumes.length)
     wrap.appendChild(row("volume", t("ui.tabs.homeTab.renderBreakdown.volumesAndHigher", { length: activeVolumes.length }), volTokens, true));
@@ -14932,7 +14938,9 @@ function renderCodexTile(def, parsed, state, ctx, send, busy) {
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = t("ui.tabs.codexTab.renderCodexTile.tokens", { choice: state.codexTokensApproximate ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  s.textContent = state.codexTokensError ? t("ui.tabs.codexTab.renderCodexTile.tokensUnavailable") : t("ui.tabs.codexTab.renderCodexTile.tokens", { choice: state.codexTokensApproximate ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  if (state.codexTokensError)
+    s.title = t("ui.tabs.codexTab.renderCodexTile.tokensFailed", { error: state.codexTokensError });
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
   stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? t("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? t("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;
@@ -20262,6 +20270,7 @@ function buildFixture(variant) {
     codexRootOrigin: null,
     codexRootOriginName: null,
     codexTokensApproximate: true,
+    codexTokensError: null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     lumiCacheAvailable: false,
     codexFileStates: spec.codexFileStates ?? {},

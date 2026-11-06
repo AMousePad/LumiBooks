@@ -3719,7 +3719,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
           prependedWhenIndividualFieldsAreLockedOn: 'Identifies locked fields. The agent sees "Locked, do not edit" in place of their values. The app restores those values on writes.',
           theEntitiesCarryingLockedFields: "the entities carrying locked fields",
           codexFillingUp: "Codex filling up",
-          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 75% of its token limit, once per category.",
+          appendedToUpdatesWhenACategoryIsOver: "Appended to update passes when a category passes 85% of its token limit, once per category.",
           theCategoryThatIsFillingUp: "The category that is filling up",
           howFullThatCategoryIs: "How full that category is, as a whole number"
         },
@@ -4997,6 +4997,8 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         renderCodexTile: {
           clickToCycle: "{tileStateLabelSt}{choice, select, yes { \xB7 missed updates while frozen} other {}}{choice2, select, yes { \xB7 waiting for the catch-up pass} other {}} - click to cycle",
           tokens: "{choice, select, yes {~} other {}}{formatTokens} tokens",
+          tokensUnavailable: "N/A tokens",
+          tokensFailed: "Couldn''t count tokens: {error}",
           stale: " \xB7 stale",
           needsCatchUp: " \xB7 needs catch-up",
           clickToCycle2: "{tileStateLabelSt} - click to cycle"
@@ -5348,6 +5350,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         renderBreakdown: {
           knowledgeCodexConstantPart: "Knowledge Codex (constant part)",
+          notAvailable: "N/A",
           volumesAndHigher: "Volumes and higher ({length})",
           arcs: "Arcs ({length})",
           chapters: "Chapters ({length})",
@@ -5644,7 +5647,7 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         },
         tokenLimits: {
           title: "Codex token limits",
-          help: "The most tokens each category may inject. Past 75% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
+          help: "The most tokens each category may inject. Past 85% the update prompt asks for a smaller Codex. Past 100% the least updated entries are cut, oldest first, and the 6 largest always stay. Use 0 for no limit.",
           category: "{file}"
         }
       },
@@ -6300,7 +6303,7 @@ var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do no
 `;
 
 // src/prompts/codex/notes/codex-full.txt
-var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 30-50%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
+var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 15-30%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
 
 // src/prompts/codex/registry.ts
 var CODEX_DIRECTIVES_DEFAULT = directives_default;
@@ -6728,7 +6731,8 @@ function makeDefaultProfile(id, name) {
     codexWriteMode: "batch",
     codexPresetKey: "codex_default",
     codexTokenLimits: defaultCodexTokenLimits(),
-    contextReliefApplied: false
+    contextReliefApplied: false,
+    contextReliefMaxContext: null
   };
 }
 var DEFAULT_SETTINGS = {
@@ -6969,6 +6973,7 @@ function normalizeProfile(raw) {
     codexPresetKey: typeof v.codexPresetKey === "string" && v.codexPresetKey.trim() ? v.codexPresetKey : base.codexPresetKey,
     codexTokenLimits: normalizeCodexTokenLimits(v.codexTokenLimits),
     contextReliefApplied: v.contextReliefApplied === true,
+    contextReliefMaxContext: typeof v.contextReliefMaxContext === "number" && v.contextReliefMaxContext > 0 ? v.contextReliefMaxContext : null,
     ...v.cacheFriendlySnapshot && typeof v.cacheFriendlySnapshot === "object" ? { cacheFriendlySnapshot: v.cacheFriendlySnapshot } : {}
   };
 }
@@ -9679,7 +9684,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.2.2",
+  version: "1.2.3",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -12322,7 +12327,7 @@ function mergeLorebookEdits(raw, generated, previous, constraints) {
 }
 
 // src/backend/codex/limits.ts
-var CODEX_FULL_PERCENT = 75;
+var CODEX_FULL_PERCENT = 85;
 var NEVER_CUT_LARGEST = 6;
 function selectCodexCuts(items, limits) {
   const cuts = new Set;
@@ -12366,49 +12371,6 @@ function advanceRecordStats(stats, before, after, run) {
       next[record] = { updates: (known?.updates ?? 0) + (before.get(record) === content ? 0 : 1), born: known?.born ?? 0 };
   }
   return next;
-}
-
-// src/backend/codex/tokens.ts
-async function countCodexText(text, userId) {
-  if (!text)
-    return { tokens: 0, approximate: false };
-  try {
-    const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
-    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0)
-      throw new Error(t("backend.codex.tokens.countCodexText.invalidTokenCount"));
-    return { tokens: result.total_tokens, approximate: result.approximate };
-  } catch {
-    return { tokens: approximateTokensFromChars(text.length), approximate: true };
-  }
-}
-async function measureCodexFullness(bundle, userId, fileStates, limits) {
-  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
-  const tokens = {};
-  for (const record of renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles })) {
-    if (disabledFiles.has(record.file) || record.disabled)
-      continue;
-    tokens[record.file] = (tokens[record.file] ?? 0) + (await countCodexText(record.content, userId)).tokens;
-  }
-  return codexFullness(tokens, limits);
-}
-async function measureCodexTokens(bundle, userId, fileStates = {}, forceConstant = false) {
-  const sections = renderCodexFileSections(bundle);
-  const counts = { files: {}, constant: 0, approximate: false };
-  for (const key of CODEX_FILE_KEYS) {
-    const count = await countCodexText(sections[key], userId);
-    counts.files[key] = count.tokens;
-    counts.approximate ||= count.approximate;
-  }
-  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
-  const records = renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles });
-  for (const record of records) {
-    if (disabledFiles.has(record.file) || record.disabled || !(forceConstant || record.constant))
-      continue;
-    const count = await countCodexText(record.content, userId);
-    counts.constant += count.tokens;
-    counts.approximate ||= count.approximate;
-  }
-  return counts;
 }
 
 // src/backend/codex/cache-states.ts
@@ -12559,7 +12521,7 @@ async function cutCandidates(desired, stats, disabledFor, userId) {
       id: rec.record,
       file: rec.file,
       index,
-      tokens: (await countCodexText(rec.content, userId)).tokens,
+      tokens: approximateTokensFromChars(rec.content.length),
       updates: stat?.updates ?? 0,
       born: stat?.born ?? 0
     });
@@ -15496,7 +15458,7 @@ function contextIsFull(stats, promptTokens) {
   const assembled = (stats.fixedTokens ?? 0) + (stats.chatHistoryTokensAfter ?? 0);
   return Math.max(promptTokens ?? 0, assembled) / stats.maxContext >= CONTEXT_RELIEF_THRESHOLD;
 }
-async function relieveContext(userId, warn) {
+async function relieveContext(userId, warn, maxContext = null) {
   const needed = (settings) => settings.contextRelief && settings.profiles.some((p) => p.id === settings.activeProfileId && !p.contextReliefApplied);
   if (!needed(await loadSettings(userId)))
     return null;
@@ -15505,7 +15467,7 @@ async function relieveContext(userId, warn) {
     if (!needed(current))
       return current;
     applied = true;
-    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? applyContextRelief(p) : p) };
+    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? { ...applyContextRelief(p), contextReliefMaxContext: maxContext } : p) };
   });
   if (!applied)
     return null;
@@ -15513,6 +15475,27 @@ async function relieveContext(userId, warn) {
   if (!next.cacheFriendly)
     warn(t("backend.contextRelief.advice"));
   return next;
+}
+async function releaseContextRelief(userId, maxContext) {
+  if (!maxContext || maxContext <= 0)
+    return false;
+  const stale = (settings) => settings.profiles.some((p) => p.id === settings.activeProfileId && p.contextReliefApplied && p.contextReliefMaxContext !== maxContext);
+  if (!stale(await loadSettings(userId)))
+    return false;
+  let released = false;
+  await mutateSettings(userId, (current) => {
+    if (!stale(current))
+      return current;
+    return { ...current, profiles: current.profiles.map((p) => {
+      if (p.id !== current.activeProfileId)
+        return p;
+      if (p.contextReliefMaxContext === null)
+        return { ...p, contextReliefMaxContext: maxContext };
+      released = true;
+      return { ...p, contextReliefApplied: false, contextReliefMaxContext: null };
+    }) };
+  });
+  return released;
 }
 
 // src/backend/injection.ts
@@ -15757,6 +15740,49 @@ function resolveTidyTarget(currentTokens, target) {
   if (limit < 1)
     throw new Error(t("codexTidy.resolveTidyTarget.theTargetMustBeAtLeastOne"));
   return { limit, modelTarget: Math.max(1, Math.floor(limit * 0.9)) };
+}
+
+// src/backend/codex/tokens.ts
+async function countCodexText(text, userId) {
+  if (!text)
+    return { tokens: 0, approximate: false };
+  try {
+    const result = await spindle.tokens.countText(text, { modelSource: "main", userId });
+    if (!Number.isFinite(result.total_tokens) || result.total_tokens < 0)
+      throw new Error(t("backend.codex.tokens.countCodexText.invalidTokenCount"));
+    return { tokens: result.total_tokens, approximate: result.approximate };
+  } catch {
+    return { tokens: approximateTokensFromChars(text.length), approximate: true };
+  }
+}
+async function measureCodexFullness(bundle, userId, fileStates, limits) {
+  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
+  const tokens = {};
+  for (const record of renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles })) {
+    if (disabledFiles.has(record.file) || record.disabled)
+      continue;
+    tokens[record.file] = (tokens[record.file] ?? 0) + approximateTokensFromChars(record.content.length);
+  }
+  return codexFullness(tokens, limits);
+}
+async function measureCodexTokens(bundle, userId, fileStates = {}, forceConstant = false) {
+  const sections = renderCodexFileSections(bundle);
+  const counts = { files: {}, constant: 0, approximate: false };
+  for (const key of CODEX_FILE_KEYS) {
+    const count = await countCodexText(sections[key], userId);
+    counts.files[key] = count.tokens;
+    counts.approximate ||= count.approximate;
+  }
+  const disabledFiles = new Set(CODEX_FILE_KEYS.filter((k) => fileStates[k] === "noInject" || fileStates[k] === "frozen"));
+  const records = renderCodexRecords(bundle, { includeRelations: !disabledFiles.has("relations"), disabledFiles });
+  for (const record of records) {
+    if (disabledFiles.has(record.file) || record.disabled || !(forceConstant || record.constant))
+      continue;
+    const count = await countCodexText(record.content, userId);
+    counts.constant += count.tokens;
+    counts.approximate ||= count.approximate;
+  }
+  return counts;
 }
 
 // src/backend/codex/agent.ts
@@ -18248,7 +18274,7 @@ These operations do not repair a Books shelf or raw chat. Busy work is serialize
   { id: "recall", label: "Summary/Codex recall, placement and token limits", text: `Summary recall is account-wide under Tuning > Settings > Books > Everywhere: Constant (default), Keywords, Vector + keywords. It selects active unsuperseded summaries for in-place injection; filing/coverage stays unchanged. Codex recall is per profile: Always, Keywords (default), Vector + keywords, Vector only. In ordinary Codex modes timeline/threads are constant; Vector only makes every enabled entry semantic-only, clearing constant and keyword paths.
 Vector recall needs a tested embedding connection and lorebook vectorization enabled in Lumiverse. Indexing is queued on mode changes/new edits; Vector + keywords retains keyword matching while vectors are unavailable. Vector only has no fallback. Disabled/no-inject/frozen records stay out. Lumiverse controls retrieval budgets; a token count on the Codex file is not the total activated prompt cost.
 Codex placement: normal lorebook-before, at history depth (0=newest edge), or after history. Summary placement remains at source history positions. Prefer specific keywords/aliases; participant names shared by many secrets over-activate them. User-edited content, keywords and activation fields survive sync; reset_overrides returns a record to generated fields.
-Each Codex category defaults to a 10,000-token injection limit (0=unlimited). Above 75% the update prompt asks for compression; above 100% least-updated/oldest eligible records are omitted from activation until it fits, protecting the six largest. Those six can keep a category over limit; this is not a guarantee of fitting the model context. Inspect the cut warning and reduce content/targets as needed.` },
+Each Codex category defaults to a 10,000-token injection limit (0=unlimited). Above 85% the update prompt asks for compression; above 100% least-updated/oldest eligible records are omitted from activation until it fits, protecting the six largest. Those six can keep a category over limit; this is not a guarantee of fitting the model context. Inspect the cut warning and reduce content/targets as needed.` },
   { id: "profiles", label: "Connections, samplers, cadence and global settings", text: `Tuning profile picker: create, copy, rename, select or delete profiles; the active profile is user-wide, not a per-chat model preset. Connection pane has separate Books and Codex connections/sampler overrides. Default/blank connection choices follow the displayed resolved fallback; inspect it before starting expensive work. Controls cover temperature, top-p, top-k, output/input token budgets, frequency/presence penalties. Blank samplers use LumiBooks defaults, not necessarily connection defaults. Provider limits still apply.
 Books Settings: lag/window units+values, Chapter/Arc targets, arc trigger/batch/lag, Volume through Universe enable/batch/lag/targets; auto-filing switches; previous memories context; hide covered messages; preview-before-save; retries; first-token timeout; outgoing/incoming regex hooks. Automation needs a full eligible window outside lag; manual pickers are available for chosen ranges.
 Codex Settings: enable/manual-only, independent lag/window/token breakpoint, lore percentage/token cap (0 token cap=unlimited), story-so-far count, Relations Table, recall/placement/depth, Thorough, Extra context, tool-calling, batch/sequential delivery, per-category token limits. Cache Friendly locks coordinated settings; read cache.
@@ -18612,6 +18638,7 @@ async function buildState(userId, requestedChatId) {
     codexRefreshPending: [],
     codexFileTokens: {},
     codexTokensApproximate: true,
+    codexTokensError: null,
     codexRevision: 0,
     lessons,
     lumiCacheAvailable: lumiCache
@@ -18708,7 +18735,12 @@ async function buildState(userId, requestedChatId) {
   const codexCursor = codexStatus.exists ? await loadCursor(chat.id, userId).catch(() => null) : null;
   const codexRootOrigin = codexCursor?.rootOrigin ?? null;
   const codexRootOriginName = codexRootOrigin ? (await spindle.chats.get(codexRootOrigin, userId).catch(() => null))?.name?.trim() || codexRootOrigin.slice(0, 8) : null;
-  const codexCounts = await getCodexTokenCounts(chat.id, userId, codexProfile).catch(() => ({ files: {}, constant: 0, approximate: true }));
+  let codexTokensError = null;
+  const codexCounts = await getCodexTokenCounts(chat.id, userId, codexProfile).catch((err) => {
+    codexTokensError = describeError(err);
+    warn(`codex token count failed for ${chat.id}: ${codexTokensError}`);
+    return { files: {}, constant: 0, approximate: true };
+  });
   const codexFileTokens = codexCounts.files;
   const codexInjectedTokens = settings.enabled && codexProfile.codexEnabled ? codexCounts.constant : 0;
   const rootEntries = entries.filter((e) => e.meta.isRoot);
@@ -18751,6 +18783,7 @@ async function buildState(userId, requestedChatId) {
     codexRefreshPending: codexPanel.refreshPending,
     codexFileTokens,
     codexTokensApproximate: codexCounts.approximate,
+    codexTokensError,
     codexRevision: getCodexRevision(chat.id)
   };
 }
@@ -19010,9 +19043,16 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
   let settings = await loadSettings(userId).catch(() => null);
   if (!settings?.enabled)
     return;
+  try {
+    if (await releaseContextRelief(userId, contextStats?.maxContext))
+      settings = await loadSettings(userId);
+  } catch (err) {
+    warn(`context relief reset failed: ${describeError(err)}`);
+    notify(userId, "error", t("backend.contextRelief.failed", { error: shortErrorText(err) }));
+  }
   if (contextIsFull(contextStats, p.usage?.prompt_tokens)) {
     try {
-      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text));
+      const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text), contextStats?.maxContext ?? null);
       if (relieved) {
         settings = relieved;
         await syncProfileSettings(userId);

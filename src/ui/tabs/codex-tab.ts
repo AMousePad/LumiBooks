@@ -899,7 +899,10 @@ function renderCodexTile(
   l.textContent = def.label;
   const s = document.createElement("div");
   s.className = "lmb-tile-sub";
-  s.textContent = tr("ui.tabs.codexTab.renderCodexTile.tokens", { choice: (state.codexTokensApproximate) ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  s.textContent = state.codexTokensError
+    ? tr("ui.tabs.codexTab.renderCodexTile.tokensUnavailable")
+    : tr("ui.tabs.codexTab.renderCodexTile.tokens", { choice: (state.codexTokensApproximate) ? "yes" : "no", formatTokens: formatTokens(tokens) });
+  if (state.codexTokensError) s.title = tr("ui.tabs.codexTab.renderCodexTile.tokensFailed", { error: state.codexTokensError });
   const stateLine = document.createElement("div");
   stateLine.className = "lmb-tile-state";
   stateLine.textContent = `${TILE_STATE_LABEL[st]}${stale ? tr("ui.tabs.codexTab.renderCodexTile.stale") : ""}${needsCatchup ? tr("ui.tabs.codexTab.renderCodexTile.needsCatchUp") : ""}`;

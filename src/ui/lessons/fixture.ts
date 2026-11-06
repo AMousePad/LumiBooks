@@ -419,6 +419,7 @@ export function buildFixture(variant: string): FrontendState {
     codexRootOrigin: null,
     codexRootOriginName: null,
     codexTokensApproximate: true,
+    codexTokensError: null,
     codexInjectedTokens: spec.codex ? 940 : 0,
     lumiCacheAvailable: false,
     codexFileStates: spec.codexFileStates ?? {},

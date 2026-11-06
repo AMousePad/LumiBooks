@@ -16,7 +16,6 @@ import { ensureCodexBookForChat, findCodexBookForChat, invalidateBookCache, list
 import { describeError, warn } from "../runtime";
 import { recordDiagnostic } from "../diagnostics";
 import { mergeLorebookEdits, type LorebookEditState } from "./lorebook-edits";
-import { countCodexText } from "./tokens";
 import { selectCodexCuts, type CutCandidate } from "./limits";
 import { alignCacheFileStates } from "./cache-states";
 import { bumpCacheEpoch } from "../hooks";
@@ -61,7 +60,7 @@ async function cutCandidates(
   for (const [index, rec] of desired.entries()) {
     if (rec.disabled || disabledFor(rec.file)) continue;
     const stat = stats[rec.record];
-    out.push({ id: rec.record, file: rec.file, index, tokens: (await countCodexText(rec.content, userId)).tokens,
+    out.push({ id: rec.record, file: rec.file, index, tokens: approximateTokensFromChars(rec.content.length),
       updates: stat?.updates ?? 0, born: stat?.born ?? 0 });
   }
   return out;
