@@ -13,6 +13,7 @@ declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { InterceptorResultDTO, LlmMessageDTO } from "lumiverse-spindle-types";
 import type { FrontendToBackend } from "../types";
+import { mergeProfilePatch } from "../profile-patch";
 import { CACHE_BREAKING_ACTIONS, cacheFriendlyFileLocked, CODEX_ENTRY_EXTENSION_KEY, EXTENSION_KEY, enterCacheFriendly, leaveCacheFriendly, makeDefaultProfile, normalizeProfile, normalizeCustomPreset } from "../shared";
 import {
   debug,
@@ -143,7 +144,13 @@ const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingPushChatIds = new Map<string, string | null>();
 const pendingPushResolvers = new Map<string, Array<() => void>>();
 
+/** Last profile save applied per UI session, echoed in state so each UI can drop its optimistic copy. */
+const profileSaveAcks = new Map<string, Map<string, number>>();
+const BOOT_ID = crypto.randomUUID();
+
 async function doPushState(userId: string, chatId?: string | null): Promise<void> {
+  // Read before the state is built, so the settings in it are at least as new as the save it confirms.
+  const saveAcks = { boot: BOOT_ID, sessions: Object.fromEntries(profileSaveAcks.get(userId) ?? []) };
   try {
     if (chatId) {
       const active = await spindle.chats.getActive(userId).catch(() => null);
@@ -154,7 +161,7 @@ async function doPushState(userId: string, chatId?: string | null): Promise<void
       const active = await spindle.chats.getActive(userId).catch(() => null);
       if (active && active.id !== chatId) return;
     }
-    send({ type: "state", state }, userId);
+    send({ type: "state", state: { ...state, profileSaveAcks: saveAcks } }, userId);
     if (state.activeChatId) {
       const status = getSummaryTransfer(userId, state.activeChatId);
       if (status) send({ type: "summary_transfer_status", status }, userId);
@@ -716,29 +723,31 @@ spindle.onFrontendMessage(async (raw, userId) => {
         let nextExtra: boolean | null = null;
         let activeBefore: string | null = null;
         let missing = false;
-        await mutateSettings(userId, (cur) => {
+        const save = msg.save;
+        const ack = () => {
+          if (!save) return;
+          const sessions = profileSaveAcks.get(userId) ?? new Map<string, number>();
+          sessions.set(save.session, Math.max(sessions.get(save.session) ?? 0, save.seq));
+          profileSaveAcks.set(userId, sessions);
+        };
+        try { await mutateSettings(userId, (cur) => {
           activeBefore = cur.activeProfileId;
           const existing = cur.profiles.find((p) => p.id === id);
           if (!existing) {
             missing = true;
             return cur;
           }
-          const merged = normalizeProfile({ ...existing, ...incoming, id,
-            promptRoles: Object.keys(incoming.promptRoles ?? {}).length
-              ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
-            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length
-              ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys,
-            // Fields save one key at a time, so a save must not overwrite keys from another save in flight.
-            codexTokenLimits: { ...existing.codexTokenLimits, ...incoming.codexTokenLimits },
-            higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...incoming.higherTiers?.[tier] }])) as typeof existing.higherTiers,
-          });
+          const merged = normalizeProfile({ ...mergeProfilePatch(existing, incoming), id });
           if (!merged) return cur;
           prevHide = existing.hideCoveredMessages;
           nextHide = merged.hideCoveredMessages;
           prevExtra = extraContextActive(existing);
           nextExtra = extraContextActive(merged);
           return { ...cur, profiles: cur.profiles.map((p) => (p.id === id ? merged : p)) };
-        });
+        }); } finally {
+          // Acknowledged even when dropped or failed, so the UI stops overlaying an edit the backend never kept.
+          ack();
+        }
         if (missing) {
           warn(`save_profile dropped: no profile with id "${id}"`);
           send({ type: "error", text: tr("backend.index.messages.profileNoLongerExists", { id: id }) }, userId);

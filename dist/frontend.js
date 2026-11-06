@@ -6076,6 +6076,845 @@ class LessonOutbox {
   }
 }
 
+// src/prompts/codex/directives.txt
+var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story record of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
+
+For normal updates, you see a WINDOW, not the whole story:
+- The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
+- Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
+- One exception: a record that breaks the schema rules is always yours to fix,
+  whether or not the visible turns mention it. Malformed is not the same as
+  unfamiliar.
+- A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
+- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
+
+For normal updates, work through three passes in your scratchpad (see the output protocol) or in your head before writing anything:
+1. UPDATE - walk the sections one by one (characters, locations, things, relations, timeline, threads, world, knowledge) and ask of each: what do the new turns add or change here? Patch every record they outdate and add everything new and durable. Be exhaustive. A concept the story established that never lands in the codex is a permanent loss.
+2. SWEEP - re-read every record the new turns touch on and verify nothing stale survived. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it. Absence from the visible turns is NOT staleness.
+3. COMPRESS - tighten the wording of everything you are about to write. Terse phrases beat sentences, no filler words. Compression trims wording, never content: dropping a durable fact to save tokens is failure, and so is padding a record with prose.
+
+Completeness bar (the ledger standard):
+- Every plot-relevant character, location, and thing has a sheet, and each sheet carries its durable facts in detail, not a summary line. A name alone is not enough: a person or place the story merely mentions in passing does not get a sheet.
+- Every standing connection that matters to the plot is encoded.
+- Every major event lands on the timeline under the story's own dating.
+- Every unresolved storyline and every planted detail that is still live is tracked in threads.
+- Every rule of the world and every who-knows-what gap that shapes the plot is recorded.
+- When in doubt whether something is durable enough to record: leave it out. The codex holds the small set of things the story cannot be understood without, not everything it has mentioned.
+
+Snapshot rules:
+- The codex describes the present. When something previously defined is seen to change in the given snippet, REPLACE the old text entirely. Be aware that there may be information in the codex describing facts that are not seen or talked about in the given snippet. You may leave those intact as they are likely a past event that did not change.
+- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.
+- Story history is not edit residue. Past events belong on the timeline; secrets may concern past events.
+- Record only what is durable. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.
+- Follow each schema's ownership rules. Repeat only the identifying context needed to express a relationship or knowledge gap.
+- Omit empty optional fields entirely if you are not adding to them.
+`;
+
+// src/prompts/codex/schema/entities-table.txt
+var entities_table_default = `{{ENTITY_FILES}}
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
+and only its stable, medium-to-long-lived facts - never the state of the current
+scene. Never put relationship info on a sheet, that lives in relations.json. An
+entity carrying "locked": true is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.`;
+
+// src/prompts/codex/schema/entities-inline.txt
+var entities_inline_default = `{{ENTITY_FILES}}
+{ "entities": [ { "id": "char:elias", "name": "Elias",
+  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
+  "traits"?: [..], "goals"?: [..], "significance"?: "",
+  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
+  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
+Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
+fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
+facts, never the state of the current scene. An entity carrying "locked": true
+is user-owned: never set or drop it.
+The sheet is where the substance goes. Fill the fields the story has actually
+established, in specific detail: what this entity is, looks like, wants, and why
+it matters. Write "Unknown" only when the story genuinely has not said. A sheet
+that misses a story-relevant attribute has lost it. Detail belongs in these
+fields, never in the keywords list.
+Relationships live in each entity's "ties"
+list as short present-tense notes - to other characters, to things, and to
+places alike. Do NOT write relations.json, it is disabled.
+Ties coverage: include established, durable, plot-relevant connections to side
+characters, places, and things as well as the lead. No minimum per entity. Phrase
+ties as standing arrangements that survive scene changes ("owes her a life
+debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
+outdated: a stale tie is an error, never leave one standing.
+`;
+
+// src/prompts/codex/schema/relations.txt
+var relations_default = `relations.json
+{ "relations": [
+  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
+    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
+  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
+    "state": "hiding in the attic since the murder" },
+  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
+    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
+Rows connect ANY entities, not just characters: character-character (bond,
+rival, kin), character-thing (owns, seeks, guards), character-location (at,
+rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
+tempted to mention another entity, that connection belongs here instead.
+Prefer ONE group row whenever a fact is genuinely shared by several entities
+(a faction, a pact, a household): it replaces a pile of
+redundant pairs and keeps future edits to one row. Use a pair only when the
+relationship is purely binary or directional a->b (two pair rows when the two
+sides differ). Never store how one member individually feels about another
+inside a group row - that stance is its own pair.
+
+Relations coverage (mandatory):
+- Include established, durable, plot-relevant connections between side
+  characters, places, and things as well as the lead. No minimum per entity.
+- Write "state" to survive the story moving on: name the standing arrangement
+  ("owes her a life debt", "banned from the guildhall"), not the scene of the
+  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
+  "history" using the story's own dates so the row stays meaningful as it ages.
+- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
+  the new turns and rewrite any state the story has outdated (demote the old
+  state to "history" only when the shift is pivotal). A row that no longer holds
+  is stale data: correct it, never leave it standing.
+`;
+
+// src/prompts/codex/schema/timeline.txt
+var timeline_default = `timeline.json
+{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
+  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
+  "causes"?: "she flees the city" } ] }
+Major events only, oldest first. "when" uses the story's own reckoning. The
+timeline is APPEND-ONLY: record new events as set rows without a rid, and
+never rewrite or drop existing events - history does not change behind the
+story. Editing an existing row is reserved for an outright factual error or
+a reference the validator flags; removals happen only in reconcile or tidy
+passes.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone or anywhere without one, write plain text instead: "the city guard",
+"a roadside inn", not "char:the guard".`;
+
+// src/prompts/codex/schema/threads.txt
+var threads_default = `threads.json
+{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
+  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
+  "seeds": ["unexplained scar on the ferryman's hand"] }
+Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
+thread you mark resolved leaves your view from the next pass on - the app
+archives it for the user - so never re-add a storyline you already resolved.`;
+
+// src/prompts/codex/schema/world.txt
+var world_default = `world.json
+{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
+  "keywords": ["ritual", "memories", "blood magic"] } ] }
+Rules and lore true of the WORLD itself, not any single entity's state. A topic
+needs at least one fact - drop the topic when its last fact goes.`;
+
+// src/prompts/codex/schema/knowledge.txt
+var knowledge_default = `knowledge.json
+{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
+  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
+  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
+  "note"?: "",
+  "keywords": ["murder", "dagger", "duke"] } ] }
+ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
+item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
+belong in world or timeline, never here.
+"fact" is the TRUE THING, stated plainly and positively. Never write someone's
+ignorance as the fact - the ignorance is what hiddenFrom is for. So:
+  WRONG: fact "Lilian doesn't know Haru was in the stone room", knownBy Lilian
+  RIGHT: fact "Haru was held in the stone room", hiddenFrom Lilian
+An item with nobody in knownBy is fine: a secret only the reader has seen is
+still a secret.
+knownBy and hiddenFrom list WHO, nothing else. Just the person or group:
+"char:mara", "the household staff". Never a sentence about what they know
+("lilian does NOT know") - hiddenFrom already means they do not know. A name
+belongs in exactly one of the two lists, never both.
+A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
+For anyone without one - a group, a crowd, an unnamed bystander - write plain
+text instead: "the household staff", "everyone at court", not "char:the staff".
+Inventing a ref for something that has no sheet is the one error to avoid here.`;
+
+// src/prompts/codex/schema/keywords.txt
+var keywords_default = `Retrieval keywords (hard limit 12):
+Every entity sheet, world entry, and knowledge item carries a "keywords" list of
+usually 4-12 supported tags; use fewer when appropriate, never filler to meet a minimum.
+Keywords help retrieve each record's lorebook entry. Anything past 12 is DISCARDED
+by the app, so a bloated list does not help retrieval, it just wastes your output.
+Rules:
+- ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
+  sentence fragments, no "the ..." constructions.
+- Single words the story will plausibly say: "locket", "duke", "tower", "murder".
+  Use two words only when one would be ambiguous ("north tower" when several
+  towers exist).
+- Concrete nouns tied to THIS record: places, objects, epithets, events.
+- Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
+  A record that matches everything is a record that means nothing.
+- The record's own name, aliases, and topic match automatically - never repeat
+  them as keywords. Knowledge participants do NOT automatically activate secrets.
+  Give each secret specific keywords about its fact, not everyone who knows it.
+- Never list other characters, other locations, or the whole cast: those records
+  carry their own keywords and will retrieve themselves.
+- No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
+- Keep keywords current: when a record's contents change, re-check its keywords.
+
+Keywords are for FINDING the record, never for storing what it says. Every fact
+belongs in the record's own fields, written out in full.
+timeline.json and threads.json need no keywords. Their retrieval mode is user-controlled.
+`;
+
+// src/prompts/codex/protocol/patch-rules.txt
+var patch_rules_default = `- "set": only new or changed rows, each COMPLETE on its own. To update an existing row, keep its exact entity "id" or "rid". Omit "rid" only for a new record that is not already represented in the file. Every untouched row survives without being resent.
+- Compare against the current codex before writing. Repeating or paraphrasing an already-established fact is not a change. Changes in truth, certainty, or who knows it update the existing row, not a new copy.
+- "drop": keys (ids or rids) of rows to delete.
+- "seeds": threads.json only, replaces the whole seeds list when provided.
+- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.
+`;
+
+// src/prompts/codex/protocol/tools.txt
+var tools_default = `Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit one file.
+{{PATCH_RULES}}
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when the codex is current.
+
+You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, skip all of them and call codex_done without any codex_write calls. codex_done is refused while any file is unaccounted for.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
+
+Emit all codex_write and codex_skip calls plus codex_done together in a single response - they run as one batch.
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
+`;
+
+// src/prompts/codex/protocol/tools-sequential.txt
+var tools_sequential_default = `Tools:
+- codex_write(file, set?, drop?, seeds?, content?): edit ONE file.
+{{PATCH_RULES}}
+- codex_skip(files, reason): declare that the listed files need no change from this material.
+- codex_done(note): call when every file has been written or skipped.
+
+You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
+
+Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one response. If all files are unchanged, skip all of them and call codex_done without any codex_write calls.
+
+Take changed files one at a time. Write a single changed file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
+
+Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
+
+Example response (shape only):
+  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
+
+Example of finishing up, once everything else is already written:
+  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
+  codex_done(note: "recorded Mara's flight and the locket's origin")
+
+Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
+A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
+`;
+
+// src/prompts/codex/protocol/json.txt
+var json_default = `Output protocol (JSON only, no tools):
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": ["world"], "done": true, "note": "one short line on what changed" }
+"writes" holds one item per file you change. Each item may carry:
+{{PATCH_RULES}}
+- "skip": the files that need no change from this material.
+- Set "done": true when the codex is current.
+
+You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true. "done" is refused while any file is unaccounted for.
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
+`;
+
+// src/prompts/codex/protocol/json-sequential.txt
+var json_sequential_default = `Output protocol (JSON only, no tools):
+
+You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
+
+Take changed files one at a time. Put a SINGLE changed file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
+
+Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one reply. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true.
+
+Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
+
+After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
+{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": [], "done": false }
+"writes" holds the file you are changing this reply. Each item may carry:
+{{PATCH_RULES}}
+- "skip": the files that need no change from this material.
+- "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
+
+Example reply (shape only):
+<think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
+{ "writes": [
+  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
+], "skip": [], "done": false }
+
+Example of finishing up, once everything else is already written:
+{ "writes": [], "skip": ["world", "knowledge"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
+
+No prose outside the <think> block and the JSON object.
+A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
+`;
+
+// src/prompts/codex/passes/update.txt
+var update_default = `<<TASK>>
+The story material ends above. Update the codex now: walk the three passes in your scratchpad or head (UPDATE every outdated or missing record section by section, SWEEP what the new turns contradict, COMPRESS your wording), then emit the complete batch of writes. Be comprehensive. This ledger is the story's only durable memory, and anything you leave unrecorded is lost.`;
+
+// src/prompts/codex/passes/verify.txt
+var verify_default = `Verification pass: correct stale claims the new turns contradict and compress any row that carries bloat, within each file's edit restrictions.
+`;
+
+// src/prompts/codex/passes/tidy.txt
+var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files into fewer, cohesive records: consolidate related entries, strip repetition, and remove details that no longer carry plot weight. Reassess relevance against the current Codex rather than preserving every old row. Keep facts and distinctions that future scenes need: causal turning points, active goals, unresolved consequences, meaningful relationship changes, and consequential differences in who knows what. Do not invent events, dates, resolutions, or knowledge transfers to justify compaction. Keep every schema exactly as specified.
+
+A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).
+
+Merging or removing rows is allowed in this pass, including timeline rows. Preserve their plot-relevant information in the consolidated records; do not just shorten every small row and leave the fragmented structure intact. Respect locked content and never rewrite files outside the target list. A category can become empty if none of its remaining records is useful.
+
+While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.
+`;
+
+// src/prompts/codex/passes/refresh.txt
+var refresh_default = 'REFRESH PASS: the user re-enabled {{TARGET_FILES}} after {{IT_THEY}} missed updates, so {{LAG_PHRASE}} the story. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
+
+// src/prompts/codex/passes/rebuild.txt
+var rebuild_default = 'REBUILD PASS: the user asked to rebuild {{TARGET_FILES}} from scratch. The target files appear empty below, and anything still shown in them is user-locked: reproduce it untouched. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the whole story, keeping every schema exactly as specified. Keep entity ids stable, other files may reference them. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
+
+// src/prompts/codex/passes/reconcile.txt
+var reconcile_default = "RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives {{STORY_SHAPE}}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.";
+
+// src/prompts/codex/passes/catchup-fast.txt
+var catchup_fast_default = "CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering {{CHUNK_LABEL}}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
+
+// src/prompts/codex/passes/catchup-ultra.txt
+var catchup_ultra_default = "CATCH-UP: this single pass covers {{CHUNK_LABEL}}. {{STORY_SHAPE}} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
+
+// src/prompts/codex/notes/partial-story.txt
+var partial_story_default = "PARTIAL VIEW: the story turns below are only the newest slice of a longer story. Everything earlier was already encoded by previous passes, so records you do not recognize come from that unseen past and are not wrong. Correct only what these turns actually contradict, never what they simply do not mention.";
+
+// src/prompts/codex/notes/reconcile.txt
+var reconcile_default2 = "RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.";
+
+// src/prompts/codex/notes/migrate-table.txt
+var migrate_table_default = 'MIGRATE: the relations table was just enabled. Lift every "ties" note off the entity sheets into relations.json rows, then remove all "ties" fields.';
+
+// src/prompts/codex/notes/migrate-inline.txt
+var migrate_inline_default = 'MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.';
+
+// src/prompts/codex/notes/repair.txt
+var repair_default = `REPAIR: these files were invalid on disk and are shown empty: {{FILES}}. Reconstruct only facts supported by the supplied story.
+`;
+
+// src/prompts/codex/notes/locked.txt
+var locked_default = "LOCKED: the user owns these entities, do NOT set or drop them: {{IDS}}.";
+
+// src/prompts/codex/notes/locked-fields.txt
+var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.
+`;
+
+// src/prompts/codex/notes/codex-full.txt
+var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 15-30%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
+
+// src/prompts/codex/registry.ts
+var CODEX_DIRECTIVES_DEFAULT = directives_default;
+var SCHEMA_HOWTO_TAIL = t("prompts.codex.registry.schemaHowtoTail");
+var CODEX_TEMPLATES = [
+  {
+    key: "schema_entities_table",
+    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOn"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesCharactersJsonLocationsJsonAndThings", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRunE") }],
+    defaultText: entities_table_default
+  },
+  {
+    key: "schema_entities_inline",
+    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOff"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesTheEntityFilesWhenTheRelations", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRun") }],
+    defaultText: entities_inline_default
+  },
+  {
+    key: "schema_relations",
+    label: t("prompts.codex.registry.codexTemplates.relationsTable"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesRelationsJsonAndTheCoverageRules", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [],
+    defaultText: relations_default
+  },
+  {
+    key: "schema_timeline",
+    label: t("prompts.codex.registry.codexTemplates.timeline"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesTimelineJsonIncludingTheAppendOnly", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [],
+    defaultText: timeline_default
+  },
+  {
+    key: "schema_threads",
+    label: t("prompts.codex.registry.codexTemplates.threads"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesThreadsJsonResolvedThreadsAreArchived", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [],
+    defaultText: threads_default
+  },
+  {
+    key: "schema_world",
+    label: t("prompts.codex.registry.codexTemplates.worldRules"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesWorldJson", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [],
+    defaultText: world_default
+  },
+  {
+    key: "schema_knowledge",
+    label: t("prompts.codex.registry.codexTemplates.secrets"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.describesKnowledgeJsonTheValidatorRejectsItems", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
+    vars: [],
+    defaultText: knowledge_default
+  },
+  {
+    key: "schema_keywords",
+    label: t("prompts.codex.registry.codexTemplates.retrievalKeywords"),
+    group: "File schemas",
+    howTo: t("prompts.codex.registry.codexTemplates.theRulesForTheKeywordsListsOn"),
+    vars: [],
+    defaultText: keywords_default
+  },
+  {
+    key: "protocol_patch_rules",
+    label: t("prompts.codex.registry.codexTemplates.patchRulesSetDropContent"),
+    group: "Write protocol",
+    howTo: t("prompts.codex.registry.codexTemplates.theSharedExplanationOfSetDropSeeds"),
+    vars: [],
+    defaultText: patch_rules_default
+  },
+  {
+    key: "protocol_tools",
+    label: t("prompts.codex.registry.codexTemplates.protocolToolCalls"),
+    group: "Write protocol",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
+    defaultText: tools_default
+  },
+  {
+    key: "protocol_tools_sequential",
+    label: t("prompts.codex.registry.codexTemplates.protocolToolCallsOneFileAtA"),
+    group: "Write protocol",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls2"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
+    defaultText: tools_sequential_default
+  },
+  {
+    key: "protocol_json",
+    label: t("prompts.codex.registry.codexTemplates.protocolJsonMode"),
+    group: "Write protocol",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
+    defaultText: json_default
+  },
+  {
+    key: "protocol_json_sequential",
+    label: t("prompts.codex.registry.codexTemplates.protocolJsonModeOneFileAtA"),
+    group: "Write protocol",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson2"),
+    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
+    defaultText: json_sequential_default
+  },
+  {
+    key: "pass_update",
+    label: t("prompts.codex.registry.codexTemplates.taskClosingBlock"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.theClosingBlockOfEveryNormalUpdate"),
+    vars: [],
+    defaultText: update_default
+  },
+  {
+    key: "pass_verify",
+    label: t("prompts.codex.registry.codexTemplates.verificationNudge"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.sentAsAnExtraRoundAfterA"),
+    vars: [],
+    defaultText: verify_default
+  },
+  {
+    key: "pass_tidy",
+    label: t("prompts.codex.registry.codexTemplates.tidyPass"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.theInstructionBlockForTidyUpThe"),
+    vars: [],
+    defaultText: tidy_default
+  },
+  {
+    key: "pass_refresh",
+    label: t("prompts.codex.registry.codexTemplates.refreshPass"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenReEnabledRecordsCatchUp"),
+    vars: [
+      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRefreshed") },
+      { token: "{{IT_THEY}}", meaning: t("prompts.codex.registry.codexTemplates.itOrTheyToMatchTheTarget") },
+      { token: "{{LAG_PHRASE}}", meaning: t("prompts.codex.registry.codexTemplates.itLagsOrTheyLagToMatch") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArrangedE") }
+    ],
+    defaultText: refresh_default
+  },
+  {
+    key: "pass_rebuild",
+    label: t("prompts.codex.registry.codexTemplates.rebuildPass"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenACategorySRebuildButton"),
+    vars: [
+      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRebuilt") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
+    ],
+    defaultText: rebuild_default
+  },
+  {
+    key: "pass_reconcile",
+    label: t("prompts.codex.registry.codexTemplates.reconcileSweep"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.sentWhenMessagesWereDeletedBehindThe"),
+    vars: [{ token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }],
+    defaultText: reconcile_default
+  },
+  {
+    key: "pass_catchup_fast",
+    label: t("prompts.codex.registry.codexTemplates.fastCatchUp"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForEachFastCatchUp"),
+    vars: [{ token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeThisBatchCovers") }],
+    defaultText: catchup_fast_default
+  },
+  {
+    key: "pass_catchup_ultra",
+    label: t("prompts.codex.registry.codexTemplates.ultraCatchUp"),
+    group: "Pass instructions",
+    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForTheSinglePassUltra"),
+    vars: [
+      { token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeCovered") },
+      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
+    ],
+    defaultText: catchup_ultra_default
+  },
+  {
+    key: "note_partial_story",
+    label: t("prompts.codex.registry.codexTemplates.partialViewGuard"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedToEveryNormalUpdateTheAgent"),
+    vars: [],
+    defaultText: partial_story_default
+  },
+  {
+    key: "note_reconcile",
+    label: t("prompts.codex.registry.codexTemplates.reconcileWarning"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEditsOrDeletionsWereDetected"),
+    vars: [],
+    defaultText: reconcile_default2
+  },
+  {
+    key: "note_migrate_table",
+    label: t("prompts.codex.registry.codexTemplates.migrationToRelationsTable"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe"),
+    vars: [],
+    defaultText: migrate_table_default
+  },
+  {
+    key: "note_migrate_inline",
+    label: t("prompts.codex.registry.codexTemplates.migrationToInlineTies"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe2"),
+    vars: [],
+    defaultText: migrate_inline_default
+  },
+  {
+    key: "note_repair",
+    label: t("prompts.codex.registry.codexTemplates.repairWarning"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenFilesOnDiskWereUnreadable"),
+    vars: [{ token: "{{FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theUnreadableFiles") }],
+    defaultText: repair_default
+  },
+  {
+    key: "note_locked",
+    label: t("prompts.codex.registry.codexTemplates.lockedEntities"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEntitiesAreLockedTheApp"),
+    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theLockedEntityIds") }],
+    defaultText: locked_default
+  },
+  {
+    key: "note_locked_fields",
+    label: t("prompts.codex.registry.codexTemplates.lockedFields"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
+    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
+    defaultText: locked_fields_default
+  },
+  {
+    key: "note_codex_full",
+    label: t("prompts.codex.registry.codexTemplates.codexFillingUp"),
+    group: "Run notes",
+    howTo: t("prompts.codex.registry.codexTemplates.appendedToUpdatesWhenACategoryIsOver"),
+    vars: [
+      { token: "{{CATEGORY}}", meaning: t("prompts.codex.registry.codexTemplates.theCategoryThatIsFillingUp") },
+      { token: "{{PERCENT}}", meaning: t("prompts.codex.registry.codexTemplates.howFullThatCategoryIs") }
+    ],
+    defaultText: codex_full_default
+  }
+];
+var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
+var BY_KEY = new Map(CODEX_TEMPLATES.map((t) => [t.key, t]));
+
+// src/shared.ts
+var CODEX_FILE_KEYS = [
+  "characters",
+  "locations",
+  "things",
+  "relations",
+  "timeline",
+  "threads",
+  "world",
+  "knowledge"
+];
+var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
+var STORAGE_VERSION = 7;
+var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
+var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
+var TIER_NAMES = [t("shared.tierNames.chapter"), t("shared.tierNames.arc"), t("shared.tierNames.volume"), t("shared.tierNames.series"), t("shared.tierNames.saga"), t("shared.tierNames.library"), t("shared.tierNames.universe")];
+var HIGHER_TIERS = [3, 4, 5, 6, 7];
+function defaultHigherTiers() {
+  return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
+    enabled: false,
+    unit: "entries",
+    batch: 6,
+    lag: 2,
+    targetUnit: "percent",
+    targetPercent: 25,
+    targetTokens: 3000
+  }]));
+}
+var EXTRA_PRESET_CATEGORIES = ["series", "saga", "library", "universe"];
+var PRESET_CATEGORIES = [...TIER_KINDS, "codex"];
+function promptRoleFor(profile, category) {
+  return profile.promptRoles[category] ?? "system";
+}
+var DEFAULT_SAMPLERS = {
+  temperature: null,
+  top_p: null,
+  top_k: null,
+  max_tokens: null,
+  max_input_tokens: null,
+  frequency_penalty: null,
+  presence_penalty: null
+};
+var SAMPLER_DEFAULTS = {
+  temperature: 0.4,
+  top_p: 1,
+  top_k: 0,
+  max_tokens: 32000,
+  max_input_tokens: 128000,
+  frequency_penalty: 0,
+  presence_penalty: 0
+};
+var CODEX_SAMPLER_DEFAULTS = {
+  temperature: 0.4,
+  top_p: 1,
+  top_k: 0,
+  max_tokens: 65536,
+  max_input_tokens: 500000,
+  frequency_penalty: 0,
+  presence_penalty: 0
+};
+function makeDefaultProfile(id, name) {
+  return {
+    id,
+    name,
+    lagUnit: "messages",
+    lagValue: 40,
+    windowUnit: "messages",
+    windowValue: 20,
+    chapterTargetUnit: "percent",
+    chapterTargetPercent: 15,
+    chapterTargetTokens: 800,
+    arcTargetUnit: "percent",
+    arcTargetPercent: 20,
+    arcTargetTokens: 1500,
+    volumeTargetUnit: "percent",
+    volumeTargetPercent: 25,
+    volumeTargetTokens: 3000,
+    arcTrigger: "chapters",
+    arcAfterChapters: 6,
+    arcAfterTokens: 8000,
+    arcLagChapters: 7,
+    arcLagTokens: 2000,
+    chapterPresetKey: "summary",
+    arcPresetKey: "arc_default",
+    volumePresetKey: "volume_default",
+    higherTierPresetKeys: {},
+    promptRoles: {},
+    previousMemoriesCount: 7,
+    regexOutgoingScriptIds: [],
+    regexIncomingScriptIds: [],
+    connectionId: null,
+    samplers: { ...DEFAULT_SAMPLERS },
+    autoCreate: true,
+    autoCreateChapter: true,
+    autoCreateArc: true,
+    higherTiers: defaultHigherTiers(),
+    hideCoveredMessages: true,
+    showMemoryPreviews: false,
+    retryCount: 3,
+    shortCommentRulesOverride: null,
+    memoriaPersonaOverride: null,
+    ttftTimeoutSecs: 60,
+    codexEnabled: true,
+    codexManualOnly: false,
+    codexLagUnit: "messages",
+    codexLagValue: 6,
+    codexWindowUnit: "messages",
+    codexWindowValue: 20,
+    codexTokenBreakpoint: 1e5,
+    codexLoreLimitUnit: "percent",
+    codexLoreLimitPercent: 25,
+    codexLoreLimitTokens: 25000,
+    codexStorySoFarCount: 5,
+    codexRelationsTable: true,
+    codexActivationMode: "keywords",
+    codexInjectionPosition: "lorebook",
+    codexInjectionDepth: 4,
+    codexThorough: true,
+    codexConnectionId: null,
+    codexExtraContext: true,
+    codexSamplers: { ...DEFAULT_SAMPLERS },
+    codexUseTools: false,
+    codexWriteMode: "batch",
+    codexPresetKey: "codex_default",
+    codexTokenLimits: defaultCodexTokenLimits(),
+    contextReliefApplied: false,
+    contextReliefMaxContext: null
+  };
+}
+var DEFAULT_SETTINGS = {
+  version: STORAGE_VERSION,
+  enabled: true,
+  profiles: [makeDefaultProfile("default", t("shared.defaultSettings.default"))],
+  activeProfileId: "default",
+  customPresets: [],
+  debugLog: false,
+  localLogsDisabled: false,
+  summaryActivationMode: "always",
+  followChatNames: true,
+  showAutomationToasts: true,
+  suppressToolCallingPrompt: false,
+  contextRelief: true,
+  cacheFriendly: false,
+  cacheFriendlySummaryMode: null
+};
+var CACHE_BREAKING_ACTIONS = new Set([
+  "create_chapter",
+  "create_chapter_range",
+  "create_all_chapters",
+  "create_arc",
+  "create_arc_from",
+  "create_all_arcs",
+  "create_higher_from",
+  "create_higher_auto",
+  "create_volume_from",
+  "retry_last_failure",
+  "delete_entry",
+  "release_entry",
+  "regenerate_entry",
+  "update_entry",
+  "rebase_root",
+  "rebuild_root",
+  "detach_root",
+  "codex_update_now",
+  "codex_reset",
+  "codex_rebuild",
+  "codex_tidy",
+  "codex_repair_references",
+  "codex_rebuild_files",
+  "codex_refresh",
+  "codex_restore",
+  "codex_undo",
+  "codex_adopt",
+  "summary_import"
+]);
+var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
+var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
+function defaultCodexTokenLimits() {
+  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
+}
+var LESSON_CHAT_PREFIX = "lesson:";
+function emptyLessonCourse() {
+  return {
+    status: "todo",
+    section: 0,
+    step: 0,
+    answers: {},
+    attempts: 0,
+    bestWrong: null,
+    lastWrong: null,
+    lastTotal: null,
+    grade: null,
+    startedAt: null,
+    completedAt: null,
+    signedName: null
+  };
+}
+function unlockedLessons() {
+  const done = () => ({ ...emptyLessonCourse(), status: "done" });
+  return { version: 1, freshInstall: false, booksSealSkipped: false, codexSealSkipped: false, books: done(), codex: done() };
+}
+function codexLessonGated(lessons) {
+  return lessons.codex.status !== "done" && !lessons.codexSealSkipped;
+}
+function lessonGradeForWrong(wrong) {
+  if (wrong <= 1)
+    return "gilded";
+  if (wrong <= 3)
+    return "silver";
+  if (wrong <= 6)
+    return "bronze";
+  return "apprentice";
+}
+var LESSON_GRADE_LABEL = {
+  gilded: t("shared.lessonGradeLabel.gilded"),
+  silver: t("shared.lessonGradeLabel.silver"),
+  bronze: t("shared.lessonGradeLabel.bronze"),
+  apprentice: t("shared.lessonGradeLabel.apprentice")
+};
+
+// src/profile-patch.ts
+function mergeProfilePatch(existing, patch) {
+  return {
+    ...existing,
+    ...patch,
+    promptRoles: Object.keys(patch.promptRoles ?? {}).length ? { ...existing.promptRoles, ...patch.promptRoles } : patch.promptRoles ?? existing.promptRoles,
+    higherTierPresetKeys: Object.keys(patch.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...patch.higherTierPresetKeys } : patch.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+    codexTokenLimits: { ...existing.codexTokenLimits, ...patch.codexTokenLimits },
+    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...patch.higherTiers?.[tier] }]))
+  };
+}
+
 // src/ui/lessons/styles-lessons.ts
 var LESSON_STYLES = `
 /* ------------------------------------------------------------ rune seal */
@@ -9383,833 +10222,6 @@ function showToast(tone, text) {
     setTimeout(() => el.remove(), 200);
   }, duration);
 }
-
-// src/prompts/codex/directives.txt
-var directives_default = `You are Memoria's archivist. You maintain the Knowledge Codex: a set of JSON files that together form the complete story record of a roleplay. The codex is the one comprehensive ledger of every durable element the story has established: every character, place, and object of consequence, every standing relationship, every dated event, every open storyline, every world rule, every secret and asymmetry of knowledge. If a durable story fact is not in the codex, it is lost. You will receive the current codex files and new story material. Update the codex so that nothing the story has established is missing, outdated, or bloated.
-
-For normal updates, you see a WINDOW, not the whole story:
-- The turns you receive are only the newest slice of a much longer story. Everything before them was already read and encoded by earlier passes.
-- Records you do not recognize come from that unseen past. They are not wrong. Never rewrite or drop a record because the visible turns do not mention it.
-- One exception: a record that breaks the schema rules is always yours to fix,
-  whether or not the visible turns mention it. Malformed is not the same as
-  unfamiliar.
-- A STORY SO FAR block, when provided, holds summaries of turns already recorded. Use it to ground your understanding of the new turns, never as new material to add.
-- Activated lore, when provided, is reference canon: use it for names, spellings, and established facts, but never copy it into the codex. The codex records only what the STORY establishes, changes, or contradicts.
-
-For normal updates, work through three passes in your scratchpad (see the output protocol) or in your head before writing anything:
-1. UPDATE - walk the sections one by one (characters, locations, things, relations, timeline, threads, world, knowledge) and ask of each: what do the new turns add or change here? Patch every record they outdate and add everything new and durable. Be exhaustive. A concept the story established that never lands in the codex is a permanent loss.
-2. SWEEP - re-read every record the new turns touch on and verify nothing stale survived. Stale information is forbidden: a claim the story has moved past must be corrected the moment you see it. Absence from the visible turns is NOT staleness.
-3. COMPRESS - tighten the wording of everything you are about to write. Terse phrases beat sentences, no filler words. Compression trims wording, never content: dropping a durable fact to save tokens is failure, and so is padding a record with prose.
-
-Completeness bar (the ledger standard):
-- Every plot-relevant character, location, and thing has a sheet, and each sheet carries its durable facts in detail, not a summary line. A name alone is not enough: a person or place the story merely mentions in passing does not get a sheet.
-- Every standing connection that matters to the plot is encoded.
-- Every major event lands on the timeline under the story's own dating.
-- Every unresolved storyline and every planted detail that is still live is tracked in threads.
-- Every rule of the world and every who-knows-what gap that shapes the plot is recorded.
-- When in doubt whether something is durable enough to record: leave it out. The codex holds the small set of things the story cannot be understood without, not everything it has mentioned.
-
-Snapshot rules:
-- The codex describes the present. When something previously defined is seen to change in the given snippet, REPLACE the old text entirely. Be aware that there may be information in the codex describing facts that are not seen or talked about in the given snippet. You may leave those intact as they are likely a past event that did not change.
-- Never leave edit residue: no "was X, now Y", no "formerly", no "updated:", no strikethrough hints, no references to previous versions of the codex.
-- Story history is not edit residue. Past events belong on the timeline; secrets may concern past events.
-- Record only what is durable. Skip anything that will change again within a scene or two: poses, moods, weather, transient scene staging, and verbatim dialogue unless a line is genuinely load-bearing.
-- Follow each schema's ownership rules. Repeat only the identifying context needed to express a relationship or knowledge gap.
-- Omit empty optional fields entirely if you are not adding to them.
-`;
-
-// src/prompts/codex/schema/entities-table.txt
-var entities_table_default = `{{ENTITY_FILES}}
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "", "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Entity sheets describe ONLY the entity itself,
-and only its stable, medium-to-long-lived facts - never the state of the current
-scene. Never put relationship info on a sheet, that lives in relations.json. An
-entity carrying "locked": true is user-owned: never set or drop it.
-The sheet is where the substance goes. Fill the fields the story has actually
-established, in specific detail: what this entity is, looks like, wants, and why
-it matters. Write "Unknown" only when the story genuinely has not said. A sheet
-that misses a story-relevant attribute has lost it. Detail belongs in these
-fields, never in the keywords list.`;
-
-// src/prompts/codex/schema/entities-inline.txt
-var entities_inline_default = `{{ENTITY_FILES}}
-{ "entities": [ { "id": "char:elias", "name": "Elias",
-  "aliases"?: [..], "kind"?: "", "role"?: "", "appearance"?: "", "description"?: "",
-  "traits"?: [..], "goals"?: [..], "significance"?: "",
-  "ties"?: ["loves Mara, hides it", "owns the silver locket", "hiding at Ashford Manor"], "notes"?: "",
-  "keywords": ["locket", "duke", "murder", "north tower"] } ] }
-Ids: char:/loc:/thing: + lowercase_snake_case, matching the file. Extra primitive
-fields (e.g. "age") are allowed. Sheets hold only stable, medium-to-long-lived
-facts, never the state of the current scene. An entity carrying "locked": true
-is user-owned: never set or drop it.
-The sheet is where the substance goes. Fill the fields the story has actually
-established, in specific detail: what this entity is, looks like, wants, and why
-it matters. Write "Unknown" only when the story genuinely has not said. A sheet
-that misses a story-relevant attribute has lost it. Detail belongs in these
-fields, never in the keywords list.
-Relationships live in each entity's "ties"
-list as short present-tense notes - to other characters, to things, and to
-places alike. Do NOT write relations.json, it is disabled.
-Ties coverage: include established, durable, plot-relevant connections to side
-characters, places, and things as well as the lead. No minimum per entity. Phrase
-ties as standing arrangements that survive scene changes ("owes her a life
-debt"), not moment-of-scene notes. Each pass, rewrite any tie the new turns have
-outdated: a stale tie is an error, never leave one standing.
-`;
-
-// src/prompts/codex/schema/relations.txt
-var relations_default = `relations.json
-{ "relations": [
-  { "rid": "r1", "type": "pair", "a": "char:elias", "b": "char:mara", "kind": "bond",
-    "state": "loves her, hides it", "history"?: ["day 12: she saw him kill"] },
-  { "rid": "r2", "type": "pair", "a": "char:mara", "b": "loc:ashford_manor", "kind": "at",
-    "state": "hiding in the attic since the murder" },
-  { "rid": "r3", "type": "group", "kind": "pact", "members": ["char:a","char:b","char:c"],
-    "state": "non-aggression, signed day 12", "roles"?: { "loc:manor": "where" } } ] }
-Rows connect ANY entities, not just characters: character-character (bond,
-rival, kin), character-thing (owns, seeks, guards), character-location (at,
-rules, banished_from), thing-location (hidden_at). Whenever an entity sheet is
-tempted to mention another entity, that connection belongs here instead.
-Prefer ONE group row whenever a fact is genuinely shared by several entities
-(a faction, a pact, a household): it replaces a pile of
-redundant pairs and keeps future edits to one row. Use a pair only when the
-relationship is purely binary or directional a->b (two pair rows when the two
-sides differ). Never store how one member individually feels about another
-inside a group row - that stance is its own pair.
-
-Relations coverage (mandatory):
-- Include established, durable, plot-relevant connections between side
-  characters, places, and things as well as the lead. No minimum per entity.
-- Write "state" to survive the story moving on: name the standing arrangement
-  ("owes her a life debt", "banned from the guildhall"), not the scene of the
-  moment ("currently arguing in the kitchen"). Anchor pivotal shifts in
-  "history" using the story's own dates so the row stays meaningful as it ages.
-- Keep every row CURRENT. Each pass, re-check the rows touching the entities in
-  the new turns and rewrite any state the story has outdated (demote the old
-  state to "history" only when the shift is pivotal). A row that no longer holds
-  is stale data: correct it, never leave it standing.
-`;
-
-// src/prompts/codex/schema/timeline.txt
-var timeline_default = `timeline.json
-{ "events": [ { "rid": "r1", "when": "day 12", "event": "Mara sees Elias kill the duke",
-  "participants"?: ["char:mara","char:elias"], "where"?: "loc:ashford_manor",
-  "causes"?: "she flees the city" } ] }
-Major events only, oldest first. "when" uses the story's own reckoning. The
-timeline is APPEND-ONLY: record new events as set rows without a rid, and
-never rewrite or drop existing events - history does not change behind the
-story. Editing an existing row is reserved for an outright factual error or
-a reference the validator flags; removals happen only in reconcile or tidy
-passes.
-A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
-For anyone or anywhere without one, write plain text instead: "the city guard",
-"a roadside inn", not "char:the guard".`;
-
-// src/prompts/codex/schema/threads.txt
-var threads_default = `threads.json
-{ "threads": [ { "rid": "r1", "name": "The stolen crown", "status": "open|stalled|resolved|abandoned",
-  "summary": "", "latest"?: "", "planted"?: ["the pawnbroker kept a receipt"] } ],
-  "seeds": ["unexplained scar on the ferryman's hand"] }
-Threads are storylines. planted/seeds are Chekhov setups awaiting payoff. A
-thread you mark resolved leaves your view from the next pass on - the app
-archives it for the user - so never re-add a storyline you already resolved.`;
-
-// src/prompts/codex/schema/world.txt
-var world_default = `world.json
-{ "entries": [ { "rid": "r1", "topic": "Magic", "facts": ["blood magic costs memories", ...],
-  "keywords": ["ritual", "memories", "blood magic"] } ] }
-Rules and lore true of the WORLD itself, not any single entity's state. A topic
-needs at least one fact - drop the topic when its last fact goes.`;
-
-// src/prompts/codex/schema/knowledge.txt
-var knowledge_default = `knowledge.json
-{ "items": [ { "rid": "r1", "fact": "Elias killed the duke",
-  "knownBy"?: ["char:mara"], "hiddenFrom"?: ["char:captain"],
-  "falseBeliefs"?: [{ "who": "char:captain", "believes": "bandits did it" }],
-  "note"?: "",
-  "keywords": ["murder", "dagger", "duke"] } ] }
-ONLY asymmetric knowledge: secrets, false beliefs, who-knows-what gaps. Every
-item needs knownBy, hiddenFrom, or falseBeliefs. Facts every character knows
-belong in world or timeline, never here.
-"fact" is the TRUE THING, stated plainly and positively. Never write someone's
-ignorance as the fact - the ignorance is what hiddenFrom is for. So:
-  WRONG: fact "Lilian doesn't know Haru was in the stone room", knownBy Lilian
-  RIGHT: fact "Haru was held in the stone room", hiddenFrom Lilian
-An item with nobody in knownBy is fine: a secret only the reader has seen is
-still a secret.
-knownBy and hiddenFrom list WHO, nothing else. Just the person or group:
-"char:mara", "the household staff". Never a sentence about what they know
-("lilian does NOT know") - hiddenFrom already means they do not know. A name
-belongs in exactly one of the two lists, never both.
-A "char:"/"loc:"/"thing:" ref must name an entity that actually has a sheet.
-For anyone without one - a group, a crowd, an unnamed bystander - write plain
-text instead: "the household staff", "everyone at court", not "char:the staff".
-Inventing a ref for something that has no sheet is the one error to avoid here.`;
-
-// src/prompts/codex/schema/keywords.txt
-var keywords_default = `Retrieval keywords (hard limit 12):
-Every entity sheet, world entry, and knowledge item carries a "keywords" list of
-usually 4-12 supported tags; use fewer when appropriate, never filler to meet a minimum.
-Keywords help retrieve each record's lorebook entry. Anything past 12 is DISCARDED
-by the app, so a bloated list does not help retrieval, it just wastes your output.
-Rules:
-- ONE OR TWO WORDS each. Three or more words is discarded. No phrases, no
-  sentence fragments, no "the ..." constructions.
-- Single words the story will plausibly say: "locket", "duke", "tower", "murder".
-  Use two words only when one would be ambiguous ("north tower" when several
-  towers exist).
-- Concrete nouns tied to THIS record: places, objects, epithets, events.
-- Pick for RECALL, not coverage. A dozen strong tags beat a hundred weak ones.
-  A record that matches everything is a record that means nothing.
-- The record's own name, aliases, and topic match automatically - never repeat
-  them as keywords. Knowledge participants do NOT automatically activate secrets.
-  Give each secret specific keywords about its fact, not everyone who knows it.
-- Never list other characters, other locations, or the whole cast: those records
-  carry their own keywords and will retrieve themselves.
-- No abstract themes (love, betrayal, tension), no filler verbs, no plot summary.
-- Keep keywords current: when a record's contents change, re-check its keywords.
-
-Keywords are for FINDING the record, never for storing what it says. Every fact
-belongs in the record's own fields, written out in full.
-timeline.json and threads.json need no keywords. Their retrieval mode is user-controlled.
-`;
-
-// src/prompts/codex/protocol/patch-rules.txt
-var patch_rules_default = `- "set": only new or changed rows, each COMPLETE on its own. To update an existing row, keep its exact entity "id" or "rid". Omit "rid" only for a new record that is not already represented in the file. Every untouched row survives without being resent.
-- Compare against the current codex before writing. Repeating or paraphrasing an already-established fact is not a change. Changes in truth, certainty, or who knows it update the existing row, not a new copy.
-- "drop": keys (ids or rids) of rows to delete.
-- "seeds": threads.json only, replaces the whole seeds list when provided.
-- "content": the COMPLETE new file, replacing everything in it. Only for a ground-up rewrite of most of a file; never combine it with set or drop.
-`;
-
-// src/prompts/codex/protocol/tools.txt
-var tools_default = `Tools:
-- codex_write(file, set?, drop?, seeds?, content?): edit one file.
-{{PATCH_RULES}}
-- codex_skip(files, reason): declare that the listed files need no change from this material.
-- codex_done(note): call when the codex is current.
-
-You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, skip all of them and call codex_done without any codex_write calls. codex_done is refused while any file is unaccounted for.
-
-Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first and walk the three passes there, section by section. Nothing inside the block is parsed or saved. Be extremely comprehensive and detailed, 1000+ tokens. Once your plan covers every section, stop planning and emit the calls.
-
-Emit all codex_write and codex_skip calls plus codex_done together in a single response - they run as one batch.
-
-Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
-A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
-`;
-
-// src/prompts/codex/protocol/tools-sequential.txt
-var tools_sequential_default = `Tools:
-- codex_write(file, set?, drop?, seeds?, content?): edit ONE file.
-{{PATCH_RULES}}
-- codex_skip(files, reason): declare that the listed files need no change from this material.
-- codex_done(note): call when every file has been written or skipped.
-
-You must account for EVERY file before finishing. Each file is either written with codex_write or named in a codex_skip. Nothing else ends the update, and codex_done is refused while any file is unaccounted for. After each response you will be told what is still outstanding.
-
-Write files that need additions, corrections, or removals; name unchanged files in codex_skip. A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one response. If all files are unchanged, skip all of them and call codex_done without any codex_write calls.
-
-Take changed files one at a time. Write a single changed file per response and give it your full attention and detail, then handle the next one when asked. Writing several at once is allowed only if every one of them still gets that same depth.
-
-Scratchpad: you may think before you act. If you do not reason natively, put ALL of your planning inside one <think>...</think> block first. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. Once your plan covers that file, stop planning and emit the call.
-
-Example response (shape only):
-  codex_write(file: "timeline", set: [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ])
-
-Example of finishing up, once everything else is already written:
-  codex_skip(files: ["world", "knowledge"], reason: "no new rules or secrets in these turns")
-  codex_done(note: "recorded Mara's flight and the locket's origin")
-
-Do not narrate outside the scratchpad, do not explain your edits, just call the tools.
-A rejected write stages nothing at all: fix the validation errors you get back and resend that file's ENTIRE write, every row of it.
-`;
-
-// src/prompts/codex/protocol/json.txt
-var json_default = `Output protocol (JSON only, no tools):
-
-Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply and walk the three passes there, section by section. Nothing inside the block is parsed or saved, and planning must never appear outside it. Be extremely comprehensive and detailed, 1000+ tokens. If you reason natively, skip the block. Once your plan covers every section, stop planning and write.
-
-After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
-{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": ["world"], "done": true, "note": "one short line on what changed" }
-"writes" holds one item per file you change. Each item may carry:
-{{PATCH_RULES}}
-- "skip": the files that need no change from this material.
-- Set "done": true when the codex is current.
-
-You must account for EVERY file. Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true. "done" is refused while any file is unaccounted for.
-
-No prose outside the <think> block and the JSON object.
-A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
-`;
-
-// src/prompts/codex/protocol/json-sequential.txt
-var json_sequential_default = `Output protocol (JSON only, no tools):
-
-You must account for EVERY file before finishing. Each file is either written in "writes" or named in "skip". Nothing else ends the update, and "done" is refused while any file is unaccounted for. After each reply you will be told what is still outstanding.
-
-Take changed files one at a time. Put a SINGLE changed file in "writes" per reply and give it your full attention and detail, then handle the next one when asked. Several at once is allowed only if every one of them still gets that same depth. A reply that tries to carry every file at once is the one most likely to be cut off mid-JSON and lost entirely.
-
-Write files that need additions, corrections, or removals; name unchanged files in "skip". A file can be mentioned in the new story and still need no change. Skipping preserves its contents and counts as completing it. You can skip several unchanged files in one reply. If all files are unchanged, return "writes": [], list all of them in "skip", and set "done": true.
-
-Scratchpad: you may think before you answer. Put ALL of your planning inside one <think>...</think> block at the very top of your reply, and planning must never appear outside it. Nothing inside the block is parsed or saved. Plan the file you are about to write, section by section, in detail. If you reason natively, skip the block.
-
-After the optional <think> block, respond with exactly ONE JSON object and nothing else, in this shape:
-{ "writes": [ { "file": "characters", "set": [ ...changed rows... ], "drop": ["char:gone"] } ], "skip": [], "done": false }
-"writes" holds the file you are changing this reply. Each item may carry:
-{{PATCH_RULES}}
-- "skip": the files that need no change from this material.
-- "done": true only once every file has been written or skipped. Add "note" with one short line on what changed.
-
-Example reply (shape only):
-<think>timeline: Mara's flight on day 14 is a major event and is not recorded yet. Writing timeline this reply.</think>
-{ "writes": [
-  { "file": "timeline", "set": [ { "when": "day 14", "event": "Mara flees the manor for the docks", "participants": ["char:mara"], "where": "loc:docks" } ] }
-], "skip": [], "done": false }
-
-Example of finishing up, once everything else is already written:
-{ "writes": [], "skip": ["world", "knowledge"], "done": true, "note": "recorded Mara's flight and the locket's origin" }
-
-No prose outside the <think> block and the JSON object.
-A rejected write stages nothing at all: fix the validation errors you get back and respond with that file's ENTIRE write again, every row of it.
-`;
-
-// src/prompts/codex/passes/update.txt
-var update_default = `<<TASK>>
-The story material ends above. Update the codex now: walk the three passes in your scratchpad or head (UPDATE every outdated or missing record section by section, SWEEP what the new turns contradict, COMPRESS your wording), then emit the complete batch of writes. Be comprehensive. This ledger is the story's only durable memory, and anything you leave unrecorded is lost.`;
-
-// src/prompts/codex/passes/verify.txt
-var verify_default = `Verification pass: correct stale claims the new turns contradict and compress any row that carries bloat, within each file's edit restrictions.
-`;
-
-// src/prompts/codex/passes/tidy.txt
-var tidy_default = `TIDY PASS: no new story turns this time. Rewrite the target files into fewer, cohesive records: consolidate related entries, strip repetition, and remove details that no longer carry plot weight. Reassess relevance against the current Codex rather than preserving every old row. Keep facts and distinctions that future scenes need: causal turning points, active goals, unresolved consequences, meaningful relationship changes, and consequential differences in who knows what. Do not invent events, dates, resolutions, or knowledge transfers to justify compaction. Keep every schema exactly as specified.
-
-A tidy is a ground-up rewrite: send each improved file as complete new "content" (not set/drop patches).
-
-Merging or removing rows is allowed in this pass, including timeline rows. Preserve their plot-relevant information in the consolidated records; do not just shorten every small row and leave the fragmented structure intact. Respect locked content and never rewrite files outside the target list. A category can become empty if none of its remaining records is useful.
-
-While you are in there: any target entity sheet, world entry, or knowledge item missing its "keywords" list gets one, following the retrieval keyword rules.
-`;
-
-// src/prompts/codex/passes/refresh.txt
-var refresh_default = 'REFRESH PASS: the user re-enabled {{TARGET_FILES}} after {{IT_THEY}} missed updates, so {{LAG_PHRASE}} the story. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the story, keeping every schema exactly as specified. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
-
-// src/prompts/codex/passes/rebuild.txt
-var rebuild_default = 'REBUILD PASS: the user asked to rebuild {{TARGET_FILES}} from scratch. The target files appear empty below, and anything still shown in them is user-locked: reproduce it untouched. The story arrives as {{STORY_SHAPE}}. Rewrite ONLY the target files as complete new "content" so they fully reflect the whole story, keeping every schema exactly as specified. Keep entity ids stable, other files may reference them. Summaries omit detail: record what is durable, and never invent specifics they do not state.';
-
-// src/prompts/codex/passes/reconcile.txt
-var reconcile_default = "RECONCILE SWEEP: messages were edited or deleted behind the codex and no unread turns remain. The story's CURRENT state arrives {{STORY_SHAPE}}. Verify every claim in every file against it and correct or drop anything the current story no longer supports. Files that still hold need no write.";
-
-// src/prompts/codex/passes/catchup-fast.txt
-var catchup_fast_default = "CATCH-UP FROM SUMMARIES: the story below is compressed chapter summaries covering {{CHUNK_LABEL}}, not raw turns (raw turns appear only where no chapter covers a span). Update the codex from them. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
-
-// src/prompts/codex/passes/catchup-ultra.txt
-var catchup_ultra_default = "CATCH-UP: this single pass covers {{CHUNK_LABEL}}. {{STORY_SHAPE}} Update the codex to reflect ALL of it. Summaries omit detail: record what is durable, and never invent specifics they do not state.";
-
-// src/prompts/codex/notes/partial-story.txt
-var partial_story_default = "PARTIAL VIEW: the story turns below are only the newest slice of a longer story. Everything earlier was already encoded by previous passes, so records you do not recognize come from that unseen past and are not wrong. Correct only what these turns actually contradict, never what they simply do not mention.";
-
-// src/prompts/codex/notes/reconcile.txt
-var reconcile_default2 = "RECONCILE: the story was edited or regenerated behind the codex. Statements in the codex may describe events that no longer happened. Treat the codex as suspect, verify its claims against the turns below, and correct anything the current story contradicts.";
-
-// src/prompts/codex/notes/migrate-table.txt
-var migrate_table_default = 'MIGRATE: the relations table was just enabled. Lift every "ties" note off the entity sheets into relations.json rows, then remove all "ties" fields.';
-
-// src/prompts/codex/notes/migrate-inline.txt
-var migrate_inline_default = 'MIGRATE: the relations table was just disabled. Fold relations.json into short "ties" notes on the involved entity sheets. Do not write relations.json.';
-
-// src/prompts/codex/notes/repair.txt
-var repair_default = `REPAIR: these files were invalid on disk and are shown empty: {{FILES}}. Reconstruct only facts supported by the supplied story.
-`;
-
-// src/prompts/codex/notes/locked.txt
-var locked_default = "LOCKED: the user owns these entities, do NOT set or drop them: {{IDS}}.";
-
-// src/prompts/codex/notes/locked-fields.txt
-var locked_fields_default = `LOCKED FIELDS: field values shown as "Locked, do not edit" are user-owned and hidden from you ({{IDS}}). When you resend such a row, keep the "Locked, do not edit" value or omit the field entirely - the app restores the user's real value either way.
-`;
-
-// src/prompts/codex/notes/codex-full.txt
-var codex_full_default = "IMPORTANT: The Codex is FILLING UP QUICKLY. Its {{CATEGORY}} category is currently {{PERCENT}}% full. When updating this codex, please aim to REDUCE the size of this category by 15-30%! If a certain entry or collection of entries are old/irrelevant, niche, and tangential to the story/events, feel free to delete it, merge/compactify it into other entries or reduce its size! This overrides any earlier instruction to be comprehensive.";
-
-// src/prompts/codex/registry.ts
-var CODEX_DIRECTIVES_DEFAULT = directives_default;
-var SCHEMA_HOWTO_TAIL = t("prompts.codex.registry.schemaHowtoTail");
-var CODEX_TEMPLATES = [
-  {
-    key: "schema_entities_table",
-    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOn"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesCharactersJsonLocationsJsonAndThings", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRunE") }],
-    defaultText: entities_table_default
-  },
-  {
-    key: "schema_entities_inline",
-    label: t("prompts.codex.registry.codexTemplates.entitySheetsRelationsTableOff"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesTheEntityFilesWhenTheRelations", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [{ token: "{{ENTITY_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theEntityFilesActiveThisRun") }],
-    defaultText: entities_inline_default
-  },
-  {
-    key: "schema_relations",
-    label: t("prompts.codex.registry.codexTemplates.relationsTable"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesRelationsJsonAndTheCoverageRules", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [],
-    defaultText: relations_default
-  },
-  {
-    key: "schema_timeline",
-    label: t("prompts.codex.registry.codexTemplates.timeline"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesTimelineJsonIncludingTheAppendOnly", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [],
-    defaultText: timeline_default
-  },
-  {
-    key: "schema_threads",
-    label: t("prompts.codex.registry.codexTemplates.threads"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesThreadsJsonResolvedThreadsAreArchived", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [],
-    defaultText: threads_default
-  },
-  {
-    key: "schema_world",
-    label: t("prompts.codex.registry.codexTemplates.worldRules"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesWorldJson", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [],
-    defaultText: world_default
-  },
-  {
-    key: "schema_knowledge",
-    label: t("prompts.codex.registry.codexTemplates.secrets"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.describesKnowledgeJsonTheValidatorRejectsItems", { schemaHowtoTail: SCHEMA_HOWTO_TAIL }),
-    vars: [],
-    defaultText: knowledge_default
-  },
-  {
-    key: "schema_keywords",
-    label: t("prompts.codex.registry.codexTemplates.retrievalKeywords"),
-    group: "File schemas",
-    howTo: t("prompts.codex.registry.codexTemplates.theRulesForTheKeywordsListsOn"),
-    vars: [],
-    defaultText: keywords_default
-  },
-  {
-    key: "protocol_patch_rules",
-    label: t("prompts.codex.registry.codexTemplates.patchRulesSetDropContent"),
-    group: "Write protocol",
-    howTo: t("prompts.codex.registry.codexTemplates.theSharedExplanationOfSetDropSeeds"),
-    vars: [],
-    defaultText: patch_rules_default
-  },
-  {
-    key: "protocol_tools",
-    label: t("prompts.codex.registry.codexTemplates.protocolToolCalls"),
-    group: "Write protocol",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls"),
-    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
-    defaultText: tools_default
-  },
-  {
-    key: "protocol_tools_sequential",
-    label: t("prompts.codex.registry.codexTemplates.protocolToolCallsOneFileAtA"),
-    group: "Write protocol",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileUsesToolCalls2"),
-    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
-    defaultText: tools_sequential_default
-  },
-  {
-    key: "protocol_json",
-    label: t("prompts.codex.registry.codexTemplates.protocolJsonMode"),
-    group: "Write protocol",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson"),
-    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
-    defaultText: json_default
-  },
-  {
-    key: "protocol_json_sequential",
-    label: t("prompts.codex.registry.codexTemplates.protocolJsonModeOneFileAtA"),
-    group: "Write protocol",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenTheProfileWritesStrictJson2"),
-    vars: [{ token: "{{PATCH_RULES}}", meaning: t("prompts.codex.registry.codexTemplates.thePatchRulesTemplateAbove") }],
-    defaultText: json_sequential_default
-  },
-  {
-    key: "pass_update",
-    label: t("prompts.codex.registry.codexTemplates.taskClosingBlock"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.theClosingBlockOfEveryNormalUpdate"),
-    vars: [],
-    defaultText: update_default
-  },
-  {
-    key: "pass_verify",
-    label: t("prompts.codex.registry.codexTemplates.verificationNudge"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.sentAsAnExtraRoundAfterA"),
-    vars: [],
-    defaultText: verify_default
-  },
-  {
-    key: "pass_tidy",
-    label: t("prompts.codex.registry.codexTemplates.tidyPass"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.theInstructionBlockForTidyUpThe"),
-    vars: [],
-    defaultText: tidy_default
-  },
-  {
-    key: "pass_refresh",
-    label: t("prompts.codex.registry.codexTemplates.refreshPass"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenReEnabledRecordsCatchUp"),
-    vars: [
-      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRefreshed") },
-      { token: "{{IT_THEY}}", meaning: t("prompts.codex.registry.codexTemplates.itOrTheyToMatchTheTarget") },
-      { token: "{{LAG_PHRASE}}", meaning: t("prompts.codex.registry.codexTemplates.itLagsOrTheyLagToMatch") },
-      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArrangedE") }
-    ],
-    defaultText: refresh_default
-  },
-  {
-    key: "pass_rebuild",
-    label: t("prompts.codex.registry.codexTemplates.rebuildPass"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenACategorySRebuildButton"),
-    vars: [
-      { token: "{{TARGET_FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theFilesBeingRebuilt") },
-      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
-    ],
-    defaultText: rebuild_default
-  },
-  {
-    key: "pass_reconcile",
-    label: t("prompts.codex.registry.codexTemplates.reconcileSweep"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.sentWhenMessagesWereDeletedBehindThe"),
-    vars: [{ token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }],
-    defaultText: reconcile_default
-  },
-  {
-    key: "pass_catchup_fast",
-    label: t("prompts.codex.registry.codexTemplates.fastCatchUp"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForEachFastCatchUp"),
-    vars: [{ token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeThisBatchCovers") }],
-    defaultText: catchup_fast_default
-  },
-  {
-    key: "pass_catchup_ultra",
-    label: t("prompts.codex.registry.codexTemplates.ultraCatchUp"),
-    group: "Pass instructions",
-    howTo: t("prompts.codex.registry.codexTemplates.thePreambleForTheSinglePassUltra"),
-    vars: [
-      { token: "{{CHUNK_LABEL}}", meaning: t("prompts.codex.registry.codexTemplates.theMessageRangeCovered") },
-      { token: "{{STORY_SHAPE}}", meaning: t("prompts.codex.registry.codexTemplates.howTheStoryInputIsArranged") }
-    ],
-    defaultText: catchup_ultra_default
-  },
-  {
-    key: "note_partial_story",
-    label: t("prompts.codex.registry.codexTemplates.partialViewGuard"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedToEveryNormalUpdateTheAgent"),
-    vars: [],
-    defaultText: partial_story_default
-  },
-  {
-    key: "note_reconcile",
-    label: t("prompts.codex.registry.codexTemplates.reconcileWarning"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEditsOrDeletionsWereDetected"),
-    vars: [],
-    defaultText: reconcile_default2
-  },
-  {
-    key: "note_migrate_table",
-    label: t("prompts.codex.registry.codexTemplates.migrationToRelationsTable"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe"),
-    vars: [],
-    defaultText: migrate_table_default
-  },
-  {
-    key: "note_migrate_inline",
-    label: t("prompts.codex.registry.codexTemplates.migrationToInlineTies"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedOnTheFirstRunAfterThe2"),
-    vars: [],
-    defaultText: migrate_inline_default
-  },
-  {
-    key: "note_repair",
-    label: t("prompts.codex.registry.codexTemplates.repairWarning"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenFilesOnDiskWereUnreadable"),
-    vars: [{ token: "{{FILES}}", meaning: t("prompts.codex.registry.codexTemplates.theUnreadableFiles") }],
-    defaultText: repair_default
-  },
-  {
-    key: "note_locked",
-    label: t("prompts.codex.registry.codexTemplates.lockedEntities"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenEntitiesAreLockedTheApp"),
-    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theLockedEntityIds") }],
-    defaultText: locked_default
-  },
-  {
-    key: "note_locked_fields",
-    label: t("prompts.codex.registry.codexTemplates.lockedFields"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.prependedWhenIndividualFieldsAreLockedOn"),
-    vars: [{ token: "{{IDS}}", meaning: t("prompts.codex.registry.codexTemplates.theEntitiesCarryingLockedFields") }],
-    defaultText: locked_fields_default
-  },
-  {
-    key: "note_codex_full",
-    label: t("prompts.codex.registry.codexTemplates.codexFillingUp"),
-    group: "Run notes",
-    howTo: t("prompts.codex.registry.codexTemplates.appendedToUpdatesWhenACategoryIsOver"),
-    vars: [
-      { token: "{{CATEGORY}}", meaning: t("prompts.codex.registry.codexTemplates.theCategoryThatIsFillingUp") },
-      { token: "{{PERCENT}}", meaning: t("prompts.codex.registry.codexTemplates.howFullThatCategoryIs") }
-    ],
-    defaultText: codex_full_default
-  }
-];
-var CODEX_TEMPLATE_KEYS = CODEX_TEMPLATES.map((t) => t.key);
-var BY_KEY = new Map(CODEX_TEMPLATES.map((t) => [t.key, t]));
-
-// src/shared.ts
-var CODEX_FILE_KEYS = [
-  "characters",
-  "locations",
-  "things",
-  "relations",
-  "timeline",
-  "threads",
-  "world",
-  "knowledge"
-];
-var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
-var STORAGE_VERSION = 7;
-var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
-var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
-var TIER_NAMES = [t("shared.tierNames.chapter"), t("shared.tierNames.arc"), t("shared.tierNames.volume"), t("shared.tierNames.series"), t("shared.tierNames.saga"), t("shared.tierNames.library"), t("shared.tierNames.universe")];
-var HIGHER_TIERS = [3, 4, 5, 6, 7];
-function defaultHigherTiers() {
-  return Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, {
-    enabled: false,
-    unit: "entries",
-    batch: 6,
-    lag: 2,
-    targetUnit: "percent",
-    targetPercent: 25,
-    targetTokens: 3000
-  }]));
-}
-var EXTRA_PRESET_CATEGORIES = ["series", "saga", "library", "universe"];
-var PRESET_CATEGORIES = [...TIER_KINDS, "codex"];
-function promptRoleFor(profile, category) {
-  return profile.promptRoles[category] ?? "system";
-}
-var DEFAULT_SAMPLERS = {
-  temperature: null,
-  top_p: null,
-  top_k: null,
-  max_tokens: null,
-  max_input_tokens: null,
-  frequency_penalty: null,
-  presence_penalty: null
-};
-var SAMPLER_DEFAULTS = {
-  temperature: 0.4,
-  top_p: 1,
-  top_k: 0,
-  max_tokens: 32000,
-  max_input_tokens: 128000,
-  frequency_penalty: 0,
-  presence_penalty: 0
-};
-var CODEX_SAMPLER_DEFAULTS = {
-  temperature: 0.4,
-  top_p: 1,
-  top_k: 0,
-  max_tokens: 65536,
-  max_input_tokens: 500000,
-  frequency_penalty: 0,
-  presence_penalty: 0
-};
-function makeDefaultProfile(id, name) {
-  return {
-    id,
-    name,
-    lagUnit: "messages",
-    lagValue: 40,
-    windowUnit: "messages",
-    windowValue: 20,
-    chapterTargetUnit: "percent",
-    chapterTargetPercent: 15,
-    chapterTargetTokens: 800,
-    arcTargetUnit: "percent",
-    arcTargetPercent: 20,
-    arcTargetTokens: 1500,
-    volumeTargetUnit: "percent",
-    volumeTargetPercent: 25,
-    volumeTargetTokens: 3000,
-    arcTrigger: "chapters",
-    arcAfterChapters: 6,
-    arcAfterTokens: 8000,
-    arcLagChapters: 7,
-    arcLagTokens: 2000,
-    chapterPresetKey: "summary",
-    arcPresetKey: "arc_default",
-    volumePresetKey: "volume_default",
-    higherTierPresetKeys: {},
-    promptRoles: {},
-    previousMemoriesCount: 7,
-    regexOutgoingScriptIds: [],
-    regexIncomingScriptIds: [],
-    connectionId: null,
-    samplers: { ...DEFAULT_SAMPLERS },
-    autoCreate: true,
-    autoCreateChapter: true,
-    autoCreateArc: true,
-    higherTiers: defaultHigherTiers(),
-    hideCoveredMessages: true,
-    showMemoryPreviews: false,
-    retryCount: 3,
-    shortCommentRulesOverride: null,
-    memoriaPersonaOverride: null,
-    ttftTimeoutSecs: 60,
-    codexEnabled: true,
-    codexManualOnly: false,
-    codexLagUnit: "messages",
-    codexLagValue: 6,
-    codexWindowUnit: "messages",
-    codexWindowValue: 20,
-    codexTokenBreakpoint: 1e5,
-    codexLoreLimitUnit: "percent",
-    codexLoreLimitPercent: 25,
-    codexLoreLimitTokens: 25000,
-    codexStorySoFarCount: 5,
-    codexRelationsTable: true,
-    codexActivationMode: "keywords",
-    codexInjectionPosition: "lorebook",
-    codexInjectionDepth: 4,
-    codexThorough: true,
-    codexConnectionId: null,
-    codexExtraContext: true,
-    codexSamplers: { ...DEFAULT_SAMPLERS },
-    codexUseTools: false,
-    codexWriteMode: "batch",
-    codexPresetKey: "codex_default",
-    codexTokenLimits: defaultCodexTokenLimits(),
-    contextReliefApplied: false,
-    contextReliefMaxContext: null
-  };
-}
-var DEFAULT_SETTINGS = {
-  version: STORAGE_VERSION,
-  enabled: true,
-  profiles: [makeDefaultProfile("default", t("shared.defaultSettings.default"))],
-  activeProfileId: "default",
-  customPresets: [],
-  debugLog: false,
-  localLogsDisabled: false,
-  summaryActivationMode: "always",
-  followChatNames: true,
-  showAutomationToasts: true,
-  suppressToolCallingPrompt: false,
-  contextRelief: true,
-  cacheFriendly: false,
-  cacheFriendlySummaryMode: null
-};
-var CACHE_BREAKING_ACTIONS = new Set([
-  "create_chapter",
-  "create_chapter_range",
-  "create_all_chapters",
-  "create_arc",
-  "create_arc_from",
-  "create_all_arcs",
-  "create_higher_from",
-  "create_higher_auto",
-  "create_volume_from",
-  "retry_last_failure",
-  "delete_entry",
-  "release_entry",
-  "regenerate_entry",
-  "update_entry",
-  "rebase_root",
-  "rebuild_root",
-  "detach_root",
-  "codex_update_now",
-  "codex_reset",
-  "codex_rebuild",
-  "codex_tidy",
-  "codex_repair_references",
-  "codex_rebuild_files",
-  "codex_refresh",
-  "codex_restore",
-  "codex_undo",
-  "codex_adopt",
-  "summary_import"
-]);
-var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
-var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
-function defaultCodexTokenLimits() {
-  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
-}
-var LESSON_CHAT_PREFIX = "lesson:";
-function emptyLessonCourse() {
-  return {
-    status: "todo",
-    section: 0,
-    step: 0,
-    answers: {},
-    attempts: 0,
-    bestWrong: null,
-    lastWrong: null,
-    lastTotal: null,
-    grade: null,
-    startedAt: null,
-    completedAt: null,
-    signedName: null
-  };
-}
-function unlockedLessons() {
-  const done = () => ({ ...emptyLessonCourse(), status: "done" });
-  return { version: 1, freshInstall: false, booksSealSkipped: false, codexSealSkipped: false, books: done(), codex: done() };
-}
-function codexLessonGated(lessons) {
-  return lessons.codex.status !== "done" && !lessons.codexSealSkipped;
-}
-function lessonGradeForWrong(wrong) {
-  if (wrong <= 1)
-    return "gilded";
-  if (wrong <= 3)
-    return "silver";
-  if (wrong <= 6)
-    return "bronze";
-  return "apprentice";
-}
-var LESSON_GRADE_LABEL = {
-  gilded: t("shared.lessonGradeLabel.gilded"),
-  silver: t("shared.lessonGradeLabel.silver"),
-  bronze: t("shared.lessonGradeLabel.bronze"),
-  apprentice: t("shared.lessonGradeLabel.apprentice")
-};
 
 // src/codex-tidy.ts
 function resolveTidyTarget(currentTokens, target) {
@@ -21992,6 +22004,15 @@ function setupApp(ctx, diagnostics, setContext) {
   let disposed = false;
   let loadTimer;
   let handshakeRetries = 0;
+  const saveSession = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  let saveSeq = 0;
+  let pendingProfileSaves = [];
+  const overlayProfileSaves = (state) => {
+    if (!pendingProfileSaves.length)
+      return state;
+    const apply = (profile) => pendingProfileSaves.reduce((acc, save) => save.profile.id === acc.id ? mergeProfilePatch(acc, save.profile) : acc, profile);
+    return { ...state, activeProfile: apply(state.activeProfile), settings: { ...state.settings, profiles: state.settings.profiles.map(apply) } };
+  };
   const tabButtons = new Map;
   let lessonStorage = null;
   try {
@@ -22017,6 +22038,13 @@ function setupApp(ctx, diagnostics, setContext) {
     deliver(msg);
   };
   const deliver = (msg) => {
+    if (msg.type === "save_profile") {
+      const seq = ++saveSeq;
+      msg = { ...msg, save: { session: saveSession, seq } };
+      pendingProfileSaves.push({ seq, profile: msg.profile });
+      if (lastState)
+        lastState = overlayProfileSaves(lastState);
+    }
     if (msg.type === "save_settings" && typeof msg.patch.localLogsDisabled === "boolean")
       diagnostics.setEnabled(!msg.patch.localLogsDisabled);
     if (msg.type === "diagnostics_clear")
@@ -22267,7 +22295,14 @@ function setupApp(ctx, diagnostics, setContext) {
             closeCodexCatchupModal();
           if (msg.state.userId)
             lessonOutbox.setUser(msg.state.userId);
-          lastState = { ...msg.state, lessons: lessonOutbox.overlay(msg.state.lessons) };
+          {
+            const acks = msg.state.profileSaveAcks;
+            if (acks && lastState?.profileSaveAcks && acks.boot !== lastState.profileSaveAcks.boot)
+              pendingProfileSaves = [];
+            const acked = acks?.sessions[saveSession] ?? 0;
+            pendingProfileSaves = pendingProfileSaves.filter((save) => save.seq > acked);
+          }
+          lastState = overlayProfileSaves({ ...msg.state, lessons: lessonOutbox.overlay(msg.state.lessons) });
           lessonOutbox.flush();
           transferPanel.setChat(lastState.activeChatId);
           renderActive();

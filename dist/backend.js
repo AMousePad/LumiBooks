@@ -7423,6 +7423,44 @@ function withCommitMutex(userId, chatId, fn) {
   return result;
 }
 
+// src/backend/entry-batch.ts
+var MAX_OPS = 64;
+var MAX_BYTES = 900000;
+async function updateEntriesBatched(updates, userId) {
+  const failures = [];
+  for (const chunk of chunkUpdates(updates)) {
+    const results = await spindle.batch(chunk.map(({ id, input }) => ({ domain: "world_books", op: "entries.update", args: { id, input } })), { userId });
+    if (results.every((r) => r.ok))
+      continue;
+    for (const update of chunk) {
+      try {
+        await spindle.world_books.entries.update(update.id, update.input, userId);
+      } catch (err) {
+        failures.push({ id: update.id, error: describeError(err) });
+      }
+    }
+  }
+  return failures;
+}
+function chunkUpdates(updates) {
+  const chunks = [];
+  let chunk = [];
+  let bytes = 0;
+  for (const update of updates) {
+    const size = new TextEncoder().encode(JSON.stringify(update)).byteLength;
+    if (chunk.length && (chunk.length >= MAX_OPS || bytes + size > MAX_BYTES)) {
+      chunks.push(chunk);
+      chunk = [];
+      bytes = 0;
+    }
+    chunk.push(update);
+    bytes += size;
+  }
+  if (chunk.length)
+    chunks.push(chunk);
+  return chunks;
+}
+
 // src/backend/world-book.ts
 var PAGE_LIMIT = 200;
 var BOOK_INDEX_CACHE_TTL_MS = 4000;
@@ -7736,21 +7774,14 @@ async function applySummaryActivation(userId) {
     const chatId = meta["lumibooks_chat_id"];
     await withCommitMutex(userId, chatId, async () => {
       const flags = activationFlags((await loadSettings(userId)).summaryActivationMode);
-      const entries = await listAllEntries(book.id, userId);
-      for (const entry of entries) {
-        const ext = entry.extensions || {};
-        if (!ext[EXTENSION_KEY])
-          continue;
-        if (entry.constant === flags.constant && (entry.vectorized ?? false) === flags.vectorized)
-          continue;
-        try {
-          await spindle.world_books.entries.update(entry.id, flags, userId);
-          updated++;
-        } catch {
-          failed++;
-        }
-      }
-    }).catch(() => {
+      const updates = (await listAllEntries(book.id, userId)).filter((entry) => (entry.extensions || {})[EXTENSION_KEY] && (entry.constant !== flags.constant || (entry.vectorized ?? false) !== flags.vectorized)).map((entry) => ({ id: entry.id, input: flags }));
+      const failures = await updateEntriesBatched(updates, userId);
+      for (const f of failures)
+        warn(`summary activation update failed for entry ${f.id}: ${f.error}`);
+      updated += updates.length - failures.length;
+      failed += failures.length;
+    }).catch((err) => {
+      warn(`summary activation update failed for book ${book.id}: ${describeError(err)}`);
       failed++;
     });
     invalidateBookCache(userId, chatId);
@@ -12630,6 +12661,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
   const cuts = profile.codexActivationMode === "always" ? selectCodexCuts(await cutCandidates(desired, cursor.recordStats, disabledFor, userId), profile.codexTokenLimits) : new Set;
   const seen = new Set;
   let wrote = false;
+  const updates = [];
   for (const [index, rec] of desired.entries()) {
     seen.add(rec.record);
     const disabled = disabledFor(rec.file) || rec.disabled || cuts.has(rec.record);
@@ -12674,16 +12706,16 @@ async function doSync(chatId, userId, relationsTableFallback) {
     if (!changed)
       continue;
     const ext = cur.raw.extensions || {};
-    try {
-      await spindle.world_books.entries.update(cur.raw.id, {
-        ...fields,
-        extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta }
-      }, userId);
+    updates.push({ id: cur.raw.id, input: { ...fields, extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta } } });
+  }
+  if (updates.length) {
+    const failures = await updateEntriesBatched(updates, userId);
+    if (failures.length < updates.length)
       wrote = true;
-    } catch (err) {
-      warn(`codex sync: failed to update entry for ${rec.record}: ${describeError(err)}`);
-      throw err;
-    }
+    for (const f of failures)
+      warn(`codex sync: failed to update entry ${f.id}: ${f.error}`);
+    if (failures.length)
+      throw new Error(failures[0].error);
   }
   for (const [record, e] of byRecord) {
     if (seen.has(record))
@@ -15496,6 +15528,18 @@ async function releaseContextRelief(userId, maxContext) {
     }) };
   });
   return released;
+}
+
+// src/profile-patch.ts
+function mergeProfilePatch(existing, patch) {
+  return {
+    ...existing,
+    ...patch,
+    promptRoles: Object.keys(patch.promptRoles ?? {}).length ? { ...existing.promptRoles, ...patch.promptRoles } : patch.promptRoles ?? existing.promptRoles,
+    higherTierPresetKeys: Object.keys(patch.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...patch.higherTierPresetKeys } : patch.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+    codexTokenLimits: { ...existing.codexTokenLimits, ...patch.codexTokenLimits },
+    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...patch.higherTiers?.[tier] }]))
+  };
 }
 
 // src/backend/injection.ts
@@ -18807,7 +18851,10 @@ var PUSH_DEBOUNCE_MS = 30;
 var pushTimers = new Map;
 var pendingPushChatIds = new Map;
 var pendingPushResolvers = new Map;
+var profileSaveAcks = new Map;
+var BOOT_ID = crypto.randomUUID();
 async function doPushState(userId, chatId) {
+  const saveAcks = { boot: BOOT_ID, sessions: Object.fromEntries(profileSaveAcks.get(userId) ?? []) };
   try {
     if (chatId) {
       const active = await spindle.chats.getActive(userId).catch(() => null);
@@ -18820,7 +18867,7 @@ async function doPushState(userId, chatId) {
       if (active && active.id !== chatId)
         return;
     }
-    send({ type: "state", state }, userId);
+    send({ type: "state", state: { ...state, profileSaveAcks: saveAcks } }, userId);
     if (state.activeChatId) {
       const status = getSummaryTransfer(userId, state.activeChatId);
       if (status)
@@ -19347,30 +19394,34 @@ spindle.onFrontendMessage(async (raw, userId) => {
         let nextExtra = null;
         let activeBefore = null;
         let missing = false;
-        await mutateSettings(userId, (cur) => {
-          activeBefore = cur.activeProfileId;
-          const existing = cur.profiles.find((p) => p.id === id);
-          if (!existing) {
-            missing = true;
-            return cur;
-          }
-          const merged = normalizeProfile({
-            ...existing,
-            ...incoming,
-            id,
-            promptRoles: Object.keys(incoming.promptRoles ?? {}).length ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
-            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys,
-            codexTokenLimits: { ...existing.codexTokenLimits, ...incoming.codexTokenLimits },
-            higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...incoming.higherTiers?.[tier] }]))
+        const save = msg.save;
+        const ack = () => {
+          if (!save)
+            return;
+          const sessions = profileSaveAcks.get(userId) ?? new Map;
+          sessions.set(save.session, Math.max(sessions.get(save.session) ?? 0, save.seq));
+          profileSaveAcks.set(userId, sessions);
+        };
+        try {
+          await mutateSettings(userId, (cur) => {
+            activeBefore = cur.activeProfileId;
+            const existing = cur.profiles.find((p) => p.id === id);
+            if (!existing) {
+              missing = true;
+              return cur;
+            }
+            const merged = normalizeProfile({ ...mergeProfilePatch(existing, incoming), id });
+            if (!merged)
+              return cur;
+            prevHide = existing.hideCoveredMessages;
+            nextHide = merged.hideCoveredMessages;
+            prevExtra = extraContextActive(existing);
+            nextExtra = extraContextActive(merged);
+            return { ...cur, profiles: cur.profiles.map((p) => p.id === id ? merged : p) };
           });
-          if (!merged)
-            return cur;
-          prevHide = existing.hideCoveredMessages;
-          nextHide = merged.hideCoveredMessages;
-          prevExtra = extraContextActive(existing);
-          nextExtra = extraContextActive(merged);
-          return { ...cur, profiles: cur.profiles.map((p) => p.id === id ? merged : p) };
-        });
+        } finally {
+          ack();
+        }
         if (missing) {
           warn(`save_profile dropped: no profile with id "${id}"`);
           send({ type: "error", text: t("backend.index.messages.profileNoLongerExists", { id }) }, userId);

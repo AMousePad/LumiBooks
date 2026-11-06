@@ -8,6 +8,7 @@ import { activationFlags } from "../activation";
 import { loadSettings } from "./storage";
 import { withCommitMutex } from "./summary-commit";
 import { describeError, error, warn } from "./runtime";
+import { updateEntriesBatched } from "./entry-batch";
 
 const PAGE_LIMIT = 200;
 const BOOK_INDEX_CACHE_TTL_MS = 4000;
@@ -404,17 +405,18 @@ export async function applySummaryActivation(userId: string): Promise<{ updated:
     const chatId = meta["lumibooks_chat_id"] as string;
     await withCommitMutex(userId, chatId, async () => {
       const flags = activationFlags((await loadSettings(userId)).summaryActivationMode);
-      const entries = await listAllEntries(book.id, userId);
-      for (const entry of entries) {
-        const ext = (entry.extensions || {}) as Record<string, unknown>;
-        if (!ext[EXTENSION_KEY]) continue;
-        if (entry.constant === flags.constant && (entry.vectorized ?? false) === flags.vectorized) continue;
-        try {
-          await spindle.world_books.entries.update(entry.id, flags, userId);
-          updated++;
-        } catch { failed++; }
-      }
-    }).catch(() => { failed++; });
+      const updates = (await listAllEntries(book.id, userId))
+        .filter((entry) => ((entry.extensions || {}) as Record<string, unknown>)[EXTENSION_KEY]
+          && (entry.constant !== flags.constant || (entry.vectorized ?? false) !== flags.vectorized))
+        .map((entry) => ({ id: entry.id, input: flags }));
+      const failures = await updateEntriesBatched(updates, userId);
+      for (const f of failures) warn(`summary activation update failed for entry ${f.id}: ${f.error}`);
+      updated += updates.length - failures.length;
+      failed += failures.length;
+    }).catch((err) => {
+      warn(`summary activation update failed for book ${book.id}: ${describeError(err)}`);
+      failed++;
+    });
     invalidateBookCache(userId, chatId);
   }
   return { updated, failed };

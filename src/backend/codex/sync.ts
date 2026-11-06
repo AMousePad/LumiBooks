@@ -14,6 +14,7 @@ import { renderCodexRecords } from "./prompt";
 import { codexPresence, loadCodex, loadCursor } from "./store";
 import { ensureCodexBookForChat, findCodexBookForChat, invalidateBookCache, listAllEntries } from "../world-book";
 import { describeError, warn } from "../runtime";
+import { updateEntriesBatched, type EntryUpdate } from "../entry-batch";
 import { recordDiagnostic } from "../diagnostics";
 import { mergeLorebookEdits, type LorebookEditState } from "./lorebook-edits";
 import { selectCodexCuts, type CutCandidate } from "./limits";
@@ -190,6 +191,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
     : new Set<string>();
   const seen = new Set<string>();
   let wrote = false;
+  const updates: EntryUpdate[] = [];
   for (const [index, rec] of desired.entries()) {
     seen.add(rec.record);
     const disabled = disabledFor(rec.file) || rec.disabled || cuts.has(rec.record);
@@ -230,20 +232,13 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
       || JSON.stringify(cur.meta) !== JSON.stringify(meta);
     if (!changed) continue;
     const ext = (cur.raw.extensions || {}) as Record<string, unknown>;
-    try {
-      await spindle.world_books.entries.update(
-        cur.raw.id,
-        {
-          ...fields,
-          extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta },
-        },
-        userId,
-      );
-      wrote = true;
-    } catch (err) {
-      warn(`codex sync: failed to update entry for ${rec.record}: ${describeError(err)}`);
-      throw err;
-    }
+    updates.push({ id: cur.raw.id, input: { ...fields, extensions: { ...ext, [CODEX_ENTRY_EXTENSION_KEY]: meta } } });
+  }
+  if (updates.length) {
+    const failures = await updateEntriesBatched(updates, userId);
+    if (failures.length < updates.length) wrote = true;
+    for (const f of failures) warn(`codex sync: failed to update entry ${f.id}: ${f.error}`);
+    if (failures.length) throw new Error(failures[0]!.error);
   }
 
   for (const [record, e] of byRecord) {
