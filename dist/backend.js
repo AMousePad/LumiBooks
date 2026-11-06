@@ -18171,7 +18171,7 @@ async function buildInjection(chatId, llmMessages, userId, context = { worldInfo
       if (o.emitted || o.lastIdx >= beforePos)
         continue;
       o.emitted = true;
-      const msg = { role: "assistant", content: formatEntryForInjection(o.entry) };
+      const msg = { role: "assistant", content: formatEntryForInjection(o.entry), __lumibooksSummary: o.label };
       injectedLabels.set(msg, o.label);
       block.push(msg);
     }

@@ -191,7 +191,7 @@ test("waits for lorebook reads beyond three seconds", async () => {
     hangEntryList = false;
     entryListRelease.resolve();
     expect(await pending).toEqual({
-      messages: [{ role: "assistant", content: "memory" }],
+      messages: [{ role: "assistant", content: "memory", __lumibooksSummary: "Chapter" }],
       breakdown: [{ messageIndex: 0, name: "Chapter" }],
     });
     expect(entryListCalls).toBe(1);
@@ -228,7 +228,7 @@ test("coalesces legacy activation reads and retries after a hung one", async () 
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(firstResult).toEqual({
-      messages: [{ role: "assistant", content: "memory" }],
+      messages: [{ role: "assistant", content: "memory", __lumibooksSummary: "Chapter" }],
       breakdown: [{ messageIndex: 0, name: "Chapter" }],
     });
     expect(secondResult).toEqual(firstResult);
@@ -281,7 +281,7 @@ test("uses captured activation and source metadata without full-chat calls", asy
   });
 
   expect(result).toEqual({
-    messages: [{ role: "assistant", content: "memory" }],
+    messages: [{ role: "assistant", content: "memory", __lumibooksSummary: "Chapter" }],
     breakdown: [{ messageIndex: 0, name: "Chapter" }],
   });
   expect(getActivatedCalls).toBe(0);
@@ -308,7 +308,7 @@ test("honors exclusions from source metadata without reading the chat", async ()
   expect(result).toEqual({
     messages: [
       messages[0],
-      { role: "assistant", content: "memory" },
+      { role: "assistant", content: "memory", __lumibooksSummary: "Chapter" },
     ],
     breakdown: [{ messageIndex: 1, name: "Chapter" }],
   });
@@ -357,7 +357,7 @@ test("new hosts avoid legacy activation when no capture is present", async () =>
   const result = await registeredInterceptor!(messages, { chatId });
 
   expect(result).toEqual({
-    messages: [{ role: "assistant", content: "memory" }],
+    messages: [{ role: "assistant", content: "memory", __lumibooksSummary: "Chapter" }],
     breakdown: [{ messageIndex: 0, name: "Chapter" }],
   });
   expect(getActivatedCalls).toBe(0);

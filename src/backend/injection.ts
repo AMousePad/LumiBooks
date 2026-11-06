@@ -274,7 +274,8 @@ export async function buildInjection(
     for (const o of ordered) {
       if (o.emitted || o.lastIdx >= beforePos) continue;
       o.emitted = true;
-      const msg: LlmMessageDTO = { role: "assistant", content: formatEntryForInjection(o.entry) };
+      // The tag lets other extensions (LumiCache) tell a summary from prompt text. Providers send named fields only, so it never reaches the model.
+      const msg = { role: "assistant", content: formatEntryForInjection(o.entry), __lumibooksSummary: o.label } as LlmMessageDTO;
       injectedLabels.set(msg, o.label);
       block.push(msg);
     }
