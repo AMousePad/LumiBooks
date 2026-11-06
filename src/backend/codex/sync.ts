@@ -46,8 +46,8 @@ export function readEntryMeta(entry: Pick<WorldBookEntryDTO, "extensions">): Cod
     ...(typeof v.updates === "number" ? { updates: v.updates } : {}), ...(typeof v.born === "number" ? { born: v.born } : {}) };
 }
 
-let cutWarning: ((userId: string, chatId: string) => void) | null = null;
-export function registerCodexCutWarning(warning: (userId: string, chatId: string) => void): void {
+let cutWarning: ((userId: string, chatId: string, cut: readonly string[], previousCut: readonly string[]) => void) | null = null;
+export function registerCodexCutWarning(warning: NonNullable<typeof cutWarning>): void {
   cutWarning = warning;
 }
 
@@ -282,8 +282,7 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   const cut = [...cuts].sort();
   await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)), cut,
     stamp: codexSettingsStamp(settings) }, { userId });
-  const previousCut = new Set(manifest?.cut ?? []);
-  if (cut.some((record) => !previousCut.has(record))) cutWarning?.(userId, chatId);
+  cutWarning?.(userId, chatId, cut, manifest?.cut ?? []);
   if (wrote && settings.cacheFriendly) bumpCacheEpoch(chatId);
   void recordDiagnostic(userId, { event: "codex", chatId, outcome: "success",
     numbers: { entries: desired.length },

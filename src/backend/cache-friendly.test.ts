@@ -11,6 +11,7 @@ import { filedMessageChanged, lumiCacheAvailable, runCacheFriendlyWindow } from 
 import { registerPipelineCallbacks } from "./pipeline";
 import { cacheModeEndpoint, saveSettings } from "./storage";
 import { invalidateBookCache } from "./world-book";
+import { createCodexCutWarning } from "./codex/cut-warnings";
 
 const original = (globalThis as any).spindle;
 const chat = "cache-chat", user = "cache-user", bookId = "shelf", codexBookId = "codex-book";
@@ -41,6 +42,9 @@ beforeEach(() => {
   const codexBook = { id: codexBookId, name: "Codex", metadata: { lumibooks_codex_chat_id: chat } };
   (globalThis as any).spindle = {
     log: { info() {}, warn() {}, error() {} },
+    async batch(ops: Array<{ args: { id: string; input: object } }>) {
+      return ops.map(({ args }) => ({ ok: true, result: Object.assign(entries.find(e => e.id === args.id), args.input) }));
+    },
     rpcPool: { sync(name: string) { if (name.startsWith("cache_epoch.")) { epochs.push(name); order.push("epoch"); } } },
     userStorage: {
       async exists(p: string) { return data.has(p); },
@@ -208,7 +212,7 @@ test("sync cuts over-limit constant entries, keeps order stable, and warns only 
   await useProfile(profile);
   const { registerCodexCutWarning } = await import("./codex/sync");
   const warned: string[] = [];
-  registerCodexCutWarning((_, chatId) => warned.push(chatId));
+  registerCodexCutWarning(createCodexCutWarning((_, chatId) => warned.push(chatId)));
   await syncCodexEntries(chat, user, false);
   const disabled = () => codexEntries().filter((e) => e.disabled).map((e) => e.comment);
   expect(disabled().length).toBeGreaterThan(0);
@@ -219,6 +223,16 @@ test("sync cuts over-limit constant entries, keeps order stable, and warns only 
   expect(new Set(orderValues).size).toBe(orderValues.length);
   await syncCodexEntries(chat, user, false);
   expect(warned).toEqual([chat]);
+  // Switching away clears the active cuts, but must not forget their warnings.
+  await useProfile({ ...profile, codexActivationMode: "keywords" }, false);
+  await syncCodexEntries(chat, user, false);
+  expect(disabled()).toEqual([]);
+  await useProfile(profile);
+  await syncCodexEntries(chat, user, false);
+  expect(warned).toEqual([chat]);
+  data.set(`codex/${chat}/world.json`, { entries: facts(10) });
+  await syncCodexEntries(chat, user, false);
+  expect(warned).toEqual([chat, chat]);
 });
 
 test("keyword mode caps only entries the recent turns can activate", () => {

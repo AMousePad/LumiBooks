@@ -25,7 +25,17 @@ export const CODEX_FILE_KEYS: readonly CodexFileKey[] = [
   "world",
   "knowledge",
 ] as const;
-export const CODEX_TOKEN_LIMIT_DEFAULT = 10000;
+export const CODEX_TOKEN_LIMIT_DEFAULTS: Readonly<Record<CodexFileKey, number>> = {
+  // Entity lorebook entries carry their relation text, in either storage mode.
+  characters: 20000,
+  locations: 20000,
+  things: 20000,
+  relations: 10000,
+  timeline: 10000,
+  threads: 10000,
+  world: 10000,
+  knowledge: 10000,
+};
 export const WORLD_BOOK_NAME_PREFIX = "LumiBooks" as const;
 /** Marker for lorebook entries synced from codex records. Distinct from
  * EXTENSION_KEY on purpose: summary entries are host-disabled and re-injected
@@ -439,7 +449,7 @@ export const CACHE_FRIENDLY_FROZEN_FILES: readonly CodexFileKey[] = ["timeline",
 export const cacheFriendlyFileLocked = (file: CodexFileKey): boolean => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
 
 function defaultCodexTokenLimits(): Record<CodexFileKey, number> {
-  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT])) as Record<CodexFileKey, number>;
+  return { ...CODEX_TOKEN_LIMIT_DEFAULTS };
 }
 
 function normalizeCodexTokenLimits(raw: unknown): Record<CodexFileKey, number> {

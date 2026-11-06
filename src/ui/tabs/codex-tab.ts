@@ -880,6 +880,7 @@ function renderCodexTile(
   let st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
   const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
+  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
   // Rendered-injection pricing from the backend; raw JSON length (with its
   // syntax overhead) only as a version-skew fallback.
   const tokens = state.codexFileTokens
@@ -887,7 +888,7 @@ function renderCodexTile(
     : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
 
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-codex-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-codex-tile ${locked ? "locked" : `${st}${stale || needsCatchup ? " stale" : ""}`}`;
   lessonMark(tile, `codex.tile.${def.id}`);
   tile.title = tr("ui.tabs.codexTab.renderCodexTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: (stale) ? "yes" : "no", choice2: (needsCatchup) ? "yes" : "no" });
 
@@ -952,10 +953,8 @@ function renderCodexTile(
   tools.appendChild(purgeBtn);
   tile.appendChild(tools);
 
-  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
   const disabledText = tr("ui.tabs.codexTab.cacheFriendlyDisabled");
   if (locked) {
-    tile.classList.add("locked");
     tile.title = disabledText;
     stateLine.textContent = disabledText;
     tools.remove();

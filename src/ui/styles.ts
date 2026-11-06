@@ -453,14 +453,16 @@ export const STYLES = `
 .lmb-codex-tile.locked { cursor: not-allowed; }
 .lmb-codex-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
 .lmb-codex-tile.noInject { border-style: dashed; }
-.lmb-codex-tile.frozen {
+.lmb-codex-tile.frozen,
+.lmb-codex-tile.locked {
   border-style: dashed;
   opacity: 0.7;
   background:
     repeating-linear-gradient(45deg, rgba(128, 128, 128, 0.06) 0 4px, transparent 4px 9px),
     var(--lmb-fill);
 }
-.lmb-codex-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.frozen .lmb-tile-value,
+.lmb-codex-tile.locked .lmb-tile-value { color: var(--lmb-ink-dim); }
 .lmb-codex-tile.stale { border-color: var(--lmb-warning-frame); }
 .lmb-codex-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
 .lmb-tile-tools { margin-top: 5px; display: flex; gap: 5px; }

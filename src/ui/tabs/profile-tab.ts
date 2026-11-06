@@ -2,7 +2,7 @@ import { t as tr } from "../../i18n";
 import { HIGHER_TIERS, TIER_NAMES, type HigherTierSettings } from "../../shared";
 import type { FrontendState, FrontendToBackend, ProfilePatch } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
-import { CODEX_FILE_KEYS, CODEX_SAMPLER_DEFAULTS, CODEX_TOKEN_LIMIT_DEFAULT, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
+import { CODEX_FILE_KEYS, CODEX_SAMPLER_DEFAULTS, CODEX_TOKEN_LIMIT_DEFAULTS, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
 const PROFILE_DEFAULTS = makeDefaultProfile("__defaults__", tr("ui.tabs.profileTab.profileDefaults.defaults"));
 // Token-mode blank-field fallbacks for the codex cadence: the shared defaults
@@ -185,8 +185,8 @@ export function renderCodexSettings(
   for (const file of CODEX_FILE_KEYS) {
     limitGrid.appendChild(labelled(tr("ui.tabs.profileTab.tokenLimits.category", { file }), numberInput({
       value: profile.codexTokenLimits[file], min: 0, max: 1000000, step: 500,
-      defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
-      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } }),
+      defaultValue: CODEX_TOKEN_LIMIT_DEFAULTS[file],
+      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULTS[file] } }),
     })));
   }
   limits.body.appendChild(limitGrid);

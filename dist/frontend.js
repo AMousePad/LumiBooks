@@ -6696,7 +6696,16 @@ var CODEX_FILE_KEYS = [
   "world",
   "knowledge"
 ];
-var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
+var CODEX_TOKEN_LIMIT_DEFAULTS = {
+  characters: 20000,
+  locations: 20000,
+  things: 20000,
+  relations: 1e4,
+  timeline: 1e4,
+  threads: 1e4,
+  world: 1e4,
+  knowledge: 1e4
+};
 var STORAGE_VERSION = 7;
 var TIER_KINDS = ["chapter", "arc", "volume", "series", "saga", "library", "universe"];
 var MODEL_TIER_NAMES = ["Chapter", "Arc", "Volume", "Series", "Saga", "Library", "Universe"];
@@ -6863,7 +6872,7 @@ var CACHE_BREAKING_ACTIONS = new Set([
 var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
 var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
 function defaultCodexTokenLimits() {
-  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
+  return { ...CODEX_TOKEN_LIMIT_DEFAULTS };
 }
 var LESSON_CHAT_PREFIX = "lesson:";
 function emptyLessonCourse() {
@@ -8061,14 +8070,16 @@ var STYLES = `
 .lmb-codex-tile.locked { cursor: not-allowed; }
 .lmb-codex-tile.noInject .lmb-tile-value { color: var(--lmb-ink-dim); }
 .lmb-codex-tile.noInject { border-style: dashed; }
-.lmb-codex-tile.frozen {
+.lmb-codex-tile.frozen,
+.lmb-codex-tile.locked {
   border-style: dashed;
   opacity: 0.7;
   background:
     repeating-linear-gradient(45deg, rgba(128, 128, 128, 0.06) 0 4px, transparent 4px 9px),
     var(--lmb-fill);
 }
-.lmb-codex-tile.frozen .lmb-tile-value { color: var(--lmb-ink-dim); }
+.lmb-codex-tile.frozen .lmb-tile-value,
+.lmb-codex-tile.locked .lmb-tile-value { color: var(--lmb-ink-dim); }
 .lmb-codex-tile.stale { border-color: var(--lmb-warning-frame); }
 .lmb-codex-tile.stale .lmb-tile-state { color: var(--lmb-warning); }
 .lmb-tile-tools { margin-top: 5px; display: flex; gap: 5px; }
@@ -14939,9 +14950,10 @@ function renderCodexTile(def, parsed, state, ctx, send, busy) {
   let st = tileState(state, def.files);
   const stale = def.files.some((f) => state.codexStaleFiles?.includes(f));
   const needsCatchup = def.files.some((f) => state.codexRefreshPending?.includes(f));
+  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
   const tokens = state.codexFileTokens ? def.files.reduce((acc, f) => acc + (state.codexFileTokens[f] ?? 0), 0) : def.files.reduce((acc, f) => acc + Math.ceil((cache.files?.[f]?.length ?? 0) / 4), 0);
   const tile = document.createElement("div");
-  tile.className = `lmb-tile lmb-codex-tile ${st}${stale || needsCatchup ? " stale" : ""}`;
+  tile.className = `lmb-tile lmb-codex-tile ${locked ? "locked" : `${st}${stale || needsCatchup ? " stale" : ""}`}`;
   lessonMark(tile, `codex.tile.${def.id}`);
   tile.title = t("ui.tabs.codexTab.renderCodexTile.clickToCycle", { tileStateLabelSt: TILE_STATE_LABEL[st], choice: stale ? "yes" : "no", choice2: needsCatchup ? "yes" : "no" });
   const v = document.createElement("div");
@@ -15002,10 +15014,8 @@ function renderCodexTile(def, parsed, state, ctx, send, busy) {
   purgeBtn.addEventListener("click", (e) => e.stopPropagation());
   tools.appendChild(purgeBtn);
   tile.appendChild(tools);
-  const locked = state.settings.cacheFriendly && def.files.some(cacheFriendlyFileLocked);
   const disabledText = t("ui.tabs.codexTab.cacheFriendlyDisabled");
   if (locked) {
-    tile.classList.add("locked");
     tile.title = disabledText;
     stateLine.textContent = disabledText;
     tools.remove();
@@ -16930,8 +16940,8 @@ function renderCodexSettings(host, state, profile, patch) {
       min: 0,
       max: 1e6,
       step: 500,
-      defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
-      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } })
+      defaultValue: CODEX_TOKEN_LIMIT_DEFAULTS[file],
+      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULTS[file] } })
     })));
   }
   limits.body.appendChild(limitGrid);

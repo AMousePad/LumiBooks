@@ -6591,7 +6591,16 @@ var CODEX_FILE_KEYS = [
   "world",
   "knowledge"
 ];
-var CODEX_TOKEN_LIMIT_DEFAULT = 1e4;
+var CODEX_TOKEN_LIMIT_DEFAULTS = {
+  characters: 20000,
+  locations: 20000,
+  things: 20000,
+  relations: 1e4,
+  timeline: 1e4,
+  threads: 1e4,
+  world: 1e4,
+  knowledge: 1e4
+};
 var WORLD_BOOK_NAME_PREFIX = "LumiBooks";
 var CODEX_ENTRY_EXTENSION_KEY = "lumibooks_codex";
 var STORAGE_VERSION = 7;
@@ -6819,7 +6828,7 @@ var CACHE_BREAKING_ACTIONS = new Set([
 var CACHE_FRIENDLY_FROZEN_FILES = ["timeline", "threads"];
 var cacheFriendlyFileLocked = (file) => CACHE_FRIENDLY_FROZEN_FILES.includes(file) || file === "relations";
 function defaultCodexTokenLimits() {
-  return Object.fromEntries(CODEX_FILE_KEYS.map((key) => [key, CODEX_TOKEN_LIMIT_DEFAULT]));
+  return { ...CODEX_TOKEN_LIMIT_DEFAULTS };
 }
 function normalizeCodexTokenLimits(raw) {
   const limits = defaultCodexTokenLimits();
@@ -9730,7 +9739,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.2.4",
+  version: "1.2.5",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -12782,9 +12791,7 @@ async function doSync(chatId, userId, relationsTableFallback) {
     cut,
     stamp: codexSettingsStamp(settings)
   }, { userId });
-  const previousCut = new Set(manifest?.cut ?? []);
-  if (cut.some((record) => !previousCut.has(record)))
-    cutWarning?.(userId, chatId);
+  cutWarning?.(userId, chatId, cut, manifest?.cut ?? []);
   if (wrote && settings.cacheFriendly)
     bumpCacheEpoch(chatId);
   recordDiagnostic(userId, {
@@ -18210,6 +18217,31 @@ function formatEntryForInjection(entry) {
   return entry.raw.content;
 }
 
+// src/backend/codex/cut-warnings.ts
+function createCodexCutWarning(notify) {
+  const chats = new Map;
+  return (userId, chatId, cut, previousCut = []) => {
+    if (!cut.length && !previousCut.length)
+      return;
+    const key = `${userId}::${chatId}`;
+    let seen = chats.get(key);
+    if (!seen) {
+      if (chats.size >= 500)
+        chats.delete(chats.keys().next().value);
+      seen = new Set;
+    }
+    chats.delete(key);
+    chats.set(key, seen);
+    for (const record of previousCut)
+      seen.add(record);
+    const hasNew = cut.some((record) => !seen.has(record));
+    for (const record of cut)
+      seen.add(record);
+    if (hasNew)
+      notify(userId, chatId);
+  };
+}
+
 // src/backend/cache-friendly.ts
 var LUMICACHE_STATUS = "lumicache.status";
 async function lumiCacheAvailable() {
@@ -19023,24 +19055,10 @@ registerCodexCallbacks({
     })();
   }
 });
-registerCodexCutWarning((userId) => {
+var warnOnNewCodexCuts = createCodexCutWarning((userId) => {
   notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
 });
-var activationCutsSeen = new Map;
-function warnOnNewActivationCuts(userId, chatId, cut) {
-  const key = `${userId}::${chatId}`;
-  let seen = activationCutsSeen.get(key);
-  if (!cut.some((id) => !seen?.has(id)))
-    return;
-  notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
-  if (!seen) {
-    if (activationCutsSeen.size > 500)
-      activationCutsSeen.clear();
-    activationCutsSeen.set(key, seen = new Set);
-  }
-  for (const id of cut)
-    seen.add(id);
-}
+registerCodexCutWarning(warnOnNewCodexCuts);
 async function warnIfFiledMessageChanged(chatId, messageId, userId, deleted) {
   if (!messageId || !(await loadSettings(userId)).cacheFriendly)
     return;
@@ -19087,7 +19105,14 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
           disabledIds.push(...codexIds);
         } else {
           disabledIds.push(...off.cut);
-          warnOnNewActivationCuts(userId, ctx.chatId, off.cut);
+          if (off.cut.length) {
+            const cutIds = new Set(off.cut);
+            const records = ctx.entries.flatMap((entry) => {
+              const meta = cutIds.has(entry.id) ? readEntryMeta(entry) : null;
+              return meta ? [meta.record] : [];
+            });
+            warnOnNewCodexCuts(userId, ctx.chatId, records);
+          }
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);

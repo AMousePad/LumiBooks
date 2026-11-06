@@ -100,7 +100,8 @@ import {
 } from "./codex/index";
 import { adoptCodexFrom, codexPresence, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
-import { codexActivationCuts, registerCodexCutWarning, retireCodexChat, syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { codexActivationCuts, readEntryMeta, registerCodexCutWarning, retireCodexChat, syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { createCodexCutWarning } from "./codex/cut-warnings";
 import { filedMessageChanged, lumiCacheAvailable, runCacheFriendlyWindow } from "./cache-friendly";
 import { bumpCacheEpoch } from "./hooks";
 import { repairCodexReferences, saveCodexEdit } from "./codex/repair";
@@ -232,24 +233,10 @@ registerCodexCallbacks({
   },
 });
 
-registerCodexCutWarning((userId) => {
+const warnOnNewCodexCuts = createCodexCutWarning((userId) => {
   void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
 });
-
-/** Warn once per entry, since keyword matches change which entries are cut each turn. */
-const activationCutsSeen = new Map<string, Set<string>>();
-
-function warnOnNewActivationCuts(userId: string, chatId: string, cut: string[]): void {
-  const key = `${userId}::${chatId}`;
-  let seen = activationCutsSeen.get(key);
-  if (!cut.some((id) => !seen?.has(id))) return;
-  void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
-  if (!seen) {
-    if (activationCutsSeen.size > 500) activationCutsSeen.clear();
-    activationCutsSeen.set(key, seen = new Set());
-  }
-  for (const id of cut) seen.add(id);
-}
+registerCodexCutWarning(warnOnNewCodexCuts);
 
 async function warnIfFiledMessageChanged(chatId: string, messageId: string | undefined, userId: string, deleted: boolean): Promise<void> {
   if (!messageId || !(await loadSettings(userId)).cacheFriendly) return;
@@ -297,7 +284,14 @@ spindle.registerWorldInfoInterceptor(async (ctx) => {
           disabledIds.push(...codexIds);
         } else {
           disabledIds.push(...off.cut);
-          warnOnNewActivationCuts(userId, ctx.chatId, off.cut);
+          if (off.cut.length) {
+            const cutIds = new Set(off.cut);
+            const records = ctx.entries.flatMap(entry => {
+              const meta = cutIds.has(entry.id) ? readEntryMeta(entry) : null;
+              return meta ? [meta.record] : [];
+            });
+            warnOnNewCodexCuts(userId, ctx.chatId, records);
+          }
         }
       } catch (err) {
         warn(`world-info codex gate failed, leaving codex entries active: ${describeError(err)}`);
