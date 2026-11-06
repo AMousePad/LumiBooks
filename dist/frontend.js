@@ -16917,7 +16917,7 @@ function renderCodexSettings(host, state, profile, patch) {
       max: 1e6,
       step: 500,
       defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
-      onBlur: (v) => patch({ codexTokenLimits: { ...profile.codexTokenLimits, [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } })
+      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } })
     })));
   }
   limits.body.appendChild(limitGrid);
@@ -17143,7 +17143,7 @@ function renderSummarySettings(host, profile, patch) {
       })));
     } else {
       const config = profile.higherTiers[tier];
-      const change = (v) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
+      const change = (v) => patch({ higherTiers: { [tier]: v } });
       card.body.append(labelled(t("ui.tabs.profileTab.renderSummarySettings.windowUnit"), select({
         value: config.unit,
         options: [{ value: "entries", label: t("ui.tabs.profileTab.renderSummarySettings.entries", { tierNamesTier2: TIER_NAMES[tier - 2] }) }, { value: "tokens", label: t("ui.tabs.profileTab.renderSummarySettings.summaryTokens") }],
@@ -17173,7 +17173,7 @@ function renderSummarySettings(host, profile, patch) {
       else if (tier === 2)
         patch({ autoCreateArc: enabled });
       else
-        patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], enabled } } });
+        patch({ higherTiers: { [tier]: { enabled } } });
     });
     sec.body.appendChild(card.wrap);
   }
@@ -17202,7 +17202,7 @@ function appendCompressionTarget(host, profile, tier, patch) {
   } : profile.higherTiers[tier];
   const change = (v) => {
     if (tier > 3) {
-      patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], ...v } } });
+      patch({ higherTiers: { [tier]: v } });
     } else {
       patch({
         ...v.targetUnit !== undefined ? { [t("ui.tabs.profileTab.change.targetUnit", { prefix })]: v.targetUnit } : {},

@@ -1,6 +1,6 @@
 import { t as tr } from "../../i18n";
 import { HIGHER_TIERS, TIER_NAMES, type HigherTierSettings } from "../../shared";
-import type { FrontendState, FrontendToBackend } from "../../types";
+import type { FrontendState, FrontendToBackend, ProfilePatch } from "../../types";
 import type { LMBProfile, SamplerSet } from "../../shared";
 import { CODEX_FILE_KEYS, CODEX_SAMPLER_DEFAULTS, CODEX_TOKEN_LIMIT_DEFAULT, SAMPLER_DEFAULTS, makeDefaultProfile } from "../../shared";
 
@@ -31,7 +31,7 @@ export function renderCodexSettings(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
-  patch: (p: Partial<LMBProfile>) => void,
+  patch: (p: ProfilePatch) => void,
 ): void {
   void state;
   const sec = section(tr("ui.tabs.profileTab.sec.knowledgeCodex"));
@@ -186,7 +186,7 @@ export function renderCodexSettings(
     limitGrid.appendChild(labelled(tr("ui.tabs.profileTab.tokenLimits.category", { file }), numberInput({
       value: profile.codexTokenLimits[file], min: 0, max: 1000000, step: 500,
       defaultValue: CODEX_TOKEN_LIMIT_DEFAULT,
-      onBlur: (v) => patch({ codexTokenLimits: { ...profile.codexTokenLimits, [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } }),
+      onBlur: (v) => patch({ codexTokenLimits: { [file]: v ?? CODEX_TOKEN_LIMIT_DEFAULT } }),
     })));
   }
   limits.body.appendChild(limitGrid);
@@ -206,7 +206,7 @@ export function renderCodexConnection(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
-  patch: (p: Partial<LMBProfile>) => void,
+  patch: (p: ProfilePatch) => void,
 ): void {
   const sec = section(tr("ui.tabs.profileTab.sec.codexConnection"));
   const connOpts = [
@@ -375,7 +375,7 @@ function summaryTierSection(title: string, tier: number): ReturnType<typeof sect
 }
 
 /** Each tier owns one card containing both its cadence and output target. */
-export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, patch: (p: ProfilePatch) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.summarySettings"));
   sec.body.appendChild(textNode(tr("ui.tabs.profileTab.renderSummarySettings.windowLagAndCompressionSettingsForEach"), "lmb-help"));
   sec.body.appendChild(cacheLocked(lessonMark(checkbox({
@@ -440,7 +440,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
         })));
     } else {
       const config = profile.higherTiers[tier];
-      const change = (v: Partial<HigherTierSettings>) => patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...config, ...v } } });
+      const change = (v: Partial<HigherTierSettings>) => patch({ higherTiers: { [tier]: v } });
       card.body.append(
         labelled(tr("ui.tabs.profileTab.renderSummarySettings.windowUnit"), select({ value: config.unit,
           options: [{ value: "entries", label: tr("ui.tabs.profileTab.renderSummarySettings.entries", { tierNamesTier2: TIER_NAMES[tier - 2] }) }, { value: "tokens", label: tr("ui.tabs.profileTab.renderSummarySettings.summaryTokens") }],
@@ -461,7 +461,7 @@ export function renderSummarySettings(host: HTMLElement, profile: LMBProfile, pa
     appendAutomationControls(card.body, lag, enabled, tier === 1, (enabled) => {
       if (tier === 1) patch({ autoCreateChapter: enabled });
       else if (tier === 2) patch({ autoCreateArc: enabled });
-      else patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier], enabled } } });
+      else patch({ higherTiers: { [tier]: { enabled } } });
     });
     sec.body.appendChild(card.wrap);
   }
@@ -483,14 +483,14 @@ function appendAutomationControls(host: HTMLElement, lag: HTMLElement, enabled: 
   host.append(modeOwned ? cacheLocked(toggle) : toggle, lag);
 }
 
-function appendCompressionTarget(host: HTMLElement, profile: LMBProfile, tier: 1 | 2 | 3 | 4 | 5 | 6 | 7, patch: (p: Partial<LMBProfile>) => void): void {
+function appendCompressionTarget(host: HTMLElement, profile: LMBProfile, tier: 1 | 2 | 3 | 4 | 5 | 6 | 7, patch: (p: ProfilePatch) => void): void {
   const prefix = tier === 1 ? "chapter" : tier === 2 ? "arc" : "volume";
   const target = tier <= 3 ? {
     targetUnit: profile[`${prefix}TargetUnit`], targetPercent: profile[`${prefix}TargetPercent`], targetTokens: profile[`${prefix}TargetTokens`],
   } : profile.higherTiers[tier as 4 | 5 | 6 | 7];
   const change = (v: Partial<Pick<HigherTierSettings, "targetUnit" | "targetPercent" | "targetTokens">>) => {
     if (tier > 3) {
-      patch({ higherTiers: { ...profile.higherTiers, [tier]: { ...profile.higherTiers[tier as 4 | 5 | 6 | 7], ...v } } });
+      patch({ higherTiers: { [tier as 4 | 5 | 6 | 7]: v } });
     } else {
       patch({
         ...(v.targetUnit !== undefined ? { [tr("ui.tabs.profileTab.change.targetUnit", { prefix: prefix })]: v.targetUnit } : {}),
@@ -519,7 +519,7 @@ export function renderConnection(
   host: HTMLElement,
   state: FrontendState,
   profile: LMBProfile,
-  patch: (p: Partial<LMBProfile>) => void,
+  patch: (p: ProfilePatch) => void,
 ): void {
   const sec = section(tr("ui.tabs.profileTab.sec.summaryConnection"));
   lessonMark(sec.wrap, "tuning.model.connection");
@@ -630,7 +630,7 @@ export function renderSamplersSwitch(
   profile: LMBProfile,
   send: (msg: FrontendToBackend) => void,
 ): void {
-  const patch = (p: Partial<LMBProfile>): void =>
+  const patch = (p: ProfilePatch): void =>
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
   const wrap = document.createElement("div");
   wrap.className = "lmb-pane";
@@ -745,7 +745,7 @@ export function renderCodexSamplers(
 
 export { renderRegex } from "../regex-picker";
 
-export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p: ProfilePatch) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.context"));
   lessonMark(sec.wrap, "tuning.ctx");
   const f = field(tr("ui.tabs.profileTab.f.chapterContext"));
@@ -800,7 +800,7 @@ export function renderContext(host: HTMLElement, profile: LMBProfile, patch: (p:
   host.appendChild(sec.wrap);
 }
 
-export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p: Partial<LMBProfile>) => void): void {
+export function renderBehavior(host: HTMLElement, profile: LMBProfile, patch: (p: ProfilePatch) => void): void {
   const sec = section(tr("ui.tabs.profileTab.sec.behavior"));
   sec.body.appendChild(checkbox({
     checked: profile.hideCoveredMessages,

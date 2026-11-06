@@ -19359,7 +19359,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
             ...incoming,
             id,
             promptRoles: Object.keys(incoming.promptRoles ?? {}).length ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
-            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys
+            higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+            codexTokenLimits: { ...existing.codexTokenLimits, ...incoming.codexTokenLimits },
+            higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...incoming.higherTiers?.[tier] }]))
           });
           if (!merged)
             return cur;

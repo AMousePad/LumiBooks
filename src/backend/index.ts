@@ -728,6 +728,9 @@ spindle.onFrontendMessage(async (raw, userId) => {
               ? { ...existing.promptRoles, ...incoming.promptRoles } : incoming.promptRoles ?? existing.promptRoles,
             higherTierPresetKeys: Object.keys(incoming.higherTierPresetKeys ?? {}).length
               ? { ...existing.higherTierPresetKeys, ...incoming.higherTierPresetKeys } : incoming.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+            // Fields save one key at a time, so a save must not overwrite keys from another save in flight.
+            codexTokenLimits: { ...existing.codexTokenLimits, ...incoming.codexTokenLimits },
+            higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...incoming.higherTiers?.[tier] }])) as typeof existing.higherTiers,
           });
           if (!merged) return cur;
           prevHide = existing.hideCoveredMessages;

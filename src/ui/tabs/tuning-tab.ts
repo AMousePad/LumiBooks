@@ -1,6 +1,6 @@
 import { t as tr } from "../../i18n";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
-import type { FrontendState, FrontendToBackend } from "../../types";
+import type { FrontendState, FrontendToBackend, ProfilePatch } from "../../types";
 import type { LMBProfile } from "../../shared";
 import { codexLessonGated } from "../../shared";
 import { applyCacheLocks, cacheLocked, checkbox, lessonMark, makeSubtabs, scrollPaneTop, section } from "../components";
@@ -62,7 +62,7 @@ export function renderTuningTab(
   }));
 
   const profile = state.activeProfile;
-  const patch = (p: Partial<LMBProfile>) =>
+  const patch = (p: ProfilePatch) =>
     send({ type: "save_profile", profile: { id: profile.id, ...p }, chatId: state.activeChatId });
 
   const pane = document.createElement("div");
