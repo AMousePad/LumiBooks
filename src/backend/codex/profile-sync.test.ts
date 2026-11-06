@@ -5,6 +5,7 @@ import { runCodexTidy, registerCodexCallbacks } from "./index";
 import { emptyCursor } from "./store";
 import { saveSettings } from "../storage";
 import { abortBusy, getBusy, registerPipelineCallbacks } from "../pipeline";
+import { fakeBatch } from "../fake-batch";
 
 const original = (globalThis as any).spindle;
 const chat = "tidy-test", user = "tidy-user";
@@ -22,6 +23,7 @@ beforeEach(async () => {
   data.set(`codex/${chat}/knowledge.json`, { items: [{ fact: "Keep this secret.", knownBy: ["Alice"] }] });
   const book = { id: "codex-book", metadata: { lumibooks_codex_chat_id: chat } };
   (globalThis as any).spindle = {
+    batch: fakeBatch,
     log: { info() {}, warn() {}, error() {} },
     userStorage: {
       async exists(p: string) { return data.has(p); },
@@ -162,22 +164,19 @@ test("recall modes survive record edits and preserve IDs, keywords and disabled 
   }
 });
 
-test("a corrupt old chat must not prevent resyncing healthy chats", async () => {
-  const { syncCodexProfiles } = await import("./sync");
-  (globalThis as any).spindle.userStorage.list = async () => ["codex/broken/cursor.json", `codex/${chat}/cursor.json`];
+test("a corrupt chat fails alone and does not block syncing another chat", async () => {
+  const { syncCodexChatSettings } = await import("./sync");
   data.set("codex/broken/cursor.json", emptyCursor());
   data.set("codex/broken/world.json", { entries: [{ topic: "invalid", facts: [] }] });
   profile.codexActivationMode = "always";
   await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [profile], activeProfileId: profile.id });
-  const failures = await syncCodexProfiles(user);
-  expect(failures).toHaveLength(1);
-  expect(failures[0]?.chatId).toBe("broken");
-  expect(failures[0]?.error).toContain("world.json");
+  await expect(syncCodexChatSettings("broken", user)).rejects.toThrow("world.json");
+  await syncCodexChatSettings(chat, user);
   expect(entries.some((e) => e.constant && e.content.includes("Weather"))).toBe(true);
 });
 
 test("deleted chats retire quietly, preserve recovery data, and stay out of continuity choices", async () => {
-  const { syncCodexProfiles } = await import("./sync");
+  const { syncCodexChatSettings } = await import("./sync");
   const { listCodexChatIds } = await import("./store");
   const host = (globalThis as any).spindle;
   const get = host.chats.get;
@@ -193,7 +192,10 @@ test("deleted chats retire quietly, preserve recovery data, and stay out of cont
     expect(path.startsWith("codex/deleted/")).toBe(false);
     return read(path);
   };
-  for (let i = 0; i < 2; i++) expect(await syncCodexProfiles(user)).toEqual([]);
+  for (let i = 0; i < 2; i++) {
+    await syncCodexChatSettings("deleted", user);
+    await syncCodexChatSettings(chat, user);
+  }
   expect(data.has("codex/deleted/orphaned.json")).toBe(true);
   expect(data.get("codex/deleted/world.json")).toEqual(saved);
   expect(data.has("codex/deleted/cursor.json")).toBe(true);
@@ -203,15 +205,15 @@ test("deleted chats retire quietly, preserve recovery data, and stay out of cont
 });
 
 test("lookup failures keep Codex state active and report the real error", async () => {
-  const { syncCodexProfiles } = await import("./sync");
+  const { syncCodexChatSettings } = await import("./sync");
   (globalThis as any).spindle.chats.get = async () => { throw new Error("host lookup unavailable"); };
-  expect(await syncCodexProfiles(user)).toEqual([{ chatId: chat, error: "host lookup unavailable" }]);
+  await expect(syncCodexChatSettings(chat, user)).rejects.toThrow("host lookup unavailable");
   expect(data.has(`codex/${chat}/orphaned.json`)).toBe(false);
   expect(data.has(`codex/${chat}/world.json`)).toBe(true);
 });
 
 test("a chat deleted while attaching its book retires its cached binding and can later recover", async () => {
-  const { syncCodexEntries, syncCodexProfiles } = await import("./sync");
+  const { syncCodexEntries, syncCodexChatSettings } = await import("./sync");
   const { findCodexBookForChat } = await import("../world-book");
   const { listCodexChatIds } = await import("./store");
   await syncCodexEntries(chat, user);
@@ -219,28 +221,26 @@ test("a chat deleted while attaching its book retires its cached binding and can
   let lookups = 0;
   host.chats.get = async () => ++lookups === 1 ? get() : null;
   const savedEntries = structuredClone(entries);
-  expect(await syncCodexProfiles(user)).toEqual([]);
+  await syncCodexChatSettings(chat, user);
   const beforeLookup = lookups;
   await findCodexBookForChat(chat, user);
   expect(lookups).toBeGreaterThan(beforeLookup);
   expect(await listCodexChatIds(user)).toEqual([]);
   expect(entries).toEqual(savedEntries);
   host.chats.get = get;
-  expect(await syncCodexProfiles(user)).toEqual([]);
+  await syncCodexChatSettings(chat, user);
   expect(data.has(`codex/${chat}/orphaned.json`)).toBe(false);
   expect(await listCodexChatIds(user)).toEqual([chat]);
   expect(entries).toEqual(savedEntries);
 });
 
 test("failed absence verification does not hide a live chat sync failure", async () => {
-  const { syncCodexProfiles } = await import("./sync");
+  const { syncCodexChatSettings } = await import("./sync");
   const host = (globalThis as any).spindle, get = host.chats.get;
   let lookups = 0;
   host.chats.get = async () => { if (++lookups > 1) throw new Error("lookup unavailable"); return get(); };
   data.set(`codex/${chat}/world.json`, { entries: [{ topic: "invalid", facts: [] }] });
-  const failures = await syncCodexProfiles(user);
-  expect(failures).toHaveLength(1);
-  expect(failures[0]?.error).toContain("world.json");
+  await expect(syncCodexChatSettings(chat, user)).rejects.toThrow("world.json");
   expect(data.has(`codex/${chat}/orphaned.json`)).toBe(false);
 });
 

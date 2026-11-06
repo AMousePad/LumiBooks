@@ -5,6 +5,7 @@ import { runCodexTidy, registerCodexCallbacks } from "./index";
 import { emptyCursor } from "./store";
 import { saveSettings } from "../storage";
 import { abortBusy, getBusy, registerPipelineCallbacks } from "../pipeline";
+import { fakeBatch } from "../fake-batch";
 
 const original = (globalThis as any).spindle;
 const chat = "tidy-test", user = "tidy-user";
@@ -22,6 +23,7 @@ beforeEach(async () => {
   data.set(`codex/${chat}/knowledge.json`, { items: [{ fact: "Keep this secret.", knownBy: ["Alice"] }] });
   const book = { id: "codex-book", metadata: { lumibooks_codex_chat_id: chat } };
   (globalThis as any).spindle = {
+    batch: fakeBatch,
     log: { info() {}, warn() {}, error() {} },
     userStorage: {
       async exists(p: string) { return data.has(p); },

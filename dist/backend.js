@@ -3141,6 +3141,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         summaryRepairFailed: "Summary repair failed: {describeError}",
         savedDiagnosticsCleared: "Saved diagnostics cleared.",
         recallSettingSavedEntryOrBookUpdates: "Recall saved, but {failed} updates failed. Reapply to retry.",
+        followChatNameFailed: "Your books could not be renamed to match the chat: {error}",
         invalidProfilePayload: "Invalid profile payload.",
         profileNoLongerExists: "Profile {id} no longer exists.",
         memoriaKeepsAtLeastOneProfile: "A profile is required",
@@ -3209,10 +3210,6 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       },
       retryLastFailure: {
         nothingToRetryYetMemoriaWillCatch: "Nothing to retry. Waiting for the next message."
-      },
-      syncProfileSettings: {
-        profileSavedButCodexInjectionSettingsCould: "Profile saved. Codex injection sync failed for {length} chat(s): {join}. Fix the errors, then reapply settings.",
-        profileSavedButCodexInjectionSettingsCould2: "Profile saved. Codex injection sync failed: {describeError}"
       },
       next: {
         newProfile: "New profile"
@@ -3636,6 +3633,11 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       applied: "Your prompt is using over 90% of your context, so I permanently lowered summary lag, summary size, and Codex limits on this profile.",
       advice: "Your context window looks small, so consider turning off larger Codex features like timeline, lore, and relations to save context.",
       failed: "I could not lower your settings for a full context window: {error}"
+    },
+    entrySettings: {
+      summaryFailed: "{failed} summary entries in this chat could not switch to your recall setting and will retry next time you use the chat.",
+      codexFailed: "This chat's Codex entries could not update to your settings: {error}",
+      failed: "This chat's lorebook entries could not update to your settings: {error}"
     }
   },
   codexTidy: {
@@ -7693,20 +7695,27 @@ async function reassertChatBinding(chatId, userId) {
 }
 var nameSyncAt = new Map;
 var NAME_SYNC_TTL_MS = 60000;
-async function syncManagedBookNames(chatId, chatName, shelfBookId, userId) {
-  await syncManagedBookName(chatId, shelfBookId, await managedBookName(chatId, chatName, userId), userId);
+async function syncManagedBookNames(chatId, chatName, shelfBookId, userId, force = false) {
+  if (shelfBookId)
+    await syncManagedBookName(chatId, shelfBookId, await managedBookName(chatId, chatName, userId), userId, force);
   const codexBookId = await findCodexBookForChat(chatId, userId).catch(() => null);
   if (codexBookId)
-    await syncManagedBookName(chatId, codexBookId, await managedBookName(chatId, chatName, userId, true), userId);
+    await syncManagedBookName(chatId, codexBookId, await managedBookName(chatId, chatName, userId, true), userId, force);
 }
-async function syncManagedBookName(chatId, bookId, name, userId) {
+async function followChatName(chatId, userId) {
+  const chat = await spindle.chats.get(chatId, userId);
+  if (!chat)
+    return;
+  await syncManagedBookNames(chatId, chat.name ?? null, await findBookForChat(chatId, userId), userId, true);
+}
+async function syncManagedBookName(chatId, bookId, name, userId, force = false) {
   const key = `${cacheKey(userId, chatId)}::${bookId}`;
   if (!(await loadSettings(userId)).followChatNames) {
     nameSyncAt.delete(key);
     return;
   }
   const last = nameSyncAt.get(key);
-  if (last && Date.now() - last < NAME_SYNC_TTL_MS)
+  if (!force && last && Date.now() - last < NAME_SYNC_TTL_MS)
     return;
   if (nameSyncAt.size > 500)
     nameSyncAt.clear();
@@ -7763,29 +7772,35 @@ async function createChapterEntry(bookId, meta, content, comment, userId, keys =
   };
   return replacement ? spindle.world_books.entries.update(replacement.raw.id, payload, userId) : spindle.world_books.entries.create(bookId, payload, userId);
 }
-async function applySummaryActivation(userId) {
-  const books = await listAllBooks(userId);
+var SUMMARY_ACTIVATION_STAMP = "lumibooks_summary_activation";
+async function applySummaryActivation(chatId, userId) {
+  const bookId = await findBookForChat(chatId, userId);
+  if (!bookId)
+    return { updated: 0, failed: 0 };
   let updated = 0;
   let failed = 0;
-  for (const book of books) {
-    const meta = book.metadata;
-    if (!meta || typeof meta["lumibooks_chat_id"] !== "string")
-      continue;
-    const chatId = meta["lumibooks_chat_id"];
-    await withCommitMutex(userId, chatId, async () => {
-      const flags = activationFlags((await loadSettings(userId)).summaryActivationMode);
-      const updates = (await listAllEntries(book.id, userId)).filter((entry) => (entry.extensions || {})[EXTENSION_KEY] && (entry.constant !== flags.constant || (entry.vectorized ?? false) !== flags.vectorized)).map((entry) => ({ id: entry.id, input: flags }));
-      const failures = await updateEntriesBatched(updates, userId);
-      for (const f of failures)
-        warn(`summary activation update failed for entry ${f.id}: ${f.error}`);
-      updated += updates.length - failures.length;
-      failed += failures.length;
-    }).catch((err) => {
-      warn(`summary activation update failed for book ${book.id}: ${describeError(err)}`);
-      failed++;
-    });
-    invalidateBookCache(userId, chatId);
-  }
+  await withCommitMutex(userId, chatId, async () => {
+    const mode = (await loadSettings(userId)).summaryActivationMode;
+    const book = await spindle.world_books.get(bookId, userId);
+    if (!book)
+      return;
+    const meta = book.metadata && typeof book.metadata === "object" ? book.metadata : {};
+    if (meta[SUMMARY_ACTIVATION_STAMP] === mode)
+      return;
+    const flags = activationFlags(mode);
+    const updates = (await listAllEntries(bookId, userId)).filter((entry) => (entry.extensions || {})[EXTENSION_KEY] && (entry.constant !== flags.constant || (entry.vectorized ?? false) !== flags.vectorized)).map((entry) => ({ id: entry.id, input: flags }));
+    const failures = await updateEntriesBatched(updates, userId);
+    for (const f of failures)
+      warn(`summary activation update failed for entry ${f.id}: ${f.error}`);
+    updated = updates.length - failures.length;
+    failed = failures.length;
+    if (failed === 0)
+      await spindle.world_books.update(bookId, { metadata: { ...meta, [SUMMARY_ACTIVATION_STAMP]: mode } }, userId);
+  }).catch((err) => {
+    warn(`summary activation update failed for chat ${chatId}: ${describeError(err)}`);
+    failed++;
+  });
+  invalidateBookCache(userId, chatId);
   return { updated, failed };
 }
 async function updateEntry(entryId, patch, userId) {
@@ -12607,12 +12622,29 @@ async function listSyncedEntries(bookId, chatId, userId) {
 function syncCodexEntries(chatId, userId, relationsTableFallback = true) {
   return withSyncLock(userId, chatId, () => doSync(chatId, userId, relationsTableFallback));
 }
+function codexSettingsStamp(settings) {
+  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  return JSON.stringify([
+    settings.cacheFriendly,
+    profile?.codexActivationMode,
+    profile?.codexInjectionPosition,
+    profile?.codexInjectionDepth,
+    profile?.codexTokenLimits
+  ]);
+}
+async function readCodexSettingsStamp(chatId, userId) {
+  const path = `codex/${chatId}/lorebook-sync.json`;
+  if (!await spindle.userStorage.exists(path, userId))
+    return null;
+  const manifest = await spindle.userStorage.getJson(path, { userId });
+  return typeof manifest?.stamp === "string" ? manifest.stamp : null;
+}
 async function doSync(chatId, userId, relationsTableFallback) {
+  const settings = await loadSettings(userId);
   if (await codexPresence(chatId, userId) === "absent") {
-    await doWipe(chatId, userId);
+    await doWipe(chatId, userId, codexSettingsStamp(settings));
     return;
   }
-  const settings = await loadSettings(userId);
   const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
   await alignCacheFileStates(chatId, userId, settings.cacheFriendly);
   const cursor = await loadCursor(chatId, userId);
@@ -12743,7 +12775,13 @@ async function doSync(chatId, userId, relationsTableFallback) {
   }
   const records = desired.map((r) => r.record);
   const cut = [...cuts].sort();
-  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter((record) => records.includes(record)), cut }, { userId });
+  await spindle.userStorage.setJson(manifestPath, {
+    bookId,
+    records,
+    suppressed: [...suppressed].filter((record) => records.includes(record)),
+    cut,
+    stamp: codexSettingsStamp(settings)
+  }, { userId });
   const previousCut = new Set(manifest?.cut ?? []);
   if (cut.some((record) => !previousCut.has(record)))
     cutWarning?.(userId, chatId);
@@ -12760,8 +12798,8 @@ async function doSync(chatId, userId, relationsTableFallback) {
 function wipeCodexEntries(chatId, userId) {
   return withSyncLock(userId, chatId, () => doWipe(chatId, userId));
 }
-async function doWipe(chatId, userId) {
-  await spindle.userStorage.setJson(`codex/${chatId}/lorebook-sync.json`, { bookId: "", records: [], suppressed: [] }, { userId });
+async function doWipe(chatId, userId, stamp) {
+  await spindle.userStorage.setJson(`codex/${chatId}/lorebook-sync.json`, { bookId: "", records: [], suppressed: [], ...stamp ? { stamp } : {} }, { userId });
   const bookId = await findCodexBookForChat(chatId, userId);
   if (!bookId)
     return;
@@ -12821,37 +12859,27 @@ function codexEntryPlacement(profile, constant) {
     role: "system"
   };
 }
-async function syncCodexProfiles(userId) {
-  const failures = [];
-  for (const chatId of await listCodexChatIds(userId, true)) {
-    try {
-      await withSyncLock(userId, chatId, async () => {
-        const retire = async () => {
-          await setCodexOrphaned(chatId, userId, true);
-          invalidateBookCache(userId, chatId);
-          recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
-        };
-        if (await spindle.chats.get(chatId, userId) === null) {
-          await retire();
-          return;
-        }
-        await setCodexOrphaned(chatId, userId, false);
-        try {
-          await doSync(chatId, userId, true);
-        } catch (err) {
-          const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
-          if (!missing)
-            throw err;
-          await retire();
-        }
-      });
-    } catch (err) {
-      const error = describeError(err);
-      failures.push({ chatId, error });
-      warn(`Codex profile sync failed for ${chatId}: ${error}`);
+async function retireCodexChat(chatId, userId) {
+  await setCodexOrphaned(chatId, userId, true);
+  invalidateBookCache(userId, chatId);
+  recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
+}
+function syncCodexChatSettings(chatId, userId) {
+  return withSyncLock(userId, chatId, async () => {
+    if (await spindle.chats.get(chatId, userId) === null) {
+      await retireCodexChat(chatId, userId);
+      return;
     }
-  }
-  return failures;
+    await setCodexOrphaned(chatId, userId, false);
+    try {
+      await doSync(chatId, userId, true);
+    } catch (err) {
+      const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
+      if (!missing)
+        throw err;
+      await retireCodexChat(chatId, userId);
+    }
+  });
 }
 
 // src/backend/binding.ts
@@ -15469,312 +15497,6 @@ async function runSummaryTransfer(userId, chatId, request) {
   }
 }
 
-// src/backend/context-relief.ts
-var statsByGeneration = new Map;
-function rememberContextStats(generationId, stats) {
-  if (generationId && stats)
-    statsByGeneration.set(generationId, stats);
-}
-function takeContextStats(generationId) {
-  if (!generationId)
-    return;
-  const stats = statsByGeneration.get(generationId);
-  statsByGeneration.delete(generationId);
-  return stats;
-}
-function contextIsFull(stats, promptTokens) {
-  if (!stats?.enabled || !stats.maxContext || stats.maxContext <= 0)
-    return false;
-  if ((stats.messagesDropped ?? 0) > 0)
-    return true;
-  const assembled = (stats.fixedTokens ?? 0) + (stats.chatHistoryTokensAfter ?? 0);
-  return Math.max(promptTokens ?? 0, assembled) / stats.maxContext >= CONTEXT_RELIEF_THRESHOLD;
-}
-async function relieveContext(userId, warn, maxContext = null) {
-  const needed = (settings) => settings.contextRelief && settings.profiles.some((p) => p.id === settings.activeProfileId && !p.contextReliefApplied);
-  if (!needed(await loadSettings(userId)))
-    return null;
-  let applied = false;
-  const next = await mutateSettings(userId, (current) => {
-    if (!needed(current))
-      return current;
-    applied = true;
-    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? { ...applyContextRelief(p), contextReliefMaxContext: maxContext } : p) };
-  });
-  if (!applied)
-    return null;
-  warn(t("backend.contextRelief.applied"));
-  if (!next.cacheFriendly)
-    warn(t("backend.contextRelief.advice"));
-  return next;
-}
-async function releaseContextRelief(userId, maxContext) {
-  if (!maxContext || maxContext <= 0)
-    return false;
-  const stale = (settings) => settings.profiles.some((p) => p.id === settings.activeProfileId && p.contextReliefApplied && p.contextReliefMaxContext !== maxContext);
-  if (!stale(await loadSettings(userId)))
-    return false;
-  let released = false;
-  await mutateSettings(userId, (current) => {
-    if (!stale(current))
-      return current;
-    return { ...current, profiles: current.profiles.map((p) => {
-      if (p.id !== current.activeProfileId)
-        return p;
-      if (p.contextReliefMaxContext === null)
-        return { ...p, contextReliefMaxContext: maxContext };
-      released = true;
-      return { ...p, contextReliefApplied: false, contextReliefMaxContext: null };
-    }) };
-  });
-  return released;
-}
-
-// src/profile-patch.ts
-function mergeProfilePatch(existing, patch) {
-  return {
-    ...existing,
-    ...patch,
-    promptRoles: Object.keys(patch.promptRoles ?? {}).length ? { ...existing.promptRoles, ...patch.promptRoles } : patch.promptRoles ?? existing.promptRoles,
-    higherTierPresetKeys: Object.keys(patch.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...patch.higherTierPresetKeys } : patch.higherTierPresetKeys ?? existing.higherTierPresetKeys,
-    codexTokenLimits: { ...existing.codexTokenLimits, ...patch.codexTokenLimits },
-    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...patch.higherTiers?.[tier] }]))
-  };
-}
-
-// src/backend/injection.ts
-var injectionAnomalyCb = null;
-function registerInjectionAnomalyCallback(cb) {
-  injectionAnomalyCb = cb;
-}
-function isAssembledHistory(lm) {
-  return lm["__isChatHistory"] === true;
-}
-function sourceMessageId(lm) {
-  const v = lm["sourceMessageId"];
-  return typeof v === "string" && v ? v : undefined;
-}
-function sourceIndexInChat(lm) {
-  const v = lm["sourceIndexInChat"];
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-function sourceMessageMetadata(lm) {
-  const record = lm;
-  if (!Object.prototype.hasOwnProperty.call(record, "sourceMessageMetadata"))
-    return;
-  const value = record["sourceMessageMetadata"];
-  return value && typeof value === "object" ? value : {};
-}
-function orderEntries(coverage, msgIdToIdx) {
-  const ordered = [];
-  for (const entry of coverage.activeEntries) {
-    let firstIdx = Number.POSITIVE_INFINITY;
-    let lastIdx = -1;
-    for (const msgId of entry.meta.msgIds) {
-      const idx = msgIdToIdx.get(msgId);
-      if (typeof idx !== "number")
-        continue;
-      if (idx < firstIdx)
-        firstIdx = idx;
-      if (idx > lastIdx)
-        lastIdx = idx;
-    }
-    const haveIdx = firstIdx !== Number.POSITIVE_INFINITY;
-    const resolvedFirst = haveIdx ? firstIdx : typeof entry.meta.firstMsgIdx === "number" ? entry.meta.firstMsgIdx : 0;
-    const resolvedLast = haveIdx ? lastIdx : typeof entry.meta.lastMsgIdx === "number" ? entry.meta.lastMsgIdx : resolvedFirst;
-    const tierName = TIER_NAMES[entry.meta.tier - 1];
-    const label = entry.raw.comment || (haveIdx ? t("backend.injection.label.msgs", { tierName, firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }) : tierName);
-    ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
-  }
-  ordered.sort((a, b) => a.firstIdx - b.firstIdx);
-  return ordered;
-}
-var LEGACY_ACTIVATION_WAIT_MS = 240000;
-var legacyActivationInflight = new Map;
-async function getLegacyActivated(chatId, userId) {
-  const key = `${userId}:${chatId}`;
-  let pending = legacyActivationInflight.get(key);
-  if (!pending) {
-    const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
-    pending = new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        if (legacyActivationInflight.get(key) === pending) {
-          legacyActivationInflight.delete(key);
-        }
-        resolve(null);
-      }, LEGACY_ACTIVATION_WAIT_MS);
-      raw.then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-        if (legacyActivationInflight.get(key) === pending) {
-          legacyActivationInflight.delete(key);
-        }
-      });
-    });
-    legacyActivationInflight.set(key, pending);
-  }
-  return await pending;
-}
-async function buildInjection(chatId, llmMessages, userId, context = { worldInfoActivationCapture: false }) {
-  let activated = null;
-  let attachedBookIds = null;
-  let allEntries;
-  if (context.capturedWorldInfo === undefined && !context.worldInfoActivationCapture) {
-    [activated, allEntries, attachedBookIds] = await Promise.all([
-      getLegacyActivated(chatId, userId),
-      listLmbEntries(chatId, userId),
-      getChatAttachedBookIds(chatId, userId).catch(() => null)
-    ]);
-  } else {
-    allEntries = await listLmbEntries(chatId, userId);
-  }
-  if (allEntries.length === 0)
-    return null;
-  let entriesForCoverage;
-  if (context.capturedWorldInfo !== undefined) {
-    const capturedIds = new Set(context.capturedWorldInfo.map((entry) => entry.id));
-    entriesForCoverage = allEntries.filter((entry) => capturedIds.has(entry.raw.id));
-  } else if (context.worldInfoActivationCapture) {
-    entriesForCoverage = allEntries.filter((entry) => !entry.raw.disabled);
-  } else {
-    const ourBookId = allEntries[0].raw.world_book_id;
-    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
-    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
-    const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
-    entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
-  }
-  const coverage = await buildCoverage(chatId, userId, allEntries, false, new Set(entriesForCoverage.map((entry) => entry.raw.id)));
-  recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
-  if (coverage.activeEntries.length === 0)
-    return null;
-  const historyMsgs = llmMessages.filter(isAssembledHistory);
-  let chatSnapshot;
-  if (historyMsgs.length === 0) {
-    let chatMessages = null;
-    try {
-      chatMessages = await spindle.chat.getMessages(chatId);
-    } catch (err) {
-      error(`injection: getMessages failed while verifying an empty history, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
-      return null;
-    }
-    const hasVisibleMessage = !!chatMessages?.some((m) => !(m.extra && m.extra.hidden));
-    if (hasVisibleMessage) {
-      error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. Possible causes: the host clipped history to fit max context, another ` + `extension reshaped the prompt first, or the active preset has no chat-history block. Skipping injection.`);
-      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTFindTheChatHistory"));
-      return null;
-    }
-    chatSnapshot = chatMessages;
-  }
-  const plan = [];
-  let missingIdx = false;
-  for (const m of historyMsgs) {
-    const id = sourceMessageId(m);
-    if (id === undefined) {
-      error(`injection: a "__isChatHistory" message is missing sourceMessageId. Host identity contract ` + `looks inconsistent, skipping injection.`);
-      return null;
-    }
-    const idx = sourceIndexInChat(m);
-    if (idx === undefined)
-      missingIdx = true;
-    plan.push({
-      id,
-      idx,
-      covered: coverage.coveredBy.has(id),
-      metadata: sourceMessageMetadata(m)
-    });
-  }
-  let msgIdToIdx;
-  const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
-  const assembledIds = new Set(plan.map((item) => item.id));
-  const needsSourceIndexes = coverage.activeEntries.some((entry) => !entry.meta.isRoot && entry.meta.msgIds.some((id) => !assembledIds.has(id)));
-  if (chatSnapshot || missingIdx || needsMetadata || needsSourceIndexes) {
-    let chatMessages;
-    try {
-      chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
-    } catch (err) {
-      error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
-      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
-      return null;
-    }
-    msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));
-    const byId = new Map(chatMessages.map((m) => [m.id, m]));
-    for (const p of plan) {
-      const idx = msgIdToIdx.get(p.id);
-      if (idx === undefined) {
-        error(`injection: sourceMessageId "${p.id}" is not in the chat, skipping injection.`);
-        return null;
-      }
-      p.idx = idx;
-      if (p.covered) {
-        p.metadata = byId.get(p.id)?.metadata ?? {};
-      }
-    }
-  } else {
-    msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx]));
-  }
-  for (const item of plan) {
-    if (item.covered && item.metadata?.["lmb_excluded"] === true) {
-      item.covered = false;
-    }
-  }
-  const ordered = orderEntries(coverage, msgIdToIdx);
-  if (ordered.length === 0)
-    return null;
-  const out = [];
-  const injectedLabels = new Map;
-  const flushAt = (index, beforePos) => {
-    const block = [];
-    for (const o of ordered) {
-      if (o.emitted || o.lastIdx >= beforePos)
-        continue;
-      o.emitted = true;
-      const msg = { role: "assistant", content: formatEntryForInjection(o.entry) };
-      injectedLabels.set(msg, o.label);
-      block.push(msg);
-    }
-    if (block.length)
-      out.splice(index, 0, ...block);
-  };
-  let hp = 0;
-  let histEnd = -1;
-  for (const lm of llmMessages) {
-    if (!isAssembledHistory(lm)) {
-      out.push(lm);
-      continue;
-    }
-    const p = plan[hp++];
-    flushAt(out.length, p.idx);
-    if (!p.covered)
-      out.push(lm);
-    histEnd = out.length;
-  }
-  let fallbackPos = 0;
-  while (fallbackPos < out.length && out[fallbackPos].role === "system")
-    fallbackPos++;
-  flushAt(histEnd < 0 ? fallbackPos : histEnd, Number.POSITIVE_INFINITY);
-  if (injectedLabels.size === 0)
-    return null;
-  const breakdown = [];
-  for (let i = 0;i < out.length; i++) {
-    const label = injectedLabels.get(out[i]);
-    if (label !== undefined)
-      breakdown.push({ messageIndex: i, name: label });
-  }
-  recordDiagnostic(userId, {
-    event: "injection",
-    chatId,
-    outcome: "success",
-    messageScope: "assembled",
-    numbers: { input: llmMessages.length, output: out.length, selected: breakdown.length, covered: plan.filter((p) => p.covered).length },
-    messages: plan.map((p) => ({ id: p.id, index: p.idx, coveredBy: coverage.coveredBy.get(p.id), excluded: p.metadata?.lmb_excluded === true }))
-  });
-  return { messages: out, breakdown };
-}
-function formatEntryForInjection(entry) {
-  return entry.raw.content;
-}
-
 // src/codex-tidy.ts
 function resolveTidyTarget(currentTokens, target) {
   if (!target || !["tokens", "percent"].includes(target.unit) || !Number.isFinite(target.value) || target.value <= 0 || target.unit === "percent" && target.value >= 100) {
@@ -18126,6 +17848,368 @@ async function rebuildCodexFiles(chatId, profile, userId, only) {
   }
 }
 
+// src/backend/entry-settings.ts
+var KNOWN_CAP = 5000;
+var known = new Map;
+var queues2 = new Map;
+var keyFor = (userId, chatId) => `${userId}
+${chatId}`;
+function ensureChatEntrySettings(userId, chatId) {
+  const key = keyFor(userId, chatId);
+  const run = (queues2.get(key) ?? Promise.resolve()).then(() => {
+    return;
+  }, () => {
+    return;
+  }).then(() => reconcile(userId, chatId, key));
+  queues2.set(key, run);
+  const clear = () => {
+    if (queues2.get(key) === run)
+      queues2.delete(key);
+  };
+  run.then(clear, clear);
+  return run;
+}
+function forgetChatEntrySettings(userId, chatId) {
+  known.delete(keyFor(userId, chatId));
+}
+async function reconcile(userId, chatId, key) {
+  const settings = await loadSettings(userId);
+  const codexStamp = codexSettingsStamp(settings);
+  const stamp = `${settings.summaryActivationMode}
+${codexStamp}`;
+  if (known.get(key) === stamp)
+    return { summaryFailed: 0, codexError: null };
+  const { failed } = await applySummaryActivation(chatId, userId);
+  let codexError = null;
+  try {
+    if (await readCodexSettingsStamp(chatId, userId) !== codexStamp) {
+      await syncCodexChatSettings(chatId, userId);
+      invalidateCodexInjectionCache(chatId, false);
+    }
+  } catch (err) {
+    codexError = describeError(err);
+  }
+  if (failed === 0 && codexError === null)
+    remember(key, stamp);
+  return { summaryFailed: failed, codexError };
+}
+function remember(key, stamp) {
+  known.delete(key);
+  known.set(key, stamp);
+  while (known.size > KNOWN_CAP) {
+    const oldest = known.keys().next().value;
+    if (oldest === undefined)
+      break;
+    known.delete(oldest);
+  }
+}
+
+// src/backend/context-relief.ts
+var statsByGeneration = new Map;
+function rememberContextStats(generationId, stats) {
+  if (generationId && stats)
+    statsByGeneration.set(generationId, stats);
+}
+function takeContextStats(generationId) {
+  if (!generationId)
+    return;
+  const stats = statsByGeneration.get(generationId);
+  statsByGeneration.delete(generationId);
+  return stats;
+}
+function contextIsFull(stats, promptTokens) {
+  if (!stats?.enabled || !stats.maxContext || stats.maxContext <= 0)
+    return false;
+  if ((stats.messagesDropped ?? 0) > 0)
+    return true;
+  const assembled = (stats.fixedTokens ?? 0) + (stats.chatHistoryTokensAfter ?? 0);
+  return Math.max(promptTokens ?? 0, assembled) / stats.maxContext >= CONTEXT_RELIEF_THRESHOLD;
+}
+async function relieveContext(userId, warn, maxContext = null) {
+  const needed = (settings) => settings.contextRelief && settings.profiles.some((p) => p.id === settings.activeProfileId && !p.contextReliefApplied);
+  if (!needed(await loadSettings(userId)))
+    return null;
+  let applied = false;
+  const next = await mutateSettings(userId, (current) => {
+    if (!needed(current))
+      return current;
+    applied = true;
+    return { ...current, profiles: current.profiles.map((p) => p.id === current.activeProfileId ? { ...applyContextRelief(p), contextReliefMaxContext: maxContext } : p) };
+  });
+  if (!applied)
+    return null;
+  warn(t("backend.contextRelief.applied"));
+  if (!next.cacheFriendly)
+    warn(t("backend.contextRelief.advice"));
+  return next;
+}
+async function releaseContextRelief(userId, maxContext) {
+  if (!maxContext || maxContext <= 0)
+    return false;
+  const stale = (settings) => settings.profiles.some((p) => p.id === settings.activeProfileId && p.contextReliefApplied && p.contextReliefMaxContext !== maxContext);
+  if (!stale(await loadSettings(userId)))
+    return false;
+  let released = false;
+  await mutateSettings(userId, (current) => {
+    if (!stale(current))
+      return current;
+    return { ...current, profiles: current.profiles.map((p) => {
+      if (p.id !== current.activeProfileId)
+        return p;
+      if (p.contextReliefMaxContext === null)
+        return { ...p, contextReliefMaxContext: maxContext };
+      released = true;
+      return { ...p, contextReliefApplied: false, contextReliefMaxContext: null };
+    }) };
+  });
+  return released;
+}
+
+// src/profile-patch.ts
+function mergeProfilePatch(existing, patch) {
+  return {
+    ...existing,
+    ...patch,
+    promptRoles: Object.keys(patch.promptRoles ?? {}).length ? { ...existing.promptRoles, ...patch.promptRoles } : patch.promptRoles ?? existing.promptRoles,
+    higherTierPresetKeys: Object.keys(patch.higherTierPresetKeys ?? {}).length ? { ...existing.higherTierPresetKeys, ...patch.higherTierPresetKeys } : patch.higherTierPresetKeys ?? existing.higherTierPresetKeys,
+    codexTokenLimits: { ...existing.codexTokenLimits, ...patch.codexTokenLimits },
+    higherTiers: Object.fromEntries(HIGHER_TIERS.map((tier) => [tier, { ...existing.higherTiers[tier], ...patch.higherTiers?.[tier] }]))
+  };
+}
+
+// src/backend/injection.ts
+var injectionAnomalyCb = null;
+function registerInjectionAnomalyCallback(cb) {
+  injectionAnomalyCb = cb;
+}
+function isAssembledHistory(lm) {
+  return lm["__isChatHistory"] === true;
+}
+function sourceMessageId(lm) {
+  const v = lm["sourceMessageId"];
+  return typeof v === "string" && v ? v : undefined;
+}
+function sourceIndexInChat(lm) {
+  const v = lm["sourceIndexInChat"];
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+function sourceMessageMetadata(lm) {
+  const record = lm;
+  if (!Object.prototype.hasOwnProperty.call(record, "sourceMessageMetadata"))
+    return;
+  const value = record["sourceMessageMetadata"];
+  return value && typeof value === "object" ? value : {};
+}
+function orderEntries(coverage, msgIdToIdx) {
+  const ordered = [];
+  for (const entry of coverage.activeEntries) {
+    let firstIdx = Number.POSITIVE_INFINITY;
+    let lastIdx = -1;
+    for (const msgId of entry.meta.msgIds) {
+      const idx = msgIdToIdx.get(msgId);
+      if (typeof idx !== "number")
+        continue;
+      if (idx < firstIdx)
+        firstIdx = idx;
+      if (idx > lastIdx)
+        lastIdx = idx;
+    }
+    const haveIdx = firstIdx !== Number.POSITIVE_INFINITY;
+    const resolvedFirst = haveIdx ? firstIdx : typeof entry.meta.firstMsgIdx === "number" ? entry.meta.firstMsgIdx : 0;
+    const resolvedLast = haveIdx ? lastIdx : typeof entry.meta.lastMsgIdx === "number" ? entry.meta.lastMsgIdx : resolvedFirst;
+    const tierName = TIER_NAMES[entry.meta.tier - 1];
+    const label = entry.raw.comment || (haveIdx ? t("backend.injection.label.msgs", { tierName, firstIdx1: firstIdx + 1, lastIdx1: lastIdx + 1 }) : tierName);
+    ordered.push({ entry, label, firstIdx: resolvedFirst, lastIdx: resolvedLast, emitted: false });
+  }
+  ordered.sort((a, b) => a.firstIdx - b.firstIdx);
+  return ordered;
+}
+var LEGACY_ACTIVATION_WAIT_MS = 240000;
+var legacyActivationInflight = new Map;
+async function getLegacyActivated(chatId, userId) {
+  const key = `${userId}:${chatId}`;
+  let pending = legacyActivationInflight.get(key);
+  if (!pending) {
+    const raw = spindle.world_books.getActivated(chatId, userId).catch(() => null);
+    pending = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (legacyActivationInflight.get(key) === pending) {
+          legacyActivationInflight.delete(key);
+        }
+        resolve(null);
+      }, LEGACY_ACTIVATION_WAIT_MS);
+      raw.then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+        if (legacyActivationInflight.get(key) === pending) {
+          legacyActivationInflight.delete(key);
+        }
+      });
+    });
+    legacyActivationInflight.set(key, pending);
+  }
+  return await pending;
+}
+async function buildInjection(chatId, llmMessages, userId, context = { worldInfoActivationCapture: false }) {
+  let activated = null;
+  let attachedBookIds = null;
+  let allEntries;
+  if (context.capturedWorldInfo === undefined && !context.worldInfoActivationCapture) {
+    [activated, allEntries, attachedBookIds] = await Promise.all([
+      getLegacyActivated(chatId, userId),
+      listLmbEntries(chatId, userId),
+      getChatAttachedBookIds(chatId, userId).catch(() => null)
+    ]);
+  } else {
+    allEntries = await listLmbEntries(chatId, userId);
+  }
+  if (allEntries.length === 0)
+    return null;
+  let entriesForCoverage;
+  if (context.capturedWorldInfo !== undefined) {
+    const capturedIds = new Set(context.capturedWorldInfo.map((entry) => entry.id));
+    entriesForCoverage = allEntries.filter((entry) => capturedIds.has(entry.raw.id));
+  } else if (context.worldInfoActivationCapture) {
+    entriesForCoverage = allEntries.filter((entry) => !entry.raw.disabled);
+  } else {
+    const ourBookId = allEntries[0].raw.world_book_id;
+    const activatedIds = activated ? new Set(activated.map((a) => a.id)) : null;
+    const anyOursActivated = !!activatedIds && allEntries.some((e) => activatedIds.has(e.raw.id));
+    const hostScanningOurBook = anyOursActivated || !!attachedBookIds && attachedBookIds.includes(ourBookId);
+    entriesForCoverage = activatedIds && hostScanningOurBook ? allEntries.filter((e) => activatedIds.has(e.raw.id)) : allEntries.filter((e) => !e.raw.disabled);
+  }
+  const coverage = await buildCoverage(chatId, userId, allEntries, false, new Set(entriesForCoverage.map((entry) => entry.raw.id)));
+  recordDiagnostic(userId, { event: "injection", chatId, outcome: coverage.activeEntries.length ? "started" : "skipped", numbers: { input: llmMessages.length, entries: coverage.activeEntries.length }, entries: diagnosticEntries(coverage.activeEntries, undefined, false) });
+  if (coverage.activeEntries.length === 0)
+    return null;
+  const historyMsgs = llmMessages.filter(isAssembledHistory);
+  let chatSnapshot;
+  if (historyMsgs.length === 0) {
+    let chatMessages = null;
+    try {
+      chatMessages = await spindle.chat.getMessages(chatId);
+    } catch (err) {
+      error(`injection: getMessages failed while verifying an empty history, skipping injection: ${describeError(err)}`);
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
+      return null;
+    }
+    const hasVisibleMessage = !!chatMessages?.some((m) => !(m.extra && m.extra.hidden));
+    if (hasVisibleMessage) {
+      error(`injection: no "__isChatHistory" messages on ${llmMessages.length} assembled message(s) despite ` + `visible chat messages. Possible causes: the host clipped history to fit max context, another ` + `extension reshaped the prompt first, or the active preset has no chat-history block. Skipping injection.`);
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTFindTheChatHistory"));
+      return null;
+    }
+    chatSnapshot = chatMessages;
+  }
+  const plan = [];
+  let missingIdx = false;
+  for (const m of historyMsgs) {
+    const id = sourceMessageId(m);
+    if (id === undefined) {
+      error(`injection: a "__isChatHistory" message is missing sourceMessageId. Host identity contract ` + `looks inconsistent, skipping injection.`);
+      return null;
+    }
+    const idx = sourceIndexInChat(m);
+    if (idx === undefined)
+      missingIdx = true;
+    plan.push({
+      id,
+      idx,
+      covered: coverage.coveredBy.has(id),
+      metadata: sourceMessageMetadata(m)
+    });
+  }
+  let msgIdToIdx;
+  const needsMetadata = plan.some((item) => item.covered && item.metadata === undefined);
+  const assembledIds = new Set(plan.map((item) => item.id));
+  const needsSourceIndexes = coverage.activeEntries.some((entry) => !entry.meta.isRoot && entry.meta.msgIds.some((id) => !assembledIds.has(id)));
+  if (chatSnapshot || missingIdx || needsMetadata || needsSourceIndexes) {
+    let chatMessages;
+    try {
+      chatMessages = chatSnapshot ?? await spindle.chat.getMessages(chatId);
+    } catch (err) {
+      error(`injection: getMessages failed on the slow path, skipping injection: ${describeError(err)}`);
+      injectionAnomalyCb?.(userId, t("backend.injection.buildInjection.memoriaCouldnTReadTheChatAnd"));
+      return null;
+    }
+    msgIdToIdx = new Map(chatMessages.map((m) => [m.id, m.index_in_chat]));
+    const byId = new Map(chatMessages.map((m) => [m.id, m]));
+    for (const p of plan) {
+      const idx = msgIdToIdx.get(p.id);
+      if (idx === undefined) {
+        error(`injection: sourceMessageId "${p.id}" is not in the chat, skipping injection.`);
+        return null;
+      }
+      p.idx = idx;
+      if (p.covered) {
+        p.metadata = byId.get(p.id)?.metadata ?? {};
+      }
+    }
+  } else {
+    msgIdToIdx = new Map(plan.map((p) => [p.id, p.idx]));
+  }
+  for (const item of plan) {
+    if (item.covered && item.metadata?.["lmb_excluded"] === true) {
+      item.covered = false;
+    }
+  }
+  const ordered = orderEntries(coverage, msgIdToIdx);
+  if (ordered.length === 0)
+    return null;
+  const out = [];
+  const injectedLabels = new Map;
+  const flushAt = (index, beforePos) => {
+    const block = [];
+    for (const o of ordered) {
+      if (o.emitted || o.lastIdx >= beforePos)
+        continue;
+      o.emitted = true;
+      const msg = { role: "assistant", content: formatEntryForInjection(o.entry) };
+      injectedLabels.set(msg, o.label);
+      block.push(msg);
+    }
+    if (block.length)
+      out.splice(index, 0, ...block);
+  };
+  let hp = 0;
+  let histEnd = -1;
+  for (const lm of llmMessages) {
+    if (!isAssembledHistory(lm)) {
+      out.push(lm);
+      continue;
+    }
+    const p = plan[hp++];
+    flushAt(out.length, p.idx);
+    if (!p.covered)
+      out.push(lm);
+    histEnd = out.length;
+  }
+  let fallbackPos = 0;
+  while (fallbackPos < out.length && out[fallbackPos].role === "system")
+    fallbackPos++;
+  flushAt(histEnd < 0 ? fallbackPos : histEnd, Number.POSITIVE_INFINITY);
+  if (injectedLabels.size === 0)
+    return null;
+  const breakdown = [];
+  for (let i = 0;i < out.length; i++) {
+    const label = injectedLabels.get(out[i]);
+    if (label !== undefined)
+      breakdown.push({ messageIndex: i, name: label });
+  }
+  recordDiagnostic(userId, {
+    event: "injection",
+    chatId,
+    outcome: "success",
+    messageScope: "assembled",
+    numbers: { input: llmMessages.length, output: out.length, selected: breakdown.length, covered: plan.filter((p) => p.covered).length },
+    messages: plan.map((p) => ({ id: p.id, index: p.idx, coveredBy: coverage.coveredBy.get(p.id), excluded: p.metadata?.lmb_excluded === true }))
+  });
+  return { messages: out, breakdown };
+}
+function formatEntryForInjection(entry) {
+  return entry.raw.content;
+}
+
 // src/backend/cache-friendly.ts
 var LUMICACHE_STATUS = "lumicache.status";
 async function lumiCacheAvailable() {
@@ -19068,6 +19152,7 @@ spindle.on("MESSAGE_SENT", async (payload, hostUserId) => {
     return;
   rememberChatUser(p.chatId, userId);
   recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
+  syncChatEntrySettings(userId, p.chatId);
 });
 var onHostEvent = spindle.on;
 onHostEvent("GENERATION_IN_PROGRESS", (payload) => {
@@ -19102,7 +19187,7 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
       const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text), contextStats?.maxContext ?? null);
       if (relieved) {
         settings = relieved;
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, p.chatId);
         await pushState(userId, p.chatId);
       }
     } catch (err) {
@@ -19116,6 +19201,7 @@ spindle.on("GENERATION_ENDED", async (payload, hostUserId) => {
     return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
+  await syncChatEntrySettings(userId, p.chatId);
   if (settings.cacheFriendly) {
     await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
       warn(`cache friendly window failed: ${describeError(err)}`);
@@ -19139,8 +19225,25 @@ spindle.on("CHAT_SWITCHED", async (payload, hostUserId) => {
     rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
+  await syncChatEntrySettings(userId, p?.chatId);
+  await pushState(userId, p?.chatId ?? null);
   await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", t("backend.index.messages.summaryRepairFailed", { describeError: describeError(err) })));
   await pushState(userId, p?.chatId ?? null);
+});
+spindle.on("CHAT_DELETED", async (payload, hostUserId) => {
+  const p = payload;
+  if (!p?.id)
+    return;
+  const userId = hostUserId ?? resolveUserId(p.id);
+  if (!userId)
+    return;
+  forgetChatEntrySettings(userId, p.id);
+  try {
+    if (await codexPresence(p.id, userId) !== "absent")
+      await retireCodexChat(p.id, userId);
+  } catch (err) {
+    warn(`retiring deleted chat ${p.id} failed: ${describeError(err)}`);
+  }
 });
 spindle.on("MESSAGE_DELETED", async (payload, hostUserId) => {
   const p = payload;
@@ -19278,14 +19381,20 @@ async function retryLastFailure(chatId, userId, profile, settings) {
   }
   await maybeRunArcCheck(chatId, profile, settings, userId);
 }
-async function syncProfileSettings(userId) {
+async function syncChatEntrySettings(userId, chatId) {
+  if (!chatId)
+    return;
   try {
-    const failures = await syncCodexProfiles(userId);
-    if (failures.length)
-      await notify(userId, "warn", t("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould", { length: failures.length, join: failures.slice(0, 3).map((f) => f.chatId).join(", ") }));
+    const { summaryFailed, codexError } = await ensureChatEntrySettings(userId, chatId);
+    if (summaryFailed)
+      await notify(userId, "warn", t("backend.entrySettings.summaryFailed", { failed: summaryFailed }));
+    if (codexError) {
+      warn(`Codex settings sync failed for ${chatId}: ${codexError}`);
+      await notify(userId, "warn", t("backend.entrySettings.codexFailed", { error: codexError }));
+    }
   } catch (err) {
-    warn(`Codex profile sync failed: ${describeError(err)}`);
-    await notify(userId, "warn", t("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould2", { describeError: describeError(err) }));
+    warn(`entry settings sync failed for ${chatId}: ${describeError(err)}`);
+    await notify(userId, "error", t("backend.entrySettings.failed", { error: shortErrorText(err) }));
   }
 }
 spindle.onFrontendMessage(async (raw, userId) => {
@@ -19356,28 +19465,25 @@ spindle.onFrontendMessage(async (raw, userId) => {
             await skipCourseSeal(userId, "codex");
         }
         await mutateSettings(userId, (cur) => msg.enabled ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map((p) => enterCacheFriendly(codexChoice && p.id === cur.activeProfileId ? { ...p, codexEnabled: codexChoice === "force" } : p)) } : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
-        const { failed } = await applySummaryActivation(userId);
-        if (failed)
-          await notify(userId, "warn", t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }));
-        await syncProfileSettings(userId);
-        if (msg.chatId)
-          await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
+        await pushState(userId, msg.chatId);
         if (msg.enabled) {
           const after = await loadSettings(userId);
           const codexOn = after.profiles.find((p) => p.id === after.activeProfileId)?.codexEnabled;
           await notify(userId, "info", codexOn ? t("backend.cacheFriendly.enabledCost") : t("backend.cacheFriendly.enabledNoCodex"));
         }
+        await syncChatEntrySettings(userId, msg.chatId);
+        if (msg.chatId)
+          await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
         await pushState(userId, msg.chatId);
         break;
       }
       case "save_settings":
         await patchSettings(userId, msg.patch);
-        if ("profiles" in msg.patch || "activeProfileId" in msg.patch)
-          await syncProfileSettings(userId);
-        if ("summaryActivationMode" in msg.patch) {
-          const { failed } = await applySummaryActivation(userId);
-          if (failed)
-            await notify(userId, "warn", t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }));
+        if ("profiles" in msg.patch || "activeProfileId" in msg.patch || "summaryActivationMode" in msg.patch) {
+          await syncChatEntrySettings(userId, msg.chatId);
+        }
+        if (msg.patch.followChatNames && msg.chatId) {
+          await followChatName(msg.chatId, userId).catch((err) => notify(userId, "warn", t("backend.index.messages.followChatNameFailed", { error: shortErrorText(err) })));
         }
         await pushState(userId, msg.chatId);
         break;
@@ -19438,7 +19544,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => (key in incoming))) {
           await pushState(userId, msg.chatId);
-          await syncProfileSettings(userId);
+          await syncChatEntrySettings(userId, msg.chatId);
         }
         if (prevExtra === true && nextExtra === false && id === activeBefore && msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "mode-off");
@@ -19480,7 +19586,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           send({ type: "error", text: t("backend.index.messages.profileNoLongerExists", { id: msg.copyFromId }) }, userId);
           break;
         }
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         if (msg.chatId)
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-create");
         await pushState(userId, msg.chatId);
@@ -19500,7 +19606,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         if (warned) {
           await notify(userId, "warn", t("backend.index.messages.memoriaKeepsAtLeastOneProfile"));
         }
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
         }
@@ -19513,7 +19619,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
             return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-switch");
         }
@@ -19821,7 +19927,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
       }
       case "set_summary_activation": {
         await patchSettings(userId, { summaryActivationMode: msg.mode });
-        const { updated, failed } = await applySummaryActivation(userId);
+        const { updated, failed } = msg.chatId ? await applySummaryActivation(msg.chatId, userId) : { updated: 0, failed: 0 };
         await notify(userId, failed ? "warn" : "info", failed ? t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }) : t("backend.index.messages.summaryRecallSavedEntriesUpdated", { updated }));
         await pushState(userId, msg.chatId);
         break;

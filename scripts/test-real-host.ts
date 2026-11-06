@@ -394,7 +394,7 @@ try {
     if (!process.argv.includes("--prompt-only") && !process.argv.includes("--vectors-only")) await runGhostScenarios({ api, action, send, until, pass, connectionId: connection.id, characterId: character.id, requests });
     if (!process.argv.includes("--prompt-only") && !process.argv.includes("--ghosts-only")) await runVectorScenarios({ api, action, response, until, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
   }
-  if (process.argv.includes("--codex-fixes-only")) await runCodexFixScenarios({ api, action, response, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
+  if (process.argv.includes("--codex-fixes-only")) await runCodexFixScenarios({ api, action, response, until, pass, fromHost, connectionId: connection.id, characterId: character.id, extensionId });
   await Bun.write(join(runDir, "checkpoint.json"), JSON.stringify({ chatId, connectionId: connection.id, characterId: character.id, extensionId, results }, null, 2));
   const revision = (directory: string) => Bun.spawnSync(["git", "-C", directory, "rev-parse", "HEAD"]).stdout.toString().trim();
   await Bun.write(join(runDir, "report.json"), JSON.stringify({

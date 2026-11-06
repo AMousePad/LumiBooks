@@ -6,10 +6,11 @@ import { listLmbEntries, invalidateBookCache } from "./world-book";
 import { emptyCursor, loadCursor } from "./codex/store";
 import { saveSettings } from "./storage";
 import { rebaseRoot, rebuildRoot, detachRoot } from "./rebase";
-import { syncCodexProfiles } from "./codex/sync";
+import { ensureChatEntrySettings } from "./entry-settings";
 import { saveImportedSummaries } from "./summary-backup";
 import { createChapterAuto, createChapterFromRange, getLastFailure, registerPipelineCallbacks, resumeSummaryBinding } from "./pipeline";
 import { buildState } from "./state";
+import { fakeBatch } from "./fake-batch";
 
 const original = (globalThis as any).spindle;
 const user = "fork-user";
@@ -22,6 +23,7 @@ beforeEach(async () => {
   parent = `parent-${++sequence}`; child = `child-${sequence}`; serial = 0;
   chats = new Map(); books = new Map(); disk = new Map(); entries = []; messages = new Map();
   (globalThis as any).spindle = {
+    batch: fakeBatch,
     log: { info() {}, warn() {}, error() {} },
     userStorage: {
       async exists(p: string) { return disk.has(p); },
@@ -43,6 +45,7 @@ beforeEach(async () => {
       async get(id: string) { return structuredClone(books.get(id) ?? null); },
       async list() { return { data: [...books.values()], total: books.size }; },
       async create(value: any) { const row = { ...structuredClone(value), id: `book-${sequence}-${++serial}` }; books.set(row.id, row); return row; },
+      async update(id: string, patch: any) { Object.assign(books.get(id), structuredClone(patch)); return structuredClone(books.get(id)); },
       async delete(id: string) { books.delete(id); entries = entries.filter((e) => e.world_book_id !== id); },
       entries: {
         async list(bookId: string) { const data = entries.filter((e) => e.world_book_id === bookId); return { data: structuredClone(data), total: data.length }; },
@@ -463,18 +466,21 @@ for (const failFirst of [false, true]) test(`opening an existing rooted timeline
   expect(calls).toBe(failFirst ? 2 : 1);
 });
 
-test("profile changes resync parent and fork books without merging their ownership", async () => {
+test("a profile change resyncs only the chat in use, the other catches up when used, and ownership never merges", async () => {
   await ensureForkAdoption(child, user);
+  await ensureChatEntrySettings(user, parent);
   const childBook = chats.get(child).metadata.lumibooks_codex_book_id;
+  const records = (id: string) => entries.filter((e) => e.world_book_id === chats.get(id).metadata.lumibooks_codex_book_id);
+  const resynced = (id: string) => records(id).length > 0
+    && records(id).every((e) => !e.constant && e.position === 4 && e.depth === 0 && e.extensions.lumibooks_codex.chatId === id);
   const next = { ...profile, codexActivationMode: "keywords" as const, codexInjectionPosition: "after_history" as const };
   await saveSettings(user, { ...DEFAULT_SETTINGS, profiles: [next], activeProfileId: next.id });
-  expect(await syncCodexProfiles(user)).toEqual([]);
-  for (const id of [parent, child]) {
-    const book = chats.get(id).metadata.lumibooks_codex_book_id;
-    const records = entries.filter((e) => e.world_book_id === book);
-    expect(records.length).toBeGreaterThan(0);
-    expect(records.every((e) => !e.constant && e.position === 4 && e.depth === 0 && e.extensions.lumibooks_codex.chatId === id)).toBe(true);
-  }
+  const parentBefore = structuredClone(records(parent));
+  expect(await ensureChatEntrySettings(user, child)).toEqual({ summaryFailed: 0, codexError: null });
+  expect(resynced(child)).toBe(true);
+  expect(records(parent)).toEqual(parentBefore);
+  expect(await ensureChatEntrySettings(user, parent)).toEqual({ summaryFailed: 0, codexError: null });
+  expect(resynced(parent)).toBe(true);
   expect(chats.get(child).metadata.lumibooks_codex_book_id).toBe(childBook);
 });
 

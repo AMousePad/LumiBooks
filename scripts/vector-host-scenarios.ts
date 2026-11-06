@@ -65,7 +65,6 @@ export async function runVectorScenarios(h: {
   await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector" } });
   assert.equal((await api(`/api/v1/world-books/${bookId}`)).name, "Independent Codex name");
   await action({ type: "save_settings", chatId, patch: { followChatNames: true } });
-  await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector" } });
   assert.notEqual((await api(`/api/v1/world-books/${bookId}`)).name, "Independent Codex name");
   pass("Codex-only chats preserve custom names and resume following chat names when re-enabled");
 
@@ -94,6 +93,7 @@ export async function runVectorScenarios(h: {
   pass("editing a Codex record keeps its entry ID and vector setting and replaces stale indexed content");
 
   await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector_only" } });
+  await until("vector-only Codex resync", entries, (list) => list.every((e: any) => !e.constant && e.vectorized && e.key.length === 0));
   await api(`/api/v1/embeddings/world-books/${bookId}/reindex`, "POST", {});
   await until("vector-only Codex indexing", entries, (list) => list.filter((e: any) => !e.disabled).every((e: any) => e.vector_index_status === "indexed"));
   assert((await entries()).every((e: any) => !e.constant && e.vectorized && e.key.length === 0));
@@ -104,9 +104,10 @@ export async function runVectorScenarios(h: {
 
   for (const mode of ["always", "keywords", "vector"] as const) {
     await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: mode } }, (s) => s.activeProfile.codexActivationMode === mode);
-    rows = await entries();
-    assert.equal(rows.find((e: any) => e.id === dragonId).constant, mode === "always");
-    assert.equal(rows.find((e: any) => e.id === dragonId).vectorized, mode === "vector");
+    await until(`Codex ${mode} resync`, entries, (list) => {
+      const dragon = list.find((e: any) => e.id === dragonId);
+      return dragon.constant === (mode === "always") && dragon.vectorized === (mode === "vector");
+    });
     if (mode === "vector") await api(`/api/v1/embeddings/world-books/${bookId}/reindex`, "POST", {});
     assembled = await prompt();
     assert.equal(assembled.includes("DRAGON_RECORD_UPDATED"), mode !== "keywords");
@@ -165,6 +166,7 @@ export async function runVectorScenarios(h: {
   await api(`/api/v1/embeddings/world-books/${state.bookId}/reindex`, "POST", {});
   // Codex no longer competes for the one vector slot.
   await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "keywords" } });
+  await until("keyword Codex resync", entries, (list) => list.every((e: any) => !e.vectorized));
   assembled = await prompt();
   assert.equal(assembled.split("SUMMARY_DRAGON_MARKER").length - 1, 1);
   assert.equal(state.coverage.coveredMessages, 1);
@@ -197,15 +199,17 @@ export async function runVectorScenarios(h: {
   const source = await Bun.file(join(codexDir, "characters.json")).text();
   const sourceEntries = await entries();
   await api(`/api/v1/chats/${chatId}`, "DELETE");
+  await until("deleted parent retired", () => Bun.file(join(codexDir, "orphaned.json")).exists(), Boolean);
   await action({ type: "save_profile", chatId: fork.id, profile: { id: "default", codexActivationMode: "always" } });
-  assert(await Bun.file(join(codexDir, "orphaned.json")).exists());
+  await until("fork always resync", async () => (await api(`/api/v1/world-books/${forkBook}/entries`)).data,
+    (list: any[]) => list.every((e: any) => e.constant && !e.vectorized));
   assert.equal(await Bun.file(join(codexDir, "characters.json")).text(), source);
   assert.deepEqual(await entries(), sourceEntries);
-  assert((await api(`/api/v1/world-books/${forkBook}/entries`)).data.every((e: any) => e.constant && !e.vectorized));
   await restartExtension(h.extensionId);
   await action({ type: "save_profile", chatId: fork.id, profile: { id: "default", codexActivationMode: "keywords" } });
+  await until("fork keyword resync after restart", async () => (await api(`/api/v1/world-books/${forkBook}/entries`)).data,
+    (list: any[]) => list.some((e: any) => !e.constant && e.content.includes("DRAGON_RECORD_UPDATED")));
   assert(await Bun.file(join(codexDir, "orphaned.json")).exists());
   assert.equal(await Bun.file(join(codexDir, "characters.json")).text(), source);
-  assert((await api(`/api/v1/world-books/${forkBook}/entries`)).data.some((e: any) => !e.constant && e.content.includes("DRAGON_RECORD_UPDATED")));
   pass("deleted parent chats retire across worker restarts while profile sync updates the live fork and preserves recovery data");
 }

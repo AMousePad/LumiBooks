@@ -6,11 +6,12 @@ export async function runCodexFixScenarios(h: {
   api: (path: string, method?: string, body?: unknown) => Promise<any>;
   action: (payload: any, predicate?: (state: any) => boolean) => Promise<any>;
   response: (payload: any, type: string) => Promise<any>;
+  until: <T>(label: string, read: () => T | Promise<T>, valid: (value: T) => boolean, timeout?: number) => Promise<T>;
   pass: (name: string) => void;
   fromHost: (path: string) => Promise<any>;
   connectionId: string; characterId: string; extensionId: string;
 }) {
-  const { api, action, response, pass, fromHost, connectionId, characterId, extensionId } = h;
+  const { api, action, response, until, pass, fromHost, connectionId, characterId, extensionId } = h;
   const chat = await api("/api/v1/chats", "POST", { character_id: characterId, name: "Codex fixes" });
   const chatId = chat.id;
   const state = await action({ type: "refresh", chatId });
@@ -88,9 +89,8 @@ export async function runCodexFixScenarios(h: {
   assert(JSON.parse(undone.files.characters).entities.some((e: any) => e.id === "char:bob"));
   assert.equal(JSON.parse(undone.files.relations).relations.length, 1);
   pass("deleting a Codex entity automatically removes its references and Undo restores the entity with its links");
-  const vectorState = await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector_only" } });
-  assert.equal(vectorState.codexInjectedTokens, 0);
-  assert((await entries()).every((e: any) => !e.constant && e.vectorized && e.key.length === 0 && e.keysecondary.length === 0));
+  await action({ type: "save_profile", chatId, profile: { id: "default", codexActivationMode: "vector_only" } }, (s) => s.codexInjectedTokens === 0);
+  await until("vector-only Codex resync", entries, (list) => list.every((e: any) => !e.constant && e.vectorized && e.key.length === 0 && e.keysecondary.length === 0));
   const dry = await api("/api/v1/generate/dry-run", "POST", { chat_id: chatId, connection_id: connectionId });
   assert(!JSON.stringify(dry.messages).includes("TIMELINE_FIX_MARKER"));
   assert(!JSON.stringify(dry.messages).includes("USER_LOREBOOK_CORRECTION"));
@@ -102,7 +102,7 @@ export async function runCodexFixScenarios(h: {
   pass("deleting two excluded messages keeps 200 later indexed turns current through real host deletion events");
   const standalone = await api("/api/v1/chats", "POST", { character_id: characterId, name: "Missing inheritance", metadata: { branched_from: crypto.randomUUID(), branch_at_message: "missing" } });
   await action({ type: "refresh", chatId: standalone.id });
-  const inherited = (await api(`/api/v1/chats/${standalone.id}`)).metadata;
-  assert.equal(inherited.lumibooks_codex_fork_adopted, standalone.id);
+  await until("standalone fork adoption", async () => (await api(`/api/v1/chats/${standalone.id}`)).metadata,
+    (md: any) => md.lumibooks_codex_fork_adopted === standalone.id);
   pass("a missing inheritance source settles in the host instead of permanently blocking a standalone chat");
 }

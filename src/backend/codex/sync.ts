@@ -1,8 +1,8 @@
 import { t as tr } from "../../i18n";
 import { loadSettings } from "../storage";
 import { activationFlags } from "../../activation";
-import type { LMBProfile } from "../../shared";
-import { listCodexChatIds, setCodexOrphaned } from "./store";
+import type { LMBProfile, LMBSettings } from "../../shared";
+import { setCodexOrphaned } from "./store";
 declare const spindle: import("lumiverse-spindle-types").SpindleAPI;
 
 import type { WorldBookEntryDTO, WorldInfoInterceptorEntryDTO } from "lumiverse-spindle-types";
@@ -129,12 +129,25 @@ export function syncCodexEntries(chatId: string, userId: string, relationsTableF
   return withSyncLock(userId, chatId, () => doSync(chatId, userId, relationsTableFallback));
 }
 
+export function codexSettingsStamp(settings: LMBSettings): string {
+  const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
+  return JSON.stringify([settings.cacheFriendly, profile?.codexActivationMode, profile?.codexInjectionPosition,
+    profile?.codexInjectionDepth, profile?.codexTokenLimits]);
+}
+
+export async function readCodexSettingsStamp(chatId: string, userId: string): Promise<string | null> {
+  const path = `codex/${chatId}/lorebook-sync.json`;
+  if (!(await spindle.userStorage.exists(path, userId))) return null;
+  const manifest = await spindle.userStorage.getJson<{ stamp?: unknown }>(path, { userId });
+  return typeof manifest?.stamp === "string" ? manifest.stamp : null;
+}
+
 async function doSync(chatId: string, userId: string, relationsTableFallback: boolean): Promise<void> {
+  const settings = await loadSettings(userId);
   if ((await codexPresence(chatId, userId)) === "absent") {
-    await doWipe(chatId, userId);
+    await doWipe(chatId, userId, codexSettingsStamp(settings));
     return;
   }
-  const settings = await loadSettings(userId);
   const profile = settings.profiles.find((p) => p.id === settings.activeProfileId)!;
   await alignCacheFileStates(chatId, userId, settings.cacheFriendly);
   const cursor = await loadCursor(chatId, userId);
@@ -267,7 +280,8 @@ async function doSync(chatId: string, userId: string, relationsTableFallback: bo
   }
   const records = desired.map(r => r.record);
   const cut = [...cuts].sort();
-  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)), cut }, { userId });
+  await spindle.userStorage.setJson(manifestPath, { bookId, records, suppressed: [...suppressed].filter(record => records.includes(record)), cut,
+    stamp: codexSettingsStamp(settings) }, { userId });
   const previousCut = new Set(manifest?.cut ?? []);
   if (cut.some((record) => !previousCut.has(record))) cutWarning?.(userId, chatId);
   if (wrote && settings.cacheFriendly) bumpCacheEpoch(chatId);
@@ -281,8 +295,8 @@ export function wipeCodexEntries(chatId: string, userId: string): Promise<void> 
   return withSyncLock(userId, chatId, () => doWipe(chatId, userId));
 }
 
-async function doWipe(chatId: string, userId: string): Promise<void> {
-  await spindle.userStorage.setJson(`codex/${chatId}/lorebook-sync.json`, { bookId: "", records: [], suppressed: [] }, { userId });
+async function doWipe(chatId: string, userId: string, stamp?: string): Promise<void> {
+  await spindle.userStorage.setJson(`codex/${chatId}/lorebook-sync.json`, { bookId: "", records: [], suppressed: [], ...(stamp ? { stamp } : {}) }, { userId });
   const bookId = await findCodexBookForChat(chatId, userId);
   if (!bookId) return;
   const existing = await listSyncedEntries(bookId, chatId, userId);
@@ -339,34 +353,24 @@ export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
     role: "system" };
 }
-export async function syncCodexProfiles(userId: string): Promise<Array<{ chatId: string; error: string }>> {
-  const failures: Array<{ chatId: string; error: string }> = [];
-  for (const chatId of await listCodexChatIds(userId, true)) {
-    try {
-      await withSyncLock(userId, chatId, async () => {
-        const retire = async () => {
-          await setCodexOrphaned(chatId, userId, true);
-          invalidateBookCache(userId, chatId);
-          void recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
-        };
-        // A null result confirms absence; permission/transport failures must
-        // still surface and must never retire potentially live state.
-        if (await spindle.chats.get(chatId, userId) === null) { await retire(); return; }
-        await setCodexOrphaned(chatId, userId, false);
-        try { await doSync(chatId, userId, true); }
-        catch (err) {
-          // Deletion can race the initial lookup and the book attachment.
-          const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
-          if (!missing) throw err;
-          await retire();
-        }
-      });
-    }
+export async function retireCodexChat(chatId: string, userId: string): Promise<void> {
+  await setCodexOrphaned(chatId, userId, true);
+  invalidateBookCache(userId, chatId);
+  void recordDiagnostic(userId, { event: "codex", chatId, outcome: "skipped", reason: "missing" });
+}
+
+export function syncCodexChatSettings(chatId: string, userId: string): Promise<void> {
+  return withSyncLock(userId, chatId, async () => {
+    // A null result confirms absence; permission/transport failures must
+    // still surface and must never retire potentially live state.
+    if (await spindle.chats.get(chatId, userId) === null) { await retireCodexChat(chatId, userId); return; }
+    await setCodexOrphaned(chatId, userId, false);
+    try { await doSync(chatId, userId, true); }
     catch (err) {
-      const error = describeError(err);
-      failures.push({ chatId, error });
-      warn(`Codex profile sync failed for ${chatId}: ${error}`);
+      // Deletion can race the initial lookup and the book attachment.
+      const missing = await spindle.chats.get(chatId, userId).then((chat) => chat === null, () => false);
+      if (!missing) throw err;
+      await retireCodexChat(chatId, userId);
     }
-  }
-  return failures;
+  });
 }

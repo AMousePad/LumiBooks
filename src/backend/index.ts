@@ -5,7 +5,7 @@ import { getSummaryTransfer, runSummaryTransfer } from "./summary-transfer";
 import { TIER_KINDS, HIGHER_TIERS, type HigherTier, type SummaryTier } from "../shared";
 import { isExtraCategory, presetKeyFor, presetKeyPatch } from "../prompts/categories";
 import { createHigherFromEntries, drainHigherBacklog } from "./pipeline";
-import { syncCodexProfiles } from "./codex/sync";
+import { ensureChatEntrySettings, forgetChatEntrySettings } from "./entry-settings";
 import { contextIsFull, releaseContextRelief, relieveContext, rememberContextStats, takeContextStats, type ContextStats } from "./context-relief";
 import { selectedChapterRuns } from "./coverage";
 import { clearCodexStaleFlags } from "./codex/store";
@@ -48,6 +48,7 @@ import {
   findChatIdForBook,
   findCachedChatIdForBook,
   invalidateAllBookCacheEntriesForBook,
+  followChatName,
   reassertChatBinding,
   registerBookAnomalyCallback,
 } from "./world-book";
@@ -97,9 +98,9 @@ import {
   runCodexTidy,
   setCodexFileState,
 } from "./codex/index";
-import { adoptCodexFrom, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
+import { adoptCodexFrom, codexPresence, deleteCodex, loadCodex, loadCursor, readCodexFilesRaw, saveCodexFile, saveCursor, withCursorLock, refreshCodexExclusions } from "./codex/store";
 import { applyCodexBackup, buildCodexBackup, clearCodexUndo, parseCodexBackup, readCodexUndo, snapshotCodexForUndo } from "./codex/backup";
-import { codexActivationCuts, registerCodexCutWarning, syncCodexEntries, wipeCodexEntries } from "./codex/sync";
+import { codexActivationCuts, registerCodexCutWarning, retireCodexChat, syncCodexEntries, wipeCodexEntries } from "./codex/sync";
 import { filedMessageChanged, lumiCacheAvailable, runCacheFriendlyWindow } from "./cache-friendly";
 import { bumpCacheEpoch } from "./hooks";
 import { repairCodexReferences, saveCodexEdit } from "./codex/repair";
@@ -144,7 +145,6 @@ const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingPushChatIds = new Map<string, string | null>();
 const pendingPushResolvers = new Map<string, Array<() => void>>();
 
-/** Last profile save applied per UI session, echoed in state so each UI can drop its optimistic copy. */
 const profileSaveAcks = new Map<string, Map<string, number>>();
 const BOOT_ID = crypto.randomUUID();
 
@@ -382,6 +382,7 @@ spindle.on("MESSAGE_SENT", async (payload: unknown, hostUserId?: string) => {
   if (!userId) return;
   rememberChatUser(p.chatId, userId);
   void recordDiagnostic(userId, { event: "message", chatId: p.chatId, entryId: p.messageId, outcome: "created" });
+  void syncChatEntrySettings(userId, p.chatId);
 });
 
 const onHostEvent = spindle.on as unknown as (event: string, handler: (payload: unknown) => void) => void;
@@ -412,7 +413,7 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
       const relieved = await relieveContext(userId, (text) => void notify(userId, "warn", text), contextStats?.maxContext ?? null);
       if (relieved) {
         settings = relieved;
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, p.chatId);
         await pushState(userId, p.chatId);
       }
     } catch (err) {
@@ -425,6 +426,7 @@ spindle.on("GENERATION_ENDED", async (payload: unknown, hostUserId?: string) => 
   if (!rawProfile) return;
   const profile = effectiveProfile(rawProfile, await ensureLessons(userId));
   await reassertChatBinding(p.chatId, userId).catch(() => {});
+  await syncChatEntrySettings(userId, p.chatId);
   if (settings.cacheFriendly) {
     await runCacheFriendlyWindow(p.chatId, profile, settings, userId, (tone, text) => void notify(userId, tone, text)).catch((err) => {
       warn(`cache friendly window failed: ${describeError(err)}`);
@@ -447,8 +449,23 @@ spindle.on("CHAT_SWITCHED", async (payload: unknown, hostUserId?: string) => {
   if (p?.chatId) rememberChatUser(p.chatId, userId);
   invalidateConnectionsCache(userId);
   await pushState(userId, p?.chatId ?? null);
+  await syncChatEntrySettings(userId, p?.chatId);
+  await pushState(userId, p?.chatId ?? null);
   await resumeActiveSummaryBinding(userId, p?.chatId).catch((err) => notify(userId, "error", tr("backend.index.messages.summaryRepairFailed", { describeError: describeError(err) })));
   await pushState(userId, p?.chatId ?? null);
+});
+
+spindle.on("CHAT_DELETED", async (payload: unknown, hostUserId?: string) => {
+  const p = payload as { id?: string };
+  if (!p?.id) return;
+  const userId = hostUserId ?? resolveUserId(p.id);
+  if (!userId) return;
+  forgetChatEntrySettings(userId, p.id);
+  try {
+    if ((await codexPresence(p.id, userId)) !== "absent") await retireCodexChat(p.id, userId);
+  } catch (err) {
+    warn(`retiring deleted chat ${p.id} failed: ${describeError(err)}`);
+  }
 });
 
 spindle.on("MESSAGE_DELETED", async (payload: unknown, hostUserId?: string) => {
@@ -605,14 +622,18 @@ export async function retryLastFailure(
 }
 
 
-async function syncProfileSettings(userId: string): Promise<void> {
+async function syncChatEntrySettings(userId: string, chatId: string | null | undefined): Promise<void> {
+  if (!chatId) return;
   try {
-    const failures = await syncCodexProfiles(userId);
-    if (failures.length) await notify(userId, "warn",
-      tr("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould", { length: failures.length, join: failures.slice(0, 3).map((f) => f.chatId).join(", ") }));
+    const { summaryFailed, codexError } = await ensureChatEntrySettings(userId, chatId);
+    if (summaryFailed) await notify(userId, "warn", tr("backend.entrySettings.summaryFailed", { failed: summaryFailed }));
+    if (codexError) {
+      warn(`Codex settings sync failed for ${chatId}: ${codexError}`);
+      await notify(userId, "warn", tr("backend.entrySettings.codexFailed", { error: codexError }));
+    }
   } catch (err) {
-    warn(`Codex profile sync failed: ${describeError(err)}`);
-    await notify(userId, "warn", tr("backend.index.syncProfileSettings.profileSavedButCodexInjectionSettingsCould2", { describeError: describeError(err) }));
+    warn(`entry settings sync failed for ${chatId}: ${describeError(err)}`);
+    await notify(userId, "error", tr("backend.entrySettings.failed", { error: shortErrorText(err) }));
   }
 }
 
@@ -687,25 +708,25 @@ spindle.onFrontendMessage(async (raw, userId) => {
           ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map((p) =>
             enterCacheFriendly(codexChoice && p.id === cur.activeProfileId ? { ...p, codexEnabled: codexChoice === "force" } : p)) }
           : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
-        const { failed } = await applySummaryActivation(userId);
-        if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));
-        await syncProfileSettings(userId);
-        if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
+        await pushState(userId, msg.chatId);
         if (msg.enabled) {
           const after = await loadSettings(userId);
           const codexOn = after.profiles.find((p) => p.id === after.activeProfileId)?.codexEnabled;
           await notify(userId, "info", codexOn ? tr("backend.cacheFriendly.enabledCost") : tr("backend.cacheFriendly.enabledNoCodex"));
         }
+        await syncChatEntrySettings(userId, msg.chatId);
+        if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "cache-friendly-off");
         await pushState(userId, msg.chatId);
         break;
       }
 
       case "save_settings":
         await patchSettings(userId, msg.patch);
-        if ("profiles" in msg.patch || "activeProfileId" in msg.patch) await syncProfileSettings(userId);
-        if ("summaryActivationMode" in msg.patch) {
-          const { failed } = await applySummaryActivation(userId);
-          if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));
+        if ("profiles" in msg.patch || "activeProfileId" in msg.patch || "summaryActivationMode" in msg.patch) {
+          await syncChatEntrySettings(userId, msg.chatId);
+        }
+        if (msg.patch.followChatNames && msg.chatId) {
+          await followChatName(msg.chatId, userId).catch((err) => notify(userId, "warn", tr("backend.index.messages.followChatNameFailed", { error: shortErrorText(err) })));
         }
         await pushState(userId, msg.chatId);
         break;
@@ -769,9 +790,8 @@ spindle.onFrontendMessage(async (raw, userId) => {
           }
         }
         if (id === activeBefore && ["codexActivationMode", "codexInjectionPosition", "codexInjectionDepth", "codexTokenLimits"].some((key) => key in incoming)) {
-          // Re-syncing every chat takes seconds, so the saved value must reach the UI first.
           await pushState(userId, msg.chatId);
-          await syncProfileSettings(userId);
+          await syncChatEntrySettings(userId, msg.chatId);
         }
         // The effective-mode off transition (extra toggle OR codex disable)
         // must clean up pending ghosts here too, independent of automation.
@@ -813,7 +833,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           send({ type: "error", text: tr("backend.index.messages.profileNoLongerExists", { id: msg.copyFromId! }) }, userId);
           break;
         }
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         if (msg.chatId) await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-create");
         await pushState(userId, msg.chatId);
         break;
@@ -835,7 +855,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
         }
         // Deleting the active profile falls back to another one, which may
         // lack effective extra mode: same ghost cleanup as set_active_profile.
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         if (msg.chatId) {
           await cleanupGhostsIfModeOff(userId, msg.chatId, "profile-delete");
         }
@@ -848,7 +868,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
           if (!cur.profiles.some((p) => p.id === msg.profileId)) return cur;
           return { ...cur, activeProfileId: msg.profileId };
         });
-        await syncProfileSettings(userId);
+        await syncChatEntrySettings(userId, msg.chatId);
         // Switching to a profile without effective extra mode strands any
         // pending ghosts: they belong to the chat, not the profile.
         if (msg.chatId) {
@@ -1165,7 +1185,7 @@ spindle.onFrontendMessage(async (raw, userId) => {
 
       case "set_summary_activation": {
         await patchSettings(userId, { summaryActivationMode: msg.mode });
-        const { updated, failed } = await applySummaryActivation(userId);
+        const { updated, failed } = msg.chatId ? await applySummaryActivation(msg.chatId, userId) : { updated: 0, failed: 0 };
         await notify(userId, failed ? "warn" : "info", failed
           ? tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed })
           : tr("backend.index.messages.summaryRecallSavedEntriesUpdated", { updated: updated }));

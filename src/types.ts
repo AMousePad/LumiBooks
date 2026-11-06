@@ -191,7 +191,7 @@ export interface FrontendState {
   codexTokensApproximate: boolean;
   /** Why the token counts could not be read; the UI shows N/A instead of 0. */
   codexTokensError: string | null;
-  /** Last profile save applied per UI session; boot changes when the backend restarts. */
+  /** boot changes when the backend restarts. */
   profileSaveAcks?: { boot: string; sessions: Record<string, number> };
   /** Bumped on every codex mutation; the Codex tab refetches file contents
    * when it moves past the revision its cache was filled from. */
@@ -215,7 +215,6 @@ export type FrontendToBackend =
   | { type: "ready"; chatId?: string | null }
   | { type: "refresh"; chatId?: string | null }
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }
-  /** save tags an edit so the UI can keep showing it until state confirms it. */
   | { type: "save_profile"; profile: ProfilePatch & { id: string }; chatId?: string | null; save?: { session: string; seq: number } }
   /** codex answers the prompt shown before the Codex course is done. */
   | { type: "cache_friendly_set"; enabled: boolean; chatId?: string | null; codex?: "off" | "force" }

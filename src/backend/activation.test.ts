@@ -13,19 +13,35 @@ test("summary conversion reports partial failure and retries without changing co
   const rows = ["first", "second", "ghost"].map((id) => ({ id, constant: true, vectorized: false, disabled: id === "ghost",
     extensions: { lumibooks: { ...meta, ghost: id === "ghost" } } }));
   let fail = true;
+  let entryLists = 0;
   const updates: string[] = [];
+  const shelf = { id: "shelf", metadata: { lumibooks_chat_id: chatId } as Record<string, unknown> };
   (globalThis as any).spindle = {
+    log: { info() {}, warn() {}, error() {} },
+    async batch(ops: Array<{ args: { id: string; input: any } }>) {
+      if (fail && ops.some((op) => op.args.id === "second")) return ops.map(() => ({ ok: false, error: "BATCH_ROLLED_BACK: unavailable" }));
+      for (const op of ops) { updates.push(op.args.id); Object.assign(rows.find((r) => r.id === op.args.id)!, op.args.input); }
+      return ops.map(() => ({ ok: true, result: null }));
+    },
     userStorage: { async exists() { return false; }, async setJson() {} },
-    world_books: { async list() { return { data: [{ id: "shelf", metadata: { lumibooks_chat_id: chatId } }, { id: "foreign" }], total: 2 }; },
+    chats: { async get(id: string) { return { id, metadata: { lumibooks_book_id: "shelf" } }; } },
+    world_books: { async list() { return { data: [shelf, { id: "foreign" }], total: 2 }; },
+      async get(id: string) { return id === "shelf" ? structuredClone(shelf) : null; },
+      async update(id: string, patch: any) { expect(id).toBe("shelf"); Object.assign(shelf, patch); return shelf; },
       entries: {
-        async list(id: string) { expect(id).toBe("shelf"); return { data: rows, total: rows.length }; },
+        async list(id: string) { expect(id).toBe("shelf"); entryLists++; return { data: rows, total: rows.length }; },
         async update(id: string, patch: any) { if (id === "second" && fail) throw new Error("unavailable"); updates.push(id); Object.assign(rows.find((r) => r.id === id)!, patch); },
       } },
   };
   await saveSettings(userId, { ...DEFAULT_SETTINGS, summaryActivationMode: "vector" });
-  expect(await applySummaryActivation(userId)).toEqual({ updated: 2, failed: 1 });
+  expect(await applySummaryActivation(chatId, userId)).toEqual({ updated: 2, failed: 1 });
+  expect(shelf.metadata.lumibooks_summary_activation).toBeUndefined();
   fail = false;
-  expect(await applySummaryActivation(userId)).toEqual({ updated: 1, failed: 0 });
+  expect(await applySummaryActivation(chatId, userId)).toEqual({ updated: 1, failed: 0 });
+  expect(shelf.metadata).toEqual({ lumibooks_chat_id: chatId, lumibooks_summary_activation: "vector" });
+  const listsBefore = entryLists;
+  expect(await applySummaryActivation(chatId, userId)).toEqual({ updated: 0, failed: 0 });
+  expect(entryLists).toBe(listsBefore);
   expect(updates).toEqual(["first", "ghost", "second"]);
   expect(rows.every((r) => r.vectorized && !r.constant)).toBe(true);
   expect(rows[2]!.disabled).toBe(true);

@@ -3140,6 +3140,7 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
         summaryRepairFailed: "Summary repair failed: {describeError}",
         savedDiagnosticsCleared: "Saved diagnostics cleared.",
         recallSettingSavedEntryOrBookUpdates: "Recall saved, but {failed} updates failed. Reapply to retry.",
+        followChatNameFailed: "Your books could not be renamed to match the chat: {error}",
         invalidProfilePayload: "Invalid profile payload.",
         profileNoLongerExists: "Profile {id} no longer exists.",
         memoriaKeepsAtLeastOneProfile: "A profile is required",
@@ -3208,10 +3209,6 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       },
       retryLastFailure: {
         nothingToRetryYetMemoriaWillCatch: "Nothing to retry. Waiting for the next message."
-      },
-      syncProfileSettings: {
-        profileSavedButCodexInjectionSettingsCould: "Profile saved. Codex injection sync failed for {length} chat(s): {join}. Fix the errors, then reapply settings.",
-        profileSavedButCodexInjectionSettingsCould2: "Profile saved. Codex injection sync failed: {describeError}"
       },
       next: {
         newProfile: "New profile"
@@ -3635,6 +3632,11 @@ Tidy: {tokens} tokens; limit {limit}; model target {modelTarget}; {remaining} ca
       applied: "Your prompt is using over 90% of your context, so I permanently lowered summary lag, summary size, and Codex limits on this profile.",
       advice: "Your context window looks small, so consider turning off larger Codex features like timeline, lore, and relations to save context.",
       failed: "I could not lower your settings for a full context window: {error}"
+    },
+    entrySettings: {
+      summaryFailed: "{failed} summary entries in this chat could not switch to your recall setting and will retry next time you use the chat.",
+      codexFailed: "This chat's Codex entries could not update to your settings: {error}",
+      failed: "This chat's lorebook entries could not update to your settings: {error}"
     }
   },
   codexTidy: {
