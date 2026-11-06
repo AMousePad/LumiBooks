@@ -206,7 +206,8 @@ export type FrontendToBackend =
   | { type: "refresh"; chatId?: string | null }
   | { type: "save_settings"; patch: Partial<LMBSettings>; chatId?: string | null }
   | { type: "save_profile"; profile: Partial<LMBProfile> & { id: string }; chatId?: string | null }
-  | { type: "cache_friendly_set"; enabled: boolean; chatId?: string | null }
+  /** codex answers the prompt shown before the Codex course is done. */
+  | { type: "cache_friendly_set"; enabled: boolean; chatId?: string | null; codex?: "off" | "force" }
   | { type: "save_samplers"; profileId: string; samplers: Partial<SamplerSet>; target?: "main" | "codex"; chatId?: string | null }
   | { type: "create_profile"; name: string; copyFromId?: string; chatId?: string | null }
   | { type: "delete_profile"; profileId: string; chatId?: string | null }

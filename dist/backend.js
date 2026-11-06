@@ -4540,6 +4540,15 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         keepToolCalls: "Keep tool calls",
         switchToJsonMode: "Switch to JSON mode"
       },
+      showCacheFriendlyCodexModal: {
+        title: "You haven''t done the Codex tutorial yet",
+        lead: "You can run Cache Friendly mode with the Codex disabled, force the Codex on anyway, or do the tutorial first.",
+        cancel: "Cancel",
+        withoutCodex: "Run without Codex",
+        forceCodex: "Force Codex on",
+        forceCodexHint: "Skips the Codex course for now. You can still take it later from Home.",
+        tutorialFirst: "Do the tutorial first"
+      },
       openEditModal: {
         label: "Label",
         content: "Content",
@@ -5412,7 +5421,6 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           hint: "Enable to have LumiBooks be optimized for cache friendly setups! This changes Summary and Codex to co-update at the same time, and has the Codex only track entities, lore, and secrets as constant entries, with a maximum default capacity of 10k tokens for each (LLM managed). Caching can reduce your LLM costs 10x!",
           needsLumiCache: "LumiCache Extension required for this option.",
           findHere: "Find Here.",
-          needsCourse: "Finish the Codex course to use this mode.",
           lumiCacheMissing: "LumiCache is not running, so unplanned prompt changes are not being watched."
         },
         renderActions: {
@@ -9671,7 +9679,7 @@ function fillPrompt(template, vars) {
 // spindle.json
 var spindle_default = {
   identifier: "lumi_books",
-  version: "1.2.1",
+  version: "1.2.2",
   name: "LumiBooks",
   author: "AMousePad",
   github: "https://github.com/AMousePad/LumiBooks",
@@ -18857,12 +18865,17 @@ registerCodexCutWarning((userId) => {
 var activationCutsSeen = new Map;
 function warnOnNewActivationCuts(userId, chatId, cut) {
   const key = `${userId}::${chatId}`;
-  const seen = activationCutsSeen.get(key);
-  if (cut.some((id) => !seen?.has(id)))
-    notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
-  if (activationCutsSeen.size > 500)
-    activationCutsSeen.clear();
-  activationCutsSeen.set(key, new Set(cut));
+  let seen = activationCutsSeen.get(key);
+  if (!cut.some((id) => !seen?.has(id)))
+    return;
+  notify(userId, "warn", t("backend.cacheFriendly.codexPartiallyCut"));
+  if (!seen) {
+    if (activationCutsSeen.size > 500)
+      activationCutsSeen.clear();
+    activationCutsSeen.set(key, seen = new Set);
+  }
+  for (const id of cut)
+    seen.add(id);
 }
 async function warnIfFiledMessageChanged(chatId, messageId, userId, deleted) {
   if (!messageId || !(await loadSettings(userId)).cacheFriendly)
@@ -19241,8 +19254,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
         const current = await loadSettings(userId);
         if (msg.enabled === current.cacheFriendly)
           break;
+        const gated = msg.enabled && codexGated(await ensureLessons(userId));
+        const codexChoice = gated && (msg.codex === "off" || msg.codex === "force") ? msg.codex : null;
         if (msg.enabled) {
-          if (codexGated(await ensureLessons(userId))) {
+          if (gated && !codexChoice) {
             await notify(userId, "warn", t("backend.cacheFriendly.finishCodexCourse"));
             break;
           }
@@ -19250,8 +19265,10 @@ spindle.onFrontendMessage(async (raw, userId) => {
             await notify(userId, "error", t("backend.cacheFriendly.needsLumiCache"));
             break;
           }
+          if (codexChoice === "force")
+            await skipCourseSeal(userId, "codex");
         }
-        await mutateSettings(userId, (cur) => msg.enabled ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map(enterCacheFriendly) } : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
+        await mutateSettings(userId, (cur) => msg.enabled ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map((p) => enterCacheFriendly(codexChoice && p.id === cur.activeProfileId ? { ...p, codexEnabled: codexChoice === "force" } : p)) } : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
         const { failed } = await applySummaryActivation(userId);
         if (failed)
           await notify(userId, "warn", t("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed }));

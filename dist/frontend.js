@@ -4539,6 +4539,15 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
         keepToolCalls: "Keep tool calls",
         switchToJsonMode: "Switch to JSON mode"
       },
+      showCacheFriendlyCodexModal: {
+        title: "You haven''t done the Codex tutorial yet",
+        lead: "You can run Cache Friendly mode with the Codex disabled, force the Codex on anyway, or do the tutorial first.",
+        cancel: "Cancel",
+        withoutCodex: "Run without Codex",
+        forceCodex: "Force Codex on",
+        forceCodexHint: "Skips the Codex course for now. You can still take it later from Home.",
+        tutorialFirst: "Do the tutorial first"
+      },
       openEditModal: {
         label: "Label",
         content: "Content",
@@ -5411,7 +5420,6 @@ Days 3-8. The duke dies, Elias flees with the silver locket, and Mara chooses si
           hint: "Enable to have LumiBooks be optimized for cache friendly setups! This changes Summary and Codex to co-update at the same time, and has the Codex only track entities, lore, and secrets as constant entries, with a maximum default capacity of 10k tokens for each (LLM managed). Caching can reduce your LLM costs 10x!",
           needsLumiCache: "LumiCache Extension required for this option.",
           findHere: "Find Here.",
-          needsCourse: "Finish the Codex course to use this mode.",
           lumiCacheMissing: "LumiCache is not running, so unplanned prompt changes are not being watched."
         },
         renderActions: {
@@ -10518,6 +10526,51 @@ function showCodexToolsHintModal(profileId, send) {
   });
   document.body.appendChild(overlay);
 }
+function showCacheFriendlyCodexModal(onPick) {
+  if (document.querySelector(".lmb-cache-codex"))
+    return;
+  const overlay = document.createElement("div");
+  overlay.className = "lmb-preview-overlay lmb-cache-codex";
+  const modal = document.createElement("div");
+  modal.className = "lmb-preview-modal";
+  modal.style.width = "min(560px, 100%)";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape")
+      close();
+  };
+  document.addEventListener("keydown", onKey);
+  const header = document.createElement("div");
+  header.className = "lmb-preview-modal__header";
+  const title = document.createElement("h3");
+  title.textContent = t("ui.modals.showCacheFriendlyCodexModal.title");
+  modal.setAttribute("aria-label", title.textContent);
+  header.append(title);
+  const body = document.createElement("div");
+  body.className = "lmb-preview-modal__body";
+  const lead = document.createElement("p");
+  lead.textContent = t("ui.modals.showCacheFriendlyCodexModal.lead");
+  body.append(lead);
+  const pick = (choice) => () => {
+    close();
+    onPick(choice);
+  };
+  const footer = document.createElement("div");
+  footer.className = "lmb-preview-modal__footer";
+  footer.append(makeButton(t("ui.modals.showCacheFriendlyCodexModal.cancel"), close), makeButton(t("ui.modals.showCacheFriendlyCodexModal.withoutCodex"), pick("off")), makeButton(t("ui.modals.showCacheFriendlyCodexModal.forceCodex"), pick("force"), { title: t("ui.modals.showCacheFriendlyCodexModal.forceCodexHint") }), makeButton(t("ui.modals.showCacheFriendlyCodexModal.tutorialFirst"), pick("lesson"), { primary: true }));
+  modal.append(header, body, footer);
+  overlay.append(modal);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay)
+      close();
+  });
+  document.body.append(overlay);
+}
 function openEditModal(ctx, title, fields, onSave) {
   const handle = ctx.ui.showModal({ title, width: 640, maxHeight: 720 });
   const form = document.createElement("div");
@@ -11797,14 +11850,26 @@ function renderActions(host, state, send) {
 var LUMICACHE_URL = "https://github.com/AMousePad/LumiCache";
 function renderCacheFriendly(host, state, send) {
   const on = state.settings.cacheFriendly;
-  const gated = codexLessonGated(state.lessons);
-  host.appendChild(checkbox({
+  const toggle = checkbox({
     checked: on,
-    disabled: !on && (!state.lumiCacheAvailable || gated),
+    disabled: !on && !state.lumiCacheAvailable,
     label: t("ui.tabs.homeTab.cacheFriendly.toggle"),
     hint: t("ui.tabs.homeTab.cacheFriendly.hint"),
-    onChange: (enabled) => send({ type: "cache_friendly_set", enabled, chatId: state.activeChatId })
-  }));
+    onChange: (enabled) => {
+      if (!enabled || !codexLessonGated(state.lessons)) {
+        send({ type: "cache_friendly_set", enabled, chatId: state.activeChatId });
+        return;
+      }
+      toggle.firstElementChild.checked = false;
+      showCacheFriendlyCodexModal((choice) => {
+        if (choice === "lesson")
+          requestLesson({ course: "codex", mode: "lesson" });
+        else
+          send({ type: "cache_friendly_set", enabled: true, chatId: state.activeChatId, codex: choice });
+      });
+    }
+  });
+  host.appendChild(toggle);
   if (!on && !state.lumiCacheAvailable) {
     const tip = textNode(`${t("ui.tabs.homeTab.cacheFriendly.needsLumiCache")} `, "lmb-field-hint");
     const link = document.createElement("a");
@@ -11814,8 +11879,7 @@ function renderCacheFriendly(host, state, send) {
     link.textContent = t("ui.tabs.homeTab.cacheFriendly.findHere");
     tip.appendChild(link);
     host.appendChild(tip);
-  } else if (!on && gated)
-    host.appendChild(textNode(t("ui.tabs.homeTab.cacheFriendly.needsCourse"), "lmb-field-hint"));
+  }
   if (on && !state.lumiCacheAvailable)
     host.appendChild(textNode(t("ui.tabs.homeTab.cacheFriendly.lumiCacheMissing"), "lmb-field-hint"));
 }

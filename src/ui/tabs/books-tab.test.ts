@@ -66,9 +66,14 @@ class Element {
 }
 
 const walk = (root: Element): Element[] => [root, ...root.children.flatMap(walk)];
+const documentEvents: { type: string; detail?: unknown }[] = [];
 const dom = {
   document: {
     body: new Element("body"),
+    querySelector: (selector: string) => walk(dom.document.body).find((n) => n.className.split(" ").includes(selector.slice(1))) ?? null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: (event: { type: string; detail?: unknown }) => { documentEvents.push(event); return true; },
     createElement: (tag: string) => new Element(tag),
     createTextNode: (text: string) => { const node = new Element("#text"); node.textContent = text; return node; },
     createTreeWalker: (root: Element) => {
@@ -456,6 +461,42 @@ test("Home offers Cache Friendly mode under Actions, and explains when it is blo
   const about = new Element("host");
   renderAboutTab(about as any, data, () => {});
   expect(about.textContent).not.toContain("Cache Friendly mode");
+});
+
+test("Cache Friendly mode before the Codex course asks what to do with the Codex", () => {
+  const data = state(), sent: any[] = [];
+  data.activeChatId = "cache-chat";
+  data.lumiCacheAvailable = true;
+  data.lessons.codex.status = "todo";
+  data.lessons.codexSealSkipped = false;
+  const host = new Element("host");
+  renderHomeTab(host as any, data, {} as any, msg => sent.push(msg));
+  const input = walk(host).find(n => n.tagName === "input" && n.type === "checkbox" && n.parentElement?.textContent.includes("Cache Friendly mode"))!;
+  expect(input.disabled).toBe(false);
+  const body = dom.document.body;
+  const choose = (label: string) => {
+    body.replaceChildren();
+    input.checked = true; input.dispatch("change");
+    expect(input.checked).toBe(false);
+    const modal = walk(body).find(n => n.className.includes("lmb-cache-codex"))!;
+    expect(walk(modal).filter(n => n.tagName === "button").map(n => n.textContent))
+      .toEqual(["Cancel", "Run without Codex", "Force Codex on", "Do the tutorial first"]);
+    walk(modal).find(n => n.tagName === "button" && n.textContent === label)!.dispatch("click");
+    expect(walk(body).some(n => n.className.includes("lmb-cache-codex"))).toBe(false);
+  };
+  const sets = () => sent.filter(msg => msg.type === "cache_friendly_set");
+  choose("Cancel");
+  expect(sets()).toEqual([]);
+  choose("Run without Codex");
+  choose("Force Codex on");
+  expect(sets()).toEqual([
+    { type: "cache_friendly_set", enabled: true, chatId: "cache-chat", codex: "off" },
+    { type: "cache_friendly_set", enabled: true, chatId: "cache-chat", codex: "force" },
+  ]);
+  documentEvents.length = 0;
+  choose("Do the tutorial first");
+  expect(sets()).toHaveLength(2);
+  expect(documentEvents.map(e => [e.type, e.detail])).toEqual([["lmb-lesson-request", { course: "codex", mode: "lesson" }]]);
 });
 
 test("Cache Friendly mode locks only the Codex tiles it owns", () => {

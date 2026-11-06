@@ -229,15 +229,19 @@ registerCodexCutWarning((userId) => {
   void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
 });
 
-/** Warn when the set grows, not every turn the same entries stay cut. */
+/** Warn once per entry, since keyword matches change which entries are cut each turn. */
 const activationCutsSeen = new Map<string, Set<string>>();
 
 function warnOnNewActivationCuts(userId: string, chatId: string, cut: string[]): void {
   const key = `${userId}::${chatId}`;
-  const seen = activationCutsSeen.get(key);
-  if (cut.some((id) => !seen?.has(id))) void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
-  if (activationCutsSeen.size > 500) activationCutsSeen.clear();
-  activationCutsSeen.set(key, new Set(cut));
+  let seen = activationCutsSeen.get(key);
+  if (!cut.some((id) => !seen?.has(id))) return;
+  void notify(userId, "warn", tr("backend.cacheFriendly.codexPartiallyCut"));
+  if (!seen) {
+    if (activationCutsSeen.size > 500) activationCutsSeen.clear();
+    activationCutsSeen.set(key, seen = new Set());
+  }
+  for (const id of cut) seen.add(id);
 }
 
 async function warnIfFiledMessageChanged(chatId: string, messageId: string | undefined, userId: string, deleted: boolean): Promise<void> {
@@ -652,8 +656,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
       case "cache_friendly_set": {
         const current = await loadSettings(userId);
         if (msg.enabled === current.cacheFriendly) break;
+        // Before the Codex course, the user picks Codex off or skips the course to force it on.
+        const gated = msg.enabled && codexGated(await ensureLessons(userId));
+        const codexChoice = gated && (msg.codex === "off" || msg.codex === "force") ? msg.codex : null;
         if (msg.enabled) {
-          if (codexGated(await ensureLessons(userId))) {
+          if (gated && !codexChoice) {
             await notify(userId, "warn", tr("backend.cacheFriendly.finishCodexCourse"));
             break;
           }
@@ -661,9 +668,11 @@ spindle.onFrontendMessage(async (raw, userId) => {
             await notify(userId, "error", tr("backend.cacheFriendly.needsLumiCache"));
             break;
           }
+          if (codexChoice === "force") await skipCourseSeal(userId, "codex");
         }
         await mutateSettings(userId, (cur) => msg.enabled
-          ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map(enterCacheFriendly) }
+          ? { ...cur, cacheFriendly: true, cacheFriendlySummaryMode: cur.summaryActivationMode, profiles: cur.profiles.map((p) =>
+            enterCacheFriendly(codexChoice && p.id === cur.activeProfileId ? { ...p, codexEnabled: codexChoice === "force" } : p)) }
           : { ...cur, cacheFriendly: false, summaryActivationMode: cur.cacheFriendlySummaryMode ?? cur.summaryActivationMode, cacheFriendlySummaryMode: null, profiles: cur.profiles.map(leaveCacheFriendly) });
         const { failed } = await applySummaryActivation(userId);
         if (failed) await notify(userId, "warn", tr("backend.index.messages.recallSettingSavedEntryOrBookUpdates", { failed: failed }));

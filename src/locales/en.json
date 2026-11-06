@@ -1695,6 +1695,15 @@
         "keepToolCalls": "Keep tool calls",
         "switchToJsonMode": "Switch to JSON mode"
       },
+      "showCacheFriendlyCodexModal": {
+        "title": "You haven''t done the Codex tutorial yet",
+        "lead": "You can run Cache Friendly mode with the Codex disabled, force the Codex on anyway, or do the tutorial first.",
+        "cancel": "Cancel",
+        "withoutCodex": "Run without Codex",
+        "forceCodex": "Force Codex on",
+        "forceCodexHint": "Skips the Codex course for now. You can still take it later from Home.",
+        "tutorialFirst": "Do the tutorial first"
+      },
       "openEditModal": {
         "label": "Label",
         "content": "Content",
@@ -2567,7 +2576,6 @@
           "hint": "Enable to have LumiBooks be optimized for cache friendly setups! This changes Summary and Codex to co-update at the same time, and has the Codex only track entities, lore, and secrets as constant entries, with a maximum default capacity of 10k tokens for each (LLM managed). Caching can reduce your LLM costs 10x!",
           "needsLumiCache": "LumiCache Extension required for this option.",
           "findHere": "Find Here.",
-          "needsCourse": "Finish the Codex course to use this mode.",
           "lumiCacheMissing": "LumiCache is not running, so unplanned prompt changes are not being watched."
         },
         "renderActions": {

@@ -21,7 +21,7 @@ import {
   textNode,
 } from "../components";
 import { memoriaSprite, requestLesson } from "../lessons/seal";
-import { requestCodexUpdate } from "../modals";
+import { requestCodexUpdate, showCacheFriendlyCodexModal } from "../modals";
 
 const inflightBusyLabels = new Map<string, HTMLSpanElement>();
 
@@ -1008,14 +1008,25 @@ const LUMICACHE_URL = "https://github.com/AMousePad/LumiCache";
 
 function renderCacheFriendly(host: HTMLElement, state: FrontendState, send: (m: FrontendToBackend) => void): void {
   const on = state.settings.cacheFriendly;
-  const gated = codexLessonGated(state.lessons);
-  host.appendChild(checkbox({
+  const toggle = checkbox({
     checked: on,
-    disabled: !on && (!state.lumiCacheAvailable || gated),
+    disabled: !on && !state.lumiCacheAvailable,
     label: tr("ui.tabs.homeTab.cacheFriendly.toggle"),
     hint: tr("ui.tabs.homeTab.cacheFriendly.hint"),
-    onChange: (enabled) => send({ type: "cache_friendly_set", enabled, chatId: state.activeChatId }),
-  }));
+    onChange: (enabled) => {
+      if (!enabled || !codexLessonGated(state.lessons)) {
+        send({ type: "cache_friendly_set", enabled, chatId: state.activeChatId });
+        return;
+      }
+      // Stays off until a choice turns it on.
+      (toggle.firstElementChild as HTMLInputElement).checked = false;
+      showCacheFriendlyCodexModal((choice) => {
+        if (choice === "lesson") requestLesson({ course: "codex", mode: "lesson" });
+        else send({ type: "cache_friendly_set", enabled: true, chatId: state.activeChatId, codex: choice });
+      });
+    },
+  });
+  host.appendChild(toggle);
   if (!on && !state.lumiCacheAvailable) {
     const tip = textNode(`${tr("ui.tabs.homeTab.cacheFriendly.needsLumiCache")} `, "lmb-field-hint");
     const link = document.createElement("a");
@@ -1025,7 +1036,7 @@ function renderCacheFriendly(host: HTMLElement, state: FrontendState, send: (m: 
     link.textContent = tr("ui.tabs.homeTab.cacheFriendly.findHere");
     tip.appendChild(link);
     host.appendChild(tip);
-  } else if (!on && gated) host.appendChild(textNode(tr("ui.tabs.homeTab.cacheFriendly.needsCourse"), "lmb-field-hint"));
+  }
   if (on && !state.lumiCacheAvailable) host.appendChild(textNode(tr("ui.tabs.homeTab.cacheFriendly.lumiCacheMissing"), "lmb-field-hint"));
 }
 
