@@ -17,7 +17,7 @@ export async function loadPromptBreakdown(request: PromptBreakdownRequest, userI
     for (const messageId of request.messageIds.slice(-15).reverse()) {
       const saved = await generate.getBreakdown(messageId, userId);
       if (!saved) continue;
-      const d = normalizeBreakdown(saved, typeof saved.chatHistoryTokens === "number" ? saved.chatHistoryTokens : 0);
+      const d = normalizeBreakdown(saved as unknown as Record<string, unknown>, typeof saved.chatHistoryTokens === "number" ? saved.chatHistoryTokens : 0);
       if (d) return { d, source: "fire" };
     }
   }

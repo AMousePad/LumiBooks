@@ -10057,7 +10057,7 @@ function report(store, userId) {
     queueDropsThisSession: health(userId).queueDrops,
     writeFailuresThisSession: health(userId).writeFailures,
     privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
-    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, 2 randomUUID, 4 getRandomValues; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
+    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, while 2 and 4 appear only in events from older versions; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
     events: store.events
   };
 }
@@ -11101,12 +11101,13 @@ async function consumeGenerationStream(makeStream, options) {
         base.chars += aggregated.length + toolChars;
         base.thinking += thinkingChars;
         options.onProgress?.(base.chars, base.thinking);
-        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
+        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage, finishReason: chunk.finish_reason ?? "unknown", reasoningChars: thinkingChars };
       }
     }
     assertRunning();
     if (options.salvagePartial && aggregated.trim()) {
-      return { content: aggregated, toolCalls: [], usage };
+      warn(`stream ended without a done chunk, keeping ${aggregated.length} partial chars and ${thinkingChars} reasoning chars`);
+      return { content: aggregated, toolCalls: [], usage, finishReason: null, reasoningChars: thinkingChars };
     }
     throw new Error(t("backend.summarizer.consumeGenerationStream.theStreamEndedBeforeCompleting"));
   } catch (err) {
@@ -11129,7 +11130,7 @@ async function runStreamingGeneration(conn, messages, profile, userId, options) 
     overallDeadlineMs: null,
     salvagePartial: true
   });
-  return { content: result.content, usage: result.usage };
+  return { content: result.content, usage: result.usage, finishReason: result.finishReason, reasoningChars: result.reasoningChars };
 }
 function buildGenerateRequest(conn, messages, profile, userId, signal) {
   const baseParams = buildSamplerParameters(profile);
@@ -11393,7 +11394,7 @@ ${a.raw.content}`).join(`
   if (!rawText)
     throw new Error(t("backend.summarizer.summarizeVolume.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply(TIER_KINDS[tier - 1], processed, result, profile);
   if (!parsed.content.trim())
     throw new Error(t("backend.summarizer.summarizeVolume.theVolumeSummaryCameBackEmpty"));
   return {
@@ -11455,7 +11456,7 @@ async function summarizeChapter(profile, customPresets, chatId, messages, previo
   if (!rawText)
     throw new Error(t("backend.summarizer.summarizeChapter.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply("chapter", processed, result, profile);
   if (!parsed.content.trim())
     throw new Error(t("backend.summarizer.summarizeChapter.theSummaryCameBackEmpty"));
   return {
@@ -11518,7 +11519,7 @@ ${c.raw.content}`).join(`
   if (!rawText)
     throw new Error(t("backend.summarizer.summarizeArc.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply("arc", processed, result, profile);
   if (!parsed.content.trim())
     throw new Error(t("backend.summarizer.summarizeArc.theArcSummaryCameBackEmpty"));
   return {
@@ -11534,6 +11535,15 @@ ${c.raw.content}`).join(`
     connectionId: conn.id,
     presetKey: profile.arcPresetKey
   };
+}
+function parseSummaryReply(kind, processed, result, profile) {
+  try {
+    return parseSummaryJson(processed);
+  } catch (err) {
+    const count = (ch) => processed.split(ch).length - 1;
+    warn(`${kind} reply unparseable: ${result.finishReason === null ? "stream ended early" : `finish_reason ${result.finishReason}`}, ` + `${result.content.length} chars (${processed.length} after regex), ${count("{")} "{" vs ${count("}")} "}", ${result.reasoningChars} reasoning chars, ` + `${result.usage?.completion_tokens ?? "unknown"} completion tokens, max_tokens ${profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens}`);
+    throw err;
+  }
 }
 function parseSummaryJson(raw) {
   const cleaned = stripThinkBlocks(raw);

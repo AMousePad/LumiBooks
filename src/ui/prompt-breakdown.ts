@@ -2,6 +2,7 @@ import { t as tr } from "../i18n";
 import type { FrontendToBackend } from "../types";
 import type { PromptBreakdownRequest, PromptBreakdownResponse, PromptBreakdownResult } from "../prompt-breakdown";
 import { reportUi } from "./diagnostics";
+import { newId } from "./uuid";
 
 const pending = new Map<string, {
   chatId: string;
@@ -15,8 +16,7 @@ export function requestPromptBreakdown(
   input: Omit<PromptBreakdownRequest, "type" | "requestId">,
   timeoutMs = 120_000,
 ): Promise<PromptBreakdownResult> {
-  // getRandomValues also works on HTTP LAN hosts, unlike randomUUID.
-  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const requestId = newId();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);

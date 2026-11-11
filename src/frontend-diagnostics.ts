@@ -24,7 +24,7 @@ export interface UiDiagnostic {
   count: number;
   first: number;
   last: number;
-  /** Capability bits: 1 secure context, 2 randomUUID, 4 getRandomValues. */
+  /** Capability bits: 1 secure context. Older versions also set 2 and 4. */
   caps?: number;
   line?: number;
   column?: number;

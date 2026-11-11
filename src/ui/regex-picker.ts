@@ -2,6 +2,7 @@ import { t as tr } from "../i18n";
 import type { LMBProfile } from "../shared";
 import type { FrontendToBackend, RegexScriptPage, RegexScriptsResponse } from "../types";
 import { field, makeButton, multiSelect, numberInput, searchField, section, textNode } from "./components";
+import { newId } from "./uuid";
 
 // Keep only the visible page. The library can contain thousands of scripts.
 let page: RegexScriptPage | null = null;
@@ -77,7 +78,7 @@ export function renderRegex(
     requestedOffset = offset;
     failed = false;
     progress = null;
-    const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const requestId = newId();
     pending = requestId;
     armTimeout(requestId);
     draw();

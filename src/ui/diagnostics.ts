@@ -66,10 +66,7 @@ export function createUiDiagnostics(options: {
     finally { flushing = false; if (pending.size || dropped) schedule(); }
   }
   function capabilities(): void {
-    const caps = (globalThis.isSecureContext ? 1 : 0)
-      | (typeof globalThis.crypto?.randomUUID === "function" ? 2 : 0)
-      | (typeof globalThis.crypto?.getRandomValues === "function" ? 4 : 0);
-    record("start", { caps });
+    record("start", { caps: globalThis.isSecureContext ? 1 : 0 });
   }
   return { record, flush, clear, capabilities,
     setEnabled(value: boolean) { const changed = enabled !== value; enabled = value; if (!value) clear(); else if (changed) capabilities(); },

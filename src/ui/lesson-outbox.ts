@@ -1,5 +1,6 @@
 import type { FrontendToBackend, LessonMutation } from "../types";
 import type { LessonsState } from "../shared";
+import { newId } from "./uuid";
 
 type Delivery = Extract<FrontendToBackend, { type: "lesson_delivery" }>;
 type StoragePort = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -40,7 +41,7 @@ export class LessonOutbox {
 
   enqueue(message: FrontendToBackend): boolean {
     if (!this.userId || !isLessonMutation(message)) return false;
-    this.queue.push({ type: "lesson_delivery", id: crypto.randomUUID(), ownerUserId: this.userId, message: structuredClone(message) });
+    this.queue.push({ type: "lesson_delivery", id: newId(), ownerUserId: this.userId, message: structuredClone(message) });
     this.persist();
     if (this.queue.length === 1) this.flush();
     return true;

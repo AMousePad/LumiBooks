@@ -5953,6 +5953,15 @@ function createTranslator(locale = DEFAULT_LOCALE, catalogs = {}) {
 }
 var t = createTranslator();
 
+// src/ui/uuid.ts
+var hostUuid;
+function bindHostUuid(ctx) {
+  hostUuid = ctx.uuid;
+}
+function newId() {
+  return hostUuid?.v4() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
 // src/ui/lesson-outbox.ts
 var isLessonMutation = (value) => ["lesson_patch", "lesson_complete", "lesson_reset", "lesson_seal_skip"].includes(value.type ?? "");
 
@@ -6001,7 +6010,7 @@ class LessonOutbox {
   enqueue(message) {
     if (!this.userId || !isLessonMutation(message))
       return false;
-    this.queue.push({ type: "lesson_delivery", id: crypto.randomUUID(), ownerUserId: this.userId, message: structuredClone(message) });
+    this.queue.push({ type: "lesson_delivery", id: newId(), ownerUserId: this.userId, message: structuredClone(message) });
     this.persist();
     if (this.queue.length === 1)
       this.flush();
@@ -9712,8 +9721,7 @@ function createUiDiagnostics(options) {
     }
   }
   function capabilities() {
-    const caps = (globalThis.isSecureContext ? 1 : 0) | (typeof globalThis.crypto?.randomUUID === "function" ? 2 : 0) | (typeof globalThis.crypto?.getRandomValues === "function" ? 4 : 0);
-    record("start", { caps });
+    record("start", { caps: globalThis.isSecureContext ? 1 : 0 });
   }
   return {
     record,
@@ -10777,7 +10785,7 @@ function promptForString(ctx, title, initial) {
 // src/ui/prompt-breakdown.ts
 var pending = new Map;
 function requestPromptBreakdown(send, input, timeoutMs = 120000) {
-  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const requestId = newId();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
@@ -12027,7 +12035,7 @@ function renderRegex(host, profile, patch, send) {
     requestedOffset = offset;
     failed = false;
     progress = null;
-    const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const requestId = newId();
     pending2 = requestId;
     armTimeout(requestId);
     draw();
@@ -21948,6 +21956,7 @@ function ensureDecoFonts() {
   document.head.append(preconnect, link);
 }
 function setup(ctx) {
+  bindHostUuid(ctx);
   let context = { view: "startup" };
   const diagnostics = createUiDiagnostics({ send: (message) => ctx.sendToBackend(message), context: () => context });
   setUiDiagnostics(diagnostics);
@@ -22016,7 +22025,7 @@ function setupApp(ctx, diagnostics, setContext) {
   let disposed = false;
   let loadTimer;
   let handshakeRetries = 0;
-  const saveSession = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  const saveSession = newId();
   let saveSeq = 0;
   let pendingProfileSaves = [];
   const overlayProfileSaves = (state) => {

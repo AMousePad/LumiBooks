@@ -6,10 +6,9 @@ afterEach(clearPromptRequests);
 const input = { chatId: "chat", messageIds: ["message"], mode: "auto" as const };
 const result = { source: "fire" as const, d: { entries: [], totalTokens: 0, maxContext: 0 } };
 
-test("prompt requests work without secure-context randomUUID", async () => {
+test("prompt requests never touch crypto", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
-  const getRandomValues = crypto.getRandomValues.bind(crypto);
-  Object.defineProperty(globalThis, "crypto", { configurable: true, value: { getRandomValues } });
+  Object.defineProperty(globalThis, "crypto", { configurable: true, get() { throw new Error("crypto is blocked"); } });
   try {
     const ids = new Set<string>();
     for (let i = 0; i < 2; i++) {

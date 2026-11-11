@@ -166,6 +166,9 @@ export function buildCodexSamplerParameters(profile: LMBProfile): Record<string,
 interface StreamedGeneration {
   content: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  /** Null when the stream ended without a done chunk. */
+  finishReason: string | null;
+  reasoningChars: number;
 }
 
 export type StreamDeltaKind = "text" | "thinking";
@@ -205,6 +208,8 @@ export interface ConsumedStream {
   content: string;
   toolCalls: ToolCallDTO[];
   usage?: StreamedGeneration["usage"];
+  finishReason: string | null;
+  reasoningChars: number;
 }
 
 /**
@@ -291,12 +296,13 @@ export async function consumeGenerationStream(
         base.chars += aggregated.length + toolChars;
         base.thinking += thinkingChars;
         options.onProgress?.(base.chars, base.thinking);
-        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage };
+        return { content: aggregated, toolCalls: chunk.tool_calls ?? [], usage, finishReason: chunk.finish_reason ?? "unknown", reasoningChars: thinkingChars };
       }
     }
     assertRunning();
     if (options.salvagePartial && aggregated.trim()) {
-      return { content: aggregated, toolCalls: [], usage };
+      warn(`stream ended without a done chunk, keeping ${aggregated.length} partial chars and ${thinkingChars} reasoning chars`);
+      return { content: aggregated, toolCalls: [], usage, finishReason: null, reasoningChars: thinkingChars };
     }
     throw new Error(tr("backend.summarizer.consumeGenerationStream.theStreamEndedBeforeCompleting"));
   } catch (err) {
@@ -327,7 +333,7 @@ async function runStreamingGeneration(
       salvagePartial: true,
     },
   );
-  return { content: result.content, usage: result.usage };
+  return { content: result.content, usage: result.usage, finishReason: result.finishReason, reasoningChars: result.reasoningChars };
 }
 
 function buildGenerateRequest(
@@ -693,7 +699,7 @@ export async function summarizeVolume(
   const rawText = (result.content || "").trim();
   if (!rawText) throw new Error(tr("backend.summarizer.summarizeVolume.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply(TIER_KINDS[tier - 1]!, processed, result, profile);
   if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeVolume.theVolumeSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
@@ -766,7 +772,7 @@ export async function summarizeChapter(
   if (!rawText) throw new Error(tr("backend.summarizer.summarizeChapter.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
 
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply("chapter", processed, result, profile);
   if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeChapter.theSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
@@ -838,7 +844,7 @@ export async function summarizeArc(
   const rawText = (result.content || "").trim();
   if (!rawText) throw new Error(tr("backend.summarizer.summarizeArc.emptyModelOutput"));
   const processed = await applySelectedRegex(rawText, profile.regexIncomingScriptIds, userId);
-  const parsed = parseSummaryJson(processed);
+  const parsed = parseSummaryReply("arc", processed, result, profile);
   if (!parsed.content.trim()) throw new Error(tr("backend.summarizer.summarizeArc.theArcSummaryCameBackEmpty"));
   return {
     rawOutput: rawText,
@@ -861,6 +867,19 @@ interface ParsedSummary {
   content: string;
   keywords: string[];
   shortComment: string;
+}
+
+/** Logs reply shape only, never its text. */
+export function parseSummaryReply(kind: string, processed: string, result: StreamedGeneration, profile: LMBProfile): ParsedSummary {
+  try {
+    return parseSummaryJson(processed);
+  } catch (err) {
+    const count = (ch: string) => processed.split(ch).length - 1;
+    warn(`${kind} reply unparseable: ${result.finishReason === null ? "stream ended early" : `finish_reason ${result.finishReason}`}, `
+      + `${result.content.length} chars (${processed.length} after regex), ${count("{")} "{" vs ${count("}")} "}", ${result.reasoningChars} reasoning chars, `
+      + `${result.usage?.completion_tokens ?? "unknown"} completion tokens, max_tokens ${profile.samplers.max_tokens ?? SAMPLER_DEFAULTS.max_tokens}`);
+    throw err;
+  }
 }
 
 function parseSummaryJson(raw: string): ParsedSummary {

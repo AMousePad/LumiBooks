@@ -129,7 +129,7 @@ function report(store: Store, userId: string) {
     exportedAt: Date.now(), indexBase: 0, maxBytes: DIAGNOSTICS_MAX_BYTES,
     droppedEvents: store.dropped, queueDropsThisSession: health(userId).queueDrops, writeFailuresThisSession: health(userId).writeFailures,
     privacy: "Includes timestamps, counts, indexes, structural relationships and salted pseudonyms. Excludes chat/summary text, prompts, reasoning, names, raw IDs, content hashes, credentials and raw errors.",
-    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, 2 randomUUID, 4 getRandomValues; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
+    frontend: "ui.count aggregates repeats between ui.first/last (epoch ms); caps bits: 1 secure context, while 2 and 4 appear only in events from older versions; line/column refer to the frontend bundle; overflow counts events dropped from the bounded browser queue.",
     events: store.events };
 }
 function bound(store: Store, userId: string): void {

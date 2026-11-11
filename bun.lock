@@ -34,7 +34,7 @@
 
     "intl-messageformat": ["intl-messageformat@12.1.3", "", { "dependencies": { "@formatjs/fast-memoize": "3.1.7", "@formatjs/icu-messageformat-parser": "3.5.21" } }, "sha512-JXi5wk8R/oSECKyxSIZ00VS8KG6MZkHM0qU4NS7RrvIWWXkiv3wVqGlCvEvyXiDvKlt2yqwZMiZGIv+I8rrnZQ=="],
 
-    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.5.31", "", {}, "sha512-Vu4ppfIskGKiK9BGqEPaBMqqdpSFCXgWDq6cgBExWV0Edb+90rD9/5iWuZ2Zi/zoqPwZKgfr62onhmjEjR7odQ=="],
+    "lumiverse-spindle-types": ["lumiverse-spindle-types@0.6.80", "", {}, "sha512-YaAiNKzYnFFo199jkXwIu0bJYcTBZZ2RAYjIFmXbbcpPIVOiPwS4y5vb+Zf2NCjwMc13zHYybOgnmVPe3P98nw=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
   }

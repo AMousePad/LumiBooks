@@ -1,5 +1,6 @@
 import { t as tr } from "../i18n";
 import { LessonOutbox } from "./lesson-outbox";
+import { bindHostUuid, newId } from "./uuid";
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { BackendToFrontend, FrontendState, FrontendToBackend, ProfilePatch } from "../types";
 import type { LMBProfile } from "../shared";
@@ -45,6 +46,7 @@ function ensureDecoFonts(): void {
 }
 
 export function setup(ctx: SpindleFrontendContext): () => void {
+  bindHostUuid(ctx);
   let context: { chatId?: string | null; view: UiDiagnostic["view"] } = { view: "startup" };
   const diagnostics = createUiDiagnostics({ send: (message) => ctx.sendToBackend(message), context: () => context });
   setUiDiagnostics(diagnostics);
@@ -110,8 +112,7 @@ function setupApp(ctx: SpindleFrontendContext, diagnostics: UiDiagnostics,
   let disposed = false;
   let loadTimer: ReturnType<typeof setTimeout> | undefined;
   let handshakeRetries = 0;
-  // Math.random because crypto.randomUUID is missing on plain-http LAN hosts.
-  const saveSession = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  const saveSession = newId();
   let saveSeq = 0;
   let pendingProfileSaves: Array<{ seq: number; profile: ProfilePatch & { id: string } }> = [];
   // State pushed mid-save predates later edits, so unconfirmed edits stay on top until acked.

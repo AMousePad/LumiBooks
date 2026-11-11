@@ -316,7 +316,7 @@ spindle.registerInterceptor(async (messages, context) => {
   try {
     const interceptorContext =
       context && typeof context === "object"
-        ? (context as Record<string, unknown>)
+        ? (context as unknown as Record<string, unknown>)
         : null;
     const chatId =
       interceptorContext && typeof interceptorContext["chatId"] === "string"
