@@ -522,7 +522,7 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
         scheduleDemoRerender(step);
         return;
       }
-      if (step.kind === "do" && m.type === step.expect && active.doPhase === "idle") {
+      if (step.kind === "do" && m.type === step.expect && active.doPhase === "idle" && currentStep() === step) {
         runDoScript(step, m);
         return;
       }
@@ -583,7 +583,8 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
   }
 
   function markDoDone(step: DoStep): void {
-    if (!active) return;
+    // Tab-less steps keep the previous demo, whose send still names its own step.
+    if (!active || currentStep() !== step) return;
     active.doPhase = "done";
     renderSheet(step);
     if (step.doneAnchor) scheduleAnchor(step.doneAnchor);
@@ -1105,6 +1106,10 @@ export function createLessonEngine(deps: LessonEngineDeps): LessonEngine {
   function stepApplies(step: LessonStep | null | undefined): boolean {
     if (!step) return false;
     if (step.onlyFreshInstall && !(deps.getState()?.lessons?.freshInstall ?? false)) return false;
+    if (step.requires) {
+      const state = deps.getState();
+      if (!state || !step.requires(state)) return false;
+    }
     return true;
   }
 

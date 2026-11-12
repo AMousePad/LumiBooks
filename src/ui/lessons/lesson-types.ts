@@ -30,6 +30,8 @@ interface StepBase {
   prep?: () => void;
   /** Step only applies to fresh installs (Course 1 automation flip). */
   onlyFreshInstall?: boolean;
+  /** Real step is skipped unless the live state can show its target. */
+  requires?: (state: FrontendState) => boolean;
 }
 
 export interface SayStep extends StepBase {

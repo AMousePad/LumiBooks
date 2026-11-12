@@ -18934,6 +18934,7 @@ var COURSE_BOOKS = {
         {
           kind: "do",
           real: true,
+          requires: (state) => !!state.activeChatId,
           tab: "home",
           anchor: "home.actions.file",
           expect: "create_chapter",
@@ -18981,6 +18982,7 @@ var COURSE_BOOKS = {
 };
 
 // src/ui/lessons/content-codex.ts
+var canUpdateCodex = (state) => !!state.activeChatId && state.activeProfile.codexEnabled;
 var COURSE_CODEX = {
   key: "codex",
   title: t("ui.lessons.contentCodex.courseCodex.theArchivistSCodex"),
@@ -19380,6 +19382,7 @@ var COURSE_CODEX = {
           kind: "nav",
           real: true,
           optional: true,
+          requires: canUpdateCodex,
           path: ["tab.home"],
           arrive: "home.actions.updatecodex",
           text: t("ui.lessons.contentCodex.courseCodex.homeHasAnUpdateCodexButtonNow"),
@@ -19388,6 +19391,7 @@ var COURSE_CODEX = {
         {
           kind: "do",
           real: true,
+          requires: canUpdateCodex,
           tab: "home",
           anchor: "home.actions.updatecodex",
           expect: "codex_update_now",
@@ -21157,7 +21161,7 @@ function createLessonEngine(deps) {
         scheduleDemoRerender(step);
         return;
       }
-      if (step.kind === "do" && m.type === step.expect && active.doPhase === "idle") {
+      if (step.kind === "do" && m.type === step.expect && active.doPhase === "idle" && currentStep() === step) {
         runDoScript(step, m);
         return;
       }
@@ -21216,7 +21220,7 @@ function createLessonEngine(deps) {
     markDoDone(step);
   }
   function markDoDone(step) {
-    if (!active)
+    if (!active || currentStep() !== step)
       return;
     active.doPhase = "done";
     renderSheet(step);
@@ -21711,6 +21715,11 @@ function createLessonEngine(deps) {
       return false;
     if (step.onlyFreshInstall && !(deps.getState()?.lessons?.freshInstall ?? false))
       return false;
+    if (step.requires) {
+      const state = deps.getState();
+      if (!state || !step.requires(state))
+        return false;
+    }
     return true;
   }
   function lastTabBefore() {

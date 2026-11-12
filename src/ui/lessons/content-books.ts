@@ -692,6 +692,7 @@ export const COURSE_BOOKS: LessonCourseDef = {
         {
           kind: "do",
           real: true,
+          requires: (state) => !!state.activeChatId,
           tab: "home",
           anchor: "home.actions.file",
           expect: "create_chapter",

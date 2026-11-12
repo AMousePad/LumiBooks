@@ -2,6 +2,9 @@ import { t as tr } from "../../i18n";
 import type { LessonCourseDef } from "./lesson-types";
 import { setCodexExpandedEntity, setCodexRelationsView, setCodexSubtab } from "../tabs/codex-tab";
 import { setSettingsView, setTuningSubtab } from "../tabs/tuning-tab";
+import type { FrontendState } from "../../types";
+
+const canUpdateCodex = (state: FrontendState) => !!state.activeChatId && state.activeProfile.codexEnabled;
 
 /** Course 2: The Archivist's Codex. A quick guided walkthrough: the user
  * navigates every pane themselves, tries the unique interactions, and only
@@ -405,6 +408,7 @@ export const COURSE_CODEX: LessonCourseDef = {
           kind: "nav",
           real: true,
           optional: true,
+          requires: canUpdateCodex,
           path: ["tab.home"],
           arrive: "home.actions.updatecodex",
           text: tr("ui.lessons.contentCodex.courseCodex.homeHasAnUpdateCodexButtonNow"),
@@ -413,6 +417,7 @@ export const COURSE_CODEX: LessonCourseDef = {
         {
           kind: "do",
           real: true,
+          requires: canUpdateCodex,
           tab: "home",
           anchor: "home.actions.updatecodex",
           expect: "codex_update_now",
