@@ -350,7 +350,7 @@ export function codexEntryPlacement(profile: LMBProfile, constant: boolean) {
   return { ...(profile.codexActivationMode === "vector_only" ? { constant: false, vectorized: true } : activationFlags(profile.codexActivationMode, constant)),
     position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
-    role: "system" };
+    role: "assistant" };
 }
 export async function retireCodexChat(chatId: string, userId: string): Promise<void> {
   await setCodexOrphaned(chatId, userId, true);

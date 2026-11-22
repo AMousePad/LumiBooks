@@ -12873,7 +12873,7 @@ function codexEntryPlacement(profile, constant) {
     ...profile.codexActivationMode === "vector_only" ? { constant: false, vectorized: true } : activationFlags(profile.codexActivationMode, constant),
     position: profile.codexInjectionPosition === "lorebook" ? 0 : 4,
     depth: profile.codexInjectionPosition === "depth" ? profile.codexInjectionDepth : 0,
-    role: "system"
+    role: "assistant"
   };
 }
 async function retireCodexChat(chatId, userId) {
